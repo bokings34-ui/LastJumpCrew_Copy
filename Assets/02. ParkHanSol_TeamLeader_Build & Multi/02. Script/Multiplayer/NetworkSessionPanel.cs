@@ -8,6 +8,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
         [SerializeField] private NetworkSessionStarter sessionStarter;
         [SerializeField] private RelaySessionConnector relayConnector;
         [SerializeField] private ProximityVoiceChatSession voiceChatSession;
+        [SerializeField] private ParkHanSolLobbyMenuController lobbyMenuController;
         [SerializeField] private string lanVoiceChannelName = "ParkHanSol_TestVoice";
         [SerializeField] private InputField addressInput;
         [SerializeField] private InputField portInput;
@@ -19,6 +20,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
         [SerializeField] private Button relayHostButton;
         [SerializeField] private Button relayClientButton;
         [SerializeField] private Button shutdownButton;
+        [SerializeField] private Button backButton;
         [SerializeField] private Text statusText;
 
         private void Awake()
@@ -29,6 +31,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
             Bind(relayHostButton, StartRelayHost);
             Bind(relayClientButton, StartRelayClient);
             Bind(shutdownButton, Shutdown);
+            Bind(backButton, BackToLobbySelection);
             RefreshStatus("Idle");
         }
 
@@ -40,6 +43,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
             Unbind(relayHostButton, StartRelayHost);
             Unbind(relayClientButton, StartRelayClient);
             Unbind(shutdownButton, Shutdown);
+            Unbind(backButton, BackToLobbySelection);
         }
 
         private void Update()
@@ -52,46 +56,81 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
 
         private void StartHost()
         {
-            ApplyInputs();
-            var started = sessionStarter != null && sessionStarter.StartHost();
-            RefreshStatus(started ? "Host started" : "Host failed");
-            StartVoiceIfRunning(started, lanVoiceChannelName);
+            StartHostSession();
         }
 
         private void StartClient()
         {
-            ApplyInputs();
-            var started = sessionStarter != null && sessionStarter.StartClient();
-            RefreshStatus(started ? "Client started" : "Client failed");
-            StartVoiceIfRunning(started, lanVoiceChannelName);
+            StartClientSession();
         }
 
         private void StartServer()
         {
             ApplyInputs();
-            RefreshStatus(sessionStarter != null && sessionStarter.StartServer() ? "Server started" : "Server failed");
+            var started = sessionStarter != null && sessionStarter.StartServer();
+            RefreshStatus(started ? "Server started" : "Server failed");
+            ShowRoomIfStarted(started);
         }
 
         private async void StartRelayHost()
+        {
+            await StartRelayHostSessionAsync();
+        }
+
+        private async void StartRelayClient()
+        {
+            var code = joinCodeInput == null ? string.Empty : joinCodeInput.text;
+            await StartRelayClientSessionAsync(code);
+        }
+
+        public bool StartHostSession()
+        {
+            ApplyInputs();
+            var started = sessionStarter != null && sessionStarter.StartHost();
+            RefreshStatus(started ? "Host started" : "Host failed");
+            ShowRoomIfStarted(started);
+            StartVoiceIfRunning(started, lanVoiceChannelName);
+            return started;
+        }
+
+        public bool StartClientSession()
+        {
+            ApplyInputs();
+            var started = sessionStarter != null && sessionStarter.StartClient();
+            RefreshStatus(started ? "Client started" : "Client failed");
+            ShowRoomIfStarted(started);
+            StartVoiceIfRunning(started, lanVoiceChannelName);
+            return started;
+        }
+
+        public async System.Threading.Tasks.Task<bool> StartRelayHostSessionAsync()
         {
             ApplyInputs();
             RefreshStatus("Relay host starting");
             var started = relayConnector != null && await relayConnector.StartRelayHostAsync();
             RefreshStatus(started ? $"Relay host: {relayConnector.JoinCode}" : "Relay host failed");
+            ShowRoomIfStarted(started);
             StartVoiceIfRunning(started, relayConnector == null ? string.Empty : relayConnector.JoinCode);
+            return started;
         }
 
-        private async void StartRelayClient()
+        public async System.Threading.Tasks.Task<bool> StartRelayClientSessionAsync(string code)
         {
             ApplyInputs();
             RefreshStatus("Relay client starting");
-            var code = joinCodeInput == null ? string.Empty : joinCodeInput.text;
+            if (joinCodeInput != null)
+            {
+                joinCodeInput.text = code;
+            }
+
             var started = relayConnector != null && await relayConnector.StartRelayClientAsync(code);
             RefreshStatus(started ? "Relay client started" : "Relay client failed");
+            ShowRoomIfStarted(started);
             StartVoiceIfRunning(started, code);
+            return started;
         }
 
-        private async void Shutdown()
+        public async void ShutdownSession()
         {
             if (voiceChatSession != null)
             {
@@ -100,6 +139,21 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
 
             sessionStarter?.Shutdown();
             RefreshStatus("Shutdown");
+        }
+
+        private void Shutdown()
+        {
+            ShutdownSession();
+        }
+
+        private void BackToLobbySelection()
+        {
+            if (sessionStarter != null && sessionStarter.IsRunning)
+            {
+                ShutdownSession();
+            }
+
+            lobbyMenuController?.ShowLobbySelection();
         }
 
         private void ApplyInputs()
@@ -148,6 +202,14 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
             if (statusText != null)
             {
                 statusText.text = message;
+            }
+        }
+
+        private void ShowRoomIfStarted(bool started)
+        {
+            if (started)
+            {
+                lobbyMenuController?.ShowRoom();
             }
         }
 

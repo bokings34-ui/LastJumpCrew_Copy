@@ -17,7 +17,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
         [SerializeField] private NetworkManager networkManager;
         [SerializeField] private UnityTransport transport;
         [SerializeField] private NetworkSessionStarter sessionStarter;
-        [SerializeField, Min(4)] private int maxPlayers = 8;
+        [SerializeField, Min(1)] private int maxPlayers = 8;
         [SerializeField] private string relayConnectionType = "dtls";
         [SerializeField] private string joinCode;
 
@@ -41,6 +41,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
                 sessionStarter.SetMaxPlayers(maxPlayers);
             }
 
+            ConfigureConnectionApproval();
             return networkManager != null && networkManager.StartHost();
         }
 
@@ -65,7 +66,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
 
         public void SetMaxPlayers(int sessionMaxPlayers)
         {
-            maxPlayers = Mathf.Max(4, sessionMaxPlayers);
+            maxPlayers = Mathf.Max(1, sessionMaxPlayers);
         }
 
         private async Task<bool> EnsureServicesReadyAsync()
@@ -102,6 +103,29 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
             {
                 transport = networkManager.GetComponent<UnityTransport>();
             }
+        }
+
+        private void ConfigureConnectionApproval()
+        {
+            if (networkManager == null)
+            {
+                return;
+            }
+
+            networkManager.NetworkConfig.ConnectionApproval = true;
+            networkManager.ConnectionApprovalCallback -= ApproveConnection;
+            networkManager.ConnectionApprovalCallback += ApproveConnection;
+        }
+
+        private void ApproveConnection(
+            NetworkManager.ConnectionApprovalRequest request,
+            NetworkManager.ConnectionApprovalResponse response)
+        {
+            var connectedCount = networkManager == null ? 0 : networkManager.ConnectedClientsIds.Count;
+            response.Approved = connectedCount < maxPlayers;
+            response.CreatePlayerObject = response.Approved;
+            response.Pending = false;
+            response.Reason = response.Approved ? string.Empty : "Session is full.";
         }
 
         private void ApplyHostAllocation(Allocation allocation)

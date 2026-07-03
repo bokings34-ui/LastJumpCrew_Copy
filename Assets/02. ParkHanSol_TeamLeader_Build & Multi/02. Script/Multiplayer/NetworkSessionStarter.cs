@@ -10,7 +10,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
         [SerializeField] private UnityTransport transport;
         [SerializeField] private string connectAddress = "127.0.0.1";
         [SerializeField] private ushort port = 7777;
-        [SerializeField, Min(4)] private int maxPlayers = 8;
+        [SerializeField, Min(1)] private int maxPlayers = 8;
 
         public bool IsRunning => networkManager != null && networkManager.IsListening;
         public int MaxPlayers => maxPlayers;
@@ -70,7 +70,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
 
         public void SetMaxPlayers(int sessionMaxPlayers)
         {
-            maxPlayers = Mathf.Max(4, sessionMaxPlayers);
+            maxPlayers = Mathf.Max(1, sessionMaxPlayers);
         }
 
         private bool CanStartSession()

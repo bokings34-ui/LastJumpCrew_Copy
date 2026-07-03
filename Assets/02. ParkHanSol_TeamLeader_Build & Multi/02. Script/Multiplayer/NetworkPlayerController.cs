@@ -1,6 +1,8 @@
 using Unity.Netcode;
 using UnityEngine;
 using UnityEngine.InputSystem;
+using UnityEngine.SceneManagement;
+using System;
 
 namespace LastJumpCrew.ParkHanSol.Multiplayer
 {
@@ -15,37 +17,54 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
         [SerializeField] private Transform cameraRoot;
         [SerializeField] private Camera playerCamera;
         [SerializeField] private AudioListener audioListener;
+        [SerializeField] private string gameplaySceneName = "ParkHanSol_PlayScene";
 
         private CharacterController characterController;
         private float verticalVelocity;
         private float cameraPitch;
+        private bool gameplayInputEnabled;
+        private bool autoMoveEnabled;
+        private float autoMoveSeconds;
+        private float autoMoveEndTime;
+        private bool autoMoveStarted;
+        private float nextPositionLogTime;
 
         public override void OnNetworkSpawn()
         {
             characterController = GetComponent<CharacterController>();
-            SetLocalView(IsOwner);
-
-            if (IsOwner)
-            {
-                Cursor.lockState = CursorLockMode.Locked;
-                Cursor.visible = false;
-            }
+            ApplySceneInputState();
         }
 
         private void Awake()
         {
             characterController = GetComponent<CharacterController>();
             SetLocalView(false);
+            ConfigureCommandLineAutomation();
+        }
+
+        private void OnEnable()
+        {
+            SceneManager.activeSceneChanged += HandleActiveSceneChanged;
+        }
+
+        private void OnDisable()
+        {
+            SceneManager.activeSceneChanged -= HandleActiveSceneChanged;
         }
 
         private void Update()
         {
-            if (!IsOwner)
+            if (!IsOwner || !gameplayInputEnabled)
             {
                 return;
             }
 
             var move = ReadMove();
+            if (autoMoveEnabled && Time.time < autoMoveEndTime)
+            {
+                move.y = 1f;
+            }
+
             var look = ReadLook();
             var jump = Keyboard.current != null && Keyboard.current.spaceKey.wasPressedThisFrame;
             var sprint = Keyboard.current != null && Keyboard.current.leftShiftKey.isPressed;
@@ -61,6 +80,82 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
             {
                 SubmitInputServerRpc(move, look.x, jump, sprint, deltaTime);
             }
+        }
+
+        public void SetGameplayInputEnabled(bool active)
+        {
+            gameplayInputEnabled = IsOwner && active;
+            SetLocalView(gameplayInputEnabled);
+
+            if (!IsOwner)
+            {
+                return;
+            }
+
+            Cursor.lockState = gameplayInputEnabled ? CursorLockMode.Locked : CursorLockMode.None;
+            Cursor.visible = !gameplayInputEnabled;
+        }
+
+        private void HandleActiveSceneChanged(Scene previousScene, Scene currentScene)
+        {
+            ApplySceneInputState();
+        }
+
+        private void ApplySceneInputState()
+        {
+            if (!IsSpawned)
+            {
+                SetLocalView(false);
+                return;
+            }
+
+            var isGameplayScene = SceneManager.GetActiveScene().name == gameplaySceneName;
+            SetGameplayInputEnabled(isGameplayScene);
+            if (gameplayInputEnabled && autoMoveEnabled && !autoMoveStarted)
+            {
+                autoMoveStarted = true;
+                autoMoveEndTime = Time.time + autoMoveSeconds;
+            }
+
+            Debug.Log($"PHS_PLAYER_SCENE_STATE scene={SceneManager.GetActiveScene().name} owner={IsOwner} input={gameplayInputEnabled}");
+        }
+
+        private void LateUpdate()
+        {
+            if (!autoMoveEnabled || Time.time < nextPositionLogTime)
+            {
+                return;
+            }
+
+            nextPositionLogTime = Time.time + 1f;
+            Debug.Log($"PHS_PLAYER_POS scene={SceneManager.GetActiveScene().name} owner={IsOwner} ownerClientId={OwnerClientId} pos={transform.position}");
+        }
+
+        private void ConfigureCommandLineAutomation()
+        {
+            autoMoveSeconds = GetCommandLineFloat("-phsAutoMoveSeconds");
+            if (autoMoveSeconds <= 0f)
+            {
+                return;
+            }
+
+            autoMoveEnabled = true;
+            nextPositionLogTime = Time.time + 1f;
+        }
+
+        private static float GetCommandLineFloat(string key)
+        {
+            var args = Environment.GetCommandLineArgs();
+            for (var i = 0; i < args.Length - 1; i++)
+            {
+                if (string.Equals(args[i], key, StringComparison.OrdinalIgnoreCase)
+                    && float.TryParse(args[i + 1], out var value))
+                {
+                    return value;
+                }
+            }
+
+            return 0f;
         }
 
         [ServerRpc]

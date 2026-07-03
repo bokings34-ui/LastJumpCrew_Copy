@@ -1,4 +1,6 @@
 using System;
+using System.Collections.Generic;
+using System.Linq;
 using System.Threading.Tasks;
 using Unity.Netcode;
 using Unity.Services.Authentication;
@@ -19,6 +21,11 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
         private string requestedChannelName;
         private bool servicesReady;
         private bool joinInProgress;
+        private int requestedInputVolume;
+        private int requestedOutputVolume;
+        private int requestedChannelVolume;
+        private bool requestedInputMuted;
+        private bool requestedOutputMuted;
 
         public bool IsInChannel { get; private set; }
         public string ActiveChannelName { get; private set; }
@@ -77,9 +84,10 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
                     fadeModel);
 
                 await VivoxService.Instance.JoinPositionalChannelAsync(channelName, ChatCapability.AudioOnly, properties);
-                VivoxService.Instance.UnmuteInputDevice();
+                ApplyVoiceDeviceSettings();
                 ActiveChannelName = channelName;
                 IsInChannel = true;
+                await ApplyChannelVolumeAsync();
                 UpdateLocalPosition(localPlayer);
                 return true;
             }
@@ -127,6 +135,182 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
             VivoxService.Instance.Set3DPosition(localPlayer, ActiveChannelName);
         }
 
+        public async Task<bool> PrepareVoiceSettingsAsync()
+        {
+            return await EnsureServicesReadyAsync();
+        }
+
+        public IReadOnlyList<string> GetInputDeviceNames()
+        {
+            return servicesReady
+                ? VivoxService.Instance.AvailableInputDevices.Select(device => device.DeviceName).ToList()
+                : Array.Empty<string>();
+        }
+
+        public IReadOnlyList<string> GetOutputDeviceNames()
+        {
+            return servicesReady
+                ? VivoxService.Instance.AvailableOutputDevices.Select(device => device.DeviceName).ToList()
+                : Array.Empty<string>();
+        }
+
+        public IReadOnlyList<string> GetRemoteParticipantNames()
+        {
+            if (!servicesReady || !IsInChannel || string.IsNullOrEmpty(ActiveChannelName)
+                || !VivoxService.Instance.ActiveChannels.TryGetValue(ActiveChannelName, out var participants))
+            {
+                return Array.Empty<string>();
+            }
+
+            return participants
+                .Where(participant => !participant.IsSelf)
+                .Select(participant => string.IsNullOrWhiteSpace(participant.DisplayName)
+                    ? participant.PlayerId
+                    : participant.DisplayName)
+                .ToList();
+        }
+
+        public int GetActiveInputDeviceIndex()
+        {
+            if (!servicesReady || VivoxService.Instance.ActiveInputDevice == null)
+            {
+                return 0;
+            }
+
+            var devices = VivoxService.Instance.AvailableInputDevices;
+            for (var i = 0; i < devices.Count; i++)
+            {
+                if (devices[i].DeviceID == VivoxService.Instance.ActiveInputDevice.DeviceID)
+                {
+                    return i;
+                }
+            }
+
+            return 0;
+        }
+
+        public int GetActiveOutputDeviceIndex()
+        {
+            if (!servicesReady || VivoxService.Instance.ActiveOutputDevice == null)
+            {
+                return 0;
+            }
+
+            var devices = VivoxService.Instance.AvailableOutputDevices;
+            for (var i = 0; i < devices.Count; i++)
+            {
+                if (devices[i].DeviceID == VivoxService.Instance.ActiveOutputDevice.DeviceID)
+                {
+                    return i;
+                }
+            }
+
+            return 0;
+        }
+
+        public async void SetInputDeviceByIndex(int index)
+        {
+            if (!await EnsureServicesReadyAsync())
+            {
+                return;
+            }
+
+            var devices = VivoxService.Instance.AvailableInputDevices;
+            if (index >= 0 && index < devices.Count)
+            {
+                await VivoxService.Instance.SetActiveInputDeviceAsync(devices[index]);
+            }
+        }
+
+        public async void SetOutputDeviceByIndex(int index)
+        {
+            if (!await EnsureServicesReadyAsync())
+            {
+                return;
+            }
+
+            var devices = VivoxService.Instance.AvailableOutputDevices;
+            if (index >= 0 && index < devices.Count)
+            {
+                await VivoxService.Instance.SetActiveOutputDeviceAsync(devices[index]);
+            }
+        }
+
+        public void SetInputVolume(int value)
+        {
+            requestedInputVolume = Mathf.Clamp(value, -50, 50);
+            if (servicesReady)
+            {
+                VivoxService.Instance.SetInputDeviceVolume(requestedInputVolume);
+            }
+        }
+
+        public void SetOutputVolume(int value)
+        {
+            requestedOutputVolume = Mathf.Clamp(value, -50, 50);
+            if (servicesReady)
+            {
+                VivoxService.Instance.SetOutputDeviceVolume(requestedOutputVolume);
+            }
+        }
+
+        public async void SetPartyVolume(int value)
+        {
+            requestedChannelVolume = Mathf.Clamp(value, -50, 50);
+            await ApplyChannelVolumeAsync();
+        }
+
+        public void SetRemoteParticipantVolumeByIndex(int index, int value)
+        {
+            if (!servicesReady || !IsInChannel || string.IsNullOrEmpty(ActiveChannelName)
+                || !VivoxService.Instance.ActiveChannels.TryGetValue(ActiveChannelName, out var participants))
+            {
+                return;
+            }
+
+            var remoteParticipants = participants.Where(participant => !participant.IsSelf).ToList();
+            if (index >= 0 && index < remoteParticipants.Count)
+            {
+                remoteParticipants[index].SetLocalVolume(value);
+            }
+        }
+
+        public void SetInputMuted(bool muted)
+        {
+            requestedInputMuted = muted;
+            if (!servicesReady)
+            {
+                return;
+            }
+
+            if (requestedInputMuted)
+            {
+                VivoxService.Instance.MuteInputDevice();
+            }
+            else
+            {
+                VivoxService.Instance.UnmuteInputDevice();
+            }
+        }
+
+        public void SetOutputMuted(bool muted)
+        {
+            requestedOutputMuted = muted;
+            if (!servicesReady)
+            {
+                return;
+            }
+
+            if (requestedOutputMuted)
+            {
+                VivoxService.Instance.MuteOutputDevice();
+            }
+            else
+            {
+                VivoxService.Instance.UnmuteOutputDevice();
+            }
+        }
+
         private async Task<bool> EnsureServicesReadyAsync()
         {
             if (servicesReady)
@@ -148,6 +332,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
 
                 await VivoxService.Instance.InitializeAsync();
                 servicesReady = true;
+                ApplyVoiceDeviceSettings();
                 return true;
             }
             catch (Exception exception)
@@ -161,6 +346,24 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
         {
             var value = string.IsNullOrWhiteSpace(channelName) ? defaultChannelName : channelName;
             return value.Trim().Replace(" ", "_");
+        }
+
+        private void ApplyVoiceDeviceSettings()
+        {
+            SetInputVolume(requestedInputVolume);
+            SetOutputVolume(requestedOutputVolume);
+            SetInputMuted(requestedInputMuted);
+            SetOutputMuted(requestedOutputMuted);
+        }
+
+        private async Task ApplyChannelVolumeAsync()
+        {
+            if (!servicesReady || !IsInChannel || string.IsNullOrEmpty(ActiveChannelName))
+            {
+                return;
+            }
+
+            await VivoxService.Instance.SetChannelVolumeAsync(ActiveChannelName, requestedChannelVolume);
         }
     }
 }
