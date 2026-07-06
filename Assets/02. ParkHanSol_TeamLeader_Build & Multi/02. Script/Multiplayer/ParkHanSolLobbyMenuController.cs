@@ -349,6 +349,35 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
             Debug.Log(created
                 ? $"PHS_AUTO_HOST_READY code={joinCode}"
                 : "PHS_AUTO_HOST_FAILED");
+
+            if (created && HasCommandLineFlag(Environment.GetCommandLineArgs(), "-phsAutoStartGame"))
+            {
+                StartCoroutine(StartGameFromCommandLineWhenReady());
+            }
+        }
+
+        private IEnumerator StartGameFromCommandLineWhenReady()
+        {
+            var args = Environment.GetCommandLineArgs();
+            var requiredClients = Mathf.Max(1, GetCommandLineInt(args, "-phsAutoStartClients", 4));
+            var timeoutSeconds = Mathf.Max(1, GetCommandLineInt(args, "-phsAutoStartTimeout", 60));
+            var deadline = Time.realtimeSinceStartup + timeoutSeconds;
+
+            while (Time.realtimeSinceStartup < deadline)
+            {
+                var connectedCount = GetConnectedClientCount();
+                Debug.Log($"PHS_AUTO_ROOM_COUNT clients={connectedCount}/{requiredClients}");
+                if (connectedCount >= requiredClients)
+                {
+                    Debug.Log($"PHS_AUTO_START_GAME clients={connectedCount}");
+                    StartGame();
+                    yield break;
+                }
+
+                yield return new WaitForSecondsRealtime(1f);
+            }
+
+            Debug.LogWarning($"PHS_AUTO_START_GAME_TIMEOUT clients={GetConnectedClientCount()}/{requiredClients}");
         }
 
         private static bool HasCommandLineFlag(string[] args, string key)
@@ -375,6 +404,12 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
             }
 
             return string.Empty;
+        }
+
+        private static int GetCommandLineInt(string[] args, string key, int fallback)
+        {
+            var value = GetCommandLineValue(args, key);
+            return int.TryParse(value, out var parsed) ? parsed : fallback;
         }
 
         private static int GetConnectedClientCount()

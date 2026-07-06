@@ -18,6 +18,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
         [SerializeField] private Camera playerCamera;
         [SerializeField] private AudioListener audioListener;
         [SerializeField] private string gameplaySceneName = "ParkHanSol_PlayScene";
+        [SerializeField] private string spawnPointsRootName = "Spawn Points";
 
         private CharacterController characterController;
         private float verticalVelocity;
@@ -32,6 +33,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
         public override void OnNetworkSpawn()
         {
             characterController = GetComponent<CharacterController>();
+            MoveToGameplaySpawnPointIfServer();
             ApplySceneInputState();
         }
 
@@ -98,6 +100,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
 
         private void HandleActiveSceneChanged(Scene previousScene, Scene currentScene)
         {
+            MoveToGameplaySpawnPointIfServer();
             ApplySceneInputState();
         }
 
@@ -190,6 +193,51 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
             var velocity = wishDirection * speed;
             velocity.y = verticalVelocity;
             characterController.Move(velocity * deltaTime);
+        }
+
+        private void MoveToGameplaySpawnPointIfServer()
+        {
+            if (!IsSpawned || !IsServer || SceneManager.GetActiveScene().name != gameplaySceneName)
+            {
+                return;
+            }
+
+            if (!TryGetSpawnPoint(out var spawnPoint))
+            {
+                Debug.LogWarning($"PHS_SPAWN_POINT_MISSING scene={SceneManager.GetActiveScene().name}");
+                return;
+            }
+
+            var wasEnabled = characterController != null && characterController.enabled;
+            if (characterController != null)
+            {
+                characterController.enabled = false;
+            }
+
+            transform.SetPositionAndRotation(spawnPoint.position, spawnPoint.rotation);
+            verticalVelocity = 0f;
+
+            if (characterController != null)
+            {
+                characterController.enabled = wasEnabled;
+            }
+
+            Debug.Log($"PHS_PLAYER_SPAWN_POINT ownerClientId={OwnerClientId} pos={transform.position}");
+        }
+
+        private bool TryGetSpawnPoint(out Transform spawnPoint)
+        {
+            spawnPoint = null;
+
+            var root = GameObject.Find(spawnPointsRootName);
+            if (root == null || root.transform.childCount == 0)
+            {
+                return false;
+            }
+
+            var index = (int)(OwnerClientId % (ulong)root.transform.childCount);
+            spawnPoint = root.transform.GetChild(index);
+            return spawnPoint != null;
         }
 
         private void ApplyLocalLook(Vector2 look)

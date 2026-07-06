@@ -68,7 +68,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
             var clientIds = GetClientIds();
             SetText(playerCountText, $"{clientIds.Count}/8 CREW");
             SetText(roomCodeText, GetRoomCode());
-            SetText(pingText, networkManager != null && networkManager.IsListening ? "20 ms" : "-- ms");
+            SetText(pingText, GetPingLabel(networkManager == null ? null : networkManager.LocalClientId));
 
             for (var i = 0; i < playerSlots.Length; i++)
             {
@@ -152,9 +152,30 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
 
                 SetText(nicknameText, $"PLAYER {clientId.Value:00}   {role}{local}");
                 SetText(readyStatusText, "WAIT");
-                SetText(pingText, manager != null && manager.IsListening ? "20 ms" : "-- ms");
+                SetText(pingText, GetPingLabel(manager, clientId.Value));
                 SetText(microphoneText, "MIC ON");
             }
+        }
+
+        private string GetPingLabel(ulong? clientId)
+        {
+            return GetPingLabel(networkManager, clientId);
+        }
+
+        private static string GetPingLabel(NetworkManager manager, ulong? clientId)
+        {
+            if (manager == null || !manager.IsListening || !clientId.HasValue || manager.NetworkConfig?.NetworkTransport == null)
+            {
+                return "-- ms";
+            }
+
+            if (manager.IsHost && clientId.Value == manager.LocalClientId)
+            {
+                return "0 ms";
+            }
+
+            var ping = manager.NetworkConfig.NetworkTransport.GetCurrentRtt(clientId.Value);
+            return $"{ping} ms";
         }
     }
 }

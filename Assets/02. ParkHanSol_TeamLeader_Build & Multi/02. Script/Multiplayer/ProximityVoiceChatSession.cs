@@ -18,6 +18,8 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
         [SerializeField, Min(0.1f)] private float fadeIntensity = 1f;
         [SerializeField] private AudioFadeModel fadeModel = AudioFadeModel.InverseByDistance;
 
+        private const float PositionUpdateStartDelay = 1f;
+
         private string requestedChannelName;
         private bool servicesReady;
         private bool joinInProgress;
@@ -26,6 +28,8 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
         private int requestedChannelVolume;
         private bool requestedInputMuted;
         private bool requestedOutputMuted;
+        private bool warnedMissingActiveChannel;
+        private float nextAllowedPositionUpdateTime;
         private readonly List<VivoxParticipant> trackedParticipants = new();
 
         public bool IsInChannel { get; private set; }
@@ -97,6 +101,8 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
                 ApplyVoiceDeviceSettings();
                 ActiveChannelName = channelName;
                 IsInChannel = true;
+                warnedMissingActiveChannel = false;
+                nextAllowedPositionUpdateTime = Time.realtimeSinceStartup + PositionUpdateStartDelay;
                 BindVoiceParticipantEvents();
                 await ApplyChannelVolumeAsync();
                 UpdateLocalPosition(localPlayer);
@@ -135,17 +141,32 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
                 SpeakingParticipantsChanged?.Invoke(Array.Empty<string>());
                 IsInChannel = false;
                 ActiveChannelName = string.Empty;
+                warnedMissingActiveChannel = false;
+                nextAllowedPositionUpdateTime = 0f;
             }
         }
 
         public void UpdateLocalPosition(GameObject localPlayer)
         {
-            if (!IsInChannel || localPlayer == null || string.IsNullOrEmpty(ActiveChannelName))
+            if (!HasActiveVivoxChannel() || localPlayer == null)
             {
                 return;
             }
 
-            VivoxService.Instance.Set3DPosition(localPlayer, ActiveChannelName);
+            if (Time.realtimeSinceStartup < nextAllowedPositionUpdateTime)
+            {
+                return;
+            }
+
+            try
+            {
+                VivoxService.Instance.Set3DPosition(localPlayer, ActiveChannelName);
+            }
+            catch (Exception exception)
+            {
+                nextAllowedPositionUpdateTime = Time.realtimeSinceStartup + PositionUpdateStartDelay;
+                Debug.LogWarning($"PHS_VOICE_POSITION_UPDATE_FAILED {exception.Message}");
+            }
         }
 
         public async Task<bool> PrepareVoiceSettingsAsync()
@@ -169,7 +190,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
 
         public IReadOnlyList<string> GetRemoteParticipantNames()
         {
-            if (!servicesReady || !IsInChannel || string.IsNullOrEmpty(ActiveChannelName))
+            if (!HasActiveVivoxChannel())
             {
                 return Array.Empty<string>();
             }
@@ -198,7 +219,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
 
         public IReadOnlyList<string> GetSpeakingParticipantNames()
         {
-            if (!servicesReady || !IsInChannel || string.IsNullOrEmpty(ActiveChannelName))
+            if (!HasActiveVivoxChannel())
             {
                 return Array.Empty<string>();
             }
@@ -328,7 +349,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
 
         public void SetRemoteParticipantVolumeByIndex(int index, int value)
         {
-            if (!servicesReady || !IsInChannel || string.IsNullOrEmpty(ActiveChannelName)
+            if (!HasActiveVivoxChannel()
                 || !VivoxService.Instance.ActiveChannels.TryGetValue(ActiveChannelName, out var participants))
             {
                 return;
@@ -454,12 +475,35 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
 
         private async Task ApplyChannelVolumeAsync()
         {
-            if (!servicesReady || !IsInChannel || string.IsNullOrEmpty(ActiveChannelName))
+            if (!HasActiveVivoxChannel())
             {
                 return;
             }
 
             await VivoxService.Instance.SetChannelVolumeAsync(ActiveChannelName, requestedChannelVolume);
+        }
+
+        private bool HasActiveVivoxChannel()
+        {
+            if (!servicesReady || !IsInChannel || string.IsNullOrEmpty(ActiveChannelName))
+            {
+                return false;
+            }
+
+            if (VivoxService.Instance != null
+                && VivoxService.Instance.ActiveChannels.ContainsKey(ActiveChannelName))
+            {
+                warnedMissingActiveChannel = false;
+                return true;
+            }
+
+            if (!warnedMissingActiveChannel)
+            {
+                Debug.LogWarning($"PHS_VOICE_ACTIVE_CHANNEL_PENDING channel={ActiveChannelName}");
+                warnedMissingActiveChannel = true;
+            }
+
+            return false;
         }
 
         private void OnDestroy()
