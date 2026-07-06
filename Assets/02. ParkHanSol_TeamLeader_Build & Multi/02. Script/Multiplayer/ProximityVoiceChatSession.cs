@@ -26,13 +26,23 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
         private int requestedChannelVolume;
         private bool requestedInputMuted;
         private bool requestedOutputMuted;
+        private readonly List<VivoxParticipant> trackedParticipants = new();
 
         public bool IsInChannel { get; private set; }
         public string ActiveChannelName { get; private set; }
+        public static ProximityVoiceChatSession ActiveSession { get; private set; }
+        public static event Action<ProximityVoiceChatSession> ActiveSessionChanged;
+        public event Action<IReadOnlyList<string>> SpeakingParticipantsChanged;
 
         private void Awake()
         {
             requestedChannelName = NormalizeChannelName(defaultChannelName);
+        }
+
+        private void OnEnable()
+        {
+            ActiveSession = this;
+            ActiveSessionChanged?.Invoke(this);
         }
 
         public void SetVoiceChannel(string channelName)
@@ -87,6 +97,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
                 ApplyVoiceDeviceSettings();
                 ActiveChannelName = channelName;
                 IsInChannel = true;
+                BindVoiceParticipantEvents();
                 await ApplyChannelVolumeAsync();
                 UpdateLocalPosition(localPlayer);
                 return true;
@@ -120,6 +131,8 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
             }
             finally
             {
+                UnbindVoiceParticipantEvents();
+                SpeakingParticipantsChanged?.Invoke(Array.Empty<string>());
                 IsInChannel = false;
                 ActiveChannelName = string.Empty;
             }
@@ -156,18 +169,71 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
 
         public IReadOnlyList<string> GetRemoteParticipantNames()
         {
-            if (!servicesReady || !IsInChannel || string.IsNullOrEmpty(ActiveChannelName)
-                || !VivoxService.Instance.ActiveChannels.TryGetValue(ActiveChannelName, out var participants))
+            if (!servicesReady || !IsInChannel || string.IsNullOrEmpty(ActiveChannelName))
             {
                 return Array.Empty<string>();
             }
 
-            return participants
-                .Where(participant => !participant.IsSelf)
-                .Select(participant => string.IsNullOrWhiteSpace(participant.DisplayName)
-                    ? participant.PlayerId
-                    : participant.DisplayName)
-                .ToList();
+            try
+            {
+                if (VivoxService.Instance == null
+                    || !VivoxService.Instance.ActiveChannels.TryGetValue(ActiveChannelName, out var participants))
+                {
+                    Debug.LogWarning("PHS_VOICE_ACTIVE_CHANNEL_READ_FAILED Vivox service or active channel is missing.");
+                    return Array.Empty<string>();
+                }
+
+                return participants
+                    .Where(participant => participant != null && !participant.IsSelf)
+                    .Select(GetParticipantDisplayName)
+                    .Where(displayName => !string.IsNullOrWhiteSpace(displayName))
+                    .ToList();
+            }
+            catch (Exception exception)
+            {
+                Debug.LogWarning($"PHS_VOICE_REMOTE_PARTICIPANTS_READ_FAILED {exception.Message}");
+                return Array.Empty<string>();
+            }
+        }
+
+        public IReadOnlyList<string> GetSpeakingParticipantNames()
+        {
+            if (!servicesReady || !IsInChannel || string.IsNullOrEmpty(ActiveChannelName))
+            {
+                return Array.Empty<string>();
+            }
+
+            try
+            {
+                if (VivoxService.Instance == null
+                    || !VivoxService.Instance.ActiveChannels.TryGetValue(ActiveChannelName, out var participants))
+                {
+                    Debug.LogWarning("PHS_VOICE_ACTIVE_CHANNEL_READ_FAILED Vivox service or active channel is missing.");
+                    return Array.Empty<string>();
+                }
+
+                var speakingNames = new List<string>();
+                foreach (var participant in participants)
+                {
+                    if (!TryReadParticipantSpeech(participant, out var isSpeaking) || !isSpeaking)
+                    {
+                        continue;
+                    }
+
+                    var displayName = GetParticipantDisplayName(participant);
+                    if (!string.IsNullOrWhiteSpace(displayName))
+                    {
+                        speakingNames.Add(displayName);
+                    }
+                }
+
+                return speakingNames;
+            }
+            catch (Exception exception)
+            {
+                Debug.LogWarning($"PHS_VOICE_SPEAKING_PARTICIPANTS_READ_FAILED {exception.Message}");
+                return Array.Empty<string>();
+            }
         }
 
         public int GetActiveInputDeviceIndex()
@@ -322,7 +388,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
             {
                 if (UnityServices.State == ServicesInitializationState.Uninitialized)
                 {
-                    await UnityServices.InitializeAsync();
+                    await UnityServices.InitializeAsync(BuildInitializationOptions());
                 }
 
                 if (!AuthenticationService.Instance.IsSignedIn)
@@ -332,6 +398,10 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
 
                 await VivoxService.Instance.InitializeAsync();
                 servicesReady = true;
+                VivoxService.Instance.ParticipantAddedToChannel -= OnParticipantAddedToChannel;
+                VivoxService.Instance.ParticipantAddedToChannel += OnParticipantAddedToChannel;
+                VivoxService.Instance.ParticipantRemovedFromChannel -= OnParticipantRemovedFromChannel;
+                VivoxService.Instance.ParticipantRemovedFromChannel += OnParticipantRemovedFromChannel;
                 ApplyVoiceDeviceSettings();
                 return true;
             }
@@ -340,6 +410,32 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
                 Debug.LogWarning($"Vivox service setup failed: {exception.Message}");
                 return false;
             }
+        }
+
+        private static InitializationOptions BuildInitializationOptions()
+        {
+            var options = new InitializationOptions();
+            var profile = GetCommandLineValue(Environment.GetCommandLineArgs(), "-phsProfile");
+            if (!string.IsNullOrWhiteSpace(profile))
+            {
+                options.SetProfile(profile);
+                Debug.Log($"PHS_SERVICES_PROFILE profile={profile}");
+            }
+
+            return options;
+        }
+
+        private static string GetCommandLineValue(string[] args, string key)
+        {
+            for (var i = 0; i < args.Length - 1; i++)
+            {
+                if (string.Equals(args[i], key, StringComparison.OrdinalIgnoreCase))
+                {
+                    return args[i + 1];
+                }
+            }
+
+            return string.Empty;
         }
 
         private string NormalizeChannelName(string channelName)
@@ -364,6 +460,153 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
             }
 
             await VivoxService.Instance.SetChannelVolumeAsync(ActiveChannelName, requestedChannelVolume);
+        }
+
+        private void OnDestroy()
+        {
+            UnbindVoiceParticipantEvents();
+
+            if (servicesReady)
+            {
+                VivoxService.Instance.ParticipantAddedToChannel -= OnParticipantAddedToChannel;
+                VivoxService.Instance.ParticipantRemovedFromChannel -= OnParticipantRemovedFromChannel;
+            }
+
+            if (ActiveSession == this)
+            {
+                ActiveSession = null;
+                ActiveSessionChanged?.Invoke(null);
+            }
+        }
+
+        private void OnParticipantAddedToChannel(VivoxParticipant participant)
+        {
+            if (!IsCurrentChannelParticipant(participant))
+            {
+                return;
+            }
+
+            BindParticipant(participant);
+            RefreshSpeakingParticipants();
+        }
+
+        private void OnParticipantRemovedFromChannel(VivoxParticipant participant)
+        {
+            UnbindParticipant(participant);
+            RefreshSpeakingParticipants();
+        }
+
+        private void BindVoiceParticipantEvents()
+        {
+            UnbindVoiceParticipantEvents();
+
+            if (!servicesReady || string.IsNullOrEmpty(ActiveChannelName)
+                || !VivoxService.Instance.ActiveChannels.TryGetValue(ActiveChannelName, out var participants))
+            {
+                return;
+            }
+
+            foreach (var participant in participants)
+            {
+                BindParticipant(participant);
+            }
+
+            RefreshSpeakingParticipants();
+        }
+
+        private void UnbindVoiceParticipantEvents()
+        {
+            for (var i = 0; i < trackedParticipants.Count; i++)
+            {
+                trackedParticipants[i].ParticipantSpeechDetected -= RefreshSpeakingParticipants;
+            }
+
+            trackedParticipants.Clear();
+        }
+
+        private void BindParticipant(VivoxParticipant participant)
+        {
+            if (participant == null || trackedParticipants.Contains(participant))
+            {
+                return;
+            }
+
+            participant.ParticipantSpeechDetected += RefreshSpeakingParticipants;
+            trackedParticipants.Add(participant);
+        }
+
+        private void UnbindParticipant(VivoxParticipant participant)
+        {
+            if (participant == null)
+            {
+                return;
+            }
+
+            participant.ParticipantSpeechDetected -= RefreshSpeakingParticipants;
+            trackedParticipants.Remove(participant);
+        }
+
+        private bool IsCurrentChannelParticipant(VivoxParticipant participant)
+        {
+            if (participant == null || !IsInChannel)
+            {
+                return false;
+            }
+
+            try
+            {
+                return string.Equals(participant.ChannelName, ActiveChannelName, StringComparison.Ordinal);
+            }
+            catch (Exception exception)
+            {
+                Debug.LogWarning($"PHS_VOICE_PARTICIPANT_CHANNEL_READ_FAILED {exception.Message}");
+                return false;
+            }
+        }
+
+        private void RefreshSpeakingParticipants()
+        {
+            SpeakingParticipantsChanged?.Invoke(GetSpeakingParticipantNames());
+        }
+
+        private static string GetParticipantDisplayName(VivoxParticipant participant)
+        {
+            if (participant == null)
+            {
+                return string.Empty;
+            }
+
+            try
+            {
+                return string.IsNullOrWhiteSpace(participant.DisplayName)
+                    ? participant.PlayerId
+                    : participant.DisplayName;
+            }
+            catch (Exception exception)
+            {
+                Debug.LogWarning($"PHS_VOICE_PARTICIPANT_NAME_READ_FAILED {exception.Message}");
+                return string.Empty;
+            }
+        }
+
+        private static bool TryReadParticipantSpeech(VivoxParticipant participant, out bool isSpeaking)
+        {
+            isSpeaking = false;
+            if (participant == null)
+            {
+                return false;
+            }
+
+            try
+            {
+                isSpeaking = participant.SpeechDetected;
+                return true;
+            }
+            catch (Exception exception)
+            {
+                Debug.LogWarning($"PHS_VOICE_PARTICIPANT_SPEECH_READ_FAILED {exception.Message}");
+                return false;
+            }
         }
     }
 }

@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using TMPro;
 using Unity.Netcode;
 using UnityEngine;
 using UnityEngine.UI;
@@ -9,10 +10,10 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
     {
         [SerializeField] private NetworkManager networkManager;
         [SerializeField] private RelaySessionConnector relayConnector;
-        [SerializeField] private Text roomCodeText;
-        [SerializeField] private Text pingText;
-        [SerializeField] private Text playerCountText;
-        [SerializeField] private Text[] playerSlotTexts;
+        [SerializeField] private TMP_Text roomCodeText;
+        [SerializeField] private TMP_Text pingText;
+        [SerializeField] private TMP_Text playerCountText;
+        [SerializeField] private PlayerSlotView[] playerSlots;
 
         private void OnEnable()
         {
@@ -69,10 +70,10 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
             SetText(roomCodeText, GetRoomCode());
             SetText(pingText, networkManager != null && networkManager.IsListening ? "20 ms" : "-- ms");
 
-            for (var i = 0; i < playerSlotTexts.Length; i++)
+            for (var i = 0; i < playerSlots.Length; i++)
             {
-                var label = i < clientIds.Count ? BuildPlayerLabel(clientIds[i]) : "EMPTY SLOT";
-                SetText(playerSlotTexts[i], label);
+                var clientId = i < clientIds.Count ? clientIds[i] : (ulong?)null;
+                playerSlots[i].Refresh(clientId, networkManager);
             }
         }
 
@@ -118,11 +119,41 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
             }
         }
 
-        private static void SetText(Text text, string value)
+        private static void SetText(TMP_Text text, string value)
         {
             if (text != null)
             {
                 text.text = value;
+            }
+        }
+
+        [System.Serializable]
+        private struct PlayerSlotView
+        {
+            [SerializeField] private TMP_Text nicknameText;
+            [SerializeField] private TMP_Text readyStatusText;
+            [SerializeField] private TMP_Text pingText;
+            [SerializeField] private TMP_Text microphoneText;
+
+            public void Refresh(ulong? clientId, NetworkManager manager)
+            {
+                if (!clientId.HasValue)
+                {
+                    SetText(nicknameText, "EMPTY SLOT");
+                    SetText(readyStatusText, "--");
+                    SetText(pingText, "-- ms");
+                    SetText(microphoneText, "MIC --");
+                    return;
+                }
+
+                var isLocal = manager != null && clientId.Value == manager.LocalClientId;
+                var role = clientId.Value == NetworkManager.ServerClientId ? "HOST" : "CLIENT";
+                var local = isLocal ? " / LOCAL" : string.Empty;
+
+                SetText(nicknameText, $"PLAYER {clientId.Value:00}   {role}{local}");
+                SetText(readyStatusText, "WAIT");
+                SetText(pingText, manager != null && manager.IsListening ? "20 ms" : "-- ms");
+                SetText(microphoneText, "MIC ON");
             }
         }
     }

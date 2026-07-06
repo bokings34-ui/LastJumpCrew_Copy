@@ -1,3 +1,4 @@
+using TMPro;
 using UnityEngine;
 using UnityEngine.UI;
 
@@ -10,10 +11,10 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
         [SerializeField] private ProximityVoiceChatSession voiceChatSession;
         [SerializeField] private ParkHanSolLobbyMenuController lobbyMenuController;
         [SerializeField] private string lanVoiceChannelName = "ParkHanSol_TestVoice";
-        [SerializeField] private InputField addressInput;
-        [SerializeField] private InputField portInput;
-        [SerializeField] private InputField maxPlayersInput;
-        [SerializeField] private InputField joinCodeInput;
+        [SerializeField] private TMP_InputField addressInput;
+        [SerializeField] private TMP_InputField portInput;
+        [SerializeField] private TMP_InputField maxPlayersInput;
+        [SerializeField] private TMP_InputField joinCodeInput;
         [SerializeField] private Button hostButton;
         [SerializeField] private Button clientButton;
         [SerializeField] private Button serverButton;
@@ -21,7 +22,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
         [SerializeField] private Button relayClientButton;
         [SerializeField] private Button shutdownButton;
         [SerializeField] private Button backButton;
-        [SerializeField] private Text statusText;
+        [SerializeField] private TMP_Text statusText;
 
         private void Awake()
         {

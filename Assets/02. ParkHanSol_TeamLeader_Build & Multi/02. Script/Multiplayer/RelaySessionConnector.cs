@@ -75,7 +75,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
             {
                 if (UnityServices.State == ServicesInitializationState.Uninitialized)
                 {
-                    await UnityServices.InitializeAsync();
+                    await UnityServices.InitializeAsync(BuildInitializationOptions());
                 }
 
                 if (!AuthenticationService.Instance.IsSignedIn)
@@ -90,6 +90,32 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
                 Debug.LogWarning($"Relay service setup failed: {exception.Message}");
                 return false;
             }
+        }
+
+        private static InitializationOptions BuildInitializationOptions()
+        {
+            var options = new InitializationOptions();
+            var profile = GetCommandLineValue(Environment.GetCommandLineArgs(), "-phsProfile");
+            if (!string.IsNullOrWhiteSpace(profile))
+            {
+                options.SetProfile(profile);
+                Debug.Log($"PHS_SERVICES_PROFILE profile={profile}");
+            }
+
+            return options;
+        }
+
+        private static string GetCommandLineValue(string[] args, string key)
+        {
+            for (var i = 0; i < args.Length - 1; i++)
+            {
+                if (string.Equals(args[i], key, StringComparison.OrdinalIgnoreCase))
+                {
+                    return args[i + 1];
+                }
+            }
+
+            return string.Empty;
         }
 
         private void EnsureReferences()
