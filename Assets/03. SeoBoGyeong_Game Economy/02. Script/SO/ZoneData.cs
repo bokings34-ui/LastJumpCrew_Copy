@@ -1,16 +1,11 @@
 using UnityEngine;
 
-public class ZoneData : MonoBehaviour
-{
-    // Start is called once before the first execution of Update after the MonoBehaviour is created
-    void Start()
-    {
-        
-    }
+[CreateAssetMenu(
+    fileName = "Zone_New",
+    menuName = "Game Data/Zone")]
 
-    // Update is called once per frame
-    void Update()
-    {
-        
-    }
+public class ZoneData
+{
+    public int id;
+    public string name;
 }
