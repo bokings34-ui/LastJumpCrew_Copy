@@ -8,5 +8,6 @@ namespace LastJumpCrew.ParkHanSol.Interaction
         UtilityItemPrefabData CurrentItemPrefabData { get; }
         bool CanReplaceHeldItem(UtilityItemPrefabData itemPrefabData);
         void ReplaceHeldItem(UtilityItemPrefabData itemPrefabData, Transform interactionSource);
+        bool TryConsumeHeldItem(string itemId);
     }
 }

@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using LastJumpCrew.ParkHanSol.Items;
 using TMPro;
 using UnityEngine;
 using UnityEngine.UI;
@@ -23,6 +24,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
         [SerializeField, Min(0.1f)] private float speakingPlayerBlinkSpeed = 6f;
         [SerializeField] private Image warpGaugeFill;
         [SerializeField] private TMP_Text heldItemText;
+        [SerializeField] private Image heldItemIconImage;
         [SerializeField] private TMP_Text[] partyFeedTexts;
 
         private readonly List<SpeakingPlayerView> speakingPlayerViews = new();
@@ -89,9 +91,22 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
             SetText(heldItemText, string.IsNullOrWhiteSpace(itemName) ? "EMPTY" : itemName);
         }
 
+        public void SetHeldItem(UtilityItemPrefabData itemPrefabData)
+        {
+            if (itemPrefabData == null)
+            {
+                ClearHeldItem();
+                return;
+            }
+
+            SetHeldItem(itemPrefabData.DisplayName);
+            SetHeldItemIcon(itemPrefabData.Icon);
+        }
+
         public void ClearHeldItem()
         {
             SetHeldItem(string.Empty);
+            SetHeldItemIcon(null);
         }
 
         public void ShowSpeakingPlayer(string playerName)
@@ -167,6 +182,19 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
             {
                 target.text = value;
             }
+        }
+
+        private void SetHeldItemIcon(Sprite icon)
+        {
+            if (heldItemIconImage == null)
+            {
+                Debug.LogError($"PHS_HELD_ITEM_UI_FAILED reason=heldItemIconImage_missing target={name}");
+                return;
+            }
+
+            heldItemIconImage.sprite = icon;
+            heldItemIconImage.enabled = true;
+            heldItemIconImage.color = icon == null ? new Color(1f, 1f, 1f, 0f) : Color.white;
         }
 
         private void RebuildSpeakingPlayerViews(IReadOnlyList<string> playerNames)
