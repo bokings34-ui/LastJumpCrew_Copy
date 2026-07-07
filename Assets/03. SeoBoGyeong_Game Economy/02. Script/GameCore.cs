@@ -6,7 +6,7 @@ public class GameCore : MonoBehaviour
 
 
     //하위클래스 위치
-    private DataManager Data = new DataManager();
+    private DataManager Data;
 
 
 
