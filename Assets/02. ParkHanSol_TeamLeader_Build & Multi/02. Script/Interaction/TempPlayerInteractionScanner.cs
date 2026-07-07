@@ -21,7 +21,7 @@ namespace LastJumpCrew.ParkHanSol.Interaction
 
         private void Update()
         {
-            if (Keyboard.current == null || !Keyboard.current.eKey.wasPressedThisFrame)
+            if (Keyboard.current == null || !Keyboard.current.fKey.wasPressedThisFrame)
             {
                 return;
             }
