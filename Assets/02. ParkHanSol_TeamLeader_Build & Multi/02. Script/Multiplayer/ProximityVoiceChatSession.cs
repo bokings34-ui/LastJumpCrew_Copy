@@ -17,6 +17,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
         [SerializeField, Min(1)] private int conversationalDistance = 5;
         [SerializeField, Min(0.1f)] private float fadeIntensity = 1f;
         [SerializeField] private AudioFadeModel fadeModel = AudioFadeModel.InverseByDistance;
+        [SerializeField, Min(0.1f)] private float positionUpdateRetryDelay = 1f;
 
         private const float PositionUpdateStartDelay = 1f;
 
@@ -29,6 +30,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
         private bool requestedInputMuted;
         private bool requestedOutputMuted;
         private bool warnedMissingActiveChannel;
+        private bool warnedMissingSelfParticipant;
         private float nextAllowedPositionUpdateTime;
         private readonly List<VivoxParticipant> trackedParticipants = new();
 
@@ -102,6 +104,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
                 ActiveChannelName = channelName;
                 IsInChannel = true;
                 warnedMissingActiveChannel = false;
+                warnedMissingSelfParticipant = false;
                 nextAllowedPositionUpdateTime = Time.realtimeSinceStartup + PositionUpdateStartDelay;
                 BindVoiceParticipantEvents();
                 await ApplyChannelVolumeAsync();
@@ -142,13 +145,14 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
                 IsInChannel = false;
                 ActiveChannelName = string.Empty;
                 warnedMissingActiveChannel = false;
+                warnedMissingSelfParticipant = false;
                 nextAllowedPositionUpdateTime = 0f;
             }
         }
 
         public void UpdateLocalPosition(GameObject localPlayer)
         {
-            if (!HasActiveVivoxChannel() || localPlayer == null)
+            if (localPlayer == null || !CanUpdateVoicePosition())
             {
                 return;
             }
@@ -164,8 +168,8 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
             }
             catch (Exception exception)
             {
-                nextAllowedPositionUpdateTime = Time.realtimeSinceStartup + PositionUpdateStartDelay;
-                Debug.LogWarning($"PHS_VOICE_POSITION_UPDATE_FAILED {exception.Message}");
+                nextAllowedPositionUpdateTime = Time.realtimeSinceStartup + positionUpdateRetryDelay;
+                Debug.LogWarning(BuildPositionUpdateFailureMessage(localPlayer, exception));
             }
         }
 
@@ -504,6 +508,55 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
             }
 
             return false;
+        }
+
+        private bool CanUpdateVoicePosition()
+        {
+            if (!HasActiveVivoxChannel())
+            {
+                return false;
+            }
+
+            if (HasSelfParticipant())
+            {
+                warnedMissingSelfParticipant = false;
+                return true;
+            }
+
+            nextAllowedPositionUpdateTime = Time.realtimeSinceStartup + positionUpdateRetryDelay;
+            if (!warnedMissingSelfParticipant)
+            {
+                Debug.LogWarning($"PHS_VOICE_POSITION_WAITING_FOR_SELF_PARTICIPANT channel={ActiveChannelName}");
+                warnedMissingSelfParticipant = true;
+            }
+
+            return false;
+        }
+
+        private bool HasSelfParticipant()
+        {
+            return VivoxService.Instance != null
+                && VivoxService.Instance.ActiveChannels.TryGetValue(ActiveChannelName, out var participants)
+                && participants.Any(participant => participant != null && participant.IsSelf);
+        }
+
+        private string BuildPositionUpdateFailureMessage(GameObject localPlayer, Exception exception)
+        {
+            var participantCount = 0;
+            var hasSelfParticipant = false;
+            if (VivoxService.Instance != null
+                && VivoxService.Instance.ActiveChannels.TryGetValue(ActiveChannelName, out var participants))
+            {
+                participantCount = participants.Count;
+                hasSelfParticipant = participants.Any(participant => participant != null && participant.IsSelf);
+            }
+
+            return "PHS_VOICE_POSITION_UPDATE_FAILED "
+                + $"channel={ActiveChannelName} "
+                + $"player={localPlayer.name} "
+                + $"participantCount={participantCount} "
+                + $"hasSelfParticipant={hasSelfParticipant} "
+                + exception.Message;
         }
 
         private void OnDestroy()
