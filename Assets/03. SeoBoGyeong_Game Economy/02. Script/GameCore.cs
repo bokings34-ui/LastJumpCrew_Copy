@@ -3,8 +3,9 @@ using UnityEngine;
 namespace LastJumpCrew.SeoBoGyeong
 {
     /// <summary>
-    /// 게임 전역 허브 싱글톤. 얇게 유지하고 실제 일은 하위 매니저가 담당한다.
-    /// 접근: GameCore.Instance.Data.~ / GameCore.Instance.Loop.~
+    /// 게임 전역 허브 싱글톤.
+    /// 실제 일은 하위 매니저/세션이 담당.
+    /// 접근: GameCore.Instance.Data.~ / GameCore.Instance.State.~ / GameCore.Instance.Commands.~
     /// </summary>
     public class GameCore : MonoBehaviour
     {
@@ -12,14 +13,21 @@ namespace LastJumpCrew.SeoBoGyeong
 
 
         [SerializeField] private DataManager data;
+        // 게임 세션(상태 소유). 지금은 LocalGameSession, 나중 NetworkGameSession 으로 교체.
+        [SerializeField] private LocalGameSession session;
+
         public DataManager Data => data;
 
-        // 런타임 게임 루프 상태(데이터만 보관). 전이 규칙은 GameLoopController 가 처리.
-        public GameLoopState Loop { get; private set; } = new();
+        
 
-        // TODO( NGO 병합 후): NetworkManager 참조 등록
-        // public NetworkManager Net => net;
+        /// <summary>인터페이스 기준 서비스 등록/조회. Mock→실구현 교체의 중심축.</summary>
+        public ServiceRegistry Services { get; private set; }
 
+        /// <summary>읽기 전용 상태(UI·플레이어·이벤트가 참조). 레지스트리 resolve 단축키.</summary>
+        public IGameStateProvider State => Services.Get<IGameStateProvider>();
+
+        /// <summary>클라 의도(명령) 창구. 레지스트리 resolve 단축키.</summary>
+        public IGameCommands Commands => Services.Get<IGameCommands>();
 
         private void Awake()
         {
@@ -40,15 +48,33 @@ namespace LastJumpCrew.SeoBoGyeong
 
         private void Init()
         {
-            // 초기화 순서: 데이터 -> (네트워크) -> 플레이어 생성
+            // 초기화 순서: 데이터 -> (나중: 네트워크) -> 세션
             if (data == null)
             {
                 Debug.LogError("[GameCore] DataManager 가 인스펙터에 연결되지 않았습니다.");
                 return;
             }
+            if (session == null)
+            {
+                Debug.LogError("[GameCore] LocalGameSession 이 인스펙터에 연결되지 않았습니다.");
+                return;
+            }
 
             data.Init();
-            // TODO(병합 후): net.Init();  // 여기서 NetworkManager 시작
+
+            // 서비스 레지스트리 구성(문서 §5 순서: 데이터 → 레지스트리 기본 등록)
+            Services = new ServiceRegistry();
+
+            // Mock 기본 등록 — 담당 파트 실구현이 오면 Register<T>()로 덮어쓴다(문서 §9)
+            Services.Register<IShipStatus>(new MockShipStatus());
+            Services.Register<IDeathEventGate>(new MockDeathEventGate());
+
+            // 세션에 레지스트리 주입(의존성 resolve) 후 상태/명령 제공자로 등록
+            session.Bind(Services);
+            Services.Register<IGameStateProvider>(session);
+            Services.Register<IGameCommands>(session);
+
+            // TODO(나중 연결): NetworkGameSession/NetworkManager 시작 → 스폰 콜백에서 Register<T>() 재등록
         }
     }
 }

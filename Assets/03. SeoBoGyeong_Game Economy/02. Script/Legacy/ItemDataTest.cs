@@ -1,7 +1,7 @@
 using System;
 using UnityEngine;
 
-namespace LastJumpCrew_SeoBoGyeong
+namespace LastJumpCrew.SeoBoGyeong
 {
     [Serializable]
     public struct ItemDataTest
