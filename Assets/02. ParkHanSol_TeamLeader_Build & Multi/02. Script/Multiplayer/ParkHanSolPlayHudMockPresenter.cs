@@ -25,6 +25,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
         [SerializeField] private Image warpGaugeFill;
         [SerializeField] private TMP_Text heldItemText;
         [SerializeField] private Image heldItemIconImage;
+        [SerializeField] private TMP_Text heldItemDurabilityText;
         [SerializeField] private TMP_Text[] partyFeedTexts;
 
         private readonly List<SpeakingPlayerView> speakingPlayerViews = new();
@@ -101,12 +102,14 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
 
             SetHeldItem(itemPrefabData.DisplayName);
             SetHeldItemIcon(itemPrefabData.Icon);
+            SetHeldItemDurability(itemPrefabData);
         }
 
         public void ClearHeldItem()
         {
             SetHeldItem(string.Empty);
             SetHeldItemIcon(null);
+            SetHeldItemDurability(null);
         }
 
         public void ShowSpeakingPlayer(string playerName)
@@ -195,6 +198,29 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
             heldItemIconImage.sprite = icon;
             heldItemIconImage.enabled = true;
             heldItemIconImage.color = icon == null ? new Color(1f, 1f, 1f, 0f) : Color.white;
+        }
+
+        private void SetHeldItemDurability(UtilityItemPrefabData itemPrefabData)
+        {
+            if (heldItemDurabilityText == null)
+            {
+                if (itemPrefabData != null && itemPrefabData.HasDurability)
+                {
+                    Debug.LogError($"PHS_HELD_ITEM_UI_FAILED reason=heldItemDurabilityText_missing target={name} item={itemPrefabData.ItemId}");
+                }
+
+                return;
+            }
+
+            if (itemPrefabData == null || !itemPrefabData.HasDurability)
+            {
+                heldItemDurabilityText.gameObject.SetActive(false);
+                SetText(heldItemDurabilityText, string.Empty);
+                return;
+            }
+
+            heldItemDurabilityText.gameObject.SetActive(true);
+            SetText(heldItemDurabilityText, $"DUR {itemPrefabData.MaxDurability}/{itemPrefabData.MaxDurability}");
         }
 
         private void RebuildSpeakingPlayerViews(IReadOnlyList<string> playerNames)
