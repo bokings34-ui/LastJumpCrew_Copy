@@ -12,6 +12,7 @@ namespace LastJumpCrew.ParkHanSol.Interaction
 
         private IItemHolder itemHolder;
         private NetworkObject networkObject;
+        private UtilityToolBoxStorageSlotInteractable focusedToolBoxSlot;
 
         private void Awake()
         {
@@ -21,17 +22,25 @@ namespace LastJumpCrew.ParkHanSol.Interaction
 
         private void Update()
         {
+            if (networkObject != null && networkObject.IsSpawned && !networkObject.IsOwner)
+            {
+                ClearToolBoxSlotFocus();
+                return;
+            }
+
+            RefreshToolBoxSlotFocus();
+
             if (Keyboard.current == null || !Keyboard.current.fKey.wasPressedThisFrame)
             {
                 return;
             }
 
-            if (networkObject != null && networkObject.IsSpawned && !networkObject.IsOwner)
-            {
-                return;
-            }
-
             TryInteract();
+        }
+
+        private void OnDisable()
+        {
+            ClearToolBoxSlotFocus();
         }
 
         private void TryInteract()
@@ -69,6 +78,44 @@ namespace LastJumpCrew.ParkHanSol.Interaction
             }
 
             interactable.Interact(itemHolder);
+        }
+
+        private void RefreshToolBoxSlotFocus()
+        {
+            if (interactionCamera == null || itemHolder == null)
+            {
+                ClearToolBoxSlotFocus();
+                return;
+            }
+
+            var ray = new Ray(interactionCamera.transform.position, interactionCamera.transform.forward);
+            if (!Physics.Raycast(ray, out var hit, interactDistance, interactableLayers, QueryTriggerInteraction.Collide))
+            {
+                ClearToolBoxSlotFocus();
+                return;
+            }
+
+            var toolBoxSlot = hit.collider.GetComponentInParent<UtilityToolBoxStorageSlotInteractable>();
+            if (toolBoxSlot == focusedToolBoxSlot)
+            {
+                focusedToolBoxSlot?.SetInteractionFocus(itemHolder, true);
+                return;
+            }
+
+            ClearToolBoxSlotFocus();
+            focusedToolBoxSlot = toolBoxSlot;
+            focusedToolBoxSlot?.SetInteractionFocus(itemHolder, true);
+        }
+
+        private void ClearToolBoxSlotFocus()
+        {
+            if (focusedToolBoxSlot == null)
+            {
+                return;
+            }
+
+            focusedToolBoxSlot.ClearInteractionFocus(itemHolder);
+            focusedToolBoxSlot = null;
         }
     }
 }
