@@ -1,47 +1,44 @@
-using UnityEngine;
-using LastJumpCrew.Common; // ÆÀÀå´ÔÀÇ °øÅë ³×ÀÓ½ºÆäÀÌ½º Àû¿ë
+ï»¿using UnityEngine;
+using LastJumpCrew.Common; // íŒ€ì¥ë‹˜ì˜ ê³µí†µ ë„¤ì„ìŠ¤í˜ì´ìŠ¤ ì ìš©
 
 public abstract class MiniGameBase : MonoBehaviour
 {
     public MiniGameType gameType;
 
-    // ¹Ì´Ï°ÔÀÓ °á°ú¸¦ µ¹·Á¹ŞÀ» 3D ¿ùµåÀÇ ÀåÄ¡ (¹®, ¹èÀü¹İ µî)
+    // ë¯¸ë‹ˆê²Œì„ ê²°ê³¼ë¥¼ ëŒë ¤ë°›ì„ 3D ì›”ë“œì˜ ì¥ì¹˜
     protected IMiniGameTarget currentTarget;
 
-    // ¹Ì´Ï°ÔÀÓÀÌ ÄÑÁú ¶§ ¸Å´ÏÀú°¡ È£ÃâÇØ ÁÖ´Â ÇÔ¼ö
     public virtual void StartGame(IMiniGameTarget target)
     {
         currentTarget = target;
-
-        // targetÀÌ nullÀÎÁö Ã¼Å©ÇÏ´Â ¹æ¾î ÄÚµå Ãß°¡ (TÅ° ´Üµ¶ Å×½ºÆ®¿ë)
         if (currentTarget != null)
         {
-            Debug.Log($"[{currentTarget.MiniGameTargetId}] ÀåÄ¡ÀÇ ¹Ì´Ï°ÔÀÓ ½ÃÀÛµÊ.");
+            Debug.Log($"[{currentTarget.MiniGameTargetId}] ì¥ì¹˜ì˜ ë¯¸ë‹ˆê²Œì„ ì‹œì‘ë¨.");
         }
         else
         {
-            // 3D ÀåÄ¡ ¾øÀÌ UI¸¸ Ä×À» ¶§ ¹ß»ıÇÏ´Â ¿¡·¯ ¹æÁö
-            Debug.Log("UI ´Üµ¶ Å×½ºÆ® ¸ğµå·Î ¹Ì´Ï°ÔÀÓÀÌ ½ÃÀÛµÊ (Target: null)");
+            Debug.Log($"{gameType} UI ë‹¨ë… í…ŒìŠ¤íŠ¸ ëª¨ë“œ ì‹œì‘ (Target: null)");
         }
     }
 
-    // ¹Ì´Ï°ÔÀÓ ³»ºÎ¿¡¼­ ¼º°ø Á¶°ÇÀ» ´Ş¼ºÇßÀ» ¶§ È£Ãâ
+    // ğŸ‘‡ ì´ í•¨ìˆ˜ê°€ ëˆ„ë½ë˜ì—ˆê±°ë‚˜ publicì´ ì•„ë‹ˆë©´ ë§¤ë‹ˆì €ì—ì„œ ë¹¨ê°„ ì¤„ì´ ëœ¹ë‹ˆë‹¤!
+    public void ForceFail()
+    {
+        Debug.Log($"{gameType} ê²Œì„ ê°•ì œ ì¢…ë£Œ ê°ì§€.");
+        GameFail(); // ë°‘ì— ìˆëŠ” ì‹¤íŒ¨ ë¡œì§ì„ ê·¸ëŒ€ë¡œ ì‹¤í–‰ì‹œí‚µë‹ˆë‹¤.
+    }
+
+    // ë¯¸ë‹ˆê²Œì„ ë‚´ë¶€ì—ì„œ ì„±ê³µ ì¡°ê±´ì„ ë‹¬ì„±í–ˆì„ ë•Œ í˜¸ì¶œ
     protected void GameSucceed()
     {
-        if (currentTarget != null)
-        {
-            currentTarget.OnMiniGameSucceeded(); // ÆÀÀå´Ô ÀÎÅÍÆäÀÌ½ºÀÇ ¼º°ø ÇÔ¼ö È£Ãâ
-        }
-        MiniGameManager.Instance.CloseAll(); // ¹Ì´Ï°ÔÀÓ Ã¢ ´İ±â
+        if (currentTarget != null) currentTarget.OnMiniGameSucceeded();
+        MiniGameManager.Instance.EndMiniGame(true); // ë§¤ë‹ˆì €ì˜ ì„±ê³µ ì—°ì¶œ(ì´ˆë¡ìƒ‰) í˜¸ì¶œ
     }
 
-    // ¹Ì´Ï°ÔÀÓ ³»ºÎ¿¡¼­ ½ÇÆĞ(½Ã°£ÃÊ°ú, ¿À´ä µî)ÇßÀ» ¶§ È£Ãâ
+    // ë¯¸ë‹ˆê²Œì„ ë‚´ë¶€ì—ì„œ ì‹¤íŒ¨í–ˆì„ ë•Œ í˜¸ì¶œ
     protected void GameFail()
     {
-        if (currentTarget != null)
-        {
-            currentTarget.OnMiniGameFailed(); // ÆÀÀå´Ô ÀÎÅÍÆäÀÌ½ºÀÇ ½ÇÆĞ ÇÔ¼ö È£Ãâ
-        }
-        MiniGameManager.Instance.CloseAll(); // ¹Ì´Ï°ÔÀÓ Ã¢ ´İ±â
+        if (currentTarget != null) currentTarget.OnMiniGameFailed();
+        MiniGameManager.Instance.EndMiniGame(false); // ë§¤ë‹ˆì €ì˜ ì‹¤íŒ¨ ì—°ì¶œ(ë¹¨ê°„ìƒ‰) í˜¸ì¶œ
     }
 }
