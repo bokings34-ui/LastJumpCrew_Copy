@@ -9,10 +9,17 @@ namespace LastJumpCrew.ParkHanSol.Interaction
     {
         // glowMaterial은 Inspector에서 연결한다. 누락되면 대체 재질을 만들지 않고 로그로 드러낸다.
         [SerializeField] private Material glowMaterial;
+
+        // 원본 Mesh보다 살짝 크게 복제해서 외곽선처럼 보이게 하는 배율이다.
         [SerializeField, Min(1f)] private float outlineScale = 1.08f;
 
+        // 런타임에 만든 외곽선 오브젝트 목록이다. 초점 상태에 따라 active만 토글한다.
         private readonly List<GameObject> outlineObjects = new();
+
+        // 현재 이 대상이 플레이어 초점을 받고 있는지 여부다.
         private bool isFocused;
+
+        // 외곽선 오브젝트를 이미 만들었는지 기록해서 중복 생성을 막는다.
         private bool isBuilt;
 
         private void Awake()
@@ -23,6 +30,7 @@ namespace LastJumpCrew.ParkHanSol.Interaction
 
         public void SetFocused(bool focused)
         {
+            // Scanner가 매 프레임 호출하므로 같은 상태면 아무 작업도 하지 않는다.
             if (isFocused == focused)
             {
                 return;
@@ -45,6 +53,8 @@ namespace LastJumpCrew.ParkHanSol.Interaction
 
         private void BuildOutlineObjects()
         {
+            // 각 MeshFilter마다 같은 Mesh를 쓰는 자식 오브젝트를 만들고 glowMaterial만 입힌다.
+            // 원본 Mesh/Material은 건드리지 않는다.
             if (isBuilt)
             {
                 return;
@@ -67,6 +77,7 @@ namespace LastJumpCrew.ParkHanSol.Interaction
 
             foreach (var meshFilter in meshFilters)
             {
+                // Mesh가 없는 Transform이나 Renderer가 없는 노드는 외곽선 대상에서 제외한다.
                 if (meshFilter == null || meshFilter.sharedMesh == null)
                 {
                     continue;
@@ -107,5 +118,7 @@ namespace LastJumpCrew.ParkHanSol.Interaction
 
     public sealed class InteractableFocusGlowOutline : MonoBehaviour
     {
+        // InteractableFocusGlow가 만든 외곽선 오브젝트를 표시하는 마커 컴포넌트다.
+        // 다시 BuildOutlineObjects 대상에 잡히지 않도록 구분용으로만 쓴다.
     }
 }

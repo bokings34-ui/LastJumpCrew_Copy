@@ -4,15 +4,29 @@ using Unity.Netcode;
 
 namespace LastJumpCrew.ParkHanSol.Interaction
 {
+    // 플레이어 카메라 정면 Raycast로 상호작용 대상을 찾는 테스트용 스캐너다.
+    // F는 상호작용, E는 현재 든 아이템 내려놓기, 초점 대상은 빛남/툴박스 하이라이트를 갱신한다.
     public sealed class TempPlayerInteractionScanner : MonoBehaviour
     {
+        // Raycast 시작점이다. 보통 플레이어 카메라를 Inspector에서 연결한다.
         [SerializeField] private Camera interactionCamera;
+
+        // 상호작용 최대 거리다.
         [SerializeField, Min(0.1f)] private float interactDistance = 2.5f;
+
+        // 상호작용 대상 레이어 필터다. Trigger도 감지한다.
         [SerializeField] private LayerMask interactableLayers = ~0;
 
+        // 같은 오브젝트에 붙은 아이템 보유 컴포넌트다.
         private IItemHolder itemHolder;
+
+        // 멀티에서 내 소유 플레이어만 입력과 초점 표시를 처리하기 위한 NetworkObject다.
         private NetworkObject networkObject;
+
+        // 현재 바라보는 툴박스 슬롯이다. 슬롯 자체 glowOutlineRoot 제어에 사용한다.
         private UtilityToolBoxStorageSlotInteractable focusedToolBoxSlot;
+
+        // 현재 바라보는 일반 상호작용 대상의 외곽선 glow다.
         private InteractableFocusGlow focusedGlow;
 
         private void Awake()
@@ -23,6 +37,7 @@ namespace LastJumpCrew.ParkHanSol.Interaction
 
         private void Update()
         {
+            // 네트워크 스폰 후 소유자가 아니면 입력/초점 표시를 하지 않는다.
             if (networkObject != null && networkObject.IsSpawned && !networkObject.IsOwner)
             {
                 ClearToolBoxSlotFocus();
@@ -67,6 +82,7 @@ namespace LastJumpCrew.ParkHanSol.Interaction
 
         private void TryInteract()
         {
+            // 카메라 정면으로 Raycast해서 가장 먼저 맞은 IInteractable을 실행한다.
             if (interactionCamera == null)
             {
                 Debug.LogWarning($"PHS_TEMP_INTERACT_FAILED reason=camera_missing player={name}");
@@ -104,6 +120,7 @@ namespace LastJumpCrew.ParkHanSol.Interaction
 
         private void RefreshToolBoxSlotFocus()
         {
+            // 툴박스 슬롯은 자체 보관 상태와 손 아이템 상태를 보고 하이라이트 여부를 계산한다.
             if (interactionCamera == null || itemHolder == null)
             {
                 ClearToolBoxSlotFocus();
@@ -142,6 +159,7 @@ namespace LastJumpCrew.ParkHanSol.Interaction
 
         private void RefreshInteractableFocusGlow()
         {
+            // 일반 아이템/상호작용 대상은 InteractableFocusGlow가 붙어 있고 CanInteract가 true일 때만 빛난다.
             if (interactionCamera == null || itemHolder == null)
             {
                 ClearInteractableFocusGlow();
