@@ -24,6 +24,10 @@ namespace LastJumpCrew.ParkHanSol.Items
         // null이면 HUD 아이콘 Image가 투명 처리된다.
         [SerializeField] private Sprite icon;
 
+        // 상점 계산 구역에서 합산할 테스트용 가격이다.
+        // 실제 경제/재화 차감은 나중에 경제 시스템이 붙을 때 연결한다.
+        [SerializeField, Min(0)] private int price;
+
         // 내구도가 있는 아이템만 true로 켠다.
         // 모든 아이템에 내구도를 강제하지 않기 위해 선택형 필드로 둔다.
         // false면 HUD의 내구도 텍스트는 숨겨진다.
@@ -45,6 +49,7 @@ namespace LastJumpCrew.ParkHanSol.Items
         public string ItemId => itemId;
         public string DisplayName => displayName;
         public Sprite Icon => icon;
+        public int Price => price;
         public bool HasDurability => hasDurability;
         public int MaxDurability => maxDurability;
         public GameObject HeldPrefab => heldPrefab;

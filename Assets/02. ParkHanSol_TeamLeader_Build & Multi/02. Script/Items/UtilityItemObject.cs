@@ -1,4 +1,5 @@
 using LastJumpCrew.Common;
+using ParkInteraction = LastJumpCrew.ParkHanSol.Interaction;
 using UnityEngine;
 
 namespace LastJumpCrew.ParkHanSol.Items
@@ -6,7 +7,7 @@ namespace LastJumpCrew.ParkHanSol.Items
     // 아이템 프리팹 루트에 붙는 런타임 컴포넌트다.
     // 플레이어가 아이템을 들거나 내려놓을 때 IHoldableItem 인터페이스를 통해 이 컴포넌트를 호출한다.
     // 아이템별 기능은 여기에서 바로 늘리지 말고, 필요할 때 별도 컴포넌트로 붙이는 방향을 기본으로 둔다.
-    public sealed class UtilityItemObject : MonoBehaviour, IHoldableItem
+    public sealed class UtilityItemObject : MonoBehaviour, IHoldableItem, ParkInteraction.IInteractable
     {
         // 이 오브젝트가 어떤 아이템 데이터인지 알려주는 필수 참조다.
         // prefab root의 UtilityItemObject에 연결되어 있어야 플레이어 HUD, 툴박스 보관, 드롭 처리에서 같은 아이템으로 인식된다.
@@ -24,10 +25,46 @@ namespace LastJumpCrew.ParkHanSol.Items
         // 현재는 아이템 루트 transform을 그대로 잡는 지점으로 쓴다.
         // 추후 손잡이 위치가 따로 필요하면 GripPoint 같은 child를 만들고 여기 반환값을 바꾸면 된다.
         public Transform HoldTransform => transform;
+        public string InteractionPrompt => "Pick Up";
 
         // holder 참조만 기준으로 든 상태를 판단한다.
         // 물리 상태나 parent 여부로 판단하면 보관함/프리뷰/네트워크 상황에서 꼬일 수 있어 단순 상태값으로 둔다.
         public bool IsHeld => currentHolder != null;
+
+        public bool CanInteract(ParkInteraction.IItemHolder itemHolder)
+        {
+            if (itemHolder == null)
+            {
+                Debug.LogWarning($"PHS_ITEM_PICKUP_FAILED reason=itemHolder_missing item={name}");
+                return false;
+            }
+
+            if (IsHeld)
+            {
+                Debug.LogWarning($"PHS_ITEM_PICKUP_FAILED reason=already_held item={name}");
+                return false;
+            }
+
+            if (itemPrefabData == null)
+            {
+                Debug.LogError($"PHS_ITEM_PICKUP_FAILED reason=itemData_missing item={name}");
+                return false;
+            }
+
+            return itemHolder.CanReplaceHeldItem(itemPrefabData);
+        }
+
+        public void Interact(ParkInteraction.IItemHolder itemHolder)
+        {
+            if (!CanInteract(itemHolder))
+            {
+                return;
+            }
+
+            itemHolder.ReplaceHeldItem(itemPrefabData, transform);
+            Destroy(gameObject);
+            Debug.Log($"PHS_ITEM_PICKED_UP item={itemPrefabData.ItemId}");
+        }
 
         // 플레이어가 아이템을 획득해서 손에 붙였을 때 호출된다.
         // 여기서는 소유자 기록과 물리 비활성화만 담당한다.

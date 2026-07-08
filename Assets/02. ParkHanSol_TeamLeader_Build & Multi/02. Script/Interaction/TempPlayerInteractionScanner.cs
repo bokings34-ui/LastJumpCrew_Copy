@@ -13,6 +13,7 @@ namespace LastJumpCrew.ParkHanSol.Interaction
         private IItemHolder itemHolder;
         private NetworkObject networkObject;
         private UtilityToolBoxStorageSlotInteractable focusedToolBoxSlot;
+        private InteractableFocusGlow focusedGlow;
 
         private void Awake()
         {
@@ -29,18 +30,39 @@ namespace LastJumpCrew.ParkHanSol.Interaction
             }
 
             RefreshToolBoxSlotFocus();
+            RefreshInteractableFocusGlow();
 
-            if (Keyboard.current == null || !Keyboard.current.fKey.wasPressedThisFrame)
+            if (Keyboard.current == null)
             {
                 return;
             }
 
-            TryInteract();
+            if (Keyboard.current.fKey.wasPressedThisFrame)
+            {
+                TryInteract();
+            }
+
+            if (Keyboard.current.eKey.wasPressedThisFrame)
+            {
+                PlaceHeldItem();
+            }
         }
 
         private void OnDisable()
         {
             ClearToolBoxSlotFocus();
+            ClearInteractableFocusGlow();
+        }
+
+        private void PlaceHeldItem()
+        {
+            if (itemHolder == null)
+            {
+                Debug.LogWarning($"PHS_TEMP_PLACE_FAILED reason=itemHolder_missing player={name}");
+                return;
+            }
+
+            itemHolder.PlaceHeldItem();
         }
 
         private void TryInteract()
@@ -116,6 +138,57 @@ namespace LastJumpCrew.ParkHanSol.Interaction
 
             focusedToolBoxSlot.ClearInteractionFocus(itemHolder);
             focusedToolBoxSlot = null;
+        }
+
+        private void RefreshInteractableFocusGlow()
+        {
+            if (interactionCamera == null || itemHolder == null)
+            {
+                ClearInteractableFocusGlow();
+                return;
+            }
+
+            var ray = new Ray(interactionCamera.transform.position, interactionCamera.transform.forward);
+            if (!Physics.Raycast(ray, out var hit, interactDistance, interactableLayers, QueryTriggerInteraction.Collide))
+            {
+                ClearInteractableFocusGlow();
+                return;
+            }
+
+            var glow = hit.collider.GetComponentInParent<InteractableFocusGlow>();
+            if (glow == null)
+            {
+                ClearInteractableFocusGlow();
+                return;
+            }
+
+            var interactable = hit.collider.GetComponentInParent<IInteractable>();
+            if (interactable == null || !interactable.CanInteract(itemHolder))
+            {
+                ClearInteractableFocusGlow();
+                return;
+            }
+
+            if (glow == focusedGlow)
+            {
+                focusedGlow?.SetFocused(true);
+                return;
+            }
+
+            ClearInteractableFocusGlow();
+            focusedGlow = glow;
+            focusedGlow?.SetFocused(true);
+        }
+
+        private void ClearInteractableFocusGlow()
+        {
+            if (focusedGlow == null)
+            {
+                return;
+            }
+
+            focusedGlow.SetFocused(false);
+            focusedGlow = null;
         }
     }
 }

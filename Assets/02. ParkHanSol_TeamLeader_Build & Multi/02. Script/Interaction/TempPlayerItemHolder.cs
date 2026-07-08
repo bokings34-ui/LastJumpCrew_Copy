@@ -67,7 +67,7 @@ namespace LastJumpCrew.ParkHanSol.Interaction
                 return;
             }
 
-            DropCurrentItem();
+            PlaceCurrentItem();
             heldItemInstance = Instantiate(itemPrefabData.HeldPrefab, ActiveHoldPoint);
             heldItemInstance.name = itemPrefabData.HeldPrefab.name;
             heldItemInstance.transform.SetLocalPositionAndRotation(Vector3.zero, Quaternion.identity);
@@ -114,7 +114,12 @@ namespace LastJumpCrew.ParkHanSol.Interaction
 
         public void Drop()
         {
-            DropCurrentItem();
+            PlaceHeldItem();
+        }
+
+        public void PlaceHeldItem()
+        {
+            PlaceCurrentItem();
         }
 
         public bool TryConsumeHeldItem(string itemId)
@@ -153,7 +158,7 @@ namespace LastJumpCrew.ParkHanSol.Interaction
             return true;
         }
 
-        private void DropCurrentItem()
+        private void PlaceCurrentItem()
         {
             if (currentItemPrefabData == null)
             {
@@ -162,7 +167,7 @@ namespace LastJumpCrew.ParkHanSol.Interaction
 
             if (!currentItemPrefabData.HasDroppedPrefab)
             {
-                Debug.LogWarning($"PHS_TEMP_ITEM_DROP_FAILED reason=droppedPrefab_missing item={currentItemPrefabData.ItemId}");
+                Debug.LogWarning($"PHS_TEMP_ITEM_PLACE_FAILED reason=droppedPrefab_missing item={currentItemPrefabData.ItemId}");
             }
             else
             {
@@ -172,14 +177,14 @@ namespace LastJumpCrew.ParkHanSol.Interaction
                 var droppedItemObject = droppedItemInstance.GetComponent<UtilityItemObject>();
                 if (droppedItemObject == null)
                 {
-                    Debug.LogError($"PHS_TEMP_ITEM_DROP_FAILED reason=utilityItemObject_missing item={currentItemPrefabData.ItemId}");
+                    Debug.LogError($"PHS_TEMP_ITEM_PLACE_FAILED reason=utilityItemObject_missing item={currentItemPrefabData.ItemId}");
                 }
                 else
                 {
                     droppedItemObject.OnDropped(position);
                 }
 
-                Debug.Log($"PHS_TEMP_ITEM_DROPPED player={name} item={currentItemPrefabData.ItemId}");
+                Debug.Log($"PHS_TEMP_ITEM_PLACED player={name} item={currentItemPrefabData.ItemId}");
             }
 
             if (heldItemInstance != null)
