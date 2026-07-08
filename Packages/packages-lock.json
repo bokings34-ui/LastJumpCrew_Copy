@@ -154,7 +154,7 @@
     },
     "com.unity.services.authentication": {
       "version": "3.7.1",
-      "depth": 1,
+      "depth": 0,
       "source": "registry",
       "dependencies": {
         "com.unity.ugui": "1.0.0",
@@ -296,7 +296,7 @@
     },
     "com.unity.transport": {
       "version": "6.5.0",
-      "depth": 1,
+      "depth": 0,
       "source": "builtin",
       "dependencies": {
         "com.unity.collections": "6.5.0",
