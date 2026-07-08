@@ -7,21 +7,23 @@ namespace SM
     {
         private FireEventDataSO FireData { get { return _data as FireEventDataSO; } }
 
-        private int _fireLevel = 1;
         private float _timer = 0f;
-        private int _nextSpawnIndex = 0;
+        public int FireLevel { get { return _activeEffects.Count; } }
+
         private readonly List<FireEffectInstance> _activeEffects = new List<FireEffectInstance>();
+        private readonly Dictionary<Transform, FireEffectInstance> _occupiedPoints = new Dictionary<Transform, FireEffectInstance>();
+        private readonly Dictionary<FireEffectInstance, Transform> _effectToPoint = new Dictionary<FireEffectInstance, Transform>();
 
         public override void OnTrigger()
         {
             ChangeState(EventState.InProgress);
-            _fireLevel = 1;
             _timer = 0f;
-            _nextSpawnIndex = 0;
             _activeEffects.Clear();
+            _occupiedPoints.Clear();
+            _effectToPoint.Clear();
 
-            SpawnNextEffect();
-            Debug.Log($"<color=lime>[{FireData.EventName}]</color> 발생! 초기 레벨: {_fireLevel}");
+            SpawnNextFire();
+            Debug.Log($"<color=lime>[{FireData.EventName}]</color> 발생! 초기 레벨: {FireLevel}");
         }
 
         public override void OnTick(float deltaTime)
@@ -33,45 +35,73 @@ namespace SM
             if (_timer >= FireData.levelUpInterval)
             {
                 _timer = 0f;
-                _fireLevel++;
-                SpawnNextEffect();
-                Debug.Log($"<color=lime>[{FireData.EventName}]</color> 현재 레벨: {_fireLevel}");
+                SpawnNextFire();
+                Debug.Log($"<color=lime>[{FireData.EventName}]</color> 현재 레벨: {FireLevel}");
             }
         }
 
-        private void SpawnNextEffect()
+        private Transform GetFreeSpawnPoint()
         {
-            if (Context == null || Context.Room == null) return;
+            var spawnPoints = Context?.Room?.FireSpawnPoints;
+            if (spawnPoints == null || spawnPoints.Count == 0) return null;
 
-            var spawnPoints = Context.Room.FireSpawnPoints;
-
-            if (spawnPoints == null || spawnPoints.Count == 0) return;
-
-            if (_nextSpawnIndex >= spawnPoints.Count)
+            var freePoints = new List<Transform>();
+            foreach (var point in spawnPoints)
             {
-                Debug.Log($"<color=lime>[{FireData.EventName}]</color> 스폰 포인트 추가 설정 필요.");
-                return;
+                if (!_occupiedPoints.ContainsKey(point))
+                    freePoints.Add(point);
             }
 
-            var point = spawnPoints[_nextSpawnIndex];
-            var effect = FireEffectPool.Instance.Get(point.position, FireData.damagePerSecond);
-
-            _activeEffects.Add(effect);
-            _nextSpawnIndex++;
+            if (freePoints.Count == 0) return null;
+            return freePoints[Random.Range(0, freePoints.Count)];
         }
 
-        protected override float GetMaxRepairProgress() => FireData.maxRepairProgress;
+        private void SpawnNextFire()
+        {
+            var point = GetFreeSpawnPoint();
+            if (point == null) return;
+
+            var effect = FireEffectPool.Instance.Get
+                (point.position, FireData.damagePerSecond, FireData.maxRepairProgress);
+            
+            effect.OnRemove += HandleRemoveFire;
+
+            _occupiedPoints[point] = effect;
+            _effectToPoint[effect] = point;
+            _activeEffects.Add(effect);
+        }
+
+        private void HandleRemoveFire(FireEffectInstance effect)
+        {
+            effect.OnRemove -= HandleRemoveFire;
+
+            if (_effectToPoint.TryGetValue(effect, out var point))
+            {
+                _occupiedPoints.Remove(point);
+                _effectToPoint.Remove(effect);
+            }
+
+            _activeEffects.Remove(effect);
+            FireEffectPool.Instance.Return(effect);
+
+            Debug.Log($"<color=lime>[{FireData.EventName}]</color> 화재 진화 성공 / 남은 화재 수: {_activeEffects.Count}");
+
+            if (_activeEffects.Count == 0)
+            {
+                OnResolve();
+            }
+        }
+
+        protected override float GetMaxRepairProgress() => 0f;
+
+        public override void ApplyRepair(float amount)
+        { 
+            // Fire는 개별 단위로 진화되므로 사용 안 함
+        }
 
         public override void OnResolve()
         {
             ChangeState(EventState.Resolve);
-
-            foreach (var effect in _activeEffects)
-            {
-                FireEffectPool.Instance.Return(effect);
-            }
-
-            _activeEffects.Clear();
             Debug.Log($"<color=lime>[{FireData.EventName}]</color> 종료.");
         }
     }

@@ -18,7 +18,8 @@ namespace SM
 
             if (Keyboard.current.wKey.wasPressedThisFrame)
             {
-                EventManager.Instance.ApplyRepairTo(EventId.Fire, 10f);
+                var target = FindAnyObjectByType<FireEffectInstance>();
+                target?.ApplyRepair(10f);
             }
         }
     }

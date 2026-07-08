@@ -1,21 +1,33 @@
+using System;
 using System.Collections.Generic;
 using UnityEngine;
 
 namespace SM
 {
     [RequireComponent(typeof(Collider))]
-    public class FireEffectInstance : MonoBehaviour
+    public class FireEffectInstance : MonoBehaviour, IRepairable
     {
         [Header("데미지 틱 설정")]
         [SerializeField] private float tickInterval = 1f;
 
         private float _damagePerSecond;
+        private float _maxRepairProgress;
+        private float _repairProgress;
         private float _timer;
+
+        public float RepairProgress { get { return _repairProgress; } }
+        public bool IsRepaired { get; private set; }
+
+        public event Action<FireEffectInstance> OnRemove;
+
         private readonly HashSet<IDamageable> _targetsInRange = new HashSet<IDamageable>();
 
-        public void Activate(float damagePerSecond)
+        public void Activate(float damagePerSecond, float maxRepairProgress)
         {
             _damagePerSecond = damagePerSecond;
+            _maxRepairProgress = maxRepairProgress;
+            _repairProgress = 0f;
+            IsRepaired = false;
             _timer = 0f;
             gameObject.SetActive(true);
         }
@@ -24,6 +36,19 @@ namespace SM
         {
             _targetsInRange.Clear();
             gameObject.SetActive(false);
+        }
+
+        public void ApplyRepair(float amount)
+        {
+            if (IsRepaired) return;
+
+            _repairProgress += amount;
+
+            if (_repairProgress >= _maxRepairProgress)
+            {
+                IsRepaired = true;
+                OnRemove?.Invoke(this);
+            }
         }
 
         private void Update()

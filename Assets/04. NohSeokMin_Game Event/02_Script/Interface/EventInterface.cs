@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using UnityEngine;
 
@@ -9,6 +10,7 @@ namespace SM
         bool IsRepaired { get; }
         void ApplyRepair(float amount);
     }
+
     public interface IRoom
     {
         string RoomId { get; }
@@ -23,7 +25,7 @@ namespace SM
 
     public interface IEventSpawner
     {
-        void SpawnEvent(EventId id, IRoom targetRoom);
+        void SpawnEvent(EventId id, IRoom targetRoom, Action<EventBase, bool> onFinished = null);
     }
     
     public interface IDamageable

@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using UnityEngine;
 
@@ -18,11 +19,16 @@ namespace SM
             }
         }
 
-        public void SpawnEvent(EventId id, IRoom targetRoom)
+        public bool IsActive(EventId id)
+        {
+            return _activeEvents.ContainsKey(id);
+        }
+
+        public void SpawnEvent(EventId id, IRoom targetRoom, Action<EventBase, bool> onFinished = null)
         {
             if (_activeEvents.ContainsKey(id))
             {
-                Debug.Log($"<color=lime>[ShipEventManager]</color> {id}는 이미 진행 중입니다.");
+                Debug.Log($"<color=lime>[EventManager]</color> {id}는 이미 진행 중입니다.");
                 return;
             }
 
@@ -30,7 +36,7 @@ namespace SM
 
             if (data == null)
             {
-                Debug.Log($"<color=lime>[ShipEventManager]</color> {id}에 대한 EventDataSO가 Registry에 없습니다.");
+                Debug.Log($"<color=lime>[EventManager]</color> {id}에 대한 EventDataSO가 Registry에 없습니다.");
                 return;
             }
 
@@ -38,10 +44,20 @@ namespace SM
             var context = new EventContext(targetRoom, this);
 
             evt.OnFinished += HandleEventFinished;
+            if (onFinished != null) evt.OnFinished += onFinished;
+
             evt.Initialize(data, context);
             evt.OnTrigger();
 
             _activeEvents[id] = evt;
+        }
+
+        private void HandleEventFinished(EventBase evt, bool success)
+        {
+            evt.OnFinished -= HandleEventFinished;
+            _activeEvents.Remove(evt.Id);
+
+            Debug.Log($"<color=lime>[EventManager]</color> {evt.Id} 종료 (성공 여부 : {success})");
         }
 
         // TODO :: 수리 상호작용 시 호출해서 진행도 전달
@@ -51,14 +67,6 @@ namespace SM
             {
                 repairable.ApplyRepair(amount);
             }
-        }
-
-        private void HandleEventFinished(EventBase evt, bool success)
-        {
-            evt.OnFinished -= HandleEventFinished;
-            _activeEvents.Remove(evt.Id);
-
-            Debug.Log($"<color=lime>[EventManager]</color> {evt.Id} 종료 (성공 여부 : {success})");
         }
     }
 }
