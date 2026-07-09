@@ -1,11 +1,12 @@
 using LastJumpCrew.ParkHanSol.Items;
 using UnityEngine;
+using CommonInteraction = LastJumpCrew.Common;
 
 namespace LastJumpCrew.ParkHanSol.Interaction
 {
     // 배터리 아이템을 전원 소켓에 꽂는 테스트 상호작용 컴포넌트다.
     // 손에 든 배터리로 상호작용하거나, 바닥 배터리가 Trigger에 들어오면 설치된다.
-    public sealed class BatteryInsertPowerStationSocket : MonoBehaviour, IInteractable
+    public sealed class BatteryInsertPowerStationSocket : MonoBehaviour, IInteractable, CommonInteraction.IInteractable, IBatteryUseTarget
     {
         // 설치 가능한 아이템 ID다. 기본값은 UtilityItemPrefabData의 battery_pack과 맞춘다.
         [SerializeField] private string requiredItemId = "battery_pack";
@@ -116,6 +117,68 @@ namespace LastJumpCrew.ParkHanSol.Interaction
 
             InstallBattery();
             Debug.Log($"PHS_BATTERY_INSERTED_BY_INTERACT target={name} item={requiredItemId}");
+        }
+
+        bool CommonInteraction.IInteractable.CanInteract(CommonInteraction.IItemHolder itemHolder)
+        {
+            return CanUseBattery(itemHolder);
+        }
+
+        void CommonInteraction.IInteractable.Interact(CommonInteraction.IItemHolder itemHolder)
+        {
+            TryUseBattery(itemHolder);
+        }
+
+        public bool CanUseBattery(CommonInteraction.IItemHolder user)
+        {
+            if (isBatteryInstalled)
+            {
+                return false;
+            }
+
+            if (user == null)
+            {
+                Debug.LogWarning($"PHS_BATTERY_USE_FAILED reason=user_missing target={name}");
+                return false;
+            }
+
+            if (user.CurrentItem == null)
+            {
+                Debug.LogWarning($"PHS_BATTERY_USE_FAILED reason=heldItem_missing target={name}");
+                return false;
+            }
+
+            if (user.CurrentItem.ItemId != requiredItemId)
+            {
+                Debug.LogWarning($"PHS_BATTERY_USE_FAILED reason=wrong_item target={name} expected={requiredItemId} actual={user.CurrentItem.ItemId}");
+                return false;
+            }
+
+            return true;
+        }
+
+        public bool TryUseBattery(CommonInteraction.IItemHolder user)
+        {
+            if (!CanUseBattery(user))
+            {
+                return false;
+            }
+
+            if (user is not IItemHolder parkItemHolder)
+            {
+                Debug.LogError($"PHS_BATTERY_USE_FAILED reason=parkItemHolder_missing target={name}");
+                return false;
+            }
+
+            if (!parkItemHolder.TryConsumeHeldItem(requiredItemId))
+            {
+                Debug.LogError($"PHS_BATTERY_USE_FAILED reason=consume_failed target={name} item={requiredItemId}");
+                return false;
+            }
+
+            InstallBattery();
+            Debug.Log($"PHS_BATTERY_INSERTED_BY_USE target={name} item={requiredItemId}");
+            return true;
         }
 
         private void InsertBattery(UtilityItemObject itemObject)
