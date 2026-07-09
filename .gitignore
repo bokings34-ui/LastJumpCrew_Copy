@@ -73,4 +73,8 @@ crashlytics-build.properties
 /[Pp]ackages/com.anklebreaker.unity-mcp/
 /[Ll]ibrary/MCPForUnity/
 /[Ll]ibrary/[Pp]ackage[Cc]ache/com.anklebreaker.unity-mcp*/
+
+# Local Unity screenshots
+/[Aa]ssets/Screenshots/
+/[Aa]ssets/Screenshots.meta
 /ProjectSettings/Packages/com.unity.services.vivox
