@@ -1,3 +1,5 @@
+using LastJumpCrew.ParkHanSol.Multiplayer;
+using Unity.Netcode;
 using UnityEngine;
 using UnityEngine.InputSystem;
 
@@ -16,6 +18,8 @@ namespace LastJumpCrew.ParkHanSol.PlayerPrefab
         [SerializeField] private float mouseSensitivity = 2.2f;
 
         private CharacterController characterController;
+        private NetworkObject networkObject;
+        private NetworkPlayerController networkPlayerController;
         private float pitch;
         private float verticalVelocity;
         private bool jumpRequested;
@@ -29,6 +33,8 @@ namespace LastJumpCrew.ParkHanSol.PlayerPrefab
         private void Awake()
         {
             characterController = GetComponent<CharacterController>();
+            networkObject = GetComponent<NetworkObject>();
+            networkPlayerController = GetComponent<NetworkPlayerController>();
 
             if (playerCamera != null)
             {
@@ -38,6 +44,12 @@ namespace LastJumpCrew.ParkHanSol.PlayerPrefab
 
         private void Update()
         {
+            if (ShouldSkipLegacyMovement())
+            {
+                ClearMovementState();
+                return;
+            }
+
             ApplyLookInput();
             ReadJumpInput();
             MoveCharacter(Time.deltaTime);
@@ -92,6 +104,22 @@ namespace LastJumpCrew.ParkHanSol.PlayerPrefab
             characterController.Move(velocity * deltaTime);
 
             PlanarVelocity = nextPlanar;
+            jumpRequested = false;
+        }
+
+        private bool ShouldSkipLegacyMovement()
+        {
+            return networkObject != null && networkObject.IsSpawned
+                || networkPlayerController != null && networkPlayerController.enabled;
+        }
+
+        private void ClearMovementState()
+        {
+            IsGrounded = characterController == null || characterController.isGrounded;
+            HasMoveInput = false;
+            IsRunning = false;
+            PlanarVelocity = Vector3.zero;
+            verticalVelocity = 0f;
             jumpRequested = false;
         }
 

@@ -1,20 +1,28 @@
+using System;
+using System.Collections.Generic;
+using LastJumpCrew.ParkHanSol.PlayerPrefab;
 using Unity.Netcode;
 using UnityEngine;
 using UnityEngine.InputSystem;
 using UnityEngine.SceneManagement;
-using System;
-using LastJumpCrew.ParkHanSol.PlayerPrefab;
 
 namespace LastJumpCrew.ParkHanSol.Multiplayer
 {
     [RequireComponent(typeof(CharacterController))]
     public sealed class NetworkPlayerController : NetworkBehaviour, IPlayerMovementAnimationSource
     {
-        [SerializeField] private float moveSpeed = 4.5f;
+        [SerializeField] private float moveSpeed = 2.4f;
+        [SerializeField] private float runSpeed = 4.2f;
+        [SerializeField, Min(0.1f)] private float groundAcceleration = 18f;
+        [SerializeField] private float jumpVelocity = 4.6f;
         [SerializeField] private float sprintMultiplier = 1.5f;
-        [SerializeField] private float jumpHeight = 1.2f;
         [SerializeField] private float gravity = -18f;
-        [SerializeField] private float mouseSensitivity = 0.12f;
+        [SerializeField, Min(0.1f)] private float zeroGravityMoveSpeed = 3.5f;
+        [SerializeField, Min(0.1f)] private float zeroGravityAcceleration = 8f;
+        [SerializeField, Min(0.1f)] private float spacewalkMoveSpeed = 5f;
+        [SerializeField, Min(0.1f)] private float spacewalkAcceleration = 5f;
+        [SerializeField, Min(0f)] private float zeroGravityDamping = 2.5f;
+        [SerializeField] private float mouseSensitivity = 2.2f;
         [SerializeField] private Transform cameraRoot;
         [SerializeField] private Camera playerCamera;
         [SerializeField] private AudioListener audioListener;
@@ -22,40 +30,53 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
         [SerializeField] private string spawnPointsRootName = "Spawn Points";
         [SerializeField] private bool allowSceneInputWithoutNetwork = true;
 
+        private readonly List<NetworkPlayerGravityArea> gravityAreas = new();
         private CharacterController characterController;
+        private Rigidbody attachedRigidbody;
         private float verticalVelocity;
         private float cameraPitch;
-        private bool hasMoveInput;
-        private bool isRunning;
-        private bool isGrounded = true;
         private bool gameplayInputEnabled;
         private bool autoMoveEnabled;
         private float autoMoveSeconds;
         private float autoMoveEndTime;
         private bool autoMoveStarted;
         private float nextPositionLogTime;
+        private bool originalRigidbodyUseGravity;
+        private bool originalRigidbodyIsKinematic;
+        private NetworkPlayerGravityMode gravityMode = NetworkPlayerGravityMode.ShipGravity;
+        private Vector3 zeroGravityVelocity;
 
-        public bool IsGrounded => isGrounded;
-        public bool HasMoveInput => hasMoveInput;
-        public bool IsRunning => isRunning;
+        public bool IsGrounded { get; private set; } = true;
+        public bool HasMoveInput { get; private set; }
+        public bool IsRunning { get; private set; }
+        public Vector3 PlanarVelocity { get; private set; }
         public float VerticalVelocity => verticalVelocity;
+        public NetworkPlayerGravityMode GravityMode => gravityMode;
 
         public override void OnNetworkSpawn()
         {
             characterController = GetComponent<CharacterController>();
+            ConfigureNetworkRigidbody(true);
             MoveToGameplaySpawnPointIfServer();
             ApplySceneInputState();
+        }
+
+        public override void OnNetworkDespawn()
+        {
+            ConfigureNetworkRigidbody(false);
         }
 
         private void Awake()
         {
             characterController = GetComponent<CharacterController>();
-            if (!enabled)
+            attachedRigidbody = GetComponent<Rigidbody>();
+            if (attachedRigidbody != null)
             {
-                return;
+                originalRigidbodyUseGravity = attachedRigidbody.useGravity;
+                originalRigidbodyIsKinematic = attachedRigidbody.isKinematic;
             }
 
-            SetLocalView(false);
+            ConfigureNetworkRigidbody(true);
             ConfigureCommandLineAutomation();
         }
 
@@ -82,7 +103,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
                 return;
             }
 
-            if (!IsOwner || !gameplayInputEnabled)
+            if (!CanProcessLocalInput())
             {
                 ClearMovementState();
                 return;
@@ -99,6 +120,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
                 move.y = 1f;
             }
 
+            var verticalMove = ReadVerticalMove();
             var look = ReadLook();
             var jump = Keyboard.current != null && Keyboard.current.spaceKey.wasPressedThisFrame;
             var sprint = Keyboard.current != null && Keyboard.current.leftShiftKey.isPressed;
@@ -106,16 +128,60 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
 
             ApplyLocalLook(look);
 
-            if (moveLocally || IsServer)
+            if (moveLocally || !IsSpawned || IsServer)
             {
-                MoveCharacter(move, look.x, jump, sprint, deltaTime);
+                MoveOnServer(move, verticalMove, look.x, jump, sprint, deltaTime);
             }
             else
             {
-                SubmitInputServerRpc(move, look.x, jump, sprint, deltaTime);
+                SubmitInputServerRpc(move, verticalMove, look.x, jump, sprint, deltaTime);
             }
 
-            UpdateMovementState(move, sprint);
+            UpdateMovementState(move, verticalMove, sprint);
+        }
+
+        public void EnterGravityArea(NetworkPlayerGravityArea gravityArea)
+        {
+            if (gravityArea == null)
+            {
+                Debug.LogError($"PHS_PLAYER_GRAVITY_AREA_FAILED reason=area_missing player={name}");
+                return;
+            }
+
+            if (!gravityAreas.Contains(gravityArea))
+            {
+                gravityAreas.Add(gravityArea);
+            }
+
+            ApplyGravityAreaMode();
+        }
+
+        public void ExitGravityArea(NetworkPlayerGravityArea gravityArea)
+        {
+            if (gravityArea == null)
+            {
+                Debug.LogError($"PHS_PLAYER_GRAVITY_AREA_FAILED reason=area_missing player={name}");
+                return;
+            }
+
+            gravityAreas.Remove(gravityArea);
+            ApplyGravityAreaMode();
+        }
+
+        public void RefreshGravityArea(NetworkPlayerGravityArea gravityArea)
+        {
+            if (gravityArea == null)
+            {
+                Debug.LogError($"PHS_PLAYER_GRAVITY_REFRESH_FAILED reason=area_missing player={name}");
+                return;
+            }
+
+            if (!gravityAreas.Contains(gravityArea))
+            {
+                return;
+            }
+
+            ApplyGravityAreaMode();
         }
 
         public void SetGameplayInputEnabled(bool active)
@@ -206,37 +272,126 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
         }
 
         [ServerRpc]
-        private void SubmitInputServerRpc(Vector2 move, float yawInput, bool jump, bool sprint, float deltaTime)
+        private void SubmitInputServerRpc(Vector2 move, float verticalMove, float yawInput, bool jump, bool sprint, float deltaTime)
         {
-            MoveCharacter(move, yawInput, jump, sprint, Mathf.Clamp(deltaTime, 0f, 0.05f));
+            MoveOnServer(move, verticalMove, yawInput, jump, sprint, Mathf.Clamp(deltaTime, 0f, 0.05f));
         }
 
-        private void MoveCharacter(Vector2 move, float yawInput, bool jump, bool sprint, float deltaTime)
+        private void MoveOnServer(Vector2 move, float verticalMove, float yawInput, bool jump, bool sprint, float deltaTime)
         {
             transform.Rotate(Vector3.up, yawInput * mouseSensitivity);
 
+            if (gravityMode != NetworkPlayerGravityMode.ShipGravity)
+            {
+                MoveZeroGravity(move, verticalMove, sprint, deltaTime);
+                return;
+            }
+
+            zeroGravityVelocity = Vector3.zero;
             var wishDirection = transform.right * move.x + transform.forward * move.y;
             if (wishDirection.sqrMagnitude > 1f)
             {
                 wishDirection.Normalize();
             }
 
-            isGrounded = characterController.isGrounded;
-            if (isGrounded && verticalVelocity < 0f)
+            IsGrounded = characterController.isGrounded;
+            if (IsGrounded && verticalVelocity < 0f)
             {
                 verticalVelocity = -2f;
             }
 
-            if (isGrounded && jump)
+            if (IsGrounded && jump)
             {
-                verticalVelocity = Mathf.Sqrt(jumpHeight * -2f * gravity);
+                verticalVelocity = jumpVelocity;
             }
 
             verticalVelocity += gravity * deltaTime;
-            var speed = sprint ? moveSpeed * sprintMultiplier : moveSpeed;
-            var velocity = wishDirection * speed;
+            var targetSpeed = sprint ? runSpeed : moveSpeed;
+            var targetPlanar = wishDirection * targetSpeed;
+            var nextPlanar = Vector3.MoveTowards(
+                PlanarVelocity,
+                targetPlanar,
+                groundAcceleration * deltaTime);
+            var velocity = nextPlanar;
             velocity.y = verticalVelocity;
+            PlanarVelocity = nextPlanar;
             characterController.Move(velocity * deltaTime);
+        }
+
+        private void MoveZeroGravity(Vector2 move, float verticalMove, bool sprint, float deltaTime)
+        {
+            verticalVelocity = 0f;
+            IsGrounded = false;
+
+            var wishDirection = transform.right * move.x
+                + transform.forward * move.y
+                + transform.up * verticalMove;
+            if (wishDirection.sqrMagnitude > 1f)
+            {
+                wishDirection.Normalize();
+            }
+
+            var baseSpeed = gravityMode == NetworkPlayerGravityMode.Spacewalk
+                ? spacewalkMoveSpeed
+                : zeroGravityMoveSpeed;
+            var acceleration = gravityMode == NetworkPlayerGravityMode.Spacewalk
+                ? spacewalkAcceleration
+                : zeroGravityAcceleration;
+            var speed = sprint ? baseSpeed * sprintMultiplier : baseSpeed;
+            var targetVelocity = wishDirection * speed;
+
+            zeroGravityVelocity = Vector3.MoveTowards(
+                zeroGravityVelocity,
+                targetVelocity,
+                acceleration * deltaTime);
+
+            if (wishDirection.sqrMagnitude <= 0.001f && zeroGravityDamping > 0f)
+            {
+                zeroGravityVelocity = Vector3.MoveTowards(
+                    zeroGravityVelocity,
+                    Vector3.zero,
+                    zeroGravityDamping * deltaTime);
+            }
+
+            PlanarVelocity = new Vector3(zeroGravityVelocity.x, 0f, zeroGravityVelocity.z);
+            characterController.Move(zeroGravityVelocity * deltaTime);
+        }
+
+        private void ApplyGravityAreaMode()
+        {
+            var nextMode = NetworkPlayerGravityMode.ShipGravity;
+            var highestPriority = int.MinValue;
+            foreach (var area in gravityAreas)
+            {
+                if (area == null || area.Priority < highestPriority)
+                {
+                    continue;
+                }
+
+                highestPriority = area.Priority;
+                nextMode = area.EffectiveGravityMode;
+            }
+
+            if (gravityMode == nextMode)
+            {
+                return;
+            }
+
+            gravityMode = nextMode;
+            verticalVelocity = 0f;
+            zeroGravityVelocity = Vector3.zero;
+            Debug.Log($"PHS_PLAYER_GRAVITY_MODE player={name} mode={gravityMode}");
+        }
+
+        private void ConfigureNetworkRigidbody(bool isNetworkSpawned)
+        {
+            if (attachedRigidbody == null)
+            {
+                return;
+            }
+
+            attachedRigidbody.useGravity = isNetworkSpawned ? false : originalRigidbodyUseGravity;
+            attachedRigidbody.isKinematic = isNetworkSpawned ? true : originalRigidbodyIsKinematic;
         }
 
         private void MoveToGameplaySpawnPointIfServer()
@@ -309,6 +464,24 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
             return Vector2.ClampMagnitude(move, 1f);
         }
 
+        private bool CanProcessLocalInput()
+        {
+            return IsSpawned && IsOwner && gameplayInputEnabled;
+        }
+
+        private static float ReadVerticalMove()
+        {
+            if (Keyboard.current == null)
+            {
+                return 0f;
+            }
+
+            var verticalMove = 0f;
+            if (Keyboard.current.spaceKey.isPressed) verticalMove += 1f;
+            if (Keyboard.current.leftCtrlKey.isPressed || Keyboard.current.cKey.isPressed) verticalMove -= 1f;
+            return Mathf.Clamp(verticalMove, -1f, 1f);
+        }
+
         private static Vector2 ReadLook()
         {
             return Mouse.current == null ? Vector2.zero : Mouse.current.delta.ReadValue();
@@ -321,17 +494,19 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
                 && (NetworkManager.Singleton == null || !NetworkManager.Singleton.IsListening);
         }
 
-        private void UpdateMovementState(Vector2 move, bool sprint)
+        private void UpdateMovementState(Vector2 move, float verticalMove, bool sprint)
         {
-            hasMoveInput = move.sqrMagnitude > 0.01f;
-            isRunning = hasMoveInput && sprint;
+            HasMoveInput = move.sqrMagnitude > 0.01f || Mathf.Abs(verticalMove) > 0.01f;
+            IsRunning = HasMoveInput && sprint;
         }
 
         private void ClearMovementState()
         {
-            hasMoveInput = false;
-            isRunning = false;
-            isGrounded = characterController == null || characterController.isGrounded;
+            HasMoveInput = false;
+            IsRunning = false;
+            IsGrounded = characterController == null || characterController.isGrounded;
+            PlanarVelocity = Vector3.zero;
+            verticalVelocity = 0f;
         }
 
         private void SetLocalView(bool active)
