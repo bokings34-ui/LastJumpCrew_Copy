@@ -1,11 +1,12 @@
 using LastJumpCrew.ParkHanSol.Items;
 using UnityEngine;
+using CommonInteraction = LastJumpCrew.Common;
 
 namespace LastJumpCrew.ParkHanSol.Interaction
 {
     // 배터리 아이템을 전원 소켓에 꽂는 테스트 상호작용 컴포넌트다.
     // 손에 든 배터리로 상호작용하거나, 바닥 배터리가 Trigger에 들어오면 설치된다.
-    public sealed class BatteryInsertPowerStationSocket : MonoBehaviour, IInteractable
+    public sealed class BatteryInsertPowerStationSocket : MonoBehaviour, IInteractable, CommonInteraction.IInteractable, IBatteryUseTarget
     {
         // 설치 가능한 아이템 ID다. 기본값은 UtilityItemPrefabData의 battery_pack과 맞춘다.
         [SerializeField] private string requiredItemId = "battery_pack";
@@ -79,6 +80,12 @@ namespace LastJumpCrew.ParkHanSol.Interaction
                 return false;
             }
 
+            if (installedBatteryVisual == null)
+            {
+                Debug.LogError($"PHS_BATTERY_INTERACT_FAILED reason=installedBatteryVisual_missing target={name}");
+                return false;
+            }
+
             if (itemHolder == null)
             {
                 Debug.LogWarning($"PHS_BATTERY_INTERACT_FAILED reason=itemHolder_missing target={name}");
@@ -114,8 +121,82 @@ namespace LastJumpCrew.ParkHanSol.Interaction
                 return;
             }
 
-            InstallBattery();
-            Debug.Log($"PHS_BATTERY_INSERTED_BY_INTERACT target={name} item={requiredItemId}");
+            if (InstallBattery())
+            {
+                Debug.Log($"PHS_BATTERY_INSERTED_BY_INTERACT target={name} item={requiredItemId}");
+            }
+        }
+
+        bool CommonInteraction.IInteractable.CanInteract(CommonInteraction.IItemHolder itemHolder)
+        {
+            return CanUseBattery(itemHolder);
+        }
+
+        void CommonInteraction.IInteractable.Interact(CommonInteraction.IItemHolder itemHolder)
+        {
+            TryUseBattery(itemHolder);
+        }
+
+        public bool CanUseBattery(CommonInteraction.IItemHolder user)
+        {
+            if (isBatteryInstalled)
+            {
+                return false;
+            }
+
+            if (installedBatteryVisual == null)
+            {
+                Debug.LogError($"PHS_BATTERY_USE_FAILED reason=installedBatteryVisual_missing target={name}");
+                return false;
+            }
+
+            if (user == null)
+            {
+                Debug.LogWarning($"PHS_BATTERY_USE_FAILED reason=user_missing target={name}");
+                return false;
+            }
+
+            if (user.CurrentItem == null)
+            {
+                Debug.LogWarning($"PHS_BATTERY_USE_FAILED reason=heldItem_missing target={name}");
+                return false;
+            }
+
+            if (user.CurrentItem.ItemId != requiredItemId)
+            {
+                Debug.LogWarning($"PHS_BATTERY_USE_FAILED reason=wrong_item target={name} expected={requiredItemId} actual={user.CurrentItem.ItemId}");
+                return false;
+            }
+
+            return true;
+        }
+
+        public bool TryUseBattery(CommonInteraction.IItemHolder user)
+        {
+            if (!CanUseBattery(user))
+            {
+                return false;
+            }
+
+            if (user is not IItemHolder parkItemHolder)
+            {
+                Debug.LogError($"PHS_BATTERY_USE_FAILED reason=parkItemHolder_missing target={name}");
+                return false;
+            }
+
+            if (!parkItemHolder.TryConsumeHeldItem(requiredItemId))
+            {
+                Debug.LogError($"PHS_BATTERY_USE_FAILED reason=consume_failed target={name} item={requiredItemId}");
+                return false;
+            }
+
+            if (!InstallBattery())
+            {
+                return false;
+            }
+
+            Debug.Log($"PHS_BATTERY_INSERTED_BY_USE target={name} item={requiredItemId}");
+            return true;
         }
 
         private void InsertBattery(UtilityItemObject itemObject)
@@ -127,7 +208,10 @@ namespace LastJumpCrew.ParkHanSol.Interaction
                 return;
             }
 
-            InstallBattery();
+            if (!InstallBattery())
+            {
+                return;
+            }
 
             if (destroyInsertedBattery && itemObject != null)
             {
@@ -137,11 +221,18 @@ namespace LastJumpCrew.ParkHanSol.Interaction
             Debug.Log($"PHS_BATTERY_INSERTED target={name} item={requiredItemId}");
         }
 
-        private void InstallBattery()
+        private bool InstallBattery()
         {
             // 설치 상태는 중복 삽입 방지와 시각물 활성화 기준으로 사용한다.
+            if (installedBatteryVisual == null)
+            {
+                Debug.LogError($"PHS_BATTERY_INSTALL_FAILED reason=installedBatteryVisual_missing target={name}");
+                return false;
+            }
+
             isBatteryInstalled = true;
             installedBatteryVisual.SetActive(true);
+            return true;
         }
     }
 }
