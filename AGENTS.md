@@ -30,6 +30,7 @@
   - `Packages/packages-lock.json`
   - `ProjectSettings/EditorBuildSettings.asset`
 - MCP 설치물만 Git에 들어가지 않게 한다.
+- Codex/MCP 같은 로컬 AI 설정 파일은 커밋하지 않는다.
 
 ## MCP / Git 규칙
 
@@ -38,6 +39,12 @@
   - `Assets/02. ParkHanSol_TeamLeader_Build & Multi/MCPPackages~/`
   - `Library/MCPForUnity/`
   - `Library/PackageCache/com.anklebreaker.unity-mcp*/`
+- 로컬 AI 설정 파일은 커밋하지 않는다.
+  - `.codex/`
+  - `.codex.json`
+  - `.codex.toml`
+  - `.mcp.json`
+  - `mcp.json`
 - MCP 때문에 `Packages/packages-lock.json`에 `com.anklebreaker.unity-mcp`가 다시 생기면 오염으로 보고 커밋하지 않는다.
 - MCP 외의 멀티 구현 파일, 패키지 설정, 빌드 설정은 정상적으로 Git 변경에 포함한다.
 - 커밋 전에는 MCP 파일이 stage되지 않았는지 확인한다.
