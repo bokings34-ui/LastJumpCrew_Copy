@@ -109,7 +109,7 @@ namespace LastJumpCrew.ParkHanSol.Items
             {
                 // 드롭된 아이템은 다시 물리 영향을 받게 한다.
                 // Rigidbody가 없는 아이템은 정적인 오브젝트처럼 위치만 잡힌다.
-                rigidbody.useGravity = true;
+                rigidbody.useGravity = false;
                 rigidbody.isKinematic = false;
             }
         }

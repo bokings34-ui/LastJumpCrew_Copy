@@ -1,13 +1,12 @@
 using UnityEngine;
-using Unity.Netcode;
 using LastJumpCrew.ParkHanSol.Multiplayer;
 
 namespace LastJumpCrew.ParkHanSol.PlayerPrefab
 {
     [RequireComponent(typeof(Animator))]
+    [RequireComponent(typeof(NetworkPlayerController))]
     public sealed class PHS_CuteWhiteGhostKeyboardAnimationController : MonoBehaviour
     {
-        [SerializeField] private PHS_CuteWhiteGhostFirstPersonController controller;
         [SerializeField] private MonoBehaviour movementSourceBehaviour;
         [SerializeField] private float crossFadeTime = 0.12f;
 
@@ -25,11 +24,6 @@ namespace LastJumpCrew.ParkHanSol.PlayerPrefab
         {
             animator = GetComponent<Animator>();
             networkController = movementSourceBehaviour as NetworkPlayerController;
-            if (controller == null)
-            {
-                controller = GetComponent<PHS_CuteWhiteGhostFirstPersonController>();
-            }
-
             if (networkController == null)
             {
                 networkController = GetComponent<NetworkPlayerController>();
@@ -38,40 +32,12 @@ namespace LastJumpCrew.ParkHanSol.PlayerPrefab
 
         private void Update()
         {
-            if (ShouldUseNetworkMovement())
-            {
-                PlayNetworkMovement();
-                return;
-            }
-
-            if (controller == null)
+            if (networkController == null)
             {
                 Play(Idle);
                 return;
             }
 
-            if (!controller.IsGrounded)
-            {
-                Play(controller.VerticalVelocity > 0.05f ? Jump : Fall);
-                return;
-            }
-
-            if (!controller.HasMoveInput)
-            {
-                Play(Idle);
-                return;
-            }
-
-            Play(controller.IsRunning ? Run : Walk);
-        }
-
-        private bool ShouldUseNetworkMovement()
-        {
-            return networkController != null && networkController.enabled;
-        }
-
-        private void PlayNetworkMovement()
-        {
             if (!networkController.IsGrounded)
             {
                 Play(networkController.VerticalVelocity > 0.05f ? Jump : Fall);

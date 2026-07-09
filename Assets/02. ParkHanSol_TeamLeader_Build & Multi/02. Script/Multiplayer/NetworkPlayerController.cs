@@ -2,11 +2,19 @@ using Unity.Netcode;
 using UnityEngine;
 using UnityEngine.InputSystem;
 using UnityEngine.SceneManagement;
+using LastJumpCrew.Common;
 using System;
 using System.Collections.Generic;
 
 namespace LastJumpCrew.ParkHanSol.Multiplayer
 {
+    public enum ZeroGravityControlPreset
+    {
+        Direct = 0,
+        Inertia = 1,
+        Hybrid = 2
+    }
+
     [RequireComponent(typeof(CharacterController))]
     public sealed class NetworkPlayerController : NetworkBehaviour
     {
@@ -21,10 +29,12 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
         [SerializeField, Min(0.1f)] private float spacewalkMoveSpeed = 5f;
         [SerializeField, Min(0.1f)] private float spacewalkAcceleration = 5f;
         [SerializeField, Min(0f)] private float zeroGravityDamping = 2.5f;
+        [SerializeField] private ZeroGravityControlPreset zeroGravityControlPreset = ZeroGravityControlPreset.Hybrid;
         [SerializeField] private float mouseSensitivity = 2.2f;
         [SerializeField] private Transform cameraRoot;
         [SerializeField] private Camera playerCamera;
         [SerializeField] private AudioListener audioListener;
+        [SerializeField] private Renderer[] localOwnerHiddenRenderers;
         [SerializeField] private string gameplaySceneName = "ParkHanSol_PlayScene";
         [SerializeField] private string spawnPointsRootName = "Spawn Points";
 
@@ -50,6 +60,33 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
         public Vector3 PlanarVelocity { get; private set; }
         public float VerticalVelocity => verticalVelocity;
         public NetworkPlayerGravityMode GravityMode => gravityMode;
+        public ZeroGravityControlPreset ZeroGravityControlPreset => zeroGravityControlPreset;
+
+        public void SetZeroGravityControlPreset(ZeroGravityControlPreset preset)
+        {
+            if (zeroGravityControlPreset == preset)
+            {
+                return;
+            }
+
+            zeroGravityControlPreset = preset;
+            zeroGravityVelocity = Vector3.zero;
+            Debug.Log($"PHS_ZERO_GRAVITY_CONTROL_PRESET player={name} preset={zeroGravityControlPreset}");
+        }
+
+        public void ApplyGravityState(GravityState gravityState)
+        {
+            var nextMode = ConvertGravityMode(gravityState.Mode);
+            if (gravityMode == nextMode)
+            {
+                return;
+            }
+
+            gravityMode = nextMode;
+            verticalVelocity = 0f;
+            zeroGravityVelocity = Vector3.zero;
+            Debug.Log($"PHS_PLAYER_GRAVITY_MODE player={name} mode={gravityMode}");
+        }
 
         public override void OnNetworkSpawn()
         {
@@ -75,6 +112,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
             }
 
             ConfigureNetworkRigidbody(true);
+            CacheLocalOwnerHiddenRenderers();
             ConfigureCommandLineAutomation();
         }
 
@@ -86,6 +124,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
         private void OnDisable()
         {
             SceneManager.activeSceneChanged -= HandleActiveSceneChanged;
+            SetLocalOwnerVisualsVisible(true);
         }
 
         private void Update()
@@ -294,8 +333,9 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
             verticalVelocity = 0f;
             IsGrounded = false;
 
-            var wishDirection = transform.right * move.x
-                + transform.forward * move.y
+            var moveBasis = GetZeroGravityMoveBasis();
+            var wishDirection = moveBasis.Right * move.x
+                + moveBasis.Forward * move.y
                 + transform.up * verticalMove;
             if (wishDirection.sqrMagnitude > 1f)
             {
@@ -311,21 +351,67 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
             var speed = sprint ? baseSpeed * sprintMultiplier : baseSpeed;
             var targetVelocity = wishDirection * speed;
 
-            zeroGravityVelocity = Vector3.MoveTowards(
-                zeroGravityVelocity,
-                targetVelocity,
-                acceleration * deltaTime);
-
-            if (wishDirection.sqrMagnitude <= 0.001f && zeroGravityDamping > 0f)
-            {
-                zeroGravityVelocity = Vector3.MoveTowards(
-                    zeroGravityVelocity,
-                    Vector3.zero,
-                    zeroGravityDamping * deltaTime);
-            }
+            MoveZeroGravityByPreset(wishDirection, targetVelocity, speed, acceleration, deltaTime);
 
             PlanarVelocity = new Vector3(zeroGravityVelocity.x, 0f, zeroGravityVelocity.z);
             characterController.Move(zeroGravityVelocity * deltaTime);
+        }
+
+        private (Vector3 Forward, Vector3 Right) GetZeroGravityMoveBasis()
+        {
+            var basisTransform = cameraRoot != null ? cameraRoot : transform;
+            var forward = basisTransform.forward;
+            var right = basisTransform.right;
+
+            if (forward.sqrMagnitude <= 0.001f)
+            {
+                forward = transform.forward;
+            }
+
+            if (right.sqrMagnitude <= 0.001f)
+            {
+                right = transform.right;
+            }
+
+            return (forward.normalized, right.normalized);
+        }
+
+        private void MoveZeroGravityByPreset(
+            Vector3 wishDirection,
+            Vector3 targetVelocity,
+            float speed,
+            float acceleration,
+            float deltaTime)
+        {
+            switch (zeroGravityControlPreset)
+            {
+                case ZeroGravityControlPreset.Direct:
+                    zeroGravityVelocity = targetVelocity;
+                    return;
+                case ZeroGravityControlPreset.Inertia:
+                    if (wishDirection.sqrMagnitude > 0.001f)
+                    {
+                        zeroGravityVelocity += wishDirection * acceleration * deltaTime;
+                        zeroGravityVelocity = Vector3.ClampMagnitude(zeroGravityVelocity, speed);
+                    }
+                    return;
+                case ZeroGravityControlPreset.Hybrid:
+                default:
+                    zeroGravityVelocity = Vector3.MoveTowards(
+                        zeroGravityVelocity,
+                        targetVelocity,
+                        acceleration * deltaTime);
+
+                    if (wishDirection.sqrMagnitude <= 0.001f && zeroGravityDamping > 0f)
+                    {
+                        zeroGravityVelocity = Vector3.MoveTowards(
+                            zeroGravityVelocity,
+                            Vector3.zero,
+                            zeroGravityDamping * deltaTime);
+                    }
+
+                    return;
+            }
         }
 
         private void ApplyGravityAreaMode()
@@ -352,6 +438,16 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
             verticalVelocity = 0f;
             zeroGravityVelocity = Vector3.zero;
             Debug.Log($"PHS_PLAYER_GRAVITY_MODE player={name} mode={gravityMode}");
+        }
+
+        private static NetworkPlayerGravityMode ConvertGravityMode(LastJumpCrew.Common.GravityMode mode)
+        {
+            return mode switch
+            {
+                LastJumpCrew.Common.GravityMode.ShipGravity => NetworkPlayerGravityMode.ShipGravity,
+                LastJumpCrew.Common.GravityMode.Spacewalk => NetworkPlayerGravityMode.Spacewalk,
+                _ => NetworkPlayerGravityMode.ShipZeroGravity,
+            };
         }
 
         private void ConfigureNetworkRigidbody(bool isNetworkSpawned)
@@ -473,6 +569,37 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
             if (audioListener != null)
             {
                 audioListener.enabled = active;
+            }
+
+            SetLocalOwnerVisualsVisible(!active);
+        }
+
+        private void CacheLocalOwnerHiddenRenderers()
+        {
+            if (localOwnerHiddenRenderers != null && localOwnerHiddenRenderers.Length > 0)
+            {
+                return;
+            }
+
+            localOwnerHiddenRenderers = GetComponentsInChildren<Renderer>(true);
+        }
+
+        private void SetLocalOwnerVisualsVisible(bool isVisible)
+        {
+            CacheLocalOwnerHiddenRenderers();
+            if (localOwnerHiddenRenderers == null)
+            {
+                return;
+            }
+
+            foreach (var targetRenderer in localOwnerHiddenRenderers)
+            {
+                if (targetRenderer == null)
+                {
+                    continue;
+                }
+
+                targetRenderer.enabled = isVisible;
             }
         }
     }
