@@ -1,35 +1,34 @@
 using UnityEngine;
+using UnityEngine.InputSystem;
 
 namespace LastJumpCrew.ParkHanSol.PlayerPrefab
 {
-    [RequireComponent(typeof(Rigidbody))]
-    public sealed class PHS_CuteWhiteGhostFirstPersonController : MonoBehaviour
+    [RequireComponent(typeof(CharacterController))]
+    public sealed class PHS_CuteWhiteGhostFirstPersonController : MonoBehaviour, IPlayerMovementAnimationSource
     {
         [SerializeField] private Transform cameraRoot;
         [SerializeField] private Camera playerCamera;
         [SerializeField] private float walkSpeed = 2.4f;
         [SerializeField] private float runSpeed = 4.2f;
         [SerializeField] private float acceleration = 18f;
-        [SerializeField] private float jumpVelocity = 4.6f;
+        [SerializeField] private float jumpHeight = 1.2f;
+        [SerializeField] private float gravity = -18f;
         [SerializeField] private float mouseSensitivity = 2.2f;
-        [SerializeField] private float groundCheckDistance = 0.18f;
-        [SerializeField] private LayerMask groundMask = ~0;
 
-        private Rigidbody body;
+        private CharacterController characterController;
         private float pitch;
+        private float verticalVelocity;
         private bool jumpRequested;
 
         public bool IsGrounded { get; private set; }
         public bool HasMoveInput { get; private set; }
         public bool IsRunning { get; private set; }
         public Vector3 PlanarVelocity { get; private set; }
+        public float VerticalVelocity => verticalVelocity;
 
         private void Awake()
         {
-            body = GetComponent<Rigidbody>();
-            body.freezeRotation = true;
-            body.interpolation = RigidbodyInterpolation.Interpolate;
-            body.collisionDetectionMode = CollisionDetectionMode.ContinuousDynamic;
+            characterController = GetComponent<CharacterController>();
 
             if (playerCamera != null)
             {
@@ -39,62 +38,81 @@ namespace LastJumpCrew.ParkHanSol.PlayerPrefab
 
         private void Update()
         {
-            float mouseX = Input.GetAxisRaw("Mouse X") * mouseSensitivity;
-            float mouseY = Input.GetAxisRaw("Mouse Y") * mouseSensitivity;
-            transform.Rotate(Vector3.up, mouseX, Space.World);
+            ApplyLookInput();
+            ReadJumpInput();
+            MoveCharacter(Time.deltaTime);
+        }
 
-            pitch = Mathf.Clamp(pitch - mouseY, -70f, 75f);
+        private void ApplyLookInput()
+        {
+            if (Mouse.current == null)
+            {
+                return;
+            }
+
+            Vector2 look = Mouse.current.delta.ReadValue();
+            transform.Rotate(Vector3.up, look.x * mouseSensitivity, Space.World);
+
+            pitch = Mathf.Clamp(pitch - look.y * mouseSensitivity, -70f, 75f);
             if (cameraRoot != null)
             {
                 cameraRoot.localRotation = Quaternion.Euler(pitch, 0f, 0f);
             }
+        }
 
-            if (Input.GetKeyDown(KeyCode.Space))
+        private void ReadJumpInput()
+        {
+            if (Keyboard.current != null && Keyboard.current.spaceKey.wasPressedThisFrame)
             {
                 jumpRequested = true;
             }
         }
 
-        private void FixedUpdate()
+        private void MoveCharacter(float deltaTime)
         {
-            IsGrounded = CheckGrounded();
+            IsGrounded = characterController.isGrounded;
+            if (IsGrounded && verticalVelocity < 0f)
+            {
+                verticalVelocity = -2f;
+            }
 
-            Vector2 input = new Vector2(Input.GetAxisRaw("Horizontal"), Input.GetAxisRaw("Vertical"));
+            Vector2 input = ReadMoveInput();
             input = Vector2.ClampMagnitude(input, 1f);
             HasMoveInput = input.sqrMagnitude > 0.01f;
-            IsRunning = HasMoveInput && Input.GetKey(KeyCode.LeftShift);
+            IsRunning = HasMoveInput && Keyboard.current != null && Keyboard.current.leftShiftKey.isPressed;
 
             Vector3 move = (transform.right * input.x) + (transform.forward * input.y);
             float targetSpeed = IsRunning ? runSpeed : walkSpeed;
             Vector3 targetPlanar = move * targetSpeed;
 
-            Vector3 velocity = body.linearVelocity;
-            Vector3 currentPlanar = new Vector3(velocity.x, 0f, velocity.z);
-            Vector3 nextPlanar = Vector3.MoveTowards(currentPlanar, targetPlanar, acceleration * Time.fixedDeltaTime);
+            Vector3 nextPlanar = Vector3.MoveTowards(PlanarVelocity, targetPlanar, acceleration * deltaTime);
 
             if (jumpRequested && IsGrounded)
             {
-                velocity.y = jumpVelocity;
+                verticalVelocity = Mathf.Sqrt(jumpHeight * -2f * gravity);
             }
 
-            body.linearVelocity = new Vector3(nextPlanar.x, velocity.y, nextPlanar.z);
+            verticalVelocity += gravity * deltaTime;
+            Vector3 velocity = new Vector3(nextPlanar.x, verticalVelocity, nextPlanar.z);
+            characterController.Move(velocity * deltaTime);
+
             PlanarVelocity = nextPlanar;
             jumpRequested = false;
         }
 
-        private bool CheckGrounded()
+        private static Vector2 ReadMoveInput()
         {
-            Vector3 origin = transform.position + Vector3.up * 0.08f;
-            float radius = 0.22f;
-            foreach (RaycastHit hit in Physics.SphereCastAll(origin, radius, Vector3.down, groundCheckDistance + 0.1f, groundMask, QueryTriggerInteraction.Ignore))
+            if (Keyboard.current == null)
             {
-                if (!hit.collider.transform.IsChildOf(transform))
-                {
-                    return true;
-                }
+                return Vector2.zero;
             }
 
-            return false;
+            Vector2 input = Vector2.zero;
+            if (Keyboard.current.aKey.isPressed) input.x -= 1f;
+            if (Keyboard.current.dKey.isPressed) input.x += 1f;
+            if (Keyboard.current.sKey.isPressed) input.y -= 1f;
+            if (Keyboard.current.wKey.isPressed) input.y += 1f;
+            return input;
         }
     }
 }

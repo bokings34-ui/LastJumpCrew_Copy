@@ -200,11 +200,24 @@ namespace LastJumpCrew.ParkHanSol.Experiments.MudPrototype
                     continue;
                 }
 
-                ragdollBody.isKinematic = !active;
-                ragdollBody.detectCollisions = active;
-                ragdollBody.linearVelocity = Vector3.zero;
-                ragdollBody.angularVelocity = Vector3.zero;
-                ragdollBody.WakeUp();
+                if (active)
+                {
+                    ragdollBody.isKinematic = false;
+                    ragdollBody.detectCollisions = true;
+                    ragdollBody.linearVelocity = Vector3.zero;
+                    ragdollBody.angularVelocity = Vector3.zero;
+                    ragdollBody.WakeUp();
+                    continue;
+                }
+
+                if (!ragdollBody.isKinematic)
+                {
+                    ragdollBody.linearVelocity = Vector3.zero;
+                    ragdollBody.angularVelocity = Vector3.zero;
+                }
+
+                ragdollBody.isKinematic = true;
+                ragdollBody.detectCollisions = false;
             }
         }
 
