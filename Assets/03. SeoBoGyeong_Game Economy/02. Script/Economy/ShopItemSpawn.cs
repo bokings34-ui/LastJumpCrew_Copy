@@ -2,115 +2,184 @@ using System;
 using System.Collections.Generic;
 using UnityEngine;
 using Random = UnityEngine.Random;
-
-public class ShopItemSpawn : MonoBehaviour
+namespace LastJumpCrew.SeoBoGyeong
 {
-    [SerializeField] private GameObject[] itemslotPrefabs;
-    //나중에 데이터 테이블 연결 예정
-    [SerializeField] private GameObject[] itemlist;
-    [SerializeField] private int maxItemCount = 5;
-    [Tooltip("배치 공간 길이\n외곽선 걸침 방지를 위해 자체적으로 -1 처리됨")]
-    [SerializeField] private float shelfLength = 8f;
-    [SerializeField] private float spawnInterval = 1f;
-    private int[] _spawnId;
-    private List<int> stockItem = new List<int>();
-
-    private void Start()
+    public class ShopItemSpawn : MonoBehaviour
     {
-        _spawnId = new int[maxItemCount];
-        SpawnItem();
-    }
+        [SerializeField] private GameObject[] shelfAreas;
+        //나중에 데이터 테이블 연결 예정
+        [SerializeField] private GameObject[] itemPrefabs;
+        [SerializeField] private int totalItemCount = 5;
+        //[Tooltip("배치 공간 길이\n외곽선 걸침 방지를 위해 자체적으로 -1 처리됨")]
+        //[SerializeField] private float shelfLength = 8f;
+        [SerializeField] private float minItemSpacing = 1f;
+        [SerializeField] private float[] length;
+        private int[] _spawnItemIndices;
+        private List<int> _itemsPerShelf = new List<int>();
+        private float[] _shelfAreaLengths;
+
+        //일정한 간격이 아닐테니 수정하기
 
 
-    private void SpawnItem()
-    {
-        float usableLength = shelfLength - 1f;
-        stockItem.Clear();
-
-        Vector3 center = itemslotPrefabs[0].transform.position;
-
-        float left = -usableLength * 0.5f;
-        float interval = usableLength / (maxItemCount - 1);
-       
-        int maxSlot;
-        // 1번 선반에 몰아넣기
-        if ((maxItemCount-1) * spawnInterval > usableLength)
+        private void Awake()
         {
-            maxSlot = Mathf.RoundToInt(usableLength / spawnInterval);
-            int amount = maxItemCount;
-            if (amount > maxSlot)
+            if (shelfAreas == null || itemPrefabs == null)
             {
-                int loopCount = Mathf.CeilToInt((float)(amount / maxSlot));
-                for (int i = 0; i <= loopCount; i++)
+                Debug.LogError("[ShopSpawn] Shelf areas 나 item prefabs 가 연결되지 않음.");
+            }
+
+            _spawnItemIndices = new int[totalItemCount];
+            _shelfAreaLengths = length; //new float[shelfAreas.Length];
+        }
+
+        private void Start()
+        {
+            SpawnItem();
+        }
+
+        private void DivideSection(float[] areaLength)
+        {
+            _itemsPerShelf.Clear();
+
+            int maxItemsPerShelf = totalItemCount;
+            int areaMaxItems = 0;
+            int shelfCount = 0;
+            for (int i = 0; i < areaLength.Length; i++)
+            {
+                if (areaMaxItems >= totalItemCount)
                 {
-                    if (amount > maxSlot)
+                    Debug.Log($"공간 충족 {shelfCount}개");
+                    break;
+                }
+                else if (areaMaxItems < totalItemCount)
+                {
+                    if (areaMaxItems + areaLength[i] <= totalItemCount)
                     {
-                        stockItem.Add(maxSlot);
-                        amount -= maxSlot;
-                    }
-                    else
-                    {
-                        stockItem.Add(amount);
-                        break;
+                        areaMaxItems += Mathf.FloorToInt(areaLength[i]);
+                        shelfCount++;
                     }
                 }
+
+                float usableLength = areaLength[i];// - 1f;
+
+
+
+                maxItemsPerShelf = Mathf.RoundToInt(usableLength / minItemSpacing);
+                int remainingItems = totalItemCount;
+
+
+                if (remainingItems > maxItemsPerShelf)
+                {
+                    _itemsPerShelf.Add(maxItemsPerShelf);
+                    remainingItems -= maxItemsPerShelf;
+                }
+                else
+                {
+                    _itemsPerShelf.Add(remainingItems);
+                    break;
+                }
+
             }
-            else
+        }
+
+
+        private void SpawnItem()
+        {
+            /*
+                        float usableLength = shelfLength - 1f;
+                        _itemsPerShelf.Clear();
+
+                        Vector3 center = shelfAreas[0].transform.position;
+
+                        float leftOffset = -usableLength * 0.5f;
+                        float itemSpacing = usableLength / (totalItemCount - 1);
+
+                        int maxItemsPerShelf;
+                        // 1번 선반에 몰아넣기
+                        if ((totalItemCount - 1) * minItemSpacing > usableLength)
+                        {
+                            maxItemsPerShelf = Mathf.RoundToInt(usableLength / minItemSpacing);
+                            int remainingItems = totalItemCount;
+                            if (remainingItems > maxItemsPerShelf)
+                            {
+                                int shelfCount = Mathf.CeilToInt((float)(remainingItems / maxItemsPerShelf));
+                                for (int i = 0; i <= shelfCount; i++)
+                                {
+                                    if (remainingItems > maxItemsPerShelf)
+                                    {
+                                        _itemsPerShelf.Add(maxItemsPerShelf);
+                                        remainingItems -= maxItemsPerShelf;
+                                    }
+                                    else
+                                    {
+                                        _itemsPerShelf.Add(remainingItems);
+                                        break;
+                                    }
+                                }
+                            }
+                            else
+                            {
+                                _itemsPerShelf.Add(remainingItems);
+                            }
+                        }
+                        else
+                        {
+                            maxItemsPerShelf = totalItemCount;
+                            _itemsPerShelf.Add(maxItemsPerShelf);
+                        }
+
+                        if (shelfAreas.Length < _itemsPerShelf.Count)
+                        {
+                            Debug.Log($"선반 개수 부족. 선반/필요: {shelfAreas.Length}/{_itemsPerShelf.Count} || 아이템 : {_itemsPerShelf[0]}개");
+                            return;
+                        }
+
+            */
+
+            DivideSection(_shelfAreaLengths);
+
+            Vector3 center = shelfAreas[0].transform.position;
+
+
+
+            for (int i = 0; i < totalItemCount; i++)
             {
-                stockItem.Add(amount);
+                _spawnItemIndices[i] = Random.Range(0, itemPrefabs.Length);
             }
-        }
-        else
-        {
-            maxSlot = maxItemCount;
-            stockItem.Add(maxSlot);
-        }
+            Array.Sort(_spawnItemIndices, (a, b) => b.CompareTo(a));
 
-        if (itemslotPrefabs.Length < stockItem.Count)
-        {
-            Debug.Log($"선반 개수 부족. 선반/필요: {itemslotPrefabs.Length}/{stockItem.Count}");
-            return;
-        }
+            // 아이템이 하나면 가운데 배치
+            if (totalItemCount == 1)
+            {
+                Instantiate(itemPrefabs[_spawnItemIndices[0]], center, Quaternion.identity);
+                return;
+            }
 
-        for (int i = 0; i < maxItemCount; i++)
-        {
-            _spawnId[i] = Random.Range(0, itemlist.Length) ;
-        }
-        Array.Sort(_spawnId, (a, b) => b.CompareTo(a));
+            int spawnIndex = 0;
 
-        // 아이템이 하나면 가운데 배치
-        if (maxItemCount == 1)
-        {
-            Instantiate(itemlist[_spawnId[0]], center, Quaternion.identity);
-            return;
-        }
-
-        int spawnIndex = 0;
-
-        for (int i = 0; i < stockItem.Count; i++)
-        {
-
-            Vector3 pos = itemslotPrefabs[i].transform.position;
-
-            int spawnCount = maxSlot * i;
-
-            int maxSpawn = stockItem[i];
-            Debug.Log($"{maxSpawn} / {i}");
-
-            interval = usableLength / (maxSpawn - 1);
-            for (int j = 0; j < maxSpawn; j++)
+            for (int i = 0; i < shelfAreas.Length; i++)
             {
 
-                float x = itemslotPrefabs[i].transform.position.x + left + interval * j;
+                Vector3 pos = shelfAreas[i].transform.position;
 
-                pos.x = x;
+                int itemsOnShelf = _itemsPerShelf[i];
+                //Debug.Log($"{itemsOnShelf} / {i}");
+                //Debug.Log($"{spawnIndex} / {_shelfAreaLengths[i]}");
+                float usableLength = _shelfAreaLengths[i];// - 1f;
 
+                float itemSpacing = usableLength / (itemsOnShelf - 1);
+                float leftOffset = -usableLength * 0.5f;
 
-                Instantiate(itemlist[_spawnId[spawnIndex++]], pos, Quaternion.identity);
-
+                for (int j = 0; j < itemsOnShelf; j++)
+                {
+                    float x = shelfAreas[i].transform.position.x + leftOffset + itemSpacing * j;
+                    Quaternion rotation = shelfAreas[i].transform.rotation;
+                    pos.x = x;
+                    Instantiate(itemPrefabs[_spawnItemIndices[spawnIndex++]], pos, rotation);
+                }
+                Debug.Log($"선반 {i + 1}번: 아이템 {itemsOnShelf + 1}개 배치 완료. 간격: {itemSpacing}");
             }
-            Debug.Log($"선반 {i}번: 아이템 {maxSpawn}개 배치 완료. 간격: {interval}");
-        }
 
+        }
     }
 }
