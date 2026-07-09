@@ -1,4 +1,5 @@
 using UnityEngine;
+using UnityEngine.InputSystem;
 
 namespace LastJumpCrew.ParkHanSol.PlayerPrefab
 {
@@ -39,17 +40,16 @@ namespace LastJumpCrew.ParkHanSol.PlayerPrefab
 
         private void Update()
         {
-            float mouseX = Input.GetAxisRaw("Mouse X") * mouseSensitivity;
-            float mouseY = Input.GetAxisRaw("Mouse Y") * mouseSensitivity;
-            transform.Rotate(Vector3.up, mouseX, Space.World);
+            var look = ReadLook() * mouseSensitivity;
+            transform.Rotate(Vector3.up, look.x, Space.World);
 
-            pitch = Mathf.Clamp(pitch - mouseY, -70f, 75f);
+            pitch = Mathf.Clamp(pitch - look.y, -70f, 75f);
             if (cameraRoot != null)
             {
                 cameraRoot.localRotation = Quaternion.Euler(pitch, 0f, 0f);
             }
 
-            if (Input.GetKeyDown(KeyCode.Space))
+            if (Keyboard.current != null && Keyboard.current.spaceKey.wasPressedThisFrame)
             {
                 jumpRequested = true;
             }
@@ -59,10 +59,10 @@ namespace LastJumpCrew.ParkHanSol.PlayerPrefab
         {
             IsGrounded = CheckGrounded();
 
-            Vector2 input = new Vector2(Input.GetAxisRaw("Horizontal"), Input.GetAxisRaw("Vertical"));
+            Vector2 input = ReadMove();
             input = Vector2.ClampMagnitude(input, 1f);
             HasMoveInput = input.sqrMagnitude > 0.01f;
-            IsRunning = HasMoveInput && Input.GetKey(KeyCode.LeftShift);
+            IsRunning = HasMoveInput && Keyboard.current != null && Keyboard.current.leftShiftKey.isPressed;
 
             Vector3 move = (transform.right * input.x) + (transform.forward * input.y);
             float targetSpeed = IsRunning ? runSpeed : walkSpeed;
@@ -95,6 +95,26 @@ namespace LastJumpCrew.ParkHanSol.PlayerPrefab
             }
 
             return false;
+        }
+
+        private static Vector2 ReadMove()
+        {
+            if (Keyboard.current == null)
+            {
+                return Vector2.zero;
+            }
+
+            var move = Vector2.zero;
+            if (Keyboard.current.aKey.isPressed) move.x -= 1f;
+            if (Keyboard.current.dKey.isPressed) move.x += 1f;
+            if (Keyboard.current.sKey.isPressed) move.y -= 1f;
+            if (Keyboard.current.wKey.isPressed) move.y += 1f;
+            return move;
+        }
+
+        private static Vector2 ReadLook()
+        {
+            return Mouse.current == null ? Vector2.zero : Mouse.current.delta.ReadValue();
         }
     }
 }
