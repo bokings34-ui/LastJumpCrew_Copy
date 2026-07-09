@@ -78,3 +78,10 @@ crashlytics-build.properties
 /[Aa]ssets/Screenshots/
 /[Aa]ssets/Screenshots.meta
 /ProjectSettings/Packages/com.unity.services.vivox
+
+# Local AI assistant settings
+/.codex/
+/.codex.json
+/.codex.toml
+/.mcp.json
+/mcp.json

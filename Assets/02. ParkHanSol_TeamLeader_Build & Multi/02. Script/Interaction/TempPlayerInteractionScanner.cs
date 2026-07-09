@@ -65,6 +65,11 @@ namespace LastJumpCrew.ParkHanSol.Interaction
 
             if (Mouse.current.leftButton.wasPressedThisFrame)
             {
+                if (TryInteractWithFocusedToolBoxSlot())
+                {
+                    return;
+                }
+
                 TryUseHeldItem();
             }
 
@@ -122,6 +127,31 @@ namespace LastJumpCrew.ParkHanSol.Interaction
             }
 
             usableItem.Use(commonItemHolder, target);
+        }
+
+        private bool TryInteractWithFocusedToolBoxSlot()
+        {
+            // 툴박스 슬롯은 좌클릭에서도 F 상호작용과 같은 공용 보관/꺼내기 규칙을 사용한다.
+            // 슬롯을 바라보지 않는 좌클릭은 기존 아이템 사용 입력으로 그대로 넘긴다.
+            if (focusedToolBoxSlot == null)
+            {
+                return false;
+            }
+
+            if (itemHolder == null)
+            {
+                Debug.LogWarning($"PHS_TOOL_BOX_LEFT_CLICK_FAILED reason=itemHolder_missing player={name}");
+                return true;
+            }
+
+            if (!focusedToolBoxSlot.CanInteract(itemHolder))
+            {
+                Debug.LogWarning($"PHS_TOOL_BOX_LEFT_CLICK_FAILED reason=canInteract_false player={name} slot={focusedToolBoxSlot.name}");
+                return true;
+            }
+
+            focusedToolBoxSlot.Interact(itemHolder);
+            return true;
         }
 
         private static bool TryGetUsableItem(CommonInteraction.IHoldableItem heldItem, out CommonInteraction.IUsableItem usableItem)
