@@ -5,10 +5,11 @@ namespace LastJumpCrew.ParkHanSol.PlayerPrefab
     [RequireComponent(typeof(Animator))]
     public sealed class PHS_CuteWhiteGhostKeyboardAnimationController : MonoBehaviour
     {
-        [SerializeField] private PHS_CuteWhiteGhostFirstPersonController controller;
+        [SerializeField] private MonoBehaviour movementSourceBehaviour;
         [SerializeField] private float crossFadeTime = 0.12f;
 
         private Animator animator;
+        private IPlayerMovementAnimationSource movementSource;
         private int currentState;
 
         private static readonly int Idle = Animator.StringToHash("Idle");
@@ -20,33 +21,51 @@ namespace LastJumpCrew.ParkHanSol.PlayerPrefab
         private void Awake()
         {
             animator = GetComponent<Animator>();
-            if (controller == null)
+            if (movementSourceBehaviour != null)
             {
-                controller = GetComponent<PHS_CuteWhiteGhostFirstPersonController>();
+                movementSource = movementSourceBehaviour as IPlayerMovementAnimationSource;
+            }
+
+            if (movementSource == null)
+            {
+                foreach (var behaviour in GetComponents<MonoBehaviour>())
+                {
+                    if (!behaviour.isActiveAndEnabled)
+                    {
+                        continue;
+                    }
+
+                    movementSource = behaviour as IPlayerMovementAnimationSource;
+                    if (movementSource != null)
+                    {
+                        movementSourceBehaviour = behaviour;
+                        break;
+                    }
+                }
             }
         }
 
         private void Update()
         {
-            if (controller == null)
+            if (movementSource == null)
             {
                 Play(Idle);
                 return;
             }
 
-            if (!controller.IsGrounded)
+            if (!movementSource.IsGrounded)
             {
-                Play(GetComponent<Rigidbody>().linearVelocity.y > 0.05f ? Jump : Fall);
+                Play(movementSource.VerticalVelocity > 0.05f ? Jump : Fall);
                 return;
             }
 
-            if (!controller.HasMoveInput)
+            if (!movementSource.HasMoveInput)
             {
                 Play(Idle);
                 return;
             }
 
-            Play(controller.IsRunning ? Run : Walk);
+            Play(movementSource.IsRunning ? Run : Walk);
         }
 
         private void Play(int stateHash)

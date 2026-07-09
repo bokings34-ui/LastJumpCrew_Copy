@@ -3,11 +3,12 @@ using UnityEngine;
 using UnityEngine.InputSystem;
 using UnityEngine.SceneManagement;
 using System;
+using LastJumpCrew.ParkHanSol.PlayerPrefab;
 
 namespace LastJumpCrew.ParkHanSol.Multiplayer
 {
     [RequireComponent(typeof(CharacterController))]
-    public sealed class NetworkPlayerController : NetworkBehaviour
+    public sealed class NetworkPlayerController : NetworkBehaviour, IPlayerMovementAnimationSource
     {
         [SerializeField] private float moveSpeed = 4.5f;
         [SerializeField] private float sprintMultiplier = 1.5f;
@@ -19,16 +20,25 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
         [SerializeField] private AudioListener audioListener;
         [SerializeField] private string gameplaySceneName = "ParkHanSol_PlayScene";
         [SerializeField] private string spawnPointsRootName = "Spawn Points";
+        [SerializeField] private bool allowSceneInputWithoutNetwork = true;
 
         private CharacterController characterController;
         private float verticalVelocity;
         private float cameraPitch;
+        private bool hasMoveInput;
+        private bool isRunning;
+        private bool isGrounded = true;
         private bool gameplayInputEnabled;
         private bool autoMoveEnabled;
         private float autoMoveSeconds;
         private float autoMoveEndTime;
         private bool autoMoveStarted;
         private float nextPositionLogTime;
+
+        public bool IsGrounded => isGrounded;
+        public bool HasMoveInput => hasMoveInput;
+        public bool IsRunning => isRunning;
+        public float VerticalVelocity => verticalVelocity;
 
         public override void OnNetworkSpawn()
         {
@@ -40,8 +50,18 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
         private void Awake()
         {
             characterController = GetComponent<CharacterController>();
+            if (!enabled)
+            {
+                return;
+            }
+
             SetLocalView(false);
             ConfigureCommandLineAutomation();
+        }
+
+        private void Start()
+        {
+            ApplySceneInputState();
         }
 
         private void OnEnable()
@@ -56,11 +76,23 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
 
         private void Update()
         {
-            if (!IsOwner || !gameplayInputEnabled)
+            if (UseSceneInputWithoutNetwork())
             {
+                ReadAndApplyLocalInput(true);
                 return;
             }
 
+            if (!IsOwner || !gameplayInputEnabled)
+            {
+                ClearMovementState();
+                return;
+            }
+
+            ReadAndApplyLocalInput(false);
+        }
+
+        private void ReadAndApplyLocalInput(bool moveLocally)
+        {
             var move = ReadMove();
             if (autoMoveEnabled && Time.time < autoMoveEndTime)
             {
@@ -74,14 +106,16 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
 
             ApplyLocalLook(look);
 
-            if (IsServer)
+            if (moveLocally || IsServer)
             {
-                MoveOnServer(move, look.x, jump, sprint, deltaTime);
+                MoveCharacter(move, look.x, jump, sprint, deltaTime);
             }
             else
             {
                 SubmitInputServerRpc(move, look.x, jump, sprint, deltaTime);
             }
+
+            UpdateMovementState(move, sprint);
         }
 
         public void SetGameplayInputEnabled(bool active)
@@ -106,9 +140,19 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
 
         private void ApplySceneInputState()
         {
+            if (UseSceneInputWithoutNetwork())
+            {
+                gameplayInputEnabled = true;
+                SetLocalView(true);
+                Cursor.lockState = CursorLockMode.Locked;
+                Cursor.visible = false;
+                return;
+            }
+
             if (!IsSpawned)
             {
                 SetLocalView(false);
+                ClearMovementState();
                 return;
             }
 
@@ -164,10 +208,10 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
         [ServerRpc]
         private void SubmitInputServerRpc(Vector2 move, float yawInput, bool jump, bool sprint, float deltaTime)
         {
-            MoveOnServer(move, yawInput, jump, sprint, Mathf.Clamp(deltaTime, 0f, 0.05f));
+            MoveCharacter(move, yawInput, jump, sprint, Mathf.Clamp(deltaTime, 0f, 0.05f));
         }
 
-        private void MoveOnServer(Vector2 move, float yawInput, bool jump, bool sprint, float deltaTime)
+        private void MoveCharacter(Vector2 move, float yawInput, bool jump, bool sprint, float deltaTime)
         {
             transform.Rotate(Vector3.up, yawInput * mouseSensitivity);
 
@@ -177,13 +221,13 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
                 wishDirection.Normalize();
             }
 
-            var grounded = characterController.isGrounded;
-            if (grounded && verticalVelocity < 0f)
+            isGrounded = characterController.isGrounded;
+            if (isGrounded && verticalVelocity < 0f)
             {
                 verticalVelocity = -2f;
             }
 
-            if (grounded && jump)
+            if (isGrounded && jump)
             {
                 verticalVelocity = Mathf.Sqrt(jumpHeight * -2f * gravity);
             }
@@ -268,6 +312,26 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
         private static Vector2 ReadLook()
         {
             return Mouse.current == null ? Vector2.zero : Mouse.current.delta.ReadValue();
+        }
+
+        private bool UseSceneInputWithoutNetwork()
+        {
+            return allowSceneInputWithoutNetwork
+                && !IsSpawned
+                && (NetworkManager.Singleton == null || !NetworkManager.Singleton.IsListening);
+        }
+
+        private void UpdateMovementState(Vector2 move, bool sprint)
+        {
+            hasMoveInput = move.sqrMagnitude > 0.01f;
+            isRunning = hasMoveInput && sprint;
+        }
+
+        private void ClearMovementState()
+        {
+            hasMoveInput = false;
+            isRunning = false;
+            isGrounded = characterController == null || characterController.isGrounded;
         }
 
         private void SetLocalView(bool active)
