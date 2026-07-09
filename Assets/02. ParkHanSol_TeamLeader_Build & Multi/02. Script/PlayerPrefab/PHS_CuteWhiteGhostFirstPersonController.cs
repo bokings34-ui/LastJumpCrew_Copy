@@ -1,5 +1,7 @@
 using UnityEngine;
 using UnityEngine.InputSystem;
+using Unity.Netcode;
+using LastJumpCrew.ParkHanSol.Multiplayer;
 
 namespace LastJumpCrew.ParkHanSol.PlayerPrefab
 {
@@ -17,6 +19,8 @@ namespace LastJumpCrew.ParkHanSol.PlayerPrefab
         [SerializeField] private LayerMask groundMask = ~0;
 
         private Rigidbody body;
+        private NetworkObject networkObject;
+        private NetworkPlayerController networkPlayerController;
         private float pitch;
         private bool jumpRequested;
 
@@ -24,10 +28,13 @@ namespace LastJumpCrew.ParkHanSol.PlayerPrefab
         public bool HasMoveInput { get; private set; }
         public bool IsRunning { get; private set; }
         public Vector3 PlanarVelocity { get; private set; }
+        public float VerticalVelocity => body == null ? 0f : body.linearVelocity.y;
 
         private void Awake()
         {
             body = GetComponent<Rigidbody>();
+            networkObject = GetComponent<NetworkObject>();
+            networkPlayerController = GetComponent<NetworkPlayerController>();
             body.freezeRotation = true;
             body.interpolation = RigidbodyInterpolation.Interpolate;
             body.collisionDetectionMode = CollisionDetectionMode.ContinuousDynamic;
@@ -40,6 +47,11 @@ namespace LastJumpCrew.ParkHanSol.PlayerPrefab
 
         private void Update()
         {
+            if (ShouldSkipLegacyMovement())
+            {
+                return;
+            }
+
             var look = ReadLook() * mouseSensitivity;
             transform.Rotate(Vector3.up, look.x, Space.World);
 
@@ -57,6 +69,11 @@ namespace LastJumpCrew.ParkHanSol.PlayerPrefab
 
         private void FixedUpdate()
         {
+            if (ShouldSkipLegacyMovement())
+            {
+                return;
+            }
+
             IsGrounded = CheckGrounded();
 
             Vector2 input = ReadMove();
@@ -95,6 +112,17 @@ namespace LastJumpCrew.ParkHanSol.PlayerPrefab
             }
 
             return false;
+        }
+
+        private bool IsNetworkSpawned()
+        {
+            return networkObject != null && networkObject.IsSpawned;
+        }
+
+        private bool ShouldSkipLegacyMovement()
+        {
+            return IsNetworkSpawned()
+                || (networkPlayerController != null && networkPlayerController.enabled);
         }
 
         private static Vector2 ReadMove()
