@@ -1,14 +1,18 @@
 using UnityEngine;
-
-[CreateAssetMenu(
-    fileName = "Zone_New",
-    menuName = "Game Data/Zone")]
-
-public class ZoneData:ScriptableObject
+namespace LastJumpCrew.SeoBoGyeong
 {
-    [Header("Zone Info")]
-    public int id;
-    public string zoneName;
+    [CreateAssetMenu(
+    fileName = "Zone_New",
+    menuName = "LastJumpCrew/SeoBoGyeong/Zone")]
 
-    // 추가되야할 정보 : 이벤트 확률, 보상, 난이도 등
+    public class ZoneData : ScriptableObject, IGameData
+    {
+        [Header("Zone Info")]
+        public int id;
+        public string zoneName;
+
+        int IGameData.Id => id;
+
+        // 추가되야할 정보 : 이벤트 확률 가중치, 보상, 난이도 등
+    }
 }
