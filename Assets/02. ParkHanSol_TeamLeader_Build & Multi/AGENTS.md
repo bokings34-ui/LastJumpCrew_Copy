@@ -42,6 +42,28 @@
 - 검토용 아이콘:
   - `03. Prefab/Props/SourceAssets/Items/IconReview/`
 
+## Scene / Player Rule
+
+- ParkHanSol 테스트 씬의 플레이어는 최신 `03. Prefab/PlayerPrefab/PHS_CuteWhiteGhost_Player.prefab`을 기준으로 배치한다.
+- 씬에 직접 만든 임시 플레이어가 필요한 경우에도 최신 플레이어 프리팹과 입력/카메라/아이템 홀더 차이를 먼저 확인한다.
+- 프로젝트 입력 설정은 New Input System 기준이다. 플레이어 조작 스크립트에서 구 `Input.GetAxisRaw`/`Input.GetKey`에 의존하지 않는다.
+- Shop/Utility 같은 테스트 씬에서 최신 네트워크 플레이어를 그냥 배치하면 네트워크 소유권/씬명 조건 때문에 조작이 꺼질 수 있다. 작동하지 않으면 먼저 입력 컴포넌트, `NetworkObject` 스폰 여부, 카메라 활성, Inspector 참조를 확인한다.
+
+## Utility Interaction Rule
+
+- `TempPlayerInteractionScanner` 입력 규칙은 다음을 기본으로 둔다.
+  - `F`: 바라보는 `IInteractable` 실행
+  - 좌클릭: 툴박스 슬롯을 바라보면 보관/꺼내기/교체 상호작용, 아니면 현재 든 아이템 사용
+  - 우클릭: 현재 든 아이템 내려놓기
+- 툴박스 보관 슬롯은 `UtilityToolBoxStorageSlotInteractable`의 공용 `CanInteract`/`Interact` 규칙을 사용한다.
+- 툴박스 슬롯에 새 기능을 붙일 때는 별도 우회 로직을 만들지 말고 기존 보관/꺼내기/교체 계약을 먼저 확장한다.
+
+## Asset Import Rule
+
+- ParkHanSol 폴더 안 FBX meta의 `materials.materialLocation`은 Unity 6 경고가 나지 않게 `1`을 사용한다.
+- `materialLocation: 0`은 `MaterialLocation.External is obsolete` 경고 원인이므로 새 FBX import 후 확인한다.
+- FBX import 경고를 고칠 때는 모델/프리팹 참조를 바꾸기 전에 `.fbx.meta` import 설정부터 확인한다.
+
 ## Implementation Rule
 
 - Unity 런타임 스크립트는 `02. Script/` 아래에 둔다.
@@ -59,3 +81,5 @@
 - 자판기 프리팹은 `UtilityVendingMachineInteractable`을 가진다.
 - SC 데이터는 현재 사용할 아이템/자판기 프리팹과 아이콘을 Inspector 참조로 가진다.
 - Unity compile error가 없어야 한다.
+- ParkHanSol 씬 작업 뒤에는 해당 씬의 missing reference/missing script가 없어야 한다.
+- 경고 정리 작업 뒤에는 Unity Console warning/error와 CompilationPipeline 결과를 분리해서 확인한다.
