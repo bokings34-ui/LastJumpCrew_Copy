@@ -5,6 +5,7 @@ namespace SM
     public abstract class MonoSingleton<T> : MonoBehaviour where T : MonoSingleton<T>
     {
         private static T _instance;
+
         public static T Instance
         {
             get
@@ -21,6 +22,11 @@ namespace SM
                 }
                 return _instance;
             }
+        }
+
+        public static T Peek()
+        {
+            return _instance;
         }
 
         protected virtual void Awake()
