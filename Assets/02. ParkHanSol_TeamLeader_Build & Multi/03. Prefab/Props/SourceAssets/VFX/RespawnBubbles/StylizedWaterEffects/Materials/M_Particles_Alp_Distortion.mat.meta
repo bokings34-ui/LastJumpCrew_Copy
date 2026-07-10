@@ -1,15 +1,8 @@
 fileFormatVersion: 2
-guid: 746d0780cfede5646b4bd23864227b55
+guid: a51e333505f547542849c3ccef33287a
 NativeFormatImporter:
   externalObjects: {}
-  mainObjectFileID: 2100000
+  mainObjectFileID: 0
   userData: 
   assetBundleName: 
   assetBundleVariant: 
-AssetOrigin:
-  serializedVersion: 1
-  productId: 270114
-  packageName: Stylized Water Effect Pack
-  packageVersion: 1.0
-  assetPath: Assets/NamuFX/StylizedWaterEffects/Materials/M_Particles_Alp_Distortion.mat
-  uploadId: 640167
