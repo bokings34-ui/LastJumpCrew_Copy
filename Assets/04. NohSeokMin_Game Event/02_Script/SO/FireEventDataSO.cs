@@ -8,6 +8,6 @@ namespace SM
         [Header("화재 밸런스 설정")]
         public float levelUpInterval = 10f;
         public float damagePerSecond = 5f;
-        public float maxRepairProgress = 100f;
+        public float maxRepairProgress = 20f;
     }
 }
