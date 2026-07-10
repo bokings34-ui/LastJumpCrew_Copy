@@ -9,6 +9,7 @@
 /[Bb]uilds/
 /[Ll]ogs/
 /[Uu]ser[Ss]ettings/
+/[Aa]ssets/[Ss]creenshots/
 
 # MemoryCaptures can get excessive in size.
 # They also could contain extremely sensitive data
@@ -74,3 +75,4 @@ crashlytics-build.properties
 /[Ll]ibrary/MCPForUnity/
 /[Ll]ibrary/[Pp]ackage[Cc]ache/com.anklebreaker.unity-mcp*/
 /ProjectSettings/Packages/com.unity.services.vivox
+ProjectSettings/Packages/com.unity.services.vivox/Settings.json
