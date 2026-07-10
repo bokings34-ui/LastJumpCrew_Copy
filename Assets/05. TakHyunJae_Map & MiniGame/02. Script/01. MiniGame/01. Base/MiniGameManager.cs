@@ -4,13 +4,12 @@ using UnityEngine.InputSystem;
 using System.Collections;
 using LastJumpCrew.Common;
 
-// 1. 매니저가 사용할 미니게임 종류 정의
 public enum MiniGameType
 {
-    DoorKeypad, // 1번 키
-    WireFix,    // 2번 키
-    PowerSync,  // 3번 키
-    Cannon      // 4번 키
+    DoorKeypad,
+    WireFix,
+    PowerSync,
+    Cannon
 }
 
 public class MiniGameManager : MonoBehaviour
@@ -18,17 +17,17 @@ public class MiniGameManager : MonoBehaviour
     public static MiniGameManager Instance;
 
     [Header("UI 연결")]
-    public GameObject canvasRoot;       // 미니게임들 담고 있는 캔버스 패널
-    public MiniGameBase[] miniGames;    // 각 미니게임 스크립트 연결
+    public GameObject canvasRoot;
+    public MiniGameBase[] miniGames;
 
     [Header("결과 피드백 연출")]
-    public Image flashScreen;           // 성공/실패 점멸용 이미지
+    public Image flashScreen;           // 번쩍일 전체 화면 이미지
 
     [Header("애니메이션 설정")]
-    public float slideDuration = 0.25f; // 위에서 내려오는 속도
+    public float slideDuration = 0.25f; // 오르내리는 속도
 
     private MiniGameBase activeGame = null;
-    private bool isFlashing = false;    // 연출 중 입력 방지용
+    private bool isFlashing = false;    // 연출 중 키보드 입력 방지
     private Coroutine slideCoroutine = null;
 
     private void Awake()
@@ -36,14 +35,13 @@ public class MiniGameManager : MonoBehaviour
         if (Instance == null) Instance = this;
         else Destroy(gameObject);
 
-        // 초기 세팅: 캔버스 끄고 대기
         canvasRoot.SetActive(false);
         if (flashScreen != null) flashScreen.gameObject.SetActive(false);
     }
 
     private void Update()
     {
-        // 입력 시스템: 1~4번 키 처리 및 ESC 취소
+        // 💡 연출(점멸 및 슬라이드)이 진행 중일 때는 모든 입력을 막아서 버그 방지
         if (Keyboard.current == null || isFlashing) return;
 
         if (Keyboard.current.digit1Key.wasPressedThisFrame) HandleInput(MiniGameType.DoorKeypad);
@@ -59,7 +57,6 @@ public class MiniGameManager : MonoBehaviour
 
     private void HandleInput(MiniGameType type)
     {
-        // 이미 다른 게임이 켜져 있으면 실패 처리 후 새 게임 열기
         if (activeGame != null) activeGame.ForceFail();
         else OpenMiniGame(type, null);
     }
@@ -76,7 +73,7 @@ public class MiniGameManager : MonoBehaviour
                 mg.StartGame(target);
                 activeGame = mg;
 
-                // 패널 애니메이션: 위에서 슉! 내려오기
+                // 💡 열릴 때: 위에서 아래로 떨어지기
                 if (slideCoroutine != null) StopCoroutine(slideCoroutine);
                 slideCoroutine = StartCoroutine(SlideDownRoutine(mg.GetComponent<RectTransform>()));
             }
@@ -91,8 +88,8 @@ public class MiniGameManager : MonoBehaviour
     {
         if (panelRect == null) yield break;
 
-        Vector2 startPos = new Vector2(0, 1200f); // 위쪽 좌표
-        Vector2 endPos = Vector2.zero;           // 중앙 좌표
+        Vector2 startPos = new Vector2(0, 1200f);
+        Vector2 endPos = Vector2.zero;
 
         panelRect.anchoredPosition = startPos;
 
@@ -107,26 +104,61 @@ public class MiniGameManager : MonoBehaviour
         panelRect.anchoredPosition = endPos;
     }
 
+    // 💡 미니게임 종료 호출부
     public void EndMiniGame(bool isSuccess)
     {
         if (isFlashing) return;
-        StartCoroutine(FlashAndCloseRoutine(isSuccess));
+        StartCoroutine(FlashAndSlideUpRoutine(isSuccess));
     }
 
-    private IEnumerator FlashAndCloseRoutine(bool isSuccess)
+    // 💡 번쩍임 -> 위로 슬라이드 -> 닫기 시퀀스
+    private IEnumerator FlashAndSlideUpRoutine(bool isSuccess)
     {
-        isFlashing = true;
+        isFlashing = true; // 연출 시작 (입력 차단)
+
+        // 1단계: 화면 번쩍임 (파란색 / 빨간색)
         if (flashScreen != null)
         {
-            flashScreen.color = isSuccess ? Color.green : Color.red;
+            // 색상을 투명도가 약간 있는 색으로 덮어씌우면 더 예쁩니다.
+            flashScreen.color = isSuccess ? new Color(0f, 0.5f, 1f, 0.7f) : new Color(1f, 0f, 0f, 0.7f);
             flashScreen.gameObject.SetActive(true);
         }
 
+        // 0.3초 대기
         yield return new WaitForSeconds(0.3f);
 
+        // 번쩍임 끄기
         if (flashScreen != null) flashScreen.gameObject.SetActive(false);
+
+        // 2단계: 패널 위로 올라가기
+        if (activeGame != null)
+        {
+            RectTransform panelRect = activeGame.GetComponent<RectTransform>();
+            yield return StartCoroutine(SlideUpRoutine(panelRect)); // 다 올라갈 때까지 기다림
+        }
+
+        // 3단계: 완전히 닫고 초기화
         CloseAll();
-        isFlashing = false;
+        isFlashing = false; // 연출 끝 (입력 허용)
+    }
+
+    // 💡 밑에서 위로 슉! 올라가는 애니메이션
+    private IEnumerator SlideUpRoutine(RectTransform panelRect)
+    {
+        if (panelRect == null) yield break;
+
+        Vector2 startPos = Vector2.zero;           // 현재 위치(중앙)
+        Vector2 endPos = new Vector2(0, 1200f);    // 다시 올라갈 화면 밖 좌표
+
+        float elapsed = 0f;
+        while (elapsed < slideDuration)
+        {
+            elapsed += Time.deltaTime;
+            float t = Mathf.SmoothStep(0f, 1f, elapsed / slideDuration);
+            panelRect.anchoredPosition = Vector2.Lerp(startPos, endPos, t);
+            yield return null;
+        }
+        panelRect.anchoredPosition = endPos;
     }
 
     public void CloseAll()

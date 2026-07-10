@@ -2,6 +2,7 @@
 using UnityEngine.UI;
 using UnityEngine.InputSystem;
 using TMPro;
+using System.Collections;
 using System.Collections.Generic;
 using LastJumpCrew.Common;
 
@@ -9,48 +10,32 @@ public class WireFixGame : MiniGameBase
 {
     [Header("UI 연결")]
     public TextMeshProUGUI timerText;
-
-    [Header("왼쪽 시작점들 (5개)")]
     public Image[] leftPoints;
-
-    [Header("오른쪽 끝점들 (5개)")]
     public Image[] rightPoints;
 
-    [Header("게임 설정")]
-    public float timeLimit = 5.0f; // 💡 인스펙터에서 바꿀 수 있는 제한 시간 (기본값 5초)
-    public float wireThickness = 15f; // 드래그할 때 나오는 선의 굵기
+    [Header("게임 추가 설정")]
+    public float wireThickness = 15f;
 
-    private float timeRemaining; // 실제 줄어드는 시간 계산용
-    private bool isGameActive = false;
     private int connectedWires = 0;
     private int draggingIndex = -1;
 
-    // 선 그리기 관련 변수
     private GameObject currentDrawingLine;
     private RectTransform currentLineRect;
     private GameObject[] completedLines;
 
     private List<Color> baseColors = new List<Color>
     {
-        Color.red,
-        Color.blue,
-        Color.green,
-        Color.yellow,
-        new Color(1f, 0.5f, 0f)
+        Color.red, Color.blue, Color.green, Color.yellow, new Color(1f, 0.5f, 0f)
     };
 
     public override void StartGame(IMiniGameTarget target)
     {
         base.StartGame(target);
 
-        // 💡 인스펙터에서 설정한 시간으로 초기화
-        timeRemaining = timeLimit;
         connectedWires = 0;
-        isGameActive = true;
         draggingIndex = -1;
         completedLines = new GameObject[leftPoints.Length];
 
-        // 게임 시작 시 이전에 그려둔 선이 있다면 전부 지우기
         foreach (Transform child in transform)
         {
             if (child.name == "WireLine") Destroy(child.gameObject);
@@ -66,6 +51,7 @@ public class WireFixGame : MiniGameBase
         for (int i = 0; i < leftPoints.Length; i++)
         {
             leftPoints[i].color = new Color(leftColors[i].r, leftColors[i].g, leftColors[i].b, 1f);
+            leftPoints[i].rectTransform.localScale = Vector3.one;
         }
 
         List<Color> rightColors = new List<Color>(baseColors);
@@ -73,6 +59,7 @@ public class WireFixGame : MiniGameBase
         for (int i = 0; i < rightPoints.Length; i++)
         {
             rightPoints[i].color = new Color(rightColors[i].r, rightColors[i].g, rightColors[i].b, 1f);
+            rightPoints[i].rectTransform.localScale = Vector3.one;
         }
     }
 
@@ -91,41 +78,50 @@ public class WireFixGame : MiniGameBase
     {
         if (!isGameActive || Mouse.current == null) return;
 
-        // 1. 타이머 로직
         timeRemaining -= Time.deltaTime;
         if (timerText != null) timerText.text = $"남은 시간: {timeRemaining:F1}초";
+
+        UpdateDangerPulse(); // 💡 붉은 깜빡임 활성화
 
         if (timeRemaining <= 0)
         {
             if (timerText != null) timerText.text = "시간 초과!";
-            isGameActive = false;
-            Invoke(nameof(GameFail), 1.0f);
+            TriggerFailure();
             return;
         }
 
-        // 2. 마우스 입력 및 선 그리기 로직
         Vector2 mousePos = Mouse.current.position.ReadValue();
 
+        // 마우스 클릭 시작
         if (Mouse.current.leftButton.wasPressedThisFrame)
         {
             for (int i = 0; i < leftPoints.Length; i++)
             {
                 if (leftPoints[i].color.a < 1f) continue;
 
-                if (RectTransformUtility.RectangleContainsScreenPoint(leftPoints[i].rectTransform, mousePos, null))
+                // 💡 [카메라 캔버스 버그 해결] 세 번째 인자에 Camera.main 적용
+                if (RectTransformUtility.RectangleContainsScreenPoint(leftPoints[i].rectTransform, mousePos, Camera.main))
                 {
                     draggingIndex = i;
                     CreateWire(i);
+                    PunchUI(leftPoints[i].rectTransform, 1.2f, 0.1f);
+                    PlaySFX(clickClip, true);
                     break;
                 }
             }
         }
 
+        // 드래그 중
         if (draggingIndex != -1 && Mouse.current.leftButton.isPressed)
         {
-            UpdateWire(mousePos);
+            // 💡 [선 튕김 버그 해결] 화면 좌표를 월드 좌표로 변환하여 계산
+            RectTransformUtility.ScreenPointToWorldPointInRectangle(
+                (RectTransform)transform, mousePos, Camera.main, out Vector3 worldMousePos);
+
+            UpdateWire(worldMousePos);
         }
 
+        // 마우스 클릭 해제
         if (Mouse.current.leftButton.wasReleasedThisFrame)
         {
             if (draggingIndex != -1)
@@ -151,30 +147,35 @@ public class WireFixGame : MiniGameBase
         currentLineRect.sizeDelta = new Vector2(0, wireThickness);
     }
 
-    private void UpdateWire(Vector2 targetPos)
+    // 💡 [로컬 좌표 정렬 공식] 캔버스 모드가 바뀌어도 선이 일직선으로 예쁘게 따라옵니다.
+    private void UpdateWire(Vector3 targetWorldPos)
     {
         if (currentLineRect == null) return;
 
-        Vector3 startPos = currentLineRect.position;
-        Vector3 dir = (Vector3)targetPos - startPos;
+        RectTransform panelRect = (RectTransform)transform;
+
+        Vector3 localStart = panelRect.InverseTransformPoint(currentLineRect.position);
+        Vector3 localEnd = panelRect.InverseTransformPoint(targetWorldPos);
+
+        Vector3 dir = localEnd - localStart;
 
         float angle = Mathf.Atan2(dir.y, dir.x) * Mathf.Rad2Deg;
-        currentLineRect.rotation = Quaternion.Euler(0, 0, angle);
-
-        float distance = dir.magnitude;
-        currentLineRect.sizeDelta = new Vector2(distance, wireThickness);
+        currentLineRect.localRotation = Quaternion.Euler(0, 0, angle);
+        currentLineRect.sizeDelta = new Vector2(dir.magnitude, wireThickness);
     }
 
     private void CheckConnection(Vector2 dropPosition)
     {
         Color draggedColor = leftPoints[draggingIndex].color;
         bool isConnected = false;
+        bool droppedOnWrong = false;
 
         for (int i = 0; i < rightPoints.Length; i++)
         {
             if (rightPoints[i].color.a < 1f) continue;
 
-            if (RectTransformUtility.RectangleContainsScreenPoint(rightPoints[i].rectTransform, dropPosition, null))
+            // 💡 여기도 똑같이 Camera.main 적용
+            if (RectTransformUtility.RectangleContainsScreenPoint(rightPoints[i].rectTransform, dropPosition, Camera.main))
             {
                 if (SameColor(rightPoints[i].color, draggedColor))
                 {
@@ -184,23 +185,68 @@ public class WireFixGame : MiniGameBase
                     UpdateWire(rightPoints[i].transform.position);
                     completedLines[draggingIndex] = currentDrawingLine;
 
+                    PlaySFX(clickClip, true);
+
+                    // 💡 [파티클 추가] 선이 성공적으로 달라붙은 우측 도착점에서 파티클 폭발!
+                    PlayParticle(rightPoints[i].rectTransform);
+
+                    PunchUI(leftPoints[draggingIndex].rectTransform, 1.4f, 0.2f);
+                    PunchUI(rightPoints[i].rectTransform, 1.4f, 0.2f);
+
+                    Image wireImg = currentDrawingLine.GetComponent<Image>();
+                    StartCoroutine(WireFlashRoutine(wireImg, draggedColor));
+
                     SetImageAlpha(leftPoints[draggingIndex], 0.3f);
                     SetImageAlpha(rightPoints[i], 0.3f);
 
                     if (connectedWires >= leftPoints.Length)
                     {
                         if (timerText != null) timerText.text = "복구 완료!";
-                        isGameActive = false;
-                        Invoke(nameof(GameSucceed), 0.5f);
+                        TriggerSuccess();
                     }
                     break;
+                }
+                else
+                {
+                    droppedOnWrong = true;
                 }
             }
         }
 
-        if (!isConnected && currentDrawingLine != null)
+        if (!isConnected)
         {
-            Destroy(currentDrawingLine);
+            if (droppedOnWrong)
+            {
+                PlaySFX(failClip, true);
+                StartCoroutine(ShakeUI(GetComponent<RectTransform>(), 8f, 0.15f));
+            }
+
+            if (currentDrawingLine != null) Destroy(currentDrawingLine);
+        }
+    }
+
+    private IEnumerator WireFlashRoutine(Image wireImg, Color targetColor)
+    {
+        if (wireImg == null) yield break;
+
+        wireImg.color = Color.white;
+        yield return new WaitForSeconds(0.05f);
+
+        float elapsed = 0f;
+        float duration = 0.2f;
+        while (elapsed < duration)
+        {
+            if (wireImg == null) break;
+            elapsed += Time.deltaTime;
+            wireImg.color = Color.Lerp(Color.white, targetColor, elapsed / duration);
+            yield return null;
+        }
+
+        if (wireImg != null)
+        {
+            Color finalColor = targetColor;
+            finalColor.a = 0.3f;
+            wireImg.color = finalColor;
         }
     }
 

@@ -1,34 +1,45 @@
 ﻿using UnityEngine;
 using UnityEngine.UI;
 using TMPro;
+using System.Collections.Generic;
 using LastJumpCrew.Common;
 
 public class CannonGame : MiniGameBase
 {
     [Header("UI 연결")]
-    public Button[] targetButtons;
+    public Button[] targetButtons; // 쏴서 없애야 할 과녁 버튼들
     public TextMeshProUGUI scoreText;
 
-    [Header("게임 설정")]
-    public float timeLimit = 5.0f;
+    [Header("이동 속도 설정")]
+    public float minMoveSpeed = 150f;
+    public float maxMoveSpeed = 350f;
 
-    [Header("💡 상하좌우 여백 자유 조절")]
+    [Header("상하좌우 여백 자유 조절 (화면 밖으로 안 나가게 방어)")]
     public float paddingLeft = 100f;
     public float paddingRight = 100f;
-    public float paddingTop = 180f;   // 텍스트 공간 확보를 위해 기본값 크게 설정
+    public float paddingTop = 180f;
     public float paddingBottom = 100f;
 
-    private float timeRemaining;
-    private int targetsDestroyed = 0;
-    private bool isGameActive = false;
+    private int targetsDestroyed = 0; // 맞춘 과녁 개수
+
+    // 과녁들이 돌아다닐 수 있는 우리(울타리)의 최소/최대 좌표값
+    private float boundMinX, boundMaxX, boundMinY, boundMaxY;
+
+    // 움직이는 각각의 과녁의 '정보'를 묶어서 관리하기 위한 작은 주머니(클래스)
+    private class MovingTarget
+    {
+        public RectTransform rect;   // 과녁의 위치와 크기 정보
+        public Vector2 velocity;     // 과녁이 날아가고 있는 방향과 속도(힘)
+    }
+
+    private List<MovingTarget> movingTargets = new List<MovingTarget>();
 
     public override void StartGame(IMiniGameTarget target)
     {
         base.StartGame(target);
 
-        timeRemaining = timeLimit;
         targetsDestroyed = 0;
-        isGameActive = true;
+        movingTargets.Clear();
 
         UpdateScoreText();
 
@@ -36,30 +47,42 @@ public class CannonGame : MiniGameBase
         float halfWidth = panelRect.rect.width / 2f;
         float halfHeight = panelRect.rect.height / 2f;
 
-        // 과녁 이미지 자체의 크기 여유분 (반지름 약 60f)
+        // 과녁 이미지의 반지름 크기(약 60)만큼 여유 공간을 더 둬서 이미지가 잘리지 않게 방어
         float buttonOffset = 60f;
 
-        // 💡 설정한 패딩 값을 기준으로 최소/최대 생성 범위 계산
-        float minX = -halfWidth + paddingLeft + buttonOffset;
-        float maxX = halfWidth - paddingRight - buttonOffset;
-        float minY = -halfHeight + paddingBottom + buttonOffset;
-        float maxY = halfHeight - paddingTop - buttonOffset;
+        // 인스펙터에서 설정한 패딩값들을 바탕으로 과녁이 돌아다닐 '가상의 벽' 좌표를 계산합니다.
+        boundMinX = -halfWidth + paddingLeft + buttonOffset;
+        boundMaxX = halfWidth - paddingRight - buttonOffset;
+        boundMinY = -halfHeight + paddingBottom + buttonOffset;
+        boundMaxY = halfHeight - paddingTop - buttonOffset;
 
-        // 패딩 값이 너무 커서 범위가 뒤집히는 에러 방어 코드
-        if (minX > maxX) minX = maxX;
-        if (minY > maxY) minY = maxY;
+        // 만약 패딩값을 너무 크게 적어서 왼쪽 벽이 오른쪽 벽을 넘어가는 오류를 수학적으로 방지합니다.
+        if (boundMinX > boundMaxX) boundMinX = boundMaxX;
+        if (boundMinY > boundMaxY) boundMinY = boundMaxY;
 
+        // 모든 과녁 버튼들을 순회하면서 위치와 속도를 세팅합니다.
         foreach (Button btn in targetButtons)
         {
-            btn.gameObject.SetActive(true);
+            btn.gameObject.SetActive(true); // 버튼을 켜줌
             RectTransform btnRect = btn.GetComponent<RectTransform>();
 
-            // 💡 정밀하게 계산된 상하좌우 영역 안에서만 랜덤 배치
-            float randomX = Random.Range(minX, maxX);
-            float randomY = Random.Range(minY, maxY);
-
+            // 가상의 벽 안쪽에서 랜덤하게 시작 위치를 잡습니다.
+            float randomX = Random.Range(boundMinX, boundMaxX);
+            float randomY = Random.Range(boundMinY, boundMaxY);
             btnRect.anchoredPosition = new Vector2(randomX, randomY);
 
+            // Random.insideUnitCircle.normalized는 무작위 방향(360도)으로 화살표를 만들어줍니다.
+            Vector2 randomDirection = Random.insideUnitCircle.normalized;
+            float randomSpeed = Random.Range(minMoveSpeed, maxMoveSpeed); // 랜덤 속도 뽑기
+
+            // 방금 만든 방향 * 속도를 곱해서 이 과녁의 최종 '이동 에너지(velocity)'를 저장해 둡니다.
+            movingTargets.Add(new MovingTarget
+            {
+                rect = btnRect,
+                velocity = randomDirection * randomSpeed
+            });
+
+            // 과녁을 클릭했을 때 실행될 이벤트 연결
             btn.onClick.RemoveAllListeners();
             btn.onClick.AddListener(() => OnTargetClicked(btn));
         }
@@ -70,13 +93,42 @@ public class CannonGame : MiniGameBase
         if (!isGameActive) return;
 
         timeRemaining -= Time.deltaTime;
+        UpdateDangerPulse(); //2초 이하로 남았을때 화면이 붉게 깜빡입니다.
         UpdateScoreText();
 
         if (timeRemaining <= 0)
         {
-            isGameActive = false;
             if (scoreText != null) scoreText.text = "시간 초과!";
-            Invoke(nameof(GameFail), 0.5f);
+            TriggerFailure();
+        }
+
+        // 🚀 핵심: 모든 과녁들을 실시간으로 이동시키고 벽에 튕기게 하는 로직
+        foreach (var target in movingTargets)
+        {
+            // 클릭해서 이미 터진 과녁은 검사하지 않고 패스(continue)
+            if (!target.rect.gameObject.activeSelf) continue;
+
+            Vector2 pos = target.rect.anchoredPosition; // 현재 과녁 위치
+
+            // 기존 위치에 '이동 에너지 * 프레임 시간'을 더해서 앞으로 나아가게 합니다.
+            pos += target.velocity * Time.deltaTime;
+
+            // X축(가로) 벽에 부딪혔을 때 검사 (왼쪽 벽을 넘었거나 오른쪽 벽을 넘었다면?)
+            if (pos.x <= boundMinX || pos.x >= boundMaxX)
+            {
+                target.velocity.x *= -1; // 💡 X축 방향 에너지를 반대로 뒤집음! (-1을 곱하면 반대로 튕겨나감)
+                pos.x = Mathf.Clamp(pos.x, boundMinX, boundMaxX); // 벽 밖으로 나간 이미지를 벽 안으로 강제 소환
+            }
+
+            // Y축(세로) 벽에 부딪혔을 때 검사 (아래 벽 또는 위 벽)
+            if (pos.y <= boundMinY || pos.y >= boundMaxY)
+            {
+                target.velocity.y *= -1; // Y축 방향 반대로 뒤집기!
+                pos.y = Mathf.Clamp(pos.y, boundMinY, boundMaxY);
+            }
+
+            // 튕기기 계산이 끝난 최종 좌표를 과녁에 다시 적용합니다.
+            target.rect.anchoredPosition = pos;
         }
     }
 
@@ -84,15 +136,20 @@ public class CannonGame : MiniGameBase
     {
         if (!isGameActive) return;
 
-        clickedButton.gameObject.SetActive(false);
+        PlaySFX(clickClip, true); // 타격음
+        PunchUI(clickedButton.GetComponent<RectTransform>()); // 과녁 찌그러짐
+
+        // 💡 [여기 추가!] 버튼 중앙에서 파티클 펑!
+        PlayParticle(clickedButton.GetComponent<RectTransform>());
+
+        clickedButton.gameObject.SetActive(false); // 과녁 숨기기
         targetsDestroyed++;
         UpdateScoreText();
 
         if (targetsDestroyed >= targetButtons.Length)
         {
-            isGameActive = false;
             if (scoreText != null) scoreText.text = "위협 제거 완료!";
-            Invoke(nameof(GameSucceed), 0.5f);
+            TriggerSuccess();
         }
     }
 
