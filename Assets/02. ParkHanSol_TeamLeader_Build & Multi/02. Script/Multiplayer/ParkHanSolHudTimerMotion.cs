@@ -14,17 +14,16 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
 
         private float nextShakeTime;
         private Vector2 originAnchoredPosition;
+        private bool isLayoutCaptured;
 
         private void Awake()
         {
-            if (timerRoot != null)
-            {
-                originAnchoredPosition = timerRoot.anchoredPosition;
-            }
+            CaptureLayoutIfNeeded();
         }
 
         public void SetTime(float remainingSeconds, float totalSeconds)
         {
+            CaptureLayoutIfNeeded();
             if (timerText == null || timerRoot == null)
             {
                 Debug.LogError($"PHS_HUD_TIMER_MOTION_FAILED reason=reference_missing target={name}");
@@ -59,6 +58,17 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
             {
                 timerRoot.DOKill();
             }
+        }
+
+        private void CaptureLayoutIfNeeded()
+        {
+            if (isLayoutCaptured || timerRoot == null)
+            {
+                return;
+            }
+
+            originAnchoredPosition = timerRoot.anchoredPosition;
+            isLayoutCaptured = true;
         }
     }
 }

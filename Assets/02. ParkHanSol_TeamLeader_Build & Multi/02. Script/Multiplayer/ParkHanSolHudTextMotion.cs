@@ -28,20 +28,16 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
         private float currentNormalizedValue = 1f;
         private Vector3 originScale;
         private Vector2 originAnchoredPosition;
+        private bool isLayoutCaptured;
 
         private void Awake()
         {
-            if (targetRoot == null)
-            {
-                return;
-            }
-
-            originScale = targetRoot.localScale;
-            originAnchoredPosition = targetRoot.anchoredPosition;
+            CaptureLayoutIfNeeded();
         }
 
         public void SetText(string value)
         {
+            CaptureLayoutIfNeeded();
             if (targetText == null)
             {
                 Debug.LogError($"PHS_HUD_TEXT_MOTION_FAILED reason=targetText_missing target={name}");
@@ -74,6 +70,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
 
         public void PlayDamageFeedback(bool playBurst)
         {
+            CaptureLayoutIfNeeded();
             if (targetText == null)
             {
                 Debug.LogError($"PHS_HUD_TEXT_MOTION_FAILED reason=targetText_missing target={name}");
@@ -99,6 +96,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
 
         public void PlayDrainFeedback()
         {
+            CaptureLayoutIfNeeded();
             if (targetRoot == null)
             {
                 Debug.LogError($"PHS_HUD_TEXT_MOTION_FAILED reason=targetRoot_missing target={name}");
@@ -115,6 +113,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
 
         private void PlayPunch(Vector3 punch)
         {
+            CaptureLayoutIfNeeded();
             if (targetRoot == null)
             {
                 Debug.LogError($"PHS_HUD_TEXT_MOTION_FAILED reason=targetRoot_missing target={name}");
@@ -148,6 +147,18 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
             }
 
             return Color.Lerp(middleValueColor, fullValueColor, (normalizedValue - 0.5f) * 2f);
+        }
+
+        private void CaptureLayoutIfNeeded()
+        {
+            if (isLayoutCaptured || targetRoot == null)
+            {
+                return;
+            }
+
+            originScale = targetRoot.localScale;
+            originAnchoredPosition = targetRoot.anchoredPosition;
+            isLayoutCaptured = true;
         }
     }
 }

@@ -270,6 +270,13 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
             SetCursorLock(gameplayInputEnabled);
         }
 
+        public void BindPlayHudPresenter(ParkHanSolPlayHudMockPresenter presenter)
+        {
+            playHudPresenter = presenter;
+            thrusterGaugeReferenceErrorLogged = false;
+            RefreshThrusterGauge();
+        }
+
         private void HandleActiveSceneChanged(Scene previousScene, Scene currentScene)
         {
             MoveToGameplaySpawnPointIfServer();
@@ -547,7 +554,6 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
 
             var currentFuel = Mathf.RoundToInt(GetThrusterFuel());
             var maxFuel = Mathf.RoundToInt(thrusterFuelCapacity);
-            playHudPresenter.SetWarpGauge(ThrusterFuelNormalized);
             playHudPresenter.SetThrusterFuel(currentFuel, maxFuel);
         }
 
