@@ -1,7 +1,7 @@
 using UnityEngine;
 
 [RequireComponent(typeof(TriggerArea))]
-public class GravityZone : MonoBehaviour
+public class GravityZoneZone : MonoBehaviour
 {
     [Header("Gravity")]
     [SerializeField] private float gravityPower = 25f;
@@ -44,7 +44,7 @@ public class GravityZone : MonoBehaviour
             return;
         }
 
-        gravity.SetGravityState(GravityState.Gravity);
+        gravity.SetGravityState(GravityState2.Gravity);
     }
     private void OnTriggerExit(Collider other) //중력 존 벗어나면 무중력 상태 부여
     {
@@ -54,7 +54,7 @@ public class GravityZone : MonoBehaviour
         {
             return;
         }
-        gravity.SetGravityState (GravityState.ZeroGravity);
+        gravity.SetGravityState (GravityState2.ZeroGravity);
     }
     private void ApplyGravity(Rigidbody rb)
     {

@@ -4,13 +4,13 @@ using UnityEngine;
 public class GravityController : MonoBehaviour
 {
     [Header("Gravity State")]
-    [SerializeField] private GravityState currentState = GravityState.ZeroGravity;
+    [SerializeField] private GravityState2 currentState = GravityState2.ZeroGravity;
 
     private Rigidbody rb;
 
-    public GravityState CurrentState => currentState;
-    public bool IsGravity => currentState == GravityState.Gravity;
-    public bool IsZeroGravity => currentState == GravityState.ZeroGravity;
+    public GravityState2 CurrentState => currentState;
+    public bool IsGravity => currentState == GravityState2.Gravity;
+    public bool IsZeroGravity => currentState == GravityState2.ZeroGravity;
     // Update is called once per frame
     private void Awake()
     {
@@ -18,11 +18,11 @@ public class GravityController : MonoBehaviour
 
         rb.useGravity = false;
     }
-    public void SetGravityState(GravityState state)
+    public void SetGravityState(GravityState2 state)
     {
         currentState = state;
 
-        if (currentState == GravityState.ZeroGravity)
+        if (currentState == GravityState2.ZeroGravity)
         {
             // 무중력에서는 Unity 기본 중력 OFF
             rb.useGravity = false;
