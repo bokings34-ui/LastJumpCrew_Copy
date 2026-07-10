@@ -2,7 +2,6 @@ using LastJumpCrew.Common;
 using TMPro;
 using UnityEngine;
 using UnityEngine.InputSystem;
-using UnityEngine.UI;
 
 namespace LastJumpCrew.ParkHanSol.Multiplayer
 {
@@ -11,6 +10,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
         [SerializeField] private NetworkPlayerController playerController;
         [SerializeField] private ShipGravityZoneController shipGravityZoneController;
         [SerializeField] private TMP_Text instructionText;
+        [SerializeField] private TMP_Text thrusterGaugeText;
         [SerializeField] private TMP_FontAsset instructionFont;
         [SerializeField] private Canvas targetCanvas;
         [SerializeField] private float testGravityStrength = 18f;
@@ -39,6 +39,8 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
 
         private void Update()
         {
+            RefreshThrusterGaugeText();
+
             if (Keyboard.current == null || playerController == null)
             {
                 return;
@@ -65,6 +67,18 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
             if (Keyboard.current.digit4Key.wasPressedThisFrame)
             {
                 ReturnToShipGravity();
+                return;
+            }
+
+            if (Keyboard.current.digit5Key.wasPressedThisFrame)
+            {
+                ApplyZeroGravityPreset(ZeroGravityControlPreset.Thruster, "5 추진제 게이지형");
+                return;
+            }
+
+            if (Keyboard.current.digit6Key.wasPressedThisFrame)
+            {
+                ApplyZeroGravityPreset(ZeroGravityControlPreset.ThrusterOnly, "6 추진제 전용형");
             }
         }
 
@@ -85,64 +99,13 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
 
         private void EnsureInstructionPanel()
         {
-            if (instructionText != null)
+            if (instructionText == null)
             {
+                Debug.LogError($"PHS_ZERO_GRAVITY_UI_SETUP_FAILED reason=instruction_text_missing switcher={name}");
                 return;
             }
 
-            if (targetCanvas == null)
-            {
-                targetCanvas = FindAnyObjectByType<Canvas>();
-            }
-
-            if (targetCanvas == null)
-            {
-                var canvasObject = new GameObject("ParkHanSol_GravityTestCanvas");
-                targetCanvas = canvasObject.AddComponent<Canvas>();
-                targetCanvas.renderMode = RenderMode.ScreenSpaceOverlay;
-                canvasObject.AddComponent<CanvasScaler>();
-                canvasObject.AddComponent<GraphicRaycaster>();
-            }
-
-            var existingPanel = targetCanvas.transform.Find(PanelName);
-            if (existingPanel != null)
-            {
-                instructionText = existingPanel.GetComponentInChildren<TMP_Text>(true);
-                if (instructionText != null)
-                {
-                    ApplyInstructionFont();
-                    return;
-                }
-            }
-
-            var panelObject = new GameObject(PanelName, typeof(RectTransform), typeof(Image));
-            panelObject.transform.SetParent(targetCanvas.transform, false);
-
-            var panelRect = panelObject.GetComponent<RectTransform>();
-            panelRect.anchorMin = new Vector2(0f, 0.5f);
-            panelRect.anchorMax = new Vector2(0f, 0.5f);
-            panelRect.pivot = new Vector2(0f, 0.5f);
-            panelRect.anchoredPosition = new Vector2(24f, 0f);
-            panelRect.sizeDelta = new Vector2(360f, 290f);
-
-            var panelImage = panelObject.GetComponent<Image>();
-            panelImage.color = new Color(0.02f, 0.04f, 0.07f, 0.78f);
-
-            var textObject = new GameObject("Instruction Text", typeof(RectTransform), typeof(TextMeshProUGUI));
-            textObject.transform.SetParent(panelObject.transform, false);
-
-            var textRect = textObject.GetComponent<RectTransform>();
-            textRect.anchorMin = Vector2.zero;
-            textRect.anchorMax = Vector2.one;
-            textRect.offsetMin = new Vector2(16f, 12f);
-            textRect.offsetMax = new Vector2(-16f, -12f);
-
-            instructionText = textObject.GetComponent<TextMeshProUGUI>();
             ApplyInstructionFont();
-            instructionText.fontSize = 18f;
-            instructionText.color = Color.white;
-            instructionText.alignment = TextAlignmentOptions.TopLeft;
-            instructionText.enableWordWrapping = true;
         }
 
         private void ApplyInstructionFont()
@@ -161,10 +124,11 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
             }
 
             instructionText.text =
-                $"ZERO-G CONTROL TEST\n" +
+                $"무중력 이동 테스트\n" +
                 $"현재: {currentLabel}\n\n" +
-                $"WASD: 바라보는 방향 기준 이동\n" +
-                $"Space 상승 / Ctrl 하강\n\n" +
+                $"1~3 이동: WASD (바라보는 방향 기준)\n" +
+                $"하강: Ctrl\n" +
+                $"추진 게이지는 중력 상태에서도 자동 회복\n\n" +
                 $"1 즉시반응형\n" +
                 $"입력 즉시 이동, 손 떼면 바로 멈춤\n\n" +
                 $"2 관성형\n" +
@@ -173,12 +137,28 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
                 $"3 절충형\n" +
                 $"부드럽게 가속, 천천히 감속\n" +
                 $"Shift 부스터\n\n" +
-                $"4 중력존 복귀\n\n" +
-                $"구슬 충돌 테스트\n" +
-                $"플레이어 질량 기준: 1\n" +
-                $"구슬 질량: 0.5 / 1 / 2 / 3.5 / 5\n" +
-                $"무중력: 부딪히면 계속 밀려남\n" +
-                $"중력존: 테스트 중에도 켜짐, 들어가면 떨어져 굴러감";
+                $"4 중력 복귀\n\n" +
+                $"5 추진제 게이지형\n" +
+                $"Space만 사용: 카메라 정면으로 추진\n" +
+                $"WASD 이동 없음\n" +
+                $"추진제 게이지 소모 후 자동 회복\n\n" +
+                $"6 추진제 전용형\n" +
+                $"WASD: 카메라 기준 방향으로 추진\n" +
+                $"모든 이동에 추진제 게이지 소모\n\n" +
+                $"데브리 충돌 테스트\n" +
+                $"플레이어 질량: 1\n" +
+                $"무중력: 충돌 후 계속 밀려남\n" +
+                $"중력 구역: 진입하면 떨어지고 굴러감";
+        }
+
+        private void RefreshThrusterGaugeText()
+        {
+            if (thrusterGaugeText == null || playerController == null)
+            {
+                return;
+            }
+
+            thrusterGaugeText.text = $"추진제 게이지  {playerController.ThrusterFuelNormalized * 100f:0}%";
         }
     }
 }

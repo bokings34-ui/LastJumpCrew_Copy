@@ -52,6 +52,11 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
             SetText(staminaText, $"ST {stamina}<size=24>/{maxStamina}</size>");
         }
 
+        public void SetThrusterFuel(int currentFuel, int maxFuel)
+        {
+            SetText(staminaText, $"추진제 {currentFuel}<size=24>/{maxFuel}</size>");
+        }
+
         public void SetEconomy(int money, int bank)
         {
             SetText(moneyText, $"${money}");
