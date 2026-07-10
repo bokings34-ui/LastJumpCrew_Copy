@@ -1,6 +1,7 @@
 using LastJumpCrew.Common;
 using LastJumpCrew.ParkHanSol.Items;
 using LastJumpCrew.ParkHanSol.Multiplayer;
+using Unity.Netcode;
 using UnityEngine;
 
 namespace LastJumpCrew.ParkHanSol.Interaction
@@ -9,10 +10,12 @@ namespace LastJumpCrew.ParkHanSol.Interaction
     // 아이템 지급, 줍기, 드롭, 소비, HUD 갱신이 이 컴포넌트를 통해 흐른다.
     public sealed class TempPlayerItemHolder : MonoBehaviour, IItemHolder, LastJumpCrew.Common.IItemHolder
     {
-        // 아이템을 붙일 기본 위치다. visibleHandHoldPoint가 없을 때 대체로 사용한다.
+        [Header("Hold Points")]
+
+        // 로컬 1인칭 화면에 보이는 아이템 위치다.
         [SerializeField] private Transform holdPoint;
 
-        // 실제 캐릭터 손 위치다. 비어 있으면 Awake에서 "R_Hand" 자식을 찾아 사용한다.
+        // 멀티 원격/외부 시점에서 보이는 아이템 위치다.
         [SerializeField] private Transform visibleHandHoldPoint;
 
         // 아이템을 내려놓을 기준 위치다. 비어 있으면 플레이어 transform 기준으로 배치한다.
@@ -20,6 +23,14 @@ namespace LastJumpCrew.ParkHanSol.Interaction
 
         // dropPoint 기준 로컬 드롭 오프셋이다.
         [SerializeField] private Vector3 droppedLocalOffset = new(0f, 0f, 1f);
+
+        [Header("Held Item Scale")]
+
+        // 1인칭 화면에서 보이는 아이템 크기 배율이다.
+        [SerializeField, Min(0.01f)] private float firstPersonHeldItemScale = 0.42f;
+
+        // 다른 플레이어에게 보이는 아이템 크기 배율이다.
+        [SerializeField, Min(0.01f)] private float worldHeldItemScale = 0.32f;
 
         // 들고 있는 아이템 이름/아이콘/내구도 표시용 HUD presenter다.
         [SerializeField] private ParkHanSolPlayHudMockPresenter playHudPresenter;
@@ -32,15 +43,18 @@ namespace LastJumpCrew.ParkHanSol.Interaction
 
         // 현재 아이템의 데이터 캐시다. 빈손이면 null이다.
         private UtilityItemPrefabData currentItemPrefabData;
+        private NetworkObject networkObject;
 
         public UtilityItemPrefabData CurrentItemPrefabData => currentItemPrefabData;
         LastJumpCrew.Common.IHoldableItem LastJumpCrew.Common.IItemHolder.CurrentItem => currentItemObject;
         public bool HasItem => currentItemPrefabData != null;
 
-        private Transform ActiveHoldPoint => visibleHandHoldPoint != null ? visibleHandHoldPoint : holdPoint;
+        private Transform ActiveHoldPoint => ShouldUseFirstPersonHoldPoint() ? holdPoint : visibleHandHoldPoint;
 
         private void Awake()
         {
+            networkObject = GetComponent<NetworkObject>();
+
             if (visibleHandHoldPoint != null)
             {
                 return;
@@ -88,11 +102,16 @@ namespace LastJumpCrew.ParkHanSol.Interaction
             // 한 손에 하나만 들 수 있으므로 기존 아이템을 먼저 월드에 내려놓는다.
             PlaceCurrentItem();
 
+            var activeHoldPoint = ActiveHoldPoint;
+
             // 아이템 프리팹은 손 위치 자식으로 생성하고, 부모 스케일을 보정한다.
-            heldItemInstance = Instantiate(itemPrefabData.HeldPrefab, ActiveHoldPoint);
+            heldItemInstance = Instantiate(itemPrefabData.HeldPrefab, activeHoldPoint);
             heldItemInstance.name = itemPrefabData.HeldPrefab.name;
             heldItemInstance.transform.SetLocalPositionAndRotation(Vector3.zero, Quaternion.identity);
-            heldItemInstance.transform.localScale = GetCompensatedHeldItemScale(itemPrefabData.HeldPrefab.transform.localScale);
+            heldItemInstance.transform.localScale = GetCompensatedHeldItemScale(
+                itemPrefabData.HeldPrefab.transform.localScale,
+                activeHoldPoint,
+                GetHeldItemScaleMultiplier());
             currentItemObject = heldItemInstance.GetComponent<UtilityItemObject>();
             currentItemPrefabData = itemPrefabData;
 
@@ -171,6 +190,7 @@ namespace LastJumpCrew.ParkHanSol.Interaction
                 return false;
             }
 
+            heldItemInstance.SetActive(false);
             Destroy(heldItemInstance);
             heldItemInstance = null;
             currentItemObject = null;
@@ -259,22 +279,32 @@ namespace LastJumpCrew.ParkHanSol.Interaction
             return null;
         }
 
-        private Vector3 GetCompensatedHeldItemScale(Vector3 prefabLocalScale)
+        private Vector3 GetCompensatedHeldItemScale(Vector3 prefabLocalScale, Transform activeHoldPoint, float scaleMultiplier)
         {
             // 손 본의 lossyScale 때문에 아이템 크기가 찌그러지는 것을 줄이기 위한 보정이다.
-            var holdPointScale = ActiveHoldPoint.lossyScale;
+            var holdPointScale = activeHoldPoint.lossyScale;
             if (Mathf.Approximately(holdPointScale.x, 0f)
                 || Mathf.Approximately(holdPointScale.y, 0f)
                 || Mathf.Approximately(holdPointScale.z, 0f))
             {
-                Debug.LogError($"PHS_TEMP_ITEM_SCALE_FAILED reason=holdPoint_scale_zero player={name} holdPoint={ActiveHoldPoint.name}");
-                return prefabLocalScale;
+                Debug.LogError($"PHS_TEMP_ITEM_SCALE_FAILED reason=holdPoint_scale_zero player={name} holdPoint={activeHoldPoint.name}");
+                return prefabLocalScale * scaleMultiplier;
             }
 
             return new Vector3(
                 prefabLocalScale.x / holdPointScale.x,
                 prefabLocalScale.y / holdPointScale.y,
-                prefabLocalScale.z / holdPointScale.z);
+                prefabLocalScale.z / holdPointScale.z) * scaleMultiplier;
+        }
+
+        private bool ShouldUseFirstPersonHoldPoint()
+        {
+            return networkObject == null || !networkObject.IsSpawned || networkObject.IsOwner;
+        }
+
+        private float GetHeldItemScaleMultiplier()
+        {
+            return ShouldUseFirstPersonHoldPoint() ? firstPersonHeldItemScale : worldHeldItemScale;
         }
     }
 }
