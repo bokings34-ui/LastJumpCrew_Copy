@@ -1,3 +1,4 @@
+using LastJumpCrew.Common;
 using System;
 using System.Collections.Generic;
 using UnityEngine;
@@ -60,13 +61,24 @@ namespace SM
             Debug.Log($"<color=lime>[EventManager]</color> {evt.Id} 종료 (성공 여부 : {success})");
         }
 
-        // TODO :: 수리 상호작용 시 호출해서 진행도 전달
         public void ApplyRepairTo(EventId id, float amount)
         {
-            if (_activeEvents.TryGetValue(id, out var evt) && evt is IRepairable repairable)
+            if (_activeEvents.TryGetValue(id, out var evt) && evt is InternalEvent internalEvent)
             {
-                repairable.ApplyRepair(amount);
+                internalEvent.ApplyRepair(amount);
             }
+        }
+
+        public IMiniGameTarget GetMiniGameTarget(string targetId)
+        {
+            foreach (var evt in _activeEvents.Values)
+            {
+                if (evt is IMiniGameTarget target && target.MiniGameTargetId == targetId)
+                {
+                    return target;
+                }
+            }
+            return null;
         }
     }
 }

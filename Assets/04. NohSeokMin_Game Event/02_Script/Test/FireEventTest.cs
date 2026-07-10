@@ -19,7 +19,7 @@ namespace SM
             if (Keyboard.current.wKey.wasPressedThisFrame)
             {
                 var target = FindAnyObjectByType<FireEffectInstance>();
-                target?.ApplyRepair(10f);
+                //target?.ApplyRepair(10f);
             }
         }
     }

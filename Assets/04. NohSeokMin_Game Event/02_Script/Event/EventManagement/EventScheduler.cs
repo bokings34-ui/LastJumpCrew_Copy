@@ -7,9 +7,11 @@ namespace SM
     public class EventScheduler : MonoSingleton<EventScheduler>
     {
         [Header("사고 발생 풀")]
-        [SerializeField] private List<EventId> eventPool = new List<EventId>
+        [SerializeField]
+        private List<EventId> eventPool = new List<EventId>
         {
             EventId.Fire,
+            EventId.EnemySpawn,
         };
 
         private const float TotalTime = 300f;
