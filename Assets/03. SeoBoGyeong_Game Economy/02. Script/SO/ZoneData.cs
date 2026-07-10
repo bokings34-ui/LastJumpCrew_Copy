@@ -1,4 +1,7 @@
 using UnityEngine;
+using LastJumpCrew.Common;
+
+
 namespace LastJumpCrew.SeoBoGyeong
 {
     [CreateAssetMenu(
