@@ -85,62 +85,9 @@ namespace LastJumpCrew.SeoBoGyeong
 
         private void SpawnItem()
         {
-            /*
-                        float usableLength = shelfLength - 1f;
-                        _itemsPerShelf.Clear();
-
-                        Vector3 center = shelfAreas[0].transform.position;
-
-                        float leftOffset = -usableLength * 0.5f;
-                        float itemSpacing = usableLength / (totalItemCount - 1);
-
-                        int maxItemsPerShelf;
-                        // 1번 선반에 몰아넣기
-                        if ((totalItemCount - 1) * minItemSpacing > usableLength)
-                        {
-                            maxItemsPerShelf = Mathf.RoundToInt(usableLength / minItemSpacing);
-                            int remainingItems = totalItemCount;
-                            if (remainingItems > maxItemsPerShelf)
-                            {
-                                int shelfCount = Mathf.CeilToInt((float)(remainingItems / maxItemsPerShelf));
-                                for (int i = 0; i <= shelfCount; i++)
-                                {
-                                    if (remainingItems > maxItemsPerShelf)
-                                    {
-                                        _itemsPerShelf.Add(maxItemsPerShelf);
-                                        remainingItems -= maxItemsPerShelf;
-                                    }
-                                    else
-                                    {
-                                        _itemsPerShelf.Add(remainingItems);
-                                        break;
-                                    }
-                                }
-                            }
-                            else
-                            {
-                                _itemsPerShelf.Add(remainingItems);
-                            }
-                        }
-                        else
-                        {
-                            maxItemsPerShelf = totalItemCount;
-                            _itemsPerShelf.Add(maxItemsPerShelf);
-                        }
-
-                        if (shelfAreas.Length < _itemsPerShelf.Count)
-                        {
-                            Debug.Log($"선반 개수 부족. 선반/필요: {shelfAreas.Length}/{_itemsPerShelf.Count} || 아이템 : {_itemsPerShelf[0]}개");
-                            return;
-                        }
-
-            */
-
             DivideSection(_shelfAreaLengths);
 
             Vector3 center = shelfAreas[0].transform.position;
-
-
 
             for (int i = 0; i < totalItemCount; i++)
             {
