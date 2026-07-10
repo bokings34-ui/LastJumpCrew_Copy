@@ -1,26 +1,27 @@
+using LastJumpCrew.Common;
+
 namespace SM
 {
-    public abstract class ExternalEvent : EventBase, IMinigameResult
+    public abstract class ExternalEvent : EventBase, IMiniGameTarget
     {
         protected IRoom TargetRoom { get { return Context?.Room; } }
         protected IEventSpawner Spawner { get { return Context?.Spawner; } }
+
+        public string MiniGameTargetId { get { return Id.ToString(); } }
 
         public override void OnTrigger()
         {
             ChangeState(EventState.InProgress);
         }
 
-        // 미니게임 결과 확정 시 호출
-        public void MinigameResult(bool success)
+        public void OnMiniGameSucceeded()
         {
-            if (success)
-            {
-                OnResolve();
-            }
-            else 
-            {
-                OnFail();
-            }
+            OnResolve();
+        }
+
+        public void OnMiniGameFailed()
+        {
+            OnFail();
         }
 
         public override void OnFail()

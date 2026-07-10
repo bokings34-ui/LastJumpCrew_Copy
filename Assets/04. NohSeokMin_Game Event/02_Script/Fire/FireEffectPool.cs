@@ -23,11 +23,12 @@ namespace SM
             }
         }
 
-        public FireEffectInstance Get(Vector3 position, float damagePerSecond)
+        public FireEffectInstance Get(Vector3 position, float damagePerSecond, float maxRepairProgress)
         {
             var instance = _pool.Count > 0 ? _pool.Dequeue() : Instantiate(effectPrefab, transform);
+
             instance.transform.position = position;
-            instance.Activate(damagePerSecond);
+            instance.Activate(damagePerSecond, maxRepairProgress);
             return instance;
         }
 
