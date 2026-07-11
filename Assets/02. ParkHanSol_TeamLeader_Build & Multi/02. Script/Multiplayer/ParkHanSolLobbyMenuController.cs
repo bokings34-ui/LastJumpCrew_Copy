@@ -12,6 +12,12 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
 {
     public sealed class ParkHanSolLobbyMenuController : MonoBehaviour
     {
+        private enum SettingsReturnTarget
+        {
+            Start,
+            Room
+        }
+
         [Header("Panels")]
         [SerializeField] private GameObject startPanel;
         [SerializeField] private GameObject lobbyPanel;
@@ -50,17 +56,19 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
         [Header("Shop")]
         [SerializeField] private Button shopBackButton;
 
+        private SettingsReturnTarget settingsReturnTarget = SettingsReturnTarget.Start;
+
         private void Awake()
         {
             Bind(startButton, ShowLobbySelection);
-            Bind(settingsButton, ShowSettings);
+            Bind(settingsButton, ShowSettingsFromStart);
             Bind(shopButton, ShowShop);
             Bind(quitButton, QuitGame);
             Bind(createRoomButton, ShowCreateRoom);
             Bind(joinRoomButton, ShowJoinRoom);
             Bind(lobbyBackButton, ShowStart);
             Bind(roomLeaveButton, LeaveRoom);
-            Bind(roomSettingsButton, ShowSettings);
+            Bind(roomSettingsButton, ShowSettingsFromRoom);
             Bind(roomStartGameButton, StartGame);
             Bind(settingsBackButton, CloseSettingsWithoutSave);
             Bind(shopBackButton, ShowStart);
@@ -89,19 +97,21 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
             {
                 CloseSettingsWithoutSave();
             }
+
+            RefreshRoomActionAvailability();
         }
 
         private void OnDestroy()
         {
             Unbind(startButton, ShowLobbySelection);
-            Unbind(settingsButton, ShowSettings);
+            Unbind(settingsButton, ShowSettingsFromStart);
             Unbind(shopButton, ShowShop);
             Unbind(quitButton, QuitGame);
             Unbind(createRoomButton, ShowCreateRoom);
             Unbind(joinRoomButton, ShowJoinRoom);
             Unbind(lobbyBackButton, ShowStart);
             Unbind(roomLeaveButton, LeaveRoom);
-            Unbind(roomSettingsButton, ShowSettings);
+            Unbind(roomSettingsButton, ShowSettingsFromRoom);
             Unbind(roomStartGameButton, StartGame);
             Unbind(settingsBackButton, CloseSettingsWithoutSave);
             Unbind(shopBackButton, ShowStart);
@@ -114,6 +124,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
 
         private void ShowStart()
         {
+            settingsReturnTarget = SettingsReturnTarget.Start;
             SetPanel(startPanel, true);
             SetPanel(lobbyPanel, false);
             SetPanel(roomPanel, false);
@@ -122,6 +133,18 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
             SetPanel(settingsApplyButton, false);
             SetPanel(shopPanel, false);
             SetPanel(sessionPanel, false);
+        }
+
+        private void ShowSettingsFromStart()
+        {
+            settingsReturnTarget = SettingsReturnTarget.Start;
+            ShowSettings();
+        }
+
+        private void ShowSettingsFromRoom()
+        {
+            settingsReturnTarget = SettingsReturnTarget.Room;
+            ShowSettings();
         }
 
         private void ShowSettings()
@@ -151,8 +174,37 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
 
         private void CloseSettingsWithoutSave()
         {
+            var returnTarget = settingsReturnTarget;
             gameSettingsController?.CancelSettings();
+            settingsReturnTarget = SettingsReturnTarget.Start;
+
+            if (returnTarget == SettingsReturnTarget.Room &&
+                NetworkManager.Singleton != null &&
+                NetworkManager.Singleton.IsListening)
+            {
+                ShowRoom();
+                return;
+            }
+
             ShowStart();
+        }
+
+        private void RefreshRoomActionAvailability()
+        {
+            if (roomStartGameButton == null)
+            {
+                return;
+            }
+
+            var manager = NetworkManager.Singleton;
+            var shouldShow = roomPanel != null &&
+                roomPanel.activeSelf &&
+                manager != null &&
+                manager.IsHost;
+            if (roomStartGameButton.gameObject.activeSelf != shouldShow)
+            {
+                roomStartGameButton.gameObject.SetActive(shouldShow);
+            }
         }
 
         public void ShowLobbySelection()
