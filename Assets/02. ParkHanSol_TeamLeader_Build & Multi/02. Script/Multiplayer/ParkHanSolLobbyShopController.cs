@@ -182,9 +182,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
             {
                 equippedPreviewImage.sprite = selectedItem.Icon;
                 equippedPreviewImage.color = selectedItem.Icon == null
-                    ? equippedIndex >= 0
-                        ? new Color(1f, 0.49f, 0f, 0.85f)
-                        : new Color(0f, 0.18f, 0.42f, 0.85f)
+                    ? new Color(1f, 1f, 1f, 0f)
                     : Color.white;
             }
 

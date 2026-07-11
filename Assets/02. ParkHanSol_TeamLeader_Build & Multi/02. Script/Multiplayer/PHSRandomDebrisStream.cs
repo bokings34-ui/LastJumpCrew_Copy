@@ -10,6 +10,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
         [SerializeField] private Vector3 spawnCenter = new(-330f, 6f, -15f);
         [SerializeField] private Vector3 spawnExtents = new(3f, 5f, 12f);
         [SerializeField] private float recycleWorldX = -365f;
+        [SerializeField] private bool distributeAcrossPathOnAwake;
         [SerializeField, Min(0.01f)] private float minimumSpeed = 0.8f;
         [SerializeField, Min(0.01f)] private float maximumSpeed = 2.8f;
         [SerializeField, Min(0f)] private float maximumAngularSpeed = 75f;
@@ -39,7 +40,10 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
 
             speeds = new float[activeDebris.Count];
             angularVelocities = new Vector3[activeDebris.Count];
-            for (var index = 0; index < activeDebris.Count; index++) ResetDebris(index);
+            for (var index = 0; index < activeDebris.Count; index++)
+            {
+                ResetDebris(index, distributeAcrossPathOnAwake);
+            }
         }
 
         private void Update()
@@ -51,25 +55,31 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
                 {
                     debris = Instantiate(debrisRoots[index % debrisRoots.Length], transform.parent);
                     activeDebris[index] = debris;
-                    ResetDebris(index);
+                    ResetDebris(index, false);
                 }
                 debris.position += Vector3.left * (speeds[index] * Time.deltaTime);
                 debris.Rotate(angularVelocities[index] * Time.deltaTime, Space.Self);
 
                 if (debris.position.x <= recycleWorldX)
                 {
-                    ResetDebris(index);
+                    ResetDebris(index, false);
                 }
             }
         }
 
-        private void ResetDebris(int index)
+        private void ResetDebris(int index, bool distributeAcrossPath)
         {
             var debris = activeDebris[index];
-            debris.position = spawnCenter + new Vector3(
-                Random.Range(-spawnExtents.x, spawnExtents.x),
-                Random.Range(-spawnExtents.y, spawnExtents.y),
-                Random.Range(-spawnExtents.z, spawnExtents.z));
+            var spawnX = distributeAcrossPath
+                ? Random.Range(
+                    Mathf.Min(recycleWorldX, spawnCenter.x + spawnExtents.x),
+                    Mathf.Max(recycleWorldX, spawnCenter.x + spawnExtents.x))
+                : spawnCenter.x + Random.Range(-spawnExtents.x, spawnExtents.x);
+
+            debris.position = new Vector3(
+                spawnX,
+                spawnCenter.y + Random.Range(-spawnExtents.y, spawnExtents.y),
+                spawnCenter.z + Random.Range(-spawnExtents.z, spawnExtents.z));
             debris.rotation = Random.rotation;
             speeds[index] = Random.Range(minimumSpeed, maximumSpeed);
             angularVelocities[index] = Random.insideUnitSphere * maximumAngularSpeed;

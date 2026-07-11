@@ -3,6 +3,7 @@ using UnityEngine.UI;
 using TMPro;
 using Unity.Netcode;
 using UnityEngine.SceneManagement;
+using UnityEngine.InputSystem;
 using System;
 using System.Collections;
 using System.Threading.Tasks;
@@ -81,7 +82,10 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
 
         private void Update()
         {
-            if (settingsPanel != null && settingsPanel.activeSelf && Input.GetKeyDown(KeyCode.Escape))
+            if (settingsPanel != null &&
+                settingsPanel.activeSelf &&
+                Keyboard.current != null &&
+                Keyboard.current.escapeKey.wasPressedThisFrame)
             {
                 CloseSettingsWithoutSave();
             }
