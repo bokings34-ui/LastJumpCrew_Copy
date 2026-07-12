@@ -36,7 +36,20 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
 
         private void Update()
         {
-            if (networkManager == null || playHudPresenter == null || !networkManager.IsListening)
+            if (playHudPresenter == null)
+            {
+                return;
+            }
+
+            var activeNetworkManager = NetworkManager.Singleton;
+            if (activeNetworkManager != null
+                && activeNetworkManager.IsListening
+                && networkManager != activeNetworkManager)
+            {
+                networkManager = activeNetworkManager;
+            }
+
+            if (networkManager == null || !networkManager.IsListening)
             {
                 return;
             }
