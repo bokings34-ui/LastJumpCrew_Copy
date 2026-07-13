@@ -40,7 +40,7 @@ namespace SM
             _spawnTimer = 0f;
 
             SpawnOneEnemy();
-            Debug.Log($"<color=lime>[{SpawnData.EventName}]</color> 발생! / 수: {SpawnData.enemyCount}");
+            Debug.Log($"<color=lime>[{SpawnData.EventName}]</color> 발생!");
         }
 
         public override void OnTick(float deltaTime)
