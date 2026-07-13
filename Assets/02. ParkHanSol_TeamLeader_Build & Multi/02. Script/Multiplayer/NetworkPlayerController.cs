@@ -151,6 +151,35 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
             zeroGravityVelocity += velocity;
         }
 
+        public void RequestTestTeleport(Vector3 targetPosition, Quaternion targetRotation)
+        {
+            if (!IsOwner)
+            {
+                Debug.LogError($"PHS_TEST_TELEPORT_FAILED reason=owner_required player={name}");
+                return;
+            }
+
+            if (IsServer)
+            {
+                TeleportTo(targetPosition, targetRotation);
+                return;
+            }
+
+            RequestTestTeleportServerRpc(targetPosition, targetRotation);
+        }
+
+        [ServerRpc]
+        private void RequestTestTeleportServerRpc(Vector3 targetPosition, Quaternion targetRotation, ServerRpcParams rpcParams = default)
+        {
+            if (rpcParams.Receive.SenderClientId != OwnerClientId)
+            {
+                Debug.LogError($"PHS_TEST_TELEPORT_FAILED reason=owner_mismatch player={name}");
+                return;
+            }
+
+            TeleportTo(targetPosition, targetRotation);
+        }
+
         public override void OnNetworkSpawn()
         {
             characterController = GetComponent<CharacterController>();
@@ -662,6 +691,26 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
             }
 
             Debug.Log($"PHS_PLAYER_SPAWN_POINT ownerClientId={OwnerClientId} pos={transform.position}");
+        }
+
+        private void TeleportTo(Vector3 targetPosition, Quaternion targetRotation)
+        {
+            var wasEnabled = characterController != null && characterController.enabled;
+            if (characterController != null)
+            {
+                characterController.enabled = false;
+            }
+
+            transform.SetPositionAndRotation(targetPosition, targetRotation);
+            verticalVelocity = 0f;
+            zeroGravityVelocity = Vector3.zero;
+
+            if (characterController != null)
+            {
+                characterController.enabled = wasEnabled;
+            }
+
+            Debug.Log($"PHS_TEST_TELEPORT_OK player={name} pos={targetPosition}");
         }
 
         private bool TryGetSpawnPoint(out Transform spawnPoint)
