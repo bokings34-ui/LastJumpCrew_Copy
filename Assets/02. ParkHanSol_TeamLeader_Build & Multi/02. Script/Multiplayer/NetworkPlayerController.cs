@@ -71,6 +71,13 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
         private float lastThrusterUseTime = float.NegativeInfinity;
         private bool thrusterGaugeReferenceErrorLogged;
 
+        private Vector3 externalVelocity; //필드 추가 
+        [SerializeField, Min(0f)]
+        private float groundedKnockbackRecovery = 10f;
+
+        [SerializeField, Min(0f)]
+        private float zeroGravityKnockbackRecovery = 2.5f;
+
         public bool IsGrounded { get; private set; }
         public bool HasMoveInput { get; private set; }
         public bool IsRunning { get; private set; }
@@ -354,7 +361,10 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
             var velocity = nextPlanar;
             velocity.y = verticalVelocity;
             PlanarVelocity = nextPlanar;
+            var finalVelocity = velocity + externalVelocity; //걷기, 달리기, 점프 속도에 외부 넉백 속도 +
             characterController.Move(velocity * deltaTime);
+
+            externalVelocity = Vector3.MoveTowards(externalVelocity, Vector3.zero, groundedKnockbackRecovery * deltaTime);
         }
 
         private void MoveZeroGravity(Vector2 move, float verticalMove, bool thruster, bool sprint, float deltaTime)
@@ -393,8 +403,10 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
             }
 
             PlanarVelocity = new Vector3(zeroGravityVelocity.x, 0f, zeroGravityVelocity.z);
-            
+            var finalVelocity = zeroGravityVelocity + externalVelocity; //무중력 이동 속도와 외부 넉백 속도 + 
             characterController.Move(zeroGravityVelocity * deltaTime);
+
+            externalVelocity = Vector3.MoveTowards(externalVelocity, Vector3.zero, zeroGravityKnockbackRecovery * deltaTime); //일반 보다 중력 상태보다 넉백이 천천이 줄어듬
         }
 
         private (Vector3 Forward, Vector3 Right) GetZeroGravityMoveBasis()
@@ -714,6 +726,13 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
                 targetRenderer.enabled = isVisible;
             }
         }
-        
+        public void ApplyExternalVelocity(Vector3 velocity)
+        {
+            if (IsSpawned && !IsServer) //서버에서 호출 되었을 때만 넉백 속도 추가 
+            {
+                return;
+            }
+            externalVelocity += velocity;
+        }
     }
 }
