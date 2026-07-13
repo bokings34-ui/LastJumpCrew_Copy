@@ -336,6 +336,11 @@ namespace LastJumpCrew.ParkHanSol.Interaction
             focusedGlow.SetFocused(false);
             focusedGlow = null;
         }
+
+        private void ClearInteractionPrompt()
+        {
+            playHudPresenter?.SetInteractionPrompt(string.Empty, string.Empty);
+        }
         
     }
 }

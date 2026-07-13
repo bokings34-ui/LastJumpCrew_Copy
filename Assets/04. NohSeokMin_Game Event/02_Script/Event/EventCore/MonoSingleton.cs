@@ -6,6 +6,11 @@ namespace SM
     {
         private static T _instance;
 
+        public static bool HasInstance
+        {
+            get { return _instance != null; }
+        }
+
         public static T Instance
         {
             get

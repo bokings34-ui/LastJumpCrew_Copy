@@ -4,6 +4,7 @@ using UnityEngine;
 
 namespace LastJumpCrew.ParkHanSol.Multiplayer
 {
+    [DefaultExecutionOrder(-100)]
     public sealed class PHSMapPlayerHudBinder : MonoBehaviour
     {
         [SerializeField] private NetworkManager networkManager;
