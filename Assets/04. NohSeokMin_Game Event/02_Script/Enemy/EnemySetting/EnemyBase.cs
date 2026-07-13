@@ -126,6 +126,12 @@ namespace SM
         protected abstract Transform SetTarget();
         public abstract void PerformAttack(Transform target);
 
+        public void ForceReturnToPool()
+        {
+            EnemyPool.Instance.Return(_enemyPrefab, this);
+        }
+
+
         protected virtual void OnDrawGizmosSelected()
         {
             Gizmos.color = Color.red;

@@ -80,5 +80,17 @@ namespace SM
             }
             return null;
         }
+
+        public void ForceClearAll()
+        {
+            foreach (var evt in _activeEvents.Values)
+            {
+                evt.ForceTerminate();
+            }
+
+            _activeEvents.Clear();
+
+            Debug.Log($"<color=lime>[EventManager]</color> 모든 활성 이벤트 강제 종료 및 초기화.");
+        }
     }
 }

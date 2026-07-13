@@ -48,5 +48,17 @@ namespace SM
             ChangeState(EventState.Resolve);
             Debug.Log($"<color=lime>[{LeakData.EventName}]</color> 누출 부위 수리 완료.");
         }
+
+        public override void ForceTerminate()
+        {
+            if (_effect != null)
+            {
+                _effect.OnSealed -= HandleSealed;
+                OxygenLeakEffectPool.Instance.Return(_effect);
+                _effect = null;
+            }
+
+            base.ForceTerminate();
+        }
     }
 }

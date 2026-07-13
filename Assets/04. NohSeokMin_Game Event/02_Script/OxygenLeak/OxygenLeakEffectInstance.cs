@@ -7,6 +7,9 @@ namespace SM
 {
     public class OxygenLeakEffectInstance : MonoBehaviour, IInteractable
     {
+        [Header("벽 무시 레이어 설정")]
+        [SerializeField] private LayerMask _wallLayerMask;
+
         private float _outerPullRadius;
         private float _innerDamageRadius;
         private float _pullSpeed;
@@ -20,7 +23,8 @@ namespace SM
         public bool IsSealed { get; private set; }
         public event Action<OxygenLeakEffectInstance> OnSealed;
 
-        private readonly HashSet<Transform> _playersInRange = new HashSet<Transform>();
+        private readonly Dictionary<Transform, CharacterController> _playersInRange 
+            = new Dictionary<Transform, CharacterController>();
 
         public void Activate(OxygenLeakEventDataSO data)
         {
@@ -62,39 +66,54 @@ namespace SM
             foreach (var hit in hits)
             {
                 var damageable = hit.GetComponentInParent<IDamageable>();
+                if (damageable == null || !damageable.IsAlive) continue;
 
-                if (damageable != null && damageable.IsAlive)
+                var controller = hit.GetComponentInParent<CharacterController>();
+                if (controller == null) continue;
+
+                if (Physics.Linecast(transform.position, hit.transform.position, _wallLayerMask))
                 {
-                    _playersInRange.Add(hit.transform);
+                    continue;
                 }
+
+                _playersInRange[hit.transform] = controller;
             }
         }
 
         private void PullPlayers()
         {
-            // TODO :: Player 이동 방식(CharacterController)에 따라 바뀔 수 있음
-            foreach (var player in _playersInRange)
+            foreach (var kvp in _playersInRange)
             {
-                player.position = Vector3.MoveTowards(
-                    player.position,
-                    transform.position,
-                    _pullSpeed * Time.deltaTime);
+                var playerTransform = kvp.Key;
+                var controller = kvp.Value;
+
+                Vector3 direction = (transform.position - playerTransform.position);
+                //direction.y = 0f;
+
+                if (direction.sqrMagnitude < 0.01f) continue;
+
+                Vector3 pullMotion = direction.normalized * _pullSpeed * Time.deltaTime;
+                controller.Move(pullMotion);
             }
         }
 
         private void ApplyCenterDamage()
         {
             _damageTimer += Time.deltaTime;
+
             if (_damageTimer < _damageTickInterval) return;
+
             _damageTimer = 0f;
 
-            foreach (var player in _playersInRange)
+            foreach (var kvp in _playersInRange)
             {
-                float dist = Vector3.Distance(transform.position, player.position);
+                var playerTransform = kvp.Key;
+
+                float dist = Vector3.Distance(transform.position, playerTransform.position);
 
                 if (dist <= _innerDamageRadius)
                 {
-                    var damageable = player.GetComponentInParent<IDamageable>();
+                    var damageable = playerTransform.GetComponentInParent<IDamageable>();
 
                     if (damageable != null && damageable.IsAlive)
                     {
@@ -127,9 +146,10 @@ namespace SM
                 OnSealed?.Invoke(this);
             }
         }
+
         private void OnDrawGizmosSelected()
         {
-            Gizmos.color = new Color(0.6f, 0.1f, 0.9f); // 선명한 보라색
+            Gizmos.color = new Color(0.6f, 0.1f, 0.9f);
             Gizmos.DrawWireSphere(transform.position, _outerPullRadius);
 
             Gizmos.color = Color.red;

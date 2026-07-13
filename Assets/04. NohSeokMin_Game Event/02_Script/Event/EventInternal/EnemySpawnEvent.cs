@@ -97,5 +97,19 @@ namespace SM
         {
             ChangeState(EventState.Resolve);
         }
+
+        public override void ForceTerminate()
+        {
+            foreach (var enemy in _activeEnemies)
+            {
+                enemy.OnDeath -= HandleEnemyDeath;
+                enemy.ForceReturnToPool();
+            }
+
+            _activeEnemies.Clear();
+            _spawnedCount = SpawnData.enemyCount;
+
+            base.ForceTerminate();
+        }
     }
 }

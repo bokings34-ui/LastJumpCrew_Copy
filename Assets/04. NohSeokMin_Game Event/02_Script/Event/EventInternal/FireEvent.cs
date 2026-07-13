@@ -104,5 +104,19 @@ namespace SM
             ChangeState(EventState.Resolve);
             Debug.Log($"<color=lime>[{FireData.EventName}]</color> 종료.");
         }
+
+        public override void ForceTerminate()
+        {
+            foreach (var effect in _activeEffects)
+            {
+                effect.OnRemove -= HandleRemoveFire;
+                FireEffectPool.Instance.Return(effect);
+            }
+            _activeEffects.Clear();
+            _occupiedPoints.Clear();
+            _effectToPoint.Clear();
+
+            base.ForceTerminate();
+        }
     }
 }
