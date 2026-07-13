@@ -40,12 +40,11 @@ namespace LastJumpCrew.SeoBoGyeong
 
             Instance = this;
             DontDestroyOnLoad(gameObject);
-        }
 
-        private void Start()
-        {
             Init();
         }
+
+        
 
         private void Init()
         {
