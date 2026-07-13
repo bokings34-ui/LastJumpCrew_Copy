@@ -105,11 +105,22 @@ namespace SM
 
         public Transform GetTarget()
         {
-            if (_cachedTarget == null)
+            if (!IsTargetValid(_cachedTarget))
             {
                 _cachedTarget = SetTarget();
             }
             return _cachedTarget;
+        }
+
+        private bool IsTargetValid(Transform target)
+        {
+            if (target == null) return false;
+            if (!target.gameObject.activeInHierarchy) return false;
+
+            var damageable = target.GetComponentInParent<IDamageable>();
+            if (damageable != null && !damageable.IsAlive) return false;
+
+            return true;
         }
 
         protected abstract Transform SetTarget();

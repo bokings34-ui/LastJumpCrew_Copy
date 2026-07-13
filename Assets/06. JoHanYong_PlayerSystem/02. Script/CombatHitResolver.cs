@@ -27,7 +27,7 @@ namespace LastJumpCrew.ParkHanSol.Combat
             }
             var knockbackable = target.GetComponentInParent<IKnockbackable>();
 
-            if(knockbackable != null || !knockbackable.CanReceiveKnockback)
+            if(knockbackable == null || !knockbackable.CanReceiveKnockback)
             {
                 return ;
             }

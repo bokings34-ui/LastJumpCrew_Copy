@@ -1,3 +1,4 @@
+using System;
 using UnityEngine;
 
 namespace LastJumpCrew.ParkHanSol.Multiplayer
@@ -6,6 +7,10 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
     {
         [SerializeField] private NetworkPlayerGravityArea[] shipInteriorAreas;
         [SerializeField] private GravityZone[] gravityZones;
+
+        public event Action<bool> GravityStateChanged;
+
+        public bool IsGravityEnabled { get; private set; } = true;
 
         public void SetGravityEnabled(bool isEnabled)
         {
@@ -33,6 +38,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
 
             if (!hasGravityZones)
             {
+                PublishGravityState(isEnabled);
                 return;
             }
 
@@ -46,6 +52,8 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
 
                 zone.SetShipGravityEnabled(isEnabled);
             }
+
+            PublishGravityState(isEnabled);
         }
 
         public void TurnGravityOn()
@@ -56,6 +64,17 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
         public void TurnGravityOff()
         {
             SetGravityEnabled(false);
+        }
+
+        private void PublishGravityState(bool isEnabled)
+        {
+            if (IsGravityEnabled == isEnabled)
+            {
+                return;
+            }
+
+            IsGravityEnabled = isEnabled;
+            GravityStateChanged?.Invoke(isEnabled);
         }
     }
 }

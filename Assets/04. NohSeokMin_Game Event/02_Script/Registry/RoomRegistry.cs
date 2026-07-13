@@ -7,11 +7,6 @@ namespace SM
     {
         private readonly List<IRoom> _rooms = new List<IRoom>();
 
-        // TODO :: Room 만들 때 붙혀놓으면 스스로 등록/해제 함. 팀원에게 요청할 것
-        // IRoom Interface 와 밑에 두줄
-        // private void OnEnable() { RoomRegistry.Instance.Register(this); }
-        // private void OnDisable() { RoomRegistry.Instance.Unregister(this); }
-
         public void Register(IRoom room)
         {
             if (!_rooms.Contains(room)) _rooms.Add(room);

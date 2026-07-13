@@ -5,7 +5,6 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
     [RequireComponent(typeof(CharacterController))]
     public sealed class ZeroGravityCollisionPusher : MonoBehaviour
     {
-        [SerializeField, Min(0.1f)] private float playerMass = 1f;
         [SerializeField, Min(0f)] private float pushMultiplier = 1.15f;
         [SerializeField, Min(0f)] private float minimumImpulse = 0.35f;
         [SerializeField, Min(0f)] private float maximumImpulse = 8f;
@@ -22,14 +21,27 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
 
         private void OnControllerColliderHit(ControllerColliderHit hit)
         {
-            if (hit == null || hit.rigidbody == null || hit.rigidbody.isKinematic)
+            if (hit == null)
             {
+                return;
+            }
+
+            if (playerController == null)
+            {
+                Debug.LogError($"PHS_ZERO_GRAVITY_COLLISION_FAILED reason=player_controller_missing pusher={name}");
                 return;
             }
 
             if (onlyPushInZeroGravity
                 && playerController != null
                 && playerController.GravityMode == NetworkPlayerGravityMode.ShipGravity)
+            {
+                return;
+            }
+
+            playerController.ReflectZeroGravityVelocity(hit.normal);
+
+            if (hit.rigidbody == null || hit.rigidbody.isKinematic)
             {
                 return;
             }
@@ -50,7 +62,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
 
             var playerSpeed = characterController == null ? 0f : characterController.velocity.magnitude;
             var impulse = Mathf.Clamp(
-                Mathf.Max(playerSpeed * playerMass * pushMultiplier, minimumImpulse),
+                Mathf.Max(playerSpeed * playerController.SpaceMass * pushMultiplier, minimumImpulse),
                 minimumImpulse,
                 maximumImpulse);
 
