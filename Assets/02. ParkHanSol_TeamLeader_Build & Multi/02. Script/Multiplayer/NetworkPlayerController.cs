@@ -127,6 +127,29 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
             Debug.Log($"PHS_PLAYER_GRAVITY_MODE player={name} mode={gravityMode}");
         }
 
+        public void ApplyExternalVelocity(Vector3 velocity)
+        {
+            if (velocity.sqrMagnitude <= 0.001f)
+            {
+                return;
+            }
+
+            if (IsSpawned && !IsServer)
+            {
+                Debug.LogError($"PHS_EXTERNAL_VELOCITY_FAILED reason=server_required player={name}");
+                return;
+            }
+
+            if (gravityMode == NetworkPlayerGravityMode.ShipGravity)
+            {
+                PlanarVelocity += new Vector3(velocity.x, 0f, velocity.z);
+                verticalVelocity += velocity.y;
+                return;
+            }
+
+            zeroGravityVelocity += velocity;
+        }
+
         public override void OnNetworkSpawn()
         {
             characterController = GetComponent<CharacterController>();
