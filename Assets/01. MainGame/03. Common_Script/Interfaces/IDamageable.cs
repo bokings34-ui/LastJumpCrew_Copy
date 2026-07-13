@@ -4,7 +4,7 @@ namespace LastJumpCrew.Common
 {
     /// <summary>
     /// 피해를 받을 수 있는 대상의 공용 규칙입니다.
-    /// 플레이어, 적, 장치, 함선 부품 등이 구현합니다.
+    /// 플레이어, 적, 장치, 함선 부품 등이 구현합니다
     /// </summary>
     public interface IDamageable
     {

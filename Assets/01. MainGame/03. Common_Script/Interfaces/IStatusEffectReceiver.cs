@@ -11,16 +11,16 @@ namespace LastJumpCrew.Common
         /// <summary>
         /// 지정 상태이상을 받을 수 있는지 판단합니다.
         /// </summary>
-        bool CanReceiveStatusEffect(string effectId);
+        bool CanReceiveStatusEffect(StatusEffectType effectType);
 
         /// <summary>
         /// 지속시간이 있는 상태이상을 적용합니다.
         /// </summary>
-        void ApplyStatusEffect(string effectId, float duration, GameObject source);
+        void ApplyStatusEffect(StatusEffectType effectType, float duration, GameObject source);
 
         /// <summary>
         /// 지정 상태이상을 제거합니다.
         /// </summary>
-        void RemoveStatusEffect(string effectId);
+        void RemoveStatusEffect(StatusEffectType effectType);
     }
 }

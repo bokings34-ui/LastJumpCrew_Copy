@@ -425,6 +425,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
             }
 
             PlanarVelocity = new Vector3(zeroGravityVelocity.x, 0f, zeroGravityVelocity.z);
+            
             characterController.Move(zeroGravityVelocity * deltaTime);
         }
 
@@ -871,5 +872,6 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
                 targetRenderer.enabled = isVisible;
             }
         }
+        
     }
 }

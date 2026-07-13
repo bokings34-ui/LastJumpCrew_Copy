@@ -65,7 +65,6 @@ namespace LastJumpCrew.ParkHanSol.Interaction
             {
                 return;
             }
-
             if (Mouse.current.leftButton.wasPressedThisFrame)
             {
                 if (TryInteractWithFocusedToolBoxSlot())
@@ -337,10 +336,6 @@ namespace LastJumpCrew.ParkHanSol.Interaction
             focusedGlow.SetFocused(false);
             focusedGlow = null;
         }
-
-        private void ClearInteractionPrompt()
-        {
-            playHudPresenter?.SetInteractionPrompt("F", string.Empty);
-        }
+        
     }
 }
