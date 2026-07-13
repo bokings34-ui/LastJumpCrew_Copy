@@ -1,34 +1,41 @@
-using LastJumpCrew.SeBoGyeong.Data;
+using LastJumpCrew.SeoBoGyeong.Data;
+using LastJumpCrew.SeoBoGyeong.Economy;
 using System;
 using System.Collections.Generic;
 using System.Linq;
 using UnityEngine;
 using Random = UnityEngine.Random;
+
 namespace LastJumpCrew.SeoBoGyeong
 {
+    /// <summary>
+    /// ìƒì  ì„ ë°˜ì— íŒë§¤ ì•„ì´í…œì„ ëœë¤ ì§„ì—´í•˜ëŠ” ìŠ¤í¬ë„ˆ.
+    /// ìŠ¤í° ì§í›„ ShopItemTag(itemId)ë¥¼ ë¶€ì°©í•´ ItemCheckout ì´ ìƒí’ˆì„ ì¸ì‹í•˜ê²Œ í•œë‹¤.
+    /// </summary>
     public class RangeItemSpawner : MonoBehaviour
     {
         [SerializeField] private GameObject[] shelfAreas;
 
-        //³ªÁß¿¡ µ¥ÀÌÅÍ Å×ÀÌºí ¿¬°á ¿¹Á¤
-         private GameObject[] _itemPrefabs;
+        // ë°ì´í„° í…Œì´ë¸”(GameCore.Data.Tools)ì—ì„œ ì±„ìš´ë‹¤
+        private GameObject[] _itemPrefabs;
+        private int[] _itemIds; // _itemPrefabs ì™€ ê°™ì€ ìƒ‰ì¸ì˜ íŒë§¤ìš© itemId
         [SerializeField] private int totalItemCount = 5;
-        //[Tooltip("¹èÄ¡ °ø°£ ±æÀÌ\n¿Ü°û¼± °ÉÄ§ ¹æÁö¸¦ À§ÇØ ÀÚÃ¼ÀûÀ¸·Î -1 Ã³¸®µÊ")]
+        //[Tooltip("ë°°ì¹˜ ê°€ëŠ¥ ê¸¸ì´\në‹¨ìˆœíˆ ê²¹ì¹¨ ë°©ì§€ìš© â€” ì‹¤ì œ ê¸¸ì´ì—ì„œ -1 ì²˜ë¦¬ë¨")]
         //[SerializeField] private float shelfLength = 8f;
         [SerializeField] private float minItemSpacing = 1f;
         [SerializeField] private float[] length;
         private int[] _spawnItemIndices;
         private List<int> _itemsPerShelf = new List<int>();
         private float[] _shelfAreaLengths;
-        private DataRepository<UtilityItemData> _tools; 
+        private DataRepository<UtilityItemData> _tools;
 
 
 
         private void Awake()
         {
-            if (shelfAreas == null )
+            if (shelfAreas == null)
             {
-                Debug.LogError("[ShopSpawn] Shelf areas °¡ ¿¬°áµÇÁö ¾ÊÀ½.");
+                Debug.LogError("[ShopSpawn] Shelf areas ê°€ ì—°ê²°ë˜ì§€ ì•ŠìŒ.");
             }
 
             _spawnItemIndices = new int[totalItemCount];
@@ -47,10 +54,12 @@ namespace LastJumpCrew.SeoBoGyeong
         {
             UtilityItemData[] item = _tools.All.Values.ToArray<UtilityItemData>();
             _itemPrefabs = new GameObject[item.Length];
-           
+            _itemIds = new int[item.Length];
+
             for (int i = 0; i < item.Length; i++)
             {
                 _itemPrefabs[i] = item[i].DroppedPrefab;
+                _itemIds[i] = item[i].Id;
             }
 
         }
@@ -65,7 +74,7 @@ namespace LastJumpCrew.SeoBoGyeong
             {
                 if (areaMaxItems >= totalItemCount)
                 {
-                    Debug.Log($"°ø°£ ÃæÁ· {shelfCount}°³");
+                    Debug.Log($"ì‚¬ìš© ì„ ë°˜ {shelfCount}ê°œ");
                     break;
                 }
                 else if (areaMaxItems < totalItemCount)
@@ -99,6 +108,13 @@ namespace LastJumpCrew.SeoBoGyeong
             }
         }
 
+        /// <summary>ì§„ì—´í’ˆ 1ê°œ ìŠ¤í° + íŒë§¤ìš© itemId íƒœê·¸ ë¶€ì°©(í”„ë¦¬íŒ¹ ìˆ˜ì • ì—†ì´ ì½”ë“œë¡œ ì—°ê²°).</summary>
+        private void SpawnDisplayItem(int prefabIndex, Vector3 pos, Quaternion rot)
+        {
+            var go = Instantiate(_itemPrefabs[prefabIndex], pos, rot);
+            go.AddComponent<ShopItemTag>().Init(_itemIds[prefabIndex]);
+        }
+
         [ContextMenu("Spawn Item")]
         private void SpawnItem()
         {
@@ -112,10 +128,10 @@ namespace LastJumpCrew.SeoBoGyeong
             }
             Array.Sort(_spawnItemIndices, (a, b) => b.CompareTo(a));
 
-            // ¾ÆÀÌÅÛÀÌ ÇÏ³ª¸é °¡¿îµ¥ ¹èÄ¡
+            // ì•„ì´í…œì´ í•˜ë‚˜ë©´ ê°€ìš´ë° ë°°ì¹˜
             if (totalItemCount == 1)
             {
-                Instantiate(_itemPrefabs[_spawnItemIndices[0]], center, Quaternion.identity);
+                SpawnDisplayItem(_spawnItemIndices[0], center, Quaternion.identity);
                 return;
             }
 
@@ -139,9 +155,9 @@ namespace LastJumpCrew.SeoBoGyeong
                     float x = shelfAreas[i].transform.position.x + leftOffset + itemSpacing * j;
                     Quaternion rotation = shelfAreas[i].transform.rotation;
                     pos.x = x;
-                    Instantiate(_itemPrefabs[_spawnItemIndices[spawnIndex++]], pos, rotation);
+                    SpawnDisplayItem(_spawnItemIndices[spawnIndex++], pos, rotation);
                 }
-                Debug.Log($"¼±¹İ {i + 1}¹ø: ¾ÆÀÌÅÛ {itemsOnShelf}°³ ¹èÄ¡ ¿Ï·á. °£°İ: {itemSpacing}");
+                Debug.Log($"ì„ ë°˜ {i + 1}ë²ˆ: ì•„ì´í…œ {itemsOnShelf}ê°œ ë°°ì¹˜ ì™„ë£Œ. ê°„ê²©: {itemSpacing}");
             }
 
         }
