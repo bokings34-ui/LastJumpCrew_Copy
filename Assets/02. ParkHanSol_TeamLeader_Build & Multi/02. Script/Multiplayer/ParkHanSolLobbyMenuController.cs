@@ -25,14 +25,12 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
         [SerializeField] private GameObject settingsPanel;
         [SerializeField] private GameObject settingsLeftMenu;
         [SerializeField] private GameObject settingsApplyButton;
-        [SerializeField] private GameObject shopPanel;
         [SerializeField] private GameObject sessionPanel;
         [SerializeField] private NetworkSessionPanel sessionPanelController;
 
         [Header("Main Buttons")]
         [SerializeField] private Button startButton;
         [SerializeField] private Button settingsButton;
-        [SerializeField] private Button shopButton;
         [SerializeField] private Button quitButton;
 
         [Header("Lobby Buttons")]
@@ -53,16 +51,12 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
         [SerializeField] private Button settingsBackButton;
         [SerializeField] private ParkHanSolGameSettingsController gameSettingsController;
 
-        [Header("Shop")]
-        [SerializeField] private Button shopBackButton;
-
         private SettingsReturnTarget settingsReturnTarget = SettingsReturnTarget.Start;
 
         private void Awake()
         {
             Bind(startButton, ShowLobbySelection);
             Bind(settingsButton, ShowSettingsFromStart);
-            Bind(shopButton, ShowShop);
             Bind(quitButton, QuitGame);
             Bind(createRoomButton, ShowCreateRoom);
             Bind(joinRoomButton, ShowJoinRoom);
@@ -71,7 +65,6 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
             Bind(roomSettingsButton, ShowSettingsFromRoom);
             Bind(roomStartGameButton, StartGame);
             Bind(settingsBackButton, CloseSettingsWithoutSave);
-            Bind(shopBackButton, ShowStart);
 
             if (masterVolumeSlider != null)
             {
@@ -105,7 +98,6 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
         {
             Unbind(startButton, ShowLobbySelection);
             Unbind(settingsButton, ShowSettingsFromStart);
-            Unbind(shopButton, ShowShop);
             Unbind(quitButton, QuitGame);
             Unbind(createRoomButton, ShowCreateRoom);
             Unbind(joinRoomButton, ShowJoinRoom);
@@ -114,7 +106,6 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
             Unbind(roomSettingsButton, ShowSettingsFromRoom);
             Unbind(roomStartGameButton, StartGame);
             Unbind(settingsBackButton, CloseSettingsWithoutSave);
-            Unbind(shopBackButton, ShowStart);
 
             if (masterVolumeSlider != null)
             {
@@ -131,7 +122,6 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
             SetPanel(settingsPanel, false);
             SetPanel(settingsLeftMenu, false);
             SetPanel(settingsApplyButton, false);
-            SetPanel(shopPanel, false);
             SetPanel(sessionPanel, false);
         }
 
@@ -155,21 +145,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
             SetPanel(settingsPanel, true);
             SetPanel(settingsLeftMenu, true);
             SetPanel(settingsApplyButton, true);
-            SetPanel(shopPanel, false);
             SetPanel(sessionPanel, false);
-        }
-
-        private void ShowShop()
-        {
-            SetPanel(startPanel, false);
-            SetPanel(lobbyPanel, false);
-            SetPanel(roomPanel, false);
-            SetPanel(settingsPanel, true);
-            SetPanel(settingsLeftMenu, false);
-            SetPanel(settingsApplyButton, false);
-            SetPanel(shopPanel, true);
-            SetPanel(sessionPanel, false);
-            ShowOnlySettingsChild(shopPanel);
         }
 
         private void CloseSettingsWithoutSave()
@@ -215,7 +191,6 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
             SetPanel(settingsPanel, false);
             SetPanel(settingsLeftMenu, false);
             SetPanel(settingsApplyButton, false);
-            SetPanel(shopPanel, false);
             SetPanel(sessionPanel, false);
         }
 
@@ -273,7 +248,6 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
             SetPanel(settingsPanel, false);
             SetPanel(settingsLeftMenu, false);
             SetPanel(settingsApplyButton, false);
-            SetPanel(shopPanel, false);
             SetPanel(sessionPanel, false);
             SetLocalGameplayInput(false);
             Debug.Log($"PHS_ONLINE_ROOM scene={SceneManager.GetActiveScene().name} clients={GetConnectedClientCount()}");
@@ -330,27 +304,6 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
             {
                 panel.SetActive(active);
             }
-        }
-
-        private void ShowOnlySettingsChild(GameObject targetPanel)
-        {
-            if (settingsPanel == null || targetPanel == null)
-            {
-                return;
-            }
-
-            for (var i = 0; i < settingsPanel.transform.childCount; i++)
-            {
-                var child = settingsPanel.transform.GetChild(i).gameObject;
-                if (child == targetPanel || child.transform.IsChildOf(targetPanel.transform))
-                {
-                    continue;
-                }
-
-                child.SetActive(false);
-            }
-
-            targetPanel.SetActive(true);
         }
 
         private static void SetLocalGameplayInput(bool active)

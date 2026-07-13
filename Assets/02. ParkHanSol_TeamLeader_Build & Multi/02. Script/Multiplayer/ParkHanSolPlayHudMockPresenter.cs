@@ -11,11 +11,9 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
     {
         [SerializeField] private TMP_Text healthText;
         [SerializeField] private TMP_Text staminaText;
-        [SerializeField] private TMP_Text moneyText;
         [SerializeField] private TMP_Text bankText;
         [FormerlySerializedAs("quotaText")]
         [SerializeField] private TMP_Text warpGaugeText;
-        [SerializeField] private TMP_Text subtitleText;
         [SerializeField] private TMP_Text shipHpText;
         [SerializeField] private TMP_Text timeLimitText;
         [SerializeField] private GameObject speakingPlayerPanel;
@@ -27,7 +25,6 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
         [SerializeField] private TMP_Text heldItemText;
         [SerializeField] private Image heldItemIconImage;
         [SerializeField] private TMP_Text heldItemDurabilityText;
-        [SerializeField] private TMP_Text[] partyFeedTexts;
         [SerializeField] private PHSHudFeedbackController hudFeedbackController;
 
         private readonly List<SpeakingPlayerView> speakingPlayerViews = new();
@@ -84,7 +81,6 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
                 return;
             }
 
-            SetText(moneyText, $"${money}");
             SetText(bankText, $"${bank}");
         }
 
@@ -97,11 +93,6 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
             }
 
             SetText(warpGaugeText, $"{Mathf.RoundToInt(Mathf.Clamp01(normalizedValue) * 100f)}%");
-        }
-
-        public void SetSubtitle(string value)
-        {
-            SetText(subtitleText, value);
         }
 
         public void SetShipHp(int current, int max)
@@ -198,35 +189,14 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
             }
         }
 
-        public void SetPartyFeedLine(int index, string value)
-        {
-            if (partyFeedTexts == null || index < 0 || index >= partyFeedTexts.Length)
-            {
-                return;
-            }
-
-            SetText(partyFeedTexts[index], value);
-        }
-
         private void ResetPlaceholders()
         {
             SetVitals(100, 100, 40, 40);
             SetEconomy(0, 0);
-            SetSubtitle(string.Empty);
             SetShipHp(100, 100);
             SetTimeLimit(0f);
             ClearHeldItem();
             HideSpeakingPlayer();
-
-            if (partyFeedTexts == null)
-            {
-                return;
-            }
-
-            for (var i = 0; i < partyFeedTexts.Length; i++)
-            {
-                SetText(partyFeedTexts[i], string.Empty);
-            }
         }
 
         private static void SetText(TMP_Text target, string value)

@@ -28,14 +28,14 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
         [SerializeField, Min(0.005f)] private float ropeWidth = 0.045f;
         [SerializeField] private LayerMask grappleLayers = ~0;
         [SerializeField, Min(1f)] private float maximumDistance = 24f;
-        [SerializeField, Min(1f)] private float hookLaunchSpeed = 40f;
-        [SerializeField, Min(0.01f)] private float hookCollisionRadius = 0.12f;
-        [SerializeField, Min(0.1f)] private float pullAcceleration = 20f;
+        [SerializeField, Min(1f)] private float hookLaunchSpeed = 50f;
+        [SerializeField, Min(0.01f)] private float hookCollisionRadius = 0.16f;
+        [SerializeField, Min(0.1f)] private float pullAcceleration = 18f;
         [SerializeField, Min(0.1f)] private float maximumPullSpeed = 10f;
-        [SerializeField, Min(0.1f)] private float stopDistance = 1.4f;
+        [SerializeField, Min(0.1f)] private float stopDistance = 1.25f;
         [Header("Input")]
-        [SerializeField] private Key hookKey = Key.LeftShift;
-        [SerializeField, Min(0.05f)] private float doubleTapCancelWindow = 0.25f;
+        [SerializeField] private Key hookKey = Key.Q;
+        [SerializeField, Min(0f)] private float refireCooldown = 0.15f;
 
         private readonly NetworkVariable<bool> grappleActive = new(false);
         private readonly NetworkVariable<Vector3> grapplePosition = new(Vector3.zero);
@@ -52,7 +52,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
         private IGrappleTarget activeTarget;
         private IGrappleCollectible activeCollectible;
         private bool pullRequested;
-        private float lastHookPressTime = float.NegativeInfinity;
+        private float lastLaunchTime = float.NegativeInfinity;
         private bool setupErrorLogged;
 
         private void Awake()
@@ -138,7 +138,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
 
         private void OnDisable()
         {
-            lastHookPressTime = float.NegativeInfinity;
+            lastLaunchTime = float.NegativeInfinity;
             SetRopeVisible(false);
             SetHookVisible(false);
             SetAimMarkerVisible(false);
@@ -153,26 +153,17 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
 
             if (Keyboard.current[hookKey].wasPressedThisFrame)
             {
-                HandleHookPressed(Time.unscaledTime);
+                HandleHookPressed();
             }
 
             if (Keyboard.current[hookKey].wasReleasedThisFrame)
             {
-                RequestSetPull(false);
+                RequestStopGrapple();
             }
         }
 
-        private void HandleHookPressed(float pressTime)
+        private void HandleHookPressed()
         {
-            if (pressTime - lastHookPressTime <= doubleTapCancelWindow)
-            {
-                lastHookPressTime = float.NegativeInfinity;
-                RequestStopGrapple();
-                Debug.Log($"PHS_GRAPPLE_DOUBLE_TAP_CANCEL player={name} active={IsGrappleActive()}");
-                return;
-            }
-
-            lastHookPressTime = pressTime;
             if (IsGrappleActive())
             {
                 RequestSetPull(true);
@@ -276,6 +267,12 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
 
         private void LaunchGrapple(Vector3 origin, Vector3 direction)
         {
+            if (Time.unscaledTime - lastLaunchTime < refireCooldown)
+            {
+                return;
+            }
+
+            lastLaunchTime = Time.unscaledTime;
             StopGrapple();
             motionState = GrappleMotionState.Flying;
             flightPosition = origin;
@@ -343,8 +340,8 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
                 QueryTriggerInteraction.Collide);
             Array.Sort(
                 overlaps,
-                (left, right) => Vector3.SqrMagnitude(left.ClosestPoint(origin) - origin)
-                    .CompareTo(Vector3.SqrMagnitude(right.ClosestPoint(origin) - origin)));
+                (left, right) => left.bounds.SqrDistance(origin)
+                    .CompareTo(right.bounds.SqrDistance(origin)));
             foreach (var overlap in overlaps)
             {
                 if (overlap.transform.root == transform.root || overlap.isTrigger)
@@ -353,7 +350,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
                 }
 
                 hitCollider = overlap;
-                hitPoint = overlap.ClosestPoint(origin);
+                hitPoint = GetSafeClosestPoint(overlap, origin);
                 hitNormal = (origin - overlap.bounds.center).normalized;
                 if (hitNormal.sqrMagnitude <= 0.001f)
                 {
@@ -390,10 +387,20 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
         private void LatchHook(Collider collider, Vector3 point)
         {
             motionState = GrappleMotionState.Latched;
-            latchedTransform = collider.transform;
-            latchedLocalPoint = latchedTransform.InverseTransformPoint(point);
             activeTarget = collider.GetComponentInParent<IGrappleTarget>();
             activeCollectible = collider.GetComponentInParent<IGrappleCollectible>();
+            if (activeTarget?.GrapplePoint != null)
+            {
+                latchedTransform = activeTarget.GrapplePoint;
+                latchedLocalPoint = Vector3.zero;
+                point = latchedTransform.position;
+            }
+            else
+            {
+                latchedTransform = collider.transform;
+                latchedLocalPoint = latchedTransform.InverseTransformPoint(point);
+            }
+
             UpdateGrapplePosition(point);
             if (TryFinishCollectibleArrival())
             {
@@ -661,6 +668,16 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
             }
 
             return false;
+        }
+
+        private static Vector3 GetSafeClosestPoint(Collider targetCollider, Vector3 point)
+        {
+            if (targetCollider is MeshCollider meshCollider && !meshCollider.convex)
+            {
+                return targetCollider.bounds.ClosestPoint(point);
+            }
+
+            return targetCollider.ClosestPoint(point);
         }
     }
 }

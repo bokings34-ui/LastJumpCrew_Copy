@@ -41,11 +41,15 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
                 return;
             }
 
-            var targetVelocity = offset.normalized * maximumPullSpeed;
-            targetRigidbody.linearVelocity = Vector3.MoveTowards(
-                targetRigidbody.linearVelocity,
-                targetVelocity,
+            var pullDirection = offset.normalized;
+            var currentVelocity = targetRigidbody.linearVelocity;
+            var radialSpeed = Vector3.Dot(currentVelocity, pullDirection);
+            var nextRadialSpeed = Mathf.MoveTowards(
+                radialSpeed,
+                maximumPullSpeed,
                 pullAcceleration * deltaTime);
+            var tangentialVelocity = currentVelocity - pullDirection * radialSpeed;
+            targetRigidbody.linearVelocity = tangentialVelocity + pullDirection * nextRadialSpeed;
         }
     }
 }
