@@ -90,6 +90,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
         private float standaloneThrusterFuel;
         private float lastThrusterUseTime = float.NegativeInfinity;
         private bool thrusterGaugeReferenceErrorLogged;
+        private float hudBindingErrorLogTime;
 
         public bool IsGrounded { get; private set; }
         public bool HasMoveInput { get; private set; }
@@ -302,6 +303,11 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
 
         private void HandleActiveSceneChanged(Scene previousScene, Scene currentScene)
         {
+            if (currentScene.name == gameplaySceneName)
+            {
+                hudBindingErrorLogTime = Time.time + 0.5f;
+            }
+
             MoveToGameplaySpawnPointIfServer();
             ApplySceneInputState();
         }
@@ -567,7 +573,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
         {
             if (playHudPresenter == null)
             {
-                if (!thrusterGaugeReferenceErrorLogged)
+                if (Time.time >= hudBindingErrorLogTime && !thrusterGaugeReferenceErrorLogged)
                 {
                     thrusterGaugeReferenceErrorLogged = true;
                     Debug.LogError($"PHS_THRUSTER_UI_SETUP_FAILED reason=play_hud_presenter_missing player={name}");
