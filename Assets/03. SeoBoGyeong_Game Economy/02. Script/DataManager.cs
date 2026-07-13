@@ -1,5 +1,5 @@
+using LastJumpCrew.SeBoGyeong.Data;
 using UnityEngine;
-using LastJumpCrew.Common;
 
 
 
@@ -7,23 +7,35 @@ namespace LastJumpCrew.SeoBoGyeong
 {
     /// <summary>
     /// 정적 데이터(구역/아이템)를 소유하는 매니저. 정적 데이터는 게임 중 불변이라 네트워크 동기화 대상이 아니다.
-    /// 이벤트(사고) 데이터는 노석민 영역(EventRegistrySO)이 소유하므로 여기서 소유하지 않는다.
-    /// ⚠️ ItemData(ScriptableObject)는 담당자 부재로 아직 미생성. 생기면 아래 Item 주석을 해제한다.
     /// </summary>
     public class DataManager : MonoBehaviour
     {
-        // --- ItemData(SO) 생성 후 주석 해제. 이벤트 데이터는 노석민 영역(EventRegistrySO) 소유라 여기 없음 ---
-        // [SerializeField] private ItemData[]  itemDatas;
-        [SerializeField] private ZoneData[]  zoneDatas;
+        private ItemData[] itemDatas;
+        private UtilityItemData[] toolDatas;
+        private ZoneData[] zoneDatas;
 
-        // public DataRepository<ItemData>  Items  { get; private set; }
+        // TryGet, Get, All의 함수로 접근 가능
+        public DataRepository<ItemData>  Items  { get; private set; }
+        public DataRepository<UtilityItemData> Tools { get; private set; }
         public DataRepository<ZoneData>  Zones  { get; private set; }
 
         public void Init()
         {
-            // Items = new DataRepository<ItemData>(itemDatas);
+            itemDatas = Resources.LoadAll<ItemData>("Data/Items");
+            // UtilityItemData는 ItemData를 상속 + 아이템 타입 & 내구도
+            toolDatas = Resources.LoadAll<UtilityItemData>("Data/Items");
+            zoneDatas = Resources.LoadAll<ZoneData>("Data/Zones");
+
+            Items = new DataRepository<ItemData>(itemDatas);
+            Tools = new DataRepository<UtilityItemData>(toolDatas);
+
             Zones = new DataRepository<ZoneData>(zoneDatas);
-            Debug.Log("[DataManager] Init 완료 (Zone 활성 / Item 은 담당자 복귀 후)");
+
+
+            Debug.Log("[DataManager] Init 완료 (Zone 활성 / Item 활성)");
+            //Debug.Log($"[DataManager] Items : {string.Join(',', Items.All)}");
+            //Debug.Log($"[DataManager] Zones : {string.Join(',', Zones.All)}");
+            Debug.Log($"[DataManager/TEST]아이템ID: 2101 ={Items.Get(2101).DisplayName}");
         }
     }
 }
