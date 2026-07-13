@@ -82,7 +82,7 @@ namespace LastJumpCrew.SeoBoGyeong
             }
         }
 
-
+        [ContextMenu("Spawn Item")]
         private void SpawnItem()
         {
             DivideSection(_shelfAreaLengths);
@@ -124,7 +124,7 @@ namespace LastJumpCrew.SeoBoGyeong
                     pos.x = x;
                     Instantiate(itemPrefabs[_spawnItemIndices[spawnIndex++]], pos, rotation);
                 }
-                Debug.Log($"선반 {i + 1}번: 아이템 {itemsOnShelf + 1}개 배치 완료. 간격: {itemSpacing}");
+                Debug.Log($"선반 {i + 1}번: 아이템 {itemsOnShelf}개 배치 완료. 간격: {itemSpacing}");
             }
 
         }
