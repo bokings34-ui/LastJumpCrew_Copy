@@ -1,23 +1,23 @@
 using UnityEngine;
-namespace LastJumpCrew.SeBoGyeong.Data
+
+namespace LastJumpCrew.SeoBoGyeong.Data
 {
     [CreateAssetMenu(
         fileName = "UtilityItem_New",
         menuName = "LastJumpCrew/SeoBoGyeong/Utility Item Data")]
     public class UtilityItemData : ItemData
     {
-        [Header("¾ÆÀÌÅÛ Å¸ÀÔ")]
+        [Header("ì•„ì´í…œ íƒ€ìž…")]
         [SerializeField] private ItemType type;
-        //Á¶ÇÑ¿ë´ÔÀÇ itemType enum
+        // ì¡°í•œìš©ë‹˜(06)ì˜ ì „ì—­ ItemType enum ì‚¬ìš©
 
-        [Header("³»±¸µµ")]
-        [Tooltip("³»±¸µµÀÇ À¯¹«")]
+        [Header("ë‚´êµ¬ë„")]
+        [Tooltip("ë‚´êµ¬ë„ ì‚¬ìš© ì—¬ë¶€")]
         [SerializeField] private bool hasDurability;
-        [Tooltip("³»±¸µµ ÃÖ´ëÄ¡")]
+        [Tooltip("ë‚´êµ¬ë„ ìµœëŒ€ì¹˜")]
         [SerializeField, Min(1)] private int maxDurability = 100;
 
         public bool HasDurability => hasDurability;
         public int MaxDurability => maxDurability;
     }
 }
-

@@ -1,40 +1,41 @@
 using LastJumpCrew.Common;
 using UnityEngine;
-namespace LastJumpCrew.SeBoGyeong.Data
+
+namespace LastJumpCrew.SeoBoGyeong.Data
 {
     [CreateAssetMenu(
         fileName = "Item_New",
         menuName = "LastJumpCrew/SeoBoGyeong/Item Data")]
     public class ItemData : ScriptableObject, IGameData
     {
-        [Header("±âº» Á¤º¸")]
-        [Tooltip("int·Î ±¸¼ºµÈ ID")]
+        [Header("ê¸°ë³¸ ì •ë³´")]
+        [Tooltip("intí˜• ì•„ì´í…œ ID")]
         [SerializeField] private int id;
-        [Tooltip("UI¿¡ Ç¥½ÃµÇ´Â ÀÌ¸§")]
+        [Tooltip("UIì— í‘œì‹œë˜ëŠ” ì´ë¦„")]
         [SerializeField] private string displayName;
         [SerializeField] private Sprite icon;
         [TextArea]
         [SerializeField] private string description;
-        
 
-        [Header("¿ÀºêÁ§Æ® Prefab")]
-        [Tooltip("ÇÃ·¹ÀÌ¾î°¡ µé¾úÀ» ¶§ÀÇ ¿ÀºêÁ§Æ®")]
+
+        [Header("ì˜¤ë¸Œì íŠ¸ Prefab")]
+        [Tooltip("í”Œë ˆì´ì–´ê°€ ë“¤ì—ˆì„ ë•Œì˜ ì˜¤ë¸Œì íŠ¸")]
         [SerializeField] private GameObject heldPrefab;
-        [Tooltip("ÇÃ·¹ÀÌ¾î°¡ ³»·Á³õ¾ÒÀ» ¶§ÀÇ ¿ÀºêÁ§Æ®")]
-        [SerializeField] private GameObject droppedPrefab;       
+        [Tooltip("í”Œë ˆì´ì–´ê°€ ë‚´ë ¤ë†“ì•˜ì„ ë•Œì˜ ì˜¤ë¸Œì íŠ¸")]
+        [SerializeField] private GameObject droppedPrefab;
 
-        [Header("±¸¸Å & ÆÇ¸Å")]
-        [Tooltip("±¸¸Å °¡´É ¿©ºÎ")]
+        [Header("êµ¬ë§¤ & íŒë§¤")]
+        [Tooltip("êµ¬ë§¤ ê°€ëŠ¥ ì—¬ë¶€")]
         [SerializeField] private bool canBuy;
-        [Tooltip("ÆÇ¸Å °¡´É ¿©ºÎ")]
+        [Tooltip("íŒë§¤ ê°€ëŠ¥ ì—¬ë¶€")]
         [SerializeField] private bool canSell;
-        [Tooltip("°¡°Ý")]
+        [Tooltip("ê°€ê²©")]
         [SerializeField, Min(0)] private int price;
 
         public int Id => id;
         public string DisplayName => displayName;
         public Sprite Icon => icon;
-       
+
         public int Price => price;
         public GameObject HeldPrefab => heldPrefab;
         public GameObject DroppedPrefab => droppedPrefab;
@@ -45,4 +46,3 @@ namespace LastJumpCrew.SeBoGyeong.Data
         public bool HasDroppedPrefab => DroppedPrefab != null;
     }
 }
-
