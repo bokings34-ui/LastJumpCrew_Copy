@@ -12,6 +12,8 @@ namespace SM
                     return new FireEvent();
                 case EventId.EnemySpawn:
                     return new EnemySpawnEvent();
+                case EventId.OxygenLeak:
+                    return new OxygenLeakEvent();
 
                 // TODO :: PowerOff, OxygenLeak, EngineBreak, MicDestroy, EnemySpawn 구현 후 추가
 

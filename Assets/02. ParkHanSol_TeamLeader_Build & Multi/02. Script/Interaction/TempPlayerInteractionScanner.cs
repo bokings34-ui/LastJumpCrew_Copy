@@ -1,6 +1,7 @@
 using UnityEngine;
 using UnityEngine.InputSystem;
 using Unity.Netcode;
+using LastJumpCrew.ParkHanSol.Multiplayer;
 using CommonInteraction = LastJumpCrew.Common;
 
 namespace LastJumpCrew.ParkHanSol.Interaction
@@ -18,6 +19,7 @@ namespace LastJumpCrew.ParkHanSol.Interaction
 
         // 상호작용 대상 레이어 필터다. Trigger도 감지한다.
         [SerializeField] private LayerMask interactableLayers = ~0;
+        [SerializeField] private ParkHanSolPlayHudMockPresenter playHudPresenter;
 
         // 같은 오브젝트에 붙은 아이템 보유 컴포넌트다.
         private IItemHolder itemHolder;
@@ -47,6 +49,7 @@ namespace LastJumpCrew.ParkHanSol.Interaction
             if (networkObject != null && networkObject.IsSpawned && !networkObject.IsOwner)
             {
                 ClearToolBoxSlotFocus();
+                ClearInteractionPrompt();
                 return;
             }
 
@@ -62,7 +65,6 @@ namespace LastJumpCrew.ParkHanSol.Interaction
             {
                 return;
             }
-
             if (Mouse.current.leftButton.wasPressedThisFrame)
             {
                 if (TryInteractWithFocusedToolBoxSlot())
@@ -83,6 +85,12 @@ namespace LastJumpCrew.ParkHanSol.Interaction
         {
             ClearToolBoxSlotFocus();
             ClearInteractableFocusGlow();
+            ClearInteractionPrompt();
+        }
+
+        public void BindPlayHudPresenter(ParkHanSolPlayHudMockPresenter presenter)
+        {
+            playHudPresenter = presenter;
         }
 
         private void PlaceHeldItem()
@@ -284,6 +292,7 @@ namespace LastJumpCrew.ParkHanSol.Interaction
             if (interactionCamera == null || itemHolder == null)
             {
                 ClearInteractableFocusGlow();
+                ClearInteractionPrompt();
                 return;
             }
 
@@ -291,18 +300,16 @@ namespace LastJumpCrew.ParkHanSol.Interaction
             if (!Physics.Raycast(ray, out var hit, interactDistance, interactableLayers, QueryTriggerInteraction.Collide))
             {
                 ClearInteractableFocusGlow();
-                return;
-            }
-
-            var glow = hit.collider.GetComponentInParent<InteractableFocusGlow>();
-            if (glow == null)
-            {
-                ClearInteractableFocusGlow();
+                ClearInteractionPrompt();
                 return;
             }
 
             var interactable = hit.collider.GetComponentInParent<IInteractable>();
-            if (interactable == null || !interactable.CanInteract(itemHolder))
+            var canInteract = interactable != null && interactable.CanInteract(itemHolder);
+            playHudPresenter?.SetInteractionPrompt("F", canInteract ? interactable.InteractionPrompt : string.Empty);
+
+            var glow = hit.collider.GetComponentInParent<InteractableFocusGlow>();
+            if (glow == null || !canInteract)
             {
                 ClearInteractableFocusGlow();
                 return;
@@ -329,5 +336,11 @@ namespace LastJumpCrew.ParkHanSol.Interaction
             focusedGlow.SetFocused(false);
             focusedGlow = null;
         }
+
+        private void ClearInteractionPrompt()
+        {
+            playHudPresenter?.SetInteractionPrompt(string.Empty, string.Empty);
+        }
+        
     }
 }

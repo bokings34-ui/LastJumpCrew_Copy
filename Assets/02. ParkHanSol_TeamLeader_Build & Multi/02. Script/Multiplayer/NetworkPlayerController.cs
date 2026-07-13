@@ -39,8 +39,22 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
         [SerializeField, Min(0.1f)] private float thrusterFuelRecoveryPerSecond = 18f;
         [SerializeField, Min(0.1f)] private float thrusterAcceleration = 14f;
         [SerializeField, Min(0.1f)] private float thrusterMaxSpeed = 9f;
+        [Header("Zero Gravity Weight")]
+        [SerializeField, Min(0.1f)] private float spaceMass = 1f;
+        [SerializeField, Range(0f, 1f)] private float zeroGravityCollisionRestitution = 0.55f;
+        [Header("Zero Gravity Camera")]
+        [SerializeField, Min(0f)] private float zeroGravityCameraRotationDelay = 0.14f;
+        [SerializeField, Min(0f)] private float zeroGravityCameraShakeDegrees = 0.45f;
+        [SerializeField, Min(0.1f)] private float zeroGravityCameraShakeFrequency = 18f;
+        [Header("Zero Gravity Thruster Audio")]
+        [SerializeField] private AudioSource thrusterAudioSource;
+        [SerializeField] private AudioClip thrusterAudioClip;
+        [SerializeField, Range(0f, 1f)] private float thrusterAudioVolume = 0.65f;
+        [SerializeField, Min(0.1f)] private float thrusterAudioAttackSpeed = 12f;
+        [SerializeField, Min(0.1f)] private float thrusterAudioReleaseSpeed = 2.5f;
         [SerializeField] private ParkHanSolPlayHudMockPresenter playHudPresenter;
         [SerializeField] private float mouseSensitivity = 2.2f;
+        [SerializeField, Min(1f)] private float maxMouseDeltaPerFrame = 18f;
         [SerializeField] private Transform cameraRoot;
         [SerializeField] private Camera playerCamera;
         [SerializeField] private AudioListener audioListener;
@@ -52,6 +66,12 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
         private Rigidbody attachedRigidbody;
         private float verticalVelocity;
         private float cameraPitch;
+        private float currentCameraPitch;
+        private float cameraPitchVelocity;
+        private float targetYaw;
+        private float yawVelocity;
+        private bool isLocalThrusterActive;
+        private bool thrusterAudioReferenceErrorLogged;
         private bool gameplayInputEnabled;
         private bool autoMoveEnabled;
         private float autoMoveSeconds;
@@ -70,6 +90,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
         private float standaloneThrusterFuel;
         private float lastThrusterUseTime = float.NegativeInfinity;
         private bool thrusterGaugeReferenceErrorLogged;
+        private float hudBindingErrorLogTime;
 
         public bool IsGrounded { get; private set; }
         public bool HasMoveInput { get; private set; }
@@ -79,6 +100,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
         public NetworkPlayerGravityMode GravityMode => gravityMode;
         public ZeroGravityControlPreset ZeroGravityControlPreset => zeroGravityControlPreset;
         public float ThrusterFuelNormalized => Mathf.Clamp01(GetThrusterFuel() / thrusterFuelCapacity);
+        public float SpaceMass => spaceMass;
 
         public void SetZeroGravityControlPreset(ZeroGravityControlPreset preset)
         {
@@ -104,6 +126,58 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
             verticalVelocity = 0f;
             zeroGravityVelocity = Vector3.zero;
             Debug.Log($"PHS_PLAYER_GRAVITY_MODE player={name} mode={gravityMode}");
+        }
+
+        public void ApplyExternalVelocity(Vector3 velocity)
+        {
+            if (velocity.sqrMagnitude <= 0.001f)
+            {
+                return;
+            }
+
+            if (IsSpawned && !IsServer)
+            {
+                Debug.LogError($"PHS_EXTERNAL_VELOCITY_FAILED reason=server_required player={name}");
+                return;
+            }
+
+            if (gravityMode == NetworkPlayerGravityMode.ShipGravity)
+            {
+                PlanarVelocity += new Vector3(velocity.x, 0f, velocity.z);
+                verticalVelocity += velocity.y;
+                return;
+            }
+
+            zeroGravityVelocity += velocity;
+        }
+
+        public void RequestTestTeleport(Vector3 targetPosition, Quaternion targetRotation)
+        {
+            if (!IsOwner)
+            {
+                Debug.LogError($"PHS_TEST_TELEPORT_FAILED reason=owner_required player={name}");
+                return;
+            }
+
+            if (IsServer)
+            {
+                TeleportTo(targetPosition, targetRotation);
+                return;
+            }
+
+            RequestTestTeleportServerRpc(targetPosition, targetRotation);
+        }
+
+        [ServerRpc]
+        private void RequestTestTeleportServerRpc(Vector3 targetPosition, Quaternion targetRotation, ServerRpcParams rpcParams = default)
+        {
+            if (rpcParams.Receive.SenderClientId != OwnerClientId)
+            {
+                Debug.LogError($"PHS_TEST_TELEPORT_FAILED reason=owner_mismatch player={name}");
+                return;
+            }
+
+            TeleportTo(targetPosition, targetRotation);
         }
 
         public override void OnNetworkSpawn()
@@ -136,6 +210,8 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
 
             ConfigureNetworkRigidbody(true);
             standaloneThrusterFuel = thrusterFuelCapacity;
+            targetYaw = transform.eulerAngles.y;
+            currentCameraPitch = cameraPitch;
             CacheLocalOwnerHiddenRenderers();
             ConfigureCommandLineAutomation();
         }
@@ -149,6 +225,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
         {
             SceneManager.activeSceneChanged -= HandleActiveSceneChanged;
             SetLocalOwnerVisualsVisible(true);
+            StopThrusterAudio();
         }
 
         private void Update()
@@ -166,7 +243,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
             }
 
             var verticalMove = ReadVerticalMove();
-            var look = ReadLook();
+            var look = Vector2.ClampMagnitude(ReadLook(), maxMouseDeltaPerFrame);
             var jump = Keyboard.current != null && Keyboard.current.spaceKey.wasPressedThisFrame;
             var thruster = Keyboard.current != null
                 && Keyboard.current.spaceKey.isPressed
@@ -176,6 +253,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
             HasMoveInput = move.sqrMagnitude > 0.01f || Mathf.Abs(verticalMove) > 0.01f || thruster;
             IsRunning = HasMoveInput && sprint;
 
+            UpdateLocalThrusterFeedback(thruster);
             ApplyLocalLook(look);
 
             if (!IsSpawned || IsServer)
@@ -242,12 +320,23 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
                 return;
             }
 
-            Cursor.lockState = gameplayInputEnabled ? CursorLockMode.Locked : CursorLockMode.None;
-            Cursor.visible = !gameplayInputEnabled;
+            SetCursorLock(gameplayInputEnabled);
+        }
+
+        public void BindPlayHudPresenter(ParkHanSolPlayHudMockPresenter presenter)
+        {
+            playHudPresenter = presenter;
+            thrusterGaugeReferenceErrorLogged = false;
+            RefreshThrusterGauge();
         }
 
         private void HandleActiveSceneChanged(Scene previousScene, Scene currentScene)
         {
+            if (currentScene.name == gameplaySceneName)
+            {
+                hudBindingErrorLogTime = Time.time + 0.5f;
+            }
+
             MoveToGameplaySpawnPointIfServer();
             ApplySceneInputState();
         }
@@ -257,6 +346,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
             if (!IsSpawned)
             {
                 SetLocalView(true);
+                SetCursorLock(true);
                 return;
             }
 
@@ -317,7 +407,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
 
         private void MoveOnServer(Vector2 move, float verticalMove, float yawInput, bool jump, bool thruster, bool sprint, float deltaTime)
         {
-            transform.Rotate(Vector3.up, yawInput * mouseSensitivity);
+            RotatePlayer(yawInput, deltaTime);
             RecoverThrusterFuel(deltaTime);
 
             if (gravityMode != NetworkPlayerGravityMode.ShipGravity)
@@ -393,6 +483,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
             }
 
             PlanarVelocity = new Vector3(zeroGravityVelocity.x, 0f, zeroGravityVelocity.z);
+            
             characterController.Move(zeroGravityVelocity * deltaTime);
         }
 
@@ -464,7 +555,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
                 SetThrusterFuel(fuel - fuelCost);
                 lastThrusterUseTime = Time.time;
 
-                zeroGravityVelocity += direction.normalized * thrusterAcceleration * deltaTime;
+                zeroGravityVelocity += direction.normalized * (thrusterAcceleration / spaceMass) * deltaTime;
                 zeroGravityVelocity = Vector3.ClampMagnitude(
                     zeroGravityVelocity,
                     Mathf.Max(baseSpeed, thrusterMaxSpeed));
@@ -511,7 +602,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
         {
             if (playHudPresenter == null)
             {
-                if (!thrusterGaugeReferenceErrorLogged)
+                if (Time.time >= hudBindingErrorLogTime && !thrusterGaugeReferenceErrorLogged)
                 {
                     thrusterGaugeReferenceErrorLogged = true;
                     Debug.LogError($"PHS_THRUSTER_UI_SETUP_FAILED reason=play_hud_presenter_missing player={name}");
@@ -522,7 +613,6 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
 
             var currentFuel = Mathf.RoundToInt(GetThrusterFuel());
             var maxFuel = Mathf.RoundToInt(thrusterFuelCapacity);
-            playHudPresenter.SetWarpGauge(ThrusterFuelNormalized);
             playHudPresenter.SetThrusterFuel(currentFuel, maxFuel);
         }
 
@@ -603,6 +693,26 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
             Debug.Log($"PHS_PLAYER_SPAWN_POINT ownerClientId={OwnerClientId} pos={transform.position}");
         }
 
+        private void TeleportTo(Vector3 targetPosition, Quaternion targetRotation)
+        {
+            var wasEnabled = characterController != null && characterController.enabled;
+            if (characterController != null)
+            {
+                characterController.enabled = false;
+            }
+
+            transform.SetPositionAndRotation(targetPosition, targetRotation);
+            verticalVelocity = 0f;
+            zeroGravityVelocity = Vector3.zero;
+
+            if (characterController != null)
+            {
+                characterController.enabled = wasEnabled;
+            }
+
+            Debug.Log($"PHS_TEST_TELEPORT_OK player={name} pos={targetPosition}");
+        }
+
         private bool TryGetSpawnPoint(out Transform spawnPoint)
         {
             spawnPoint = null;
@@ -624,7 +734,134 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
 
             if (cameraRoot != null)
             {
-                cameraRoot.localRotation = Quaternion.Euler(cameraPitch, 0f, 0f);
+                var useZeroGravityCamera = gravityMode != NetworkPlayerGravityMode.ShipGravity;
+                if (useZeroGravityCamera && zeroGravityCameraRotationDelay > 0f)
+                {
+                    currentCameraPitch = Mathf.SmoothDampAngle(
+                        currentCameraPitch,
+                        cameraPitch,
+                        ref cameraPitchVelocity,
+                        zeroGravityCameraRotationDelay);
+                }
+                else
+                {
+                    currentCameraPitch = cameraPitch;
+                    cameraPitchVelocity = 0f;
+                }
+
+                var shakeMultiplier = look.sqrMagnitude > 0.01f ? 0.35f : 1f;
+                var shake = GetThrusterCameraShake() * shakeMultiplier;
+                cameraRoot.localRotation = Quaternion.Euler(
+                    currentCameraPitch + shake,
+                    0f,
+                    isLocalThrusterActive ? shake * 0.5f : 0f);
+            }
+        }
+
+        private static void SetCursorLock(bool active)
+        {
+            Cursor.lockState = active ? CursorLockMode.Locked : CursorLockMode.None;
+            Cursor.visible = !active;
+        }
+
+        public void ReflectZeroGravityVelocity(Vector3 surfaceNormal)
+        {
+            if (gravityMode == NetworkPlayerGravityMode.ShipGravity || surfaceNormal.sqrMagnitude <= 0.001f)
+            {
+                return;
+            }
+
+            var normal = surfaceNormal.normalized;
+            if (Vector3.Dot(zeroGravityVelocity, normal) >= -0.1f)
+            {
+                return;
+            }
+
+            zeroGravityVelocity = Vector3.Reflect(zeroGravityVelocity, normal)
+                * zeroGravityCollisionRestitution;
+        }
+
+        private void RotatePlayer(float yawInput, float deltaTime)
+        {
+            if (gravityMode == NetworkPlayerGravityMode.ShipGravity || zeroGravityCameraRotationDelay <= 0f)
+            {
+                transform.Rotate(Vector3.up, yawInput * mouseSensitivity);
+                targetYaw = transform.eulerAngles.y;
+                yawVelocity = 0f;
+                return;
+            }
+
+            targetYaw += yawInput * mouseSensitivity;
+            var nextYaw = Mathf.SmoothDampAngle(
+                transform.eulerAngles.y,
+                targetYaw,
+                ref yawVelocity,
+                zeroGravityCameraRotationDelay,
+                Mathf.Infinity,
+                deltaTime);
+            transform.rotation = Quaternion.Euler(0f, nextYaw, 0f);
+        }
+
+        private void UpdateLocalThrusterFeedback(bool thrusterRequested)
+        {
+            isLocalThrusterActive = thrusterRequested
+                && gravityMode != NetworkPlayerGravityMode.ShipGravity
+                && GetThrusterFuel() > 0f;
+
+            if (thrusterAudioSource == null || thrusterAudioClip == null)
+            {
+                if (!thrusterAudioReferenceErrorLogged)
+                {
+                    thrusterAudioReferenceErrorLogged = true;
+                    Debug.LogError($"PHS_THRUSTER_AUDIO_SETUP_FAILED reason=audio_reference_missing player={name}");
+                }
+
+                return;
+            }
+
+            thrusterAudioSource.clip = thrusterAudioClip;
+            thrusterAudioSource.loop = true;
+            thrusterAudioSource.spatialBlend = 0f;
+            if (isLocalThrusterActive && !thrusterAudioSource.isPlaying)
+            {
+                thrusterAudioSource.volume = 0f;
+                thrusterAudioSource.Play();
+            }
+
+            var targetVolume = isLocalThrusterActive ? thrusterAudioVolume : 0f;
+            var fadeSpeed = isLocalThrusterActive
+                ? thrusterAudioAttackSpeed
+                : thrusterAudioReleaseSpeed;
+            thrusterAudioSource.volume = Mathf.MoveTowards(
+                thrusterAudioSource.volume,
+                targetVolume,
+                fadeSpeed * Time.deltaTime);
+
+            if (!isLocalThrusterActive
+                && thrusterAudioSource.isPlaying
+                && thrusterAudioSource.volume <= 0.001f)
+            {
+                thrusterAudioSource.Stop();
+            }
+        }
+
+        private float GetThrusterCameraShake()
+        {
+            if (!isLocalThrusterActive)
+            {
+                return 0f;
+            }
+
+            return Mathf.Sin(Time.time * zeroGravityCameraShakeFrequency)
+                * zeroGravityCameraShakeDegrees;
+        }
+
+        private void StopThrusterAudio()
+        {
+            isLocalThrusterActive = false;
+            if (thrusterAudioSource != null && thrusterAudioSource.isPlaying)
+            {
+                thrusterAudioSource.Stop();
             }
         }
 
@@ -713,5 +950,6 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
                 targetRenderer.enabled = isVisible;
             }
         }
+        
     }
 }

@@ -1,9 +1,12 @@
 using UnityEngine;
+using LastJumpCrew.Common;
+
+
 namespace LastJumpCrew.SeoBoGyeong
 {
     [CreateAssetMenu(
     fileName = "Zone_New",
-    menuName = "LastJumpCrew/SeoBoGyeong/Zone")]
+    menuName = "LastJumpCrew/SeoBoGyeong/Zone Data")]
 
     public class ZoneData : ScriptableObject, IGameData
     {

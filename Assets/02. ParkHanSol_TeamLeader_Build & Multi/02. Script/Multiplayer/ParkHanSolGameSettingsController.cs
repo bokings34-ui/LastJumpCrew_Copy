@@ -54,11 +54,18 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
 
             if (voiceChatSession != null && await voiceChatSession.PrepareVoiceSettingsAsync())
             {
+                SetVoiceControlsAvailable(true);
                 RefreshVoiceOptions();
                 savedSnapshot = CaptureCurrentSettings();
             }
             else
             {
+                SetVoiceControlsAvailable(false);
+                suppressEvents = true;
+                SetDropdownOptions(microphoneDropdown, new List<string> { "VOICE OFFLINE" }, 0);
+                SetDropdownOptions(outputDeviceDropdown, new List<string> { "VOICE OFFLINE" }, 0);
+                SetDropdownOptions(participantDropdown, new List<string> { "NO MEMBERS" }, 0);
+                suppressEvents = false;
                 SetStatus("VOICE OFFLINE");
             }
         }
@@ -149,12 +156,31 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
 
         private void RefreshVoiceOptions()
         {
+            var participantNames = voiceChatSession.GetRemoteParticipantNames();
             suppressEvents = true;
             SetDropdownOptions(microphoneDropdown, voiceChatSession.GetInputDeviceNames(), voiceChatSession.GetActiveInputDeviceIndex());
             SetDropdownOptions(outputDeviceDropdown, voiceChatSession.GetOutputDeviceNames(), voiceChatSession.GetActiveOutputDeviceIndex());
-            SetDropdownOptions(participantDropdown, voiceChatSession.GetRemoteParticipantNames(), 0);
+            SetDropdownOptions(
+                participantDropdown,
+                participantNames.Count == 0 ? new List<string> { "NO MEMBERS" } : participantNames,
+                0);
             suppressEvents = false;
+            if (participantDropdown != null) participantDropdown.interactable = participantNames.Count > 0;
+            if (participantVolumeSlider != null) participantVolumeSlider.interactable = participantNames.Count > 0;
             SetStatus("READY");
+        }
+
+        private void SetVoiceControlsAvailable(bool available)
+        {
+            if (microphoneDropdown != null) microphoneDropdown.interactable = available;
+            if (outputDeviceDropdown != null) outputDeviceDropdown.interactable = available;
+            if (microphoneVolumeSlider != null) microphoneVolumeSlider.interactable = available;
+            if (partyVolumeSlider != null) partyVolumeSlider.interactable = available;
+            if (outputVolumeSlider != null) outputVolumeSlider.interactable = available;
+            if (microphoneMuteToggle != null) microphoneMuteToggle.interactable = available;
+            if (outputMuteToggle != null) outputMuteToggle.interactable = available;
+            if (participantDropdown != null) participantDropdown.interactable = available;
+            if (participantVolumeSlider != null) participantVolumeSlider.interactable = available;
         }
 
         private void ApplySavedValuesToControls()
