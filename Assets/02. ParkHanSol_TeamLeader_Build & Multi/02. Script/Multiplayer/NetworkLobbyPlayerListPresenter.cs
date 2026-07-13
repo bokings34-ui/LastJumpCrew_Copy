@@ -130,6 +130,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
         [System.Serializable]
         private struct PlayerSlotView
         {
+            [SerializeField] private GameObject slotRoot;
             [SerializeField] private TMP_Text nicknameText;
             [SerializeField] private TMP_Text readyStatusText;
             [SerializeField] private TMP_Text pingText;
@@ -139,21 +140,23 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
             {
                 if (!clientId.HasValue)
                 {
-                    SetText(nicknameText, "EMPTY SLOT");
-                    SetText(readyStatusText, "--");
-                    SetText(pingText, "-- ms");
-                    SetText(microphoneText, "MIC --");
+                    SetText(nicknameText, string.Empty);
+                    SetText(readyStatusText, string.Empty);
+                    SetText(pingText, string.Empty);
+                    SetText(microphoneText, string.Empty);
+                    slotRoot?.SetActive(false);
                     return;
                 }
 
+                slotRoot?.SetActive(true);
                 var isLocal = manager != null && clientId.Value == manager.LocalClientId;
                 var role = clientId.Value == NetworkManager.ServerClientId ? "HOST" : "CLIENT";
                 var local = isLocal ? " / LOCAL" : string.Empty;
 
                 SetText(nicknameText, $"PLAYER {clientId.Value:00}   {role}{local}");
-                SetText(readyStatusText, "WAIT");
+                SetText(readyStatusText, string.Empty);
                 SetText(pingText, GetPingLabel(manager, clientId.Value));
-                SetText(microphoneText, "MIC ON");
+                SetText(microphoneText, string.Empty);
             }
         }
 

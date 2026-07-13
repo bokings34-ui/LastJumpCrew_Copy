@@ -201,6 +201,12 @@ namespace LastJumpCrew.ParkHanSol.Interaction
             return true;
         }
 
+        public void BindPlayHudPresenter(ParkHanSolPlayHudMockPresenter presenter)
+        {
+            playHudPresenter = presenter;
+            RefreshHeldItemHud();
+        }
+
         private void PlaceCurrentItem()
         {
             if (currentItemPrefabData == null)
