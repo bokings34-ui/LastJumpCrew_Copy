@@ -2,6 +2,7 @@ using System.Collections.Generic;
 using LastJumpCrew.ParkHanSol.Items;
 using TMPro;
 using UnityEngine;
+using UnityEngine.Serialization;
 using UnityEngine.UI;
 
 namespace LastJumpCrew.ParkHanSol.Multiplayer
@@ -12,7 +13,8 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
         [SerializeField] private TMP_Text staminaText;
         [SerializeField] private TMP_Text moneyText;
         [SerializeField] private TMP_Text bankText;
-        [SerializeField] private TMP_Text quotaText;
+        [FormerlySerializedAs("quotaText")]
+        [SerializeField] private TMP_Text warpGaugeText;
         [SerializeField] private TMP_Text subtitleText;
         [SerializeField] private TMP_Text shipHpText;
         [SerializeField] private TMP_Text timeLimitText;
@@ -22,17 +24,22 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
         [SerializeField] private SpeakingPlayerView speakingPlayerTemplate;
         [SerializeField, Min(0.1f)] private float speakingPlayerVisibleSeconds = 1.5f;
         [SerializeField, Min(0.1f)] private float speakingPlayerBlinkSpeed = 6f;
-        [SerializeField] private Image warpGaugeFill;
         [SerializeField] private TMP_Text heldItemText;
         [SerializeField] private Image heldItemIconImage;
         [SerializeField] private TMP_Text heldItemDurabilityText;
         [SerializeField] private TMP_Text[] partyFeedTexts;
+        [SerializeField] private PHSHudFeedbackController hudFeedbackController;
 
         private readonly List<SpeakingPlayerView> speakingPlayerViews = new();
         private float speakingPlayerHideTime;
 
         private void Awake()
         {
+            if (hudFeedbackController == null)
+            {
+                hudFeedbackController = GetComponent<PHSHudFeedbackController>();
+            }
+
             ResetPlaceholders();
         }
 
@@ -48,24 +55,48 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
 
         public void SetVitals(int health, int maxHealth, int stamina, int maxStamina)
         {
+            if (hudFeedbackController != null)
+            {
+                hudFeedbackController.SetVitals(health, maxHealth, stamina, maxStamina);
+                return;
+            }
+
             SetText(healthText, $"+{health}<size=26>/{maxHealth}</size>");
             SetText(staminaText, $"ST {stamina}<size=24>/{maxStamina}</size>");
         }
 
         public void SetThrusterFuel(int currentFuel, int maxFuel)
         {
-            SetText(staminaText, $"추진제 {currentFuel}<size=24>/{maxFuel}</size>");
+            if (hudFeedbackController != null)
+            {
+                hudFeedbackController.SetThrusterFuel(currentFuel, maxFuel);
+                return;
+            }
+
+            SetText(staminaText, $" {currentFuel}<size=22>/{maxFuel}</size>");
         }
 
         public void SetEconomy(int money, int bank)
         {
+            if (hudFeedbackController != null)
+            {
+                hudFeedbackController.SetEconomy(money, bank);
+                return;
+            }
+
             SetText(moneyText, $"${money}");
-            SetText(bankText, $"BANK ${bank}");
+            SetText(bankText, $"${bank}");
         }
 
-        public void SetQuota(int current, int target)
+        public void SetWarpGauge(float normalizedValue)
         {
-            SetText(quotaText, $"{current}<color=#ff7a00>/{target}</color>");
+            if (hudFeedbackController != null)
+            {
+                hudFeedbackController.SetWarpGauge(normalizedValue);
+                return;
+            }
+
+            SetText(warpGaugeText, $"{Mathf.RoundToInt(Mathf.Clamp01(normalizedValue) * 100f)}%");
         }
 
         public void SetSubtitle(string value)
@@ -75,21 +106,25 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
 
         public void SetShipHp(int current, int max)
         {
+            if (hudFeedbackController != null)
+            {
+                hudFeedbackController.SetShipHp(current, max);
+                return;
+            }
+
             SetText(shipHpText, $"SHIP HP {current}<size=24>/{max}</size>");
         }
 
         public void SetTimeLimit(float seconds)
         {
+            if (hudFeedbackController != null)
+            {
+                hudFeedbackController.SetTimeLimit(seconds);
+                return;
+            }
+
             var time = Mathf.Max(0, Mathf.CeilToInt(seconds));
             SetText(timeLimitText, $"{time / 60:00}:{time % 60:00}");
-        }
-
-        public void SetWarpGauge(float normalizedValue)
-        {
-            if (warpGaugeFill != null)
-            {
-                warpGaugeFill.fillAmount = Mathf.Clamp01(normalizedValue);
-            }
         }
 
         public void SetHeldItem(string itemName)
@@ -108,6 +143,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
             SetHeldItem(itemPrefabData.DisplayName);
             SetHeldItemIcon(itemPrefabData.Icon);
             SetHeldItemDurability(itemPrefabData);
+            hudFeedbackController?.PlayHeldItemChanged(true);
         }
 
         public void ClearHeldItem()
@@ -115,6 +151,17 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
             SetHeldItem(string.Empty);
             SetHeldItemIcon(null);
             SetHeldItemDurability(null);
+            hudFeedbackController?.PlayHeldItemChanged(false);
+        }
+
+        public void SetInteractionPrompt(string inputLabel, string prompt)
+        {
+            hudFeedbackController?.SetInteractionPrompt(inputLabel, prompt);
+        }
+
+        public void SetGravityWarning(bool isVisible)
+        {
+            hudFeedbackController?.SetGravityWarning(isVisible);
         }
 
         public void ShowSpeakingPlayer(string playerName)
@@ -165,11 +212,9 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
         {
             SetVitals(100, 100, 40, 40);
             SetEconomy(0, 0);
-            SetQuota(0, 1);
             SetSubtitle(string.Empty);
             SetShipHp(100, 100);
             SetTimeLimit(0f);
-            SetWarpGauge(0f);
             ClearHeldItem();
             HideSpeakingPlayer();
 
