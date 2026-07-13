@@ -8,15 +8,6 @@ using System.Collections.Generic;
 
 namespace LastJumpCrew.ParkHanSol.Multiplayer
 {
-    public enum ZeroGravityControlPreset
-    {
-        Direct = 0,
-        Inertia = 1,
-        Hybrid = 2,
-        Thruster = 3,
-        ThrusterOnly = 4
-    }
-
     [RequireComponent(typeof(CharacterController))]
     public sealed class NetworkPlayerController : NetworkBehaviour
     {
@@ -24,21 +15,17 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
         [SerializeField] private float runSpeed = 4.2f;
         [SerializeField, Min(0.1f)] private float groundAcceleration = 18f;
         [SerializeField] private float jumpVelocity = 4.6f;
-        [SerializeField] private float sprintMultiplier = 1.5f;
         [SerializeField] private float gravity = -18f;
-        [SerializeField, Min(0.1f)] private float zeroGravityMoveSpeed = 3.5f;
-        [SerializeField, Min(0.1f)] private float zeroGravityAcceleration = 8f;
-        [SerializeField, Min(0.1f)] private float spacewalkMoveSpeed = 5f;
-        [SerializeField, Min(0.1f)] private float spacewalkAcceleration = 5f;
-        [SerializeField, Min(0f)] private float zeroGravityDamping = 2.5f;
-        [SerializeField] private ZeroGravityControlPreset zeroGravityControlPreset = ZeroGravityControlPreset.Hybrid;
-        [Header("Zero Gravity Thruster")]
+        [SerializeField, Min(0.01f)] private float gravityBlendDuration = 0.4f;
+        [SerializeField, Min(0.1f)] private float maximumFallSpeed = 14f;
+        [Header("Cinematic Zero Gravity Thruster")]
         [SerializeField, Min(1f)] private float thrusterFuelCapacity = 100f;
         [SerializeField, Min(0.1f)] private float thrusterFuelUsePerSecond = 30f;
         [SerializeField, Min(0f)] private float thrusterFuelRecoveryDelay = 1f;
         [SerializeField, Min(0.1f)] private float thrusterFuelRecoveryPerSecond = 18f;
-        [SerializeField, Min(0.1f)] private float thrusterAcceleration = 14f;
-        [SerializeField, Min(0.1f)] private float thrusterMaxSpeed = 9f;
+        [SerializeField, Min(0.1f)] private float thrusterAcceleration = 7f;
+        [SerializeField, Min(0.1f)] private float thrusterMaxSpeed = 7f;
+        [SerializeField, Min(0f)] private float thrusterStabilizationAcceleration = 0.8f;
         [Header("Zero Gravity Weight")]
         [SerializeField, Min(0.1f)] private float spaceMass = 1f;
         [SerializeField, Range(0f, 1f)] private float zeroGravityCollisionRestitution = 0.55f;
@@ -63,6 +50,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
         [SerializeField] private string spawnPointsRootName = "Spawn Points";
 
         private CharacterController characterController;
+        private NetworkPlayerGrappleController grappleController;
         private Rigidbody attachedRigidbody;
         private float verticalVelocity;
         private float cameraPitch;
@@ -83,6 +71,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
         private readonly List<NetworkPlayerGravityArea> gravityAreas = new();
         private NetworkPlayerGravityMode gravityMode = NetworkPlayerGravityMode.ShipGravity;
         private Vector3 zeroGravityVelocity;
+        private float shipGravityBlend = 1f;
         private readonly NetworkVariable<float> thrusterFuel = new(
             0f,
             NetworkVariableReadPermission.Owner,
@@ -98,34 +87,13 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
         public Vector3 PlanarVelocity { get; private set; }
         public float VerticalVelocity => verticalVelocity;
         public NetworkPlayerGravityMode GravityMode => gravityMode;
-        public ZeroGravityControlPreset ZeroGravityControlPreset => zeroGravityControlPreset;
         public float ThrusterFuelNormalized => Mathf.Clamp01(GetThrusterFuel() / thrusterFuelCapacity);
         public float SpaceMass => spaceMass;
-
-        public void SetZeroGravityControlPreset(ZeroGravityControlPreset preset)
-        {
-            if (zeroGravityControlPreset == preset)
-            {
-                return;
-            }
-
-            zeroGravityControlPreset = preset;
-            zeroGravityVelocity = Vector3.zero;
-            Debug.Log($"PHS_ZERO_GRAVITY_CONTROL_PRESET player={name} preset={zeroGravityControlPreset}");
-        }
+        public bool CanAcceptLocalInput => CanProcessLocalInput();
 
         public void ApplyGravityState(GravityState gravityState)
         {
-            var nextMode = ConvertGravityMode(gravityState.Mode);
-            if (gravityMode == nextMode)
-            {
-                return;
-            }
-
-            gravityMode = nextMode;
-            verticalVelocity = 0f;
-            zeroGravityVelocity = Vector3.zero;
-            Debug.Log($"PHS_PLAYER_GRAVITY_MODE player={name} mode={gravityMode}");
+            SetGravityMode(ConvertGravityMode(gravityState.Mode));
         }
 
         public void ApplyExternalVelocity(Vector3 velocity)
@@ -151,8 +119,53 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
             zeroGravityVelocity += velocity;
         }
 
+        public void ApplyGrapplePull(
+            Vector3 targetPosition,
+            float pullAcceleration,
+            float maximumPullSpeed,
+            float stopDistance,
+            float deltaTime)
+        {
+            if (IsSpawned && !IsServer)
+            {
+                Debug.LogError($"PHS_GRAPPLE_PULL_FAILED reason=server_required player={name}");
+                return;
+            }
+
+            var offset = targetPosition - transform.position;
+            var distance = offset.magnitude;
+            if (distance <= stopDistance)
+            {
+                return;
+            }
+
+            var currentVelocity = gravityMode == NetworkPlayerGravityMode.ShipGravity
+                ? new Vector3(PlanarVelocity.x, verticalVelocity, PlanarVelocity.z)
+                : zeroGravityVelocity;
+            var targetVelocity = offset.normalized * maximumPullSpeed;
+            var nextVelocity = Vector3.MoveTowards(
+                currentVelocity,
+                targetVelocity,
+                pullAcceleration * deltaTime);
+
+            if (gravityMode == NetworkPlayerGravityMode.ShipGravity)
+            {
+                PlanarVelocity = new Vector3(nextVelocity.x, 0f, nextVelocity.z);
+                verticalVelocity = nextVelocity.y;
+                return;
+            }
+
+            zeroGravityVelocity = nextVelocity;
+        }
+
         public void RequestTestTeleport(Vector3 targetPosition, Quaternion targetRotation)
         {
+            if (!IsSpawned)
+            {
+                TeleportTo(targetPosition, targetRotation);
+                return;
+            }
+
             if (!IsOwner)
             {
                 Debug.LogError($"PHS_TEST_TELEPORT_FAILED reason=owner_required player={name}");
@@ -183,6 +196,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
         public override void OnNetworkSpawn()
         {
             characterController = GetComponent<CharacterController>();
+            grappleController = GetComponent<NetworkPlayerGrappleController>();
             ConfigureNetworkRigidbody(true);
             if (IsServer)
             {
@@ -201,6 +215,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
         private void Awake()
         {
             characterController = GetComponent<CharacterController>();
+            grappleController = GetComponent<NetworkPlayerGrappleController>();
             attachedRigidbody = GetComponent<Rigidbody>();
             if (attachedRigidbody != null)
             {
@@ -244,16 +259,23 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
 
             var verticalMove = ReadVerticalMove();
             var look = Vector2.ClampMagnitude(ReadLook(), maxMouseDeltaPerFrame);
-            var jump = Keyboard.current != null && Keyboard.current.spaceKey.wasPressedThisFrame;
+            var spacebarPressedThisFrame = Keyboard.current != null
+                && Keyboard.current.spaceKey.wasPressedThisFrame;
+            var jump = spacebarPressedThisFrame;
             var thruster = Keyboard.current != null
                 && Keyboard.current.spaceKey.isPressed
-                && zeroGravityControlPreset == ZeroGravityControlPreset.Thruster;
-            var sprint = Keyboard.current != null && Keyboard.current.leftShiftKey.isPressed;
+                && gravityMode != NetworkPlayerGravityMode.ShipGravity;
+            var thrusterFeedback = thruster;
+            var sprint = Keyboard.current != null
+                && Keyboard.current.leftShiftKey.isPressed
+                && grappleController == null;
             var deltaTime = Time.deltaTime;
-            HasMoveInput = move.sqrMagnitude > 0.01f || Mathf.Abs(verticalMove) > 0.01f || thruster;
+            HasMoveInput = gravityMode == NetworkPlayerGravityMode.ShipGravity
+                ? move.sqrMagnitude > 0.01f || Mathf.Abs(verticalMove) > 0.01f
+                : thrusterFeedback;
             IsRunning = HasMoveInput && sprint;
 
-            UpdateLocalThrusterFeedback(thruster);
+            UpdateLocalThrusterFeedback(thrusterFeedback);
             ApplyLocalLook(look);
 
             if (!IsSpawned || IsServer)
@@ -412,7 +434,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
 
             if (gravityMode != NetworkPlayerGravityMode.ShipGravity)
             {
-                MoveZeroGravity(move, verticalMove, thruster, sprint, deltaTime);
+                MoveZeroGravity(thruster, deltaTime);
                 return;
             }
 
@@ -434,54 +456,42 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
                 verticalVelocity = jumpVelocity;
             }
 
-            verticalVelocity += gravity * deltaTime;
+            shipGravityBlend = Mathf.MoveTowards(
+                shipGravityBlend,
+                1f,
+                deltaTime / gravityBlendDuration);
+            verticalVelocity = Mathf.Max(
+                verticalVelocity + gravity * shipGravityBlend * deltaTime,
+                -maximumFallSpeed);
             var targetSpeed = sprint ? runSpeed : moveSpeed;
             var targetPlanar = wishDirection * targetSpeed;
             var nextPlanar = Vector3.MoveTowards(
                 PlanarVelocity,
                 targetPlanar,
                 groundAcceleration * deltaTime);
-            var velocity = nextPlanar;
-            velocity.y = verticalVelocity;
             PlanarVelocity = nextPlanar;
+            grappleController?.ApplyServerPull(deltaTime);
+            var velocity = PlanarVelocity;
+            velocity.y = verticalVelocity;
             characterController.Move(velocity * deltaTime);
         }
 
-        private void MoveZeroGravity(Vector2 move, float verticalMove, bool thruster, bool sprint, float deltaTime)
+        private void MoveZeroGravity(bool thruster, float deltaTime)
         {
             verticalVelocity = 0f;
             IsGrounded = false;
 
             var moveBasis = GetZeroGravityMoveBasis();
-            var wishDirection = moveBasis.Right * move.x
-                + moveBasis.Forward * move.y
-                + transform.up * verticalMove;
-            if (wishDirection.sqrMagnitude > 1f)
+            ApplyThruster(thruster, moveBasis.Forward, deltaTime);
+            if (!thruster && thrusterStabilizationAcceleration > 0f)
             {
-                wishDirection.Normalize();
+                zeroGravityVelocity = Vector3.MoveTowards(
+                    zeroGravityVelocity,
+                    Vector3.zero,
+                    thrusterStabilizationAcceleration * deltaTime);
             }
 
-            var baseSpeed = gravityMode == NetworkPlayerGravityMode.Spacewalk
-                ? spacewalkMoveSpeed
-                : zeroGravityMoveSpeed;
-            var acceleration = gravityMode == NetworkPlayerGravityMode.Spacewalk
-                ? spacewalkAcceleration
-                : zeroGravityAcceleration;
-            var speed = sprint ? baseSpeed * sprintMultiplier : baseSpeed;
-            if (zeroGravityControlPreset == ZeroGravityControlPreset.Thruster)
-            {
-                ApplyThruster(thruster, moveBasis.Forward, speed, deltaTime);
-            }
-            else if (zeroGravityControlPreset == ZeroGravityControlPreset.ThrusterOnly)
-            {
-                ApplyThruster(wishDirection.sqrMagnitude > 0.001f, wishDirection, speed, deltaTime);
-            }
-            else
-            {
-                var targetVelocity = wishDirection * speed;
-                MoveZeroGravityByPreset(wishDirection, targetVelocity, speed, acceleration, deltaTime);
-            }
-
+            grappleController?.ApplyServerPull(deltaTime);
             PlanarVelocity = new Vector3(zeroGravityVelocity.x, 0f, zeroGravityVelocity.z);
             
             characterController.Move(zeroGravityVelocity * deltaTime);
@@ -506,47 +516,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
             return (forward.normalized, right.normalized);
         }
 
-        private void MoveZeroGravityByPreset(
-            Vector3 wishDirection,
-            Vector3 targetVelocity,
-            float speed,
-            float acceleration,
-            float deltaTime)
-        {
-            switch (zeroGravityControlPreset)
-            {
-                case ZeroGravityControlPreset.Direct:
-                    zeroGravityVelocity = targetVelocity;
-                    return;
-                case ZeroGravityControlPreset.Inertia:
-                    if (wishDirection.sqrMagnitude > 0.001f)
-                    {
-                        zeroGravityVelocity += wishDirection * acceleration * deltaTime;
-                        zeroGravityVelocity = Vector3.ClampMagnitude(zeroGravityVelocity, speed);
-                    }
-                    return;
-                case ZeroGravityControlPreset.Hybrid:
-                case ZeroGravityControlPreset.Thruster:
-                case ZeroGravityControlPreset.ThrusterOnly:
-                default:
-                    zeroGravityVelocity = Vector3.MoveTowards(
-                        zeroGravityVelocity,
-                        targetVelocity,
-                        acceleration * deltaTime);
-
-                    if (wishDirection.sqrMagnitude <= 0.001f && zeroGravityDamping > 0f)
-                    {
-                        zeroGravityVelocity = Vector3.MoveTowards(
-                            zeroGravityVelocity,
-                            Vector3.zero,
-                            zeroGravityDamping * deltaTime);
-                    }
-
-                    return;
-            }
-        }
-
-        private void ApplyThruster(bool requested, Vector3 direction, float baseSpeed, float deltaTime)
+        private void ApplyThruster(bool requested, Vector3 direction, float deltaTime)
         {
             var fuel = GetThrusterFuel();
             if (requested && fuel > 0f)
@@ -558,7 +528,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
                 zeroGravityVelocity += direction.normalized * (thrusterAcceleration / spaceMass) * deltaTime;
                 zeroGravityVelocity = Vector3.ClampMagnitude(
                     zeroGravityVelocity,
-                    Mathf.Max(baseSpeed, thrusterMaxSpeed));
+                    thrusterMaxSpeed);
                 return;
             }
 
@@ -631,15 +601,38 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
                 nextMode = area.EffectiveGravityMode;
             }
 
+            SetGravityMode(nextMode);
+        }
+
+        private void SetGravityMode(NetworkPlayerGravityMode nextMode)
+        {
             if (gravityMode == nextMode)
             {
                 return;
             }
 
+            var previousMode = gravityMode;
+            var transitionVelocity = previousMode == NetworkPlayerGravityMode.ShipGravity
+                ? new Vector3(PlanarVelocity.x, IsGrounded ? 0f : verticalVelocity, PlanarVelocity.z)
+                : zeroGravityVelocity;
+
             gravityMode = nextMode;
-            verticalVelocity = 0f;
-            zeroGravityVelocity = Vector3.zero;
-            Debug.Log($"PHS_PLAYER_GRAVITY_MODE player={name} mode={gravityMode}");
+            if (nextMode == NetworkPlayerGravityMode.ShipGravity)
+            {
+                PlanarVelocity = new Vector3(transitionVelocity.x, 0f, transitionVelocity.z);
+                verticalVelocity = transitionVelocity.y;
+                zeroGravityVelocity = Vector3.zero;
+                shipGravityBlend = 0f;
+            }
+            else
+            {
+                zeroGravityVelocity = transitionVelocity;
+                PlanarVelocity = new Vector3(transitionVelocity.x, 0f, transitionVelocity.z);
+                verticalVelocity = 0f;
+                shipGravityBlend = 0f;
+            }
+
+            Debug.Log($"PHS_PLAYER_GRAVITY_MODE player={name} previous={previousMode} mode={gravityMode} velocity={transitionVelocity}");
         }
 
         private static NetworkPlayerGravityMode ConvertGravityMode(LastJumpCrew.Common.GravityMode mode)
@@ -702,6 +695,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
             }
 
             transform.SetPositionAndRotation(targetPosition, targetRotation);
+            PlanarVelocity = Vector3.zero;
             verticalVelocity = 0f;
             zeroGravityVelocity = Vector3.zero;
 
