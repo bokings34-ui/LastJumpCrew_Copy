@@ -63,15 +63,7 @@ namespace LastJumpCrew.ParkHanSol.Interaction
                 return;
             }
 
-            if (Mouse.current.leftButton.wasPressedThisFrame)
-            {
-                if (TryInteractWithFocusedToolBoxSlot())
-                {
-                    return;
-                }
-
-                TryUseHeldItem();
-            }
+            ProcessHeldItemUseInput(); //좌클릭 입력을 현재 손 아이템의 사용방식의 맞게 처리하기
 
             if (Mouse.current.rightButton.wasPressedThisFrame)
             {
@@ -328,6 +320,51 @@ namespace LastJumpCrew.ParkHanSol.Interaction
 
             focusedGlow.SetFocused(false);
             focusedGlow = null;
+        }
+        private void ProcessHeldItemUseInput() //손 아이템의 사용 방식을 확인하여 좌클릭 입력 처리
+        {
+            if(Mouse.current == null)
+            {
+                return;
+            }
+            if(commonItemHolder == null)
+            {
+                return;
+            }
+
+            var heldItem = commonItemHolder.CurrentItem;
+
+            //빈손이라면 사용할 아이템 없음
+            if(heldItem == null)
+            {
+                return;
+            }
+            if(!TryGetUsableItem(heldItem, out var usableItem))
+            {
+                return; 
+            }
+            //IContinusUsableItem을 함께 구현한 아이템인지 검사
+            var isContinuousItem = usableItem is CommonInteraction.IContinuousUsableItem;
+
+            //지속 아이템
+            if (isContinuousItem)
+            {
+                if (Mouse.current.leftButton.isPressed)
+                {
+                    TryUseHeldItem();
+                }
+                return;
+            }
+            //일반 아이템
+            if (!Mouse.current.leftButton.wasPressedThisFrame) //렌치같은 아이템 좌클릭 누른 순간에만 한번 사용
+            {
+                return;
+            }
+            if (TryInteractWithFocusedToolBoxSlot()) //아이템 공격보다 상호작용을 우선
+            {
+                return;
+            }
+            TryUseHeldItem();
         }
     }
 }

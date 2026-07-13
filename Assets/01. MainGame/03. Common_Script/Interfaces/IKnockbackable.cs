@@ -16,6 +16,6 @@ namespace LastJumpCrew.Common
         /// <summary>
         /// 힘 방향과 원인 오브젝트를 받아 넉백을 적용합니다.
         /// </summary>
-        void ApplyKnockback(Vector3 force, GameObject source);
+        void ApplyKnockback(Vector3 direction, float force, GameObject attacker);
     }
 }
