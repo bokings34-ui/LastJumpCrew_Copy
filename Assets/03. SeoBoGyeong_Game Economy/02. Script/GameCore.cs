@@ -6,6 +6,7 @@ namespace LastJumpCrew.SeoBoGyeong
     /// 게임 전역 허브 싱글톤.
     /// 실제 일은 하위 매니저/세션이 담당.
     /// 접근: GameCore.Instance.Data.~ / GameCore.Instance.State.~ / GameCore.Instance.Commands.~
+    /// 사용하는 스크립트에서 경로 저장해 놓기
     /// </summary>
     public class GameCore : MonoBehaviour
     {
@@ -56,7 +57,7 @@ namespace LastJumpCrew.SeoBoGyeong
             }
             if (session == null)
             {
-                Debug.LogError("[GameCore] LocalGameSession 이 인스펙터에 연결되지 않았습니다.");
+                Debug.LogError("[GameCore] GameSession 이 인스펙터에 연결되지 않았습니다.");
                 return;
             }
 

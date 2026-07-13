@@ -1,5 +1,7 @@
+using LastJumpCrew.SeBoGyeong.Data;
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using UnityEngine;
 using Random = UnityEngine.Random;
 namespace LastJumpCrew.SeoBoGyeong
@@ -7,8 +9,9 @@ namespace LastJumpCrew.SeoBoGyeong
     public class RangeItemSpawner : MonoBehaviour
     {
         [SerializeField] private GameObject[] shelfAreas;
+
         //나중에 데이터 테이블 연결 예정
-        [SerializeField] private GameObject[] itemPrefabs;
+         private GameObject[] _itemPrefabs;
         [SerializeField] private int totalItemCount = 5;
         //[Tooltip("배치 공간 길이\n외곽선 걸침 방지를 위해 자체적으로 -1 처리됨")]
         //[SerializeField] private float shelfLength = 8f;
@@ -17,15 +20,15 @@ namespace LastJumpCrew.SeoBoGyeong
         private int[] _spawnItemIndices;
         private List<int> _itemsPerShelf = new List<int>();
         private float[] _shelfAreaLengths;
+        private DataRepository<UtilityItemData> _tools; 
 
-        //일정한 간격이 아닐테니 수정하기
 
 
         private void Awake()
         {
-            if (shelfAreas == null || itemPrefabs == null)
+            if (shelfAreas == null )
             {
-                Debug.LogError("[ShopSpawn] Shelf areas 나 item prefabs 가 연결되지 않음.");
+                Debug.LogError("[ShopSpawn] Shelf areas 가 연결되지 않음.");
             }
 
             _spawnItemIndices = new int[totalItemCount];
@@ -34,9 +37,23 @@ namespace LastJumpCrew.SeoBoGyeong
 
         private void Start()
         {
+            _tools = GameCore.Instance.Data.Tools;
+            FillItem();
+
             SpawnItem();
         }
 
+        private void FillItem()
+        {
+            UtilityItemData[] item = _tools.All.Values.ToArray<UtilityItemData>();
+            _itemPrefabs = new GameObject[item.Length];
+           
+            for (int i = 0; i < item.Length; i++)
+            {
+                _itemPrefabs[i] = item[i].DroppedPrefab;
+            }
+
+        }
         private void DivideSection(float[] areaLength)
         {
             _itemsPerShelf.Clear();
@@ -91,14 +108,14 @@ namespace LastJumpCrew.SeoBoGyeong
 
             for (int i = 0; i < totalItemCount; i++)
             {
-                _spawnItemIndices[i] = Random.Range(0, itemPrefabs.Length);
+                _spawnItemIndices[i] = Random.Range(0, _itemPrefabs.Length);
             }
             Array.Sort(_spawnItemIndices, (a, b) => b.CompareTo(a));
 
             // 아이템이 하나면 가운데 배치
             if (totalItemCount == 1)
             {
-                Instantiate(itemPrefabs[_spawnItemIndices[0]], center, Quaternion.identity);
+                Instantiate(_itemPrefabs[_spawnItemIndices[0]], center, Quaternion.identity);
                 return;
             }
 
@@ -122,7 +139,7 @@ namespace LastJumpCrew.SeoBoGyeong
                     float x = shelfAreas[i].transform.position.x + leftOffset + itemSpacing * j;
                     Quaternion rotation = shelfAreas[i].transform.rotation;
                     pos.x = x;
-                    Instantiate(itemPrefabs[_spawnItemIndices[spawnIndex++]], pos, rotation);
+                    Instantiate(_itemPrefabs[_spawnItemIndices[spawnIndex++]], pos, rotation);
                 }
                 Debug.Log($"선반 {i + 1}번: 아이템 {itemsOnShelf}개 배치 완료. 간격: {itemSpacing}");
             }
