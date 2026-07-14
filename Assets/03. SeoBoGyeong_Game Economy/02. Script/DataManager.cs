@@ -1,5 +1,6 @@
-using System.Linq;
 using LastJumpCrew.SeoBoGyeong.Data;
+using SM;
+using System.Linq;
 using UnityEngine;
 
 namespace LastJumpCrew.SeoBoGyeong
@@ -17,7 +18,7 @@ namespace LastJumpCrew.SeoBoGyeong
         public DataRepository<ItemData> Items { get; private set; }
         public DataRepository<UtilityItemData> Tools { get; private set; }
         public DataRepository<ZoneData> Zones { get; private set; }
-
+       
         public void Init()
         {
             if (catalog == null)
@@ -30,6 +31,8 @@ namespace LastJumpCrew.SeoBoGyeong
             // UtilityItemData 는 ItemData 상속 — Items 에서 타입 필터로 파생(현행 '양쪽 존재' 동작 유지)
             Tools = new DataRepository<UtilityItemData>(catalog.Items.OfType<UtilityItemData>().ToArray());
             Zones = new DataRepository<ZoneData>(catalog.Zones);
+
+
 
             Debug.Log($"[DataManager] Init 완료 — Items {Items.Count} / Tools {Tools.Count} / Zones {Zones.Count}");
         }

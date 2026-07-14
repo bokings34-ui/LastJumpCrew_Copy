@@ -39,7 +39,7 @@ namespace LastJumpCrew.SeoBoGyeong
             }
 
             _spawnItemIndices = new int[totalItemCount];
-            _shelfAreaLengths = length; //new float[shelfAreas.Length];
+            _shelfAreaLengths = length;
         }
 
         private void Start()
@@ -86,7 +86,7 @@ namespace LastJumpCrew.SeoBoGyeong
                     }
                 }
 
-                float usableLength = areaLength[i];// - 1f;
+                float usableLength = areaLength[i];
 
 
 
@@ -118,9 +118,17 @@ namespace LastJumpCrew.SeoBoGyeong
         [ContextMenu("Spawn Item")]
         private void SpawnItem()
         {
-            DivideSection(_shelfAreaLengths);
-
             Vector3 center = shelfAreas[0].transform.position;
+
+            
+            // 아이템이 하나면 가운데 배치
+            if (totalItemCount == 1)
+            {
+                SpawnDisplayItem(_spawnItemIndices[0], center, Quaternion.identity);
+                return;
+            }
+
+            DivideSection(_shelfAreaLengths);           
 
             for (int i = 0; i < totalItemCount; i++)
             {
@@ -128,12 +136,7 @@ namespace LastJumpCrew.SeoBoGyeong
             }
             Array.Sort(_spawnItemIndices, (a, b) => b.CompareTo(a));
 
-            // 아이템이 하나면 가운데 배치
-            if (totalItemCount == 1)
-            {
-                SpawnDisplayItem(_spawnItemIndices[0], center, Quaternion.identity);
-                return;
-            }
+            
 
             int spawnIndex = 0;
 
