@@ -1,5 +1,6 @@
 using System.Collections.Generic;
 using LastJumpCrew.SeoBoGyeong.Data;
+using SM;
 using UnityEngine;
 
 namespace LastJumpCrew.SeoBoGyeong
@@ -20,7 +21,10 @@ namespace LastJumpCrew.SeoBoGyeong
         [Header("구역")]
         [SerializeField] private List<ZoneData> zones = new();
 
+        
+
         public IReadOnlyList<ItemData> Items => items;
         public IReadOnlyList<ZoneData> Zones => zones;
+
     }
 }
