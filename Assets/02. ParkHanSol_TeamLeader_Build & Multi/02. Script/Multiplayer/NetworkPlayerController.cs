@@ -5,10 +5,12 @@ using UnityEngine.SceneManagement;
 using LastJumpCrew.Common;
 using System;
 using System.Collections.Generic;
+using LastJumpCrew.ParkHanSol.Interaction;
 
 namespace LastJumpCrew.ParkHanSol.Multiplayer
 {
     [RequireComponent(typeof(CharacterController))]
+    [RequireComponent(typeof(TempPlayerItemHolder))]
     public sealed class NetworkPlayerController : NetworkBehaviour
     {
         [SerializeField] private float moveSpeed = 2.4f;
@@ -28,6 +30,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
         [SerializeField, Min(0f)] private float thrusterStabilizationAcceleration = 0.8f;
         [Header("Zero Gravity Weight")]
         [SerializeField, Min(0.1f)] private float spaceMass = 1f;
+        [SerializeField, Min(0f)] private float heldDebrisMassInfluence = 0.25f;
         [SerializeField, Range(0f, 1f)] private float zeroGravityCollisionRestitution = 0.55f;
         [Header("Zero Gravity Camera")]
         [SerializeField, Min(0f)] private float zeroGravityCameraRotationDelay = 0.14f;
@@ -40,7 +43,12 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
         [SerializeField, Min(0.1f)] private float thrusterAudioAttackSpeed = 12f;
         [SerializeField, Min(0.1f)] private float thrusterAudioReleaseSpeed = 2.5f;
         [SerializeField] private ParkHanSolPlayHudMockPresenter playHudPresenter;
-        [SerializeField] private float mouseSensitivity = 2.2f;
+        public const string MouseSensitivityPreferenceKey = "PHS_MouseSensitivity";
+        public const float DefaultMouseSensitivity = 1.1f;
+        public const float MinimumMouseSensitivity = 0.1f;
+        public const float MaximumMouseSensitivity = 3f;
+
+        [SerializeField, Range(MinimumMouseSensitivity, MaximumMouseSensitivity)] private float mouseSensitivity = DefaultMouseSensitivity;
         [SerializeField, Min(1f)] private float maxMouseDeltaPerFrame = 18f;
         [SerializeField] private Transform cameraRoot;
         [SerializeField] private Camera playerCamera;
@@ -50,6 +58,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
         private CharacterController characterController;
         private NetworkPlayerGrappleController grappleController;
         private Rigidbody attachedRigidbody;
+        private IDebrisHolder debrisHolder;
         private float verticalVelocity;
         private float cameraPitch;
         private float currentCameraPitch;
@@ -59,6 +68,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
         private bool isLocalThrusterActive;
         private bool thrusterAudioReferenceErrorLogged;
         private bool gameplayInputEnabled;
+        private bool pauseInputBlocked;
         private bool autoMoveEnabled;
         private float autoMoveSeconds;
         private float autoMoveEndTime;
@@ -88,8 +98,25 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
         public float VerticalVelocity => verticalVelocity;
         public NetworkPlayerGravityMode GravityMode => gravityMode;
         public float ThrusterFuelNormalized => Mathf.Clamp01(GetThrusterFuel() / thrusterFuelCapacity);
-        public float SpaceMass => spaceMass;
+        public float SpaceMass => Mathf.Max(
+            0.1f,
+            spaceMass + (debrisHolder == null ? 0f : debrisHolder.HeldDebrisMass * heldDebrisMassInfluence));
         public bool CanAcceptLocalInput => CanProcessLocalInput();
+
+        public static float GetSavedMouseSensitivity(float fallback = DefaultMouseSensitivity)
+        {
+            return Mathf.Clamp(
+                PlayerPrefs.GetFloat(MouseSensitivityPreferenceKey, fallback),
+                MinimumMouseSensitivity,
+                MaximumMouseSensitivity);
+        }
+
+        public static void SaveMouseSensitivity(float value)
+        {
+            PlayerPrefs.SetFloat(
+                MouseSensitivityPreferenceKey,
+                Mathf.Clamp(value, MinimumMouseSensitivity, MaximumMouseSensitivity));
+        }
 
         public void ApplyGravityState(GravityState gravityState)
         {
@@ -276,6 +303,11 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
             characterController = GetComponent<CharacterController>();
             grappleController = GetComponent<NetworkPlayerGrappleController>();
             attachedRigidbody = GetComponent<Rigidbody>();
+            debrisHolder = GetComponent<IDebrisHolder>();
+            if (debrisHolder == null)
+            {
+                Debug.LogError($"PHS_PLAYER_MASS_SETUP_FAILED reason=debris_holder_missing player={name}");
+            }
             if (attachedRigidbody != null)
             {
                 originalRigidbodyUseGravity = attachedRigidbody.useGravity;
@@ -403,6 +435,22 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
             SetCursorLock(gameplayInputEnabled);
         }
 
+        public void SetPauseInputBlocked(bool blocked)
+        {
+            if (IsSpawned && !IsOwner)
+            {
+                return;
+            }
+
+            pauseInputBlocked = blocked;
+            if (blocked)
+            {
+                HasMoveInput = false;
+                IsRunning = false;
+                UpdateLocalThrusterFeedback(false);
+            }
+        }
+
         public void BindPlayHudPresenter(ParkHanSolPlayHudMockPresenter presenter)
         {
             playHudPresenter = presenter;
@@ -523,13 +571,16 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
             verticalVelocity = Mathf.Max(
                 verticalVelocity + gravity * shipGravityBlend * deltaTime,
                 -maximumFallSpeed);
-            var targetSpeed = sprint ? runSpeed : moveSpeed;
-            var targetPlanar = wishDirection * targetSpeed;
-            var nextPlanar = Vector3.MoveTowards(
-                PlanarVelocity,
-                targetPlanar,
-                groundAcceleration * deltaTime);
-            PlanarVelocity = nextPlanar;
+            var hasPlanarMoveInput = wishDirection.sqrMagnitude > 0.001f;
+            if (hasPlanarMoveInput || grappleController == null || !grappleController.IsPullingPlayer)
+            {
+                var targetSpeed = sprint ? runSpeed : moveSpeed;
+                var targetPlanar = wishDirection * targetSpeed;
+                PlanarVelocity = Vector3.MoveTowards(
+                    PlanarVelocity,
+                    targetPlanar,
+                    groundAcceleration * deltaTime);
+            }
             grappleController?.ApplyServerPull(deltaTime);
             var velocity = PlanarVelocity;
             velocity.y = verticalVelocity;
@@ -548,13 +599,14 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
                 zeroGravityVelocity = Vector3.MoveTowards(
                     zeroGravityVelocity,
                     Vector3.zero,
-                    thrusterStabilizationAcceleration * deltaTime);
+                    GetEffectiveStabilizationAcceleration() * deltaTime);
             }
 
             grappleController?.ApplyServerPull(deltaTime);
             PlanarVelocity = new Vector3(zeroGravityVelocity.x, 0f, zeroGravityVelocity.z);
-            
-            characterController.Move(zeroGravityVelocity * deltaTime);
+
+            var collisionFlags = characterController.Move(zeroGravityVelocity * deltaTime);
+            grappleController?.StopGrappleForBlockedPlayerMovement(collisionFlags);
         }
 
         private (Vector3 Forward, Vector3 Right) GetZeroGravityMoveBasis()
@@ -585,13 +637,19 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
                 SetThrusterFuel(fuel - fuelCost);
                 lastThrusterUseTime = Time.time;
 
-                zeroGravityVelocity += direction.normalized * (thrusterAcceleration / spaceMass) * deltaTime;
+                zeroGravityVelocity += direction.normalized * (thrusterAcceleration / SpaceMass) * deltaTime;
                 zeroGravityVelocity = Vector3.ClampMagnitude(
                     zeroGravityVelocity,
                     thrusterMaxSpeed);
                 return;
             }
 
+        }
+
+        private float GetEffectiveStabilizationAcceleration()
+        {
+            var massRatio = SpaceMass / Mathf.Max(0.1f, spaceMass);
+            return thrusterStabilizationAcceleration / Mathf.Max(1f, massRatio);
         }
 
         private void RecoverThrusterFuel(float deltaTime)
@@ -771,7 +829,8 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
 
         private void ApplyLocalLook(Vector2 look)
         {
-            cameraPitch = Mathf.Clamp(cameraPitch - look.y * mouseSensitivity, -80f, 80f);
+            var sensitivity = GetSavedMouseSensitivity(mouseSensitivity);
+            cameraPitch = Mathf.Clamp(cameraPitch - look.y * sensitivity, -80f, 80f);
 
             if (cameraRoot != null)
             {
@@ -826,13 +885,13 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
         {
             if (gravityMode == NetworkPlayerGravityMode.ShipGravity || zeroGravityCameraRotationDelay <= 0f)
             {
-                transform.Rotate(Vector3.up, yawInput * mouseSensitivity);
+                transform.Rotate(Vector3.up, yawInput * GetSavedMouseSensitivity(mouseSensitivity));
                 targetYaw = transform.eulerAngles.y;
                 yawVelocity = 0f;
                 return;
             }
 
-            targetYaw += yawInput * mouseSensitivity;
+            targetYaw += yawInput * GetSavedMouseSensitivity(mouseSensitivity);
             var nextYaw = Mathf.SmoothDampAngle(
                 transform.eulerAngles.y,
                 targetYaw,
@@ -928,7 +987,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
                 return true;
             }
 
-            return IsOwner && gameplayInputEnabled;
+            return IsOwner && gameplayInputEnabled && !pauseInputBlocked;
         }
 
         private static float ReadVerticalMove()
