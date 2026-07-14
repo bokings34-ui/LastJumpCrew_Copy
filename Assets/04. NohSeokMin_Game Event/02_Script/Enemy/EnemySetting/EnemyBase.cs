@@ -1,4 +1,5 @@
 using System;
+using System.Collections;
 using UnityEngine;
 using UnityEngine.AI;
 using LastJumpCrew.Common;
@@ -6,7 +7,7 @@ using LastJumpCrew.Common;
 namespace SM
 {
     [RequireComponent(typeof(NavMeshAgent))]
-    public abstract class EnemyBase : MonoBehaviour, IDamageable
+    public abstract class EnemyBase : MonoBehaviour, IDamageable, IStatusEffectReceiver, IKnockbackable
     {
         public event Action<EnemyBase> OnDeath;
 
@@ -23,7 +24,12 @@ namespace SM
 
         public float MaxHealth => maxHealth;
         public float CurrentHealth => _currentHealth;
+
+        private Coroutine _electricShockRoutine;
+        private Coroutine _knockbackRoutine;
+
         public bool IsAlive { get { return StateMachine.CurrentType != EnemyStateType.Dead; } }
+        public bool IsShocked { get; private set; }
 
         public NavMeshAgent Agent { get; private set; }
         public EnemyStateMachine StateMachine { get; private set; }
@@ -47,8 +53,11 @@ namespace SM
             _enemyPrefab = sourcePrefab;
             _currentHealth = maxHealth;
             _cachedTarget = null;
+            IsShocked = false;
+
             Agent.enabled = true;
             gameObject.SetActive(true);
+
             GetTarget();
             StateMachine.ChangeState(this, EnemyStateType.Chase);
         }
@@ -56,13 +65,28 @@ namespace SM
         public void Deactivate()
         {
             _cachedTarget = null;
+
+            if (_electricShockRoutine != null) 
+            { 
+                StopCoroutine(_electricShockRoutine); 
+                _electricShockRoutine = null;
+            }
+            if (_knockbackRoutine != null) 
+            { 
+                StopCoroutine(_knockbackRoutine); 
+                _knockbackRoutine = null;
+            }
+
             gameObject.SetActive(false);
         }
 
         public void Tick(float deltaTime)
         {
+            if (IsShocked) return;
             StateMachine.Tick(this, deltaTime);
         }
+
+        // ________ IDamageable __________
 
         public void ApplyDamage(int amount, GameObject attacker)
         {
@@ -74,6 +98,91 @@ namespace SM
             {
                 StateMachine.ChangeState(this, EnemyStateType.Dead);
             }
+        }
+
+        // __________ IStatusEffectReceiver __________
+
+        public bool CanReceiveStatusEffect(StatusEffectType effectType)
+        {
+            return IsAlive;
+        }
+
+        public void ApplyStatusEffect(StatusEffectType effectType, float duration, GameObject source)
+        {
+            if (!CanReceiveStatusEffect(effectType)) return;
+
+            switch (effectType)
+            {
+                case StatusEffectType.ElectricShok:
+                    if (_electricShockRoutine != null) StopCoroutine(_electricShockRoutine);
+                    _electricShockRoutine = StartCoroutine(ElectricShockRoutine(duration));
+                    break;
+            }
+        }
+
+        public void RemoveStatusEffect(StatusEffectType effectType)
+        {
+            if (effectType == StatusEffectType.ElectricShok && _electricShockRoutine != null)
+            {
+                StopCoroutine(_electricShockRoutine);
+                _electricShockRoutine = null;
+                EndElectricShock();
+            }
+        }
+
+        private IEnumerator ElectricShockRoutine(float duration)
+        {
+            IsShocked = true;
+            Agent.isStopped = true;
+
+            yield return new WaitForSeconds(duration);
+
+            EndElectricShock();
+        }
+
+        private void EndElectricShock()
+        {
+            IsShocked = false;
+            if (Agent.enabled) Agent.isStopped = false;
+            _electricShockRoutine = null;
+        }
+
+        // ________ IKnockbackable _________
+
+        public bool CanReceiveKnockback { get { return IsAlive; } }
+
+        public void ApplyKnockback(Vector3 direction, float force, GameObject attacker)
+        {
+            if (!CanReceiveKnockback) return;
+
+            if (_knockbackRoutine != null) StopCoroutine(_knockbackRoutine);
+            _knockbackRoutine = StartCoroutine(KnockbackRoutine(direction.normalized, force));
+        }
+
+        private IEnumerator KnockbackRoutine(Vector3 direction, float force)
+        {
+            const float knockbackDuration = 0.25f;
+            float elapsed = 0f;
+
+            bool agentWasEnabled = Agent.enabled;
+            if (agentWasEnabled) Agent.enabled = false;
+
+            while (elapsed < knockbackDuration)
+            {
+                float t = elapsed / knockbackDuration;
+                float currentForce = force * (1f - t);
+                transform.position += direction * currentForce * Time.deltaTime;
+                elapsed += Time.deltaTime;
+                yield return null;
+            }
+
+            if (agentWasEnabled)
+            {
+                Agent.Warp(transform.position);
+                Agent.enabled = true;
+            }
+
+            _knockbackRoutine = null;
         }
 
         public void SetColliderEnabled(bool enabled)
@@ -130,7 +239,6 @@ namespace SM
         {
             EnemyPool.Instance.Return(_enemyPrefab, this);
         }
-
 
         protected virtual void OnDrawGizmosSelected()
         {

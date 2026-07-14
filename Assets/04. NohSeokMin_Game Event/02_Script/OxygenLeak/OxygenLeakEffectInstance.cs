@@ -5,7 +5,7 @@ using LastJumpCrew.Common;
 
 namespace SM
 {
-    public class OxygenLeakEffectInstance : MonoBehaviour, IInteractable
+    public class OxygenLeakEffectInstance : MonoBehaviour, IInteractable, IRequireHeldItem
     {
         [Header("벽 무시 레이어 설정")]
         [SerializeField] private LayerMask _wallLayerMask;
@@ -123,17 +123,29 @@ namespace SM
             }
         }
 
+        // ___________ IRequireHeldItem ___________
+
+        public string RequiredItemId { get { return ItemType.Wrench.ToString(); } }
+
+        public bool IsRequirementMet(IItemHolder itemHolder)
+        {
+            return itemHolder.HasItem && itemHolder.CurrentItem.ItemId == RequiredItemId;
+        }
+
+        // ___________  IInteractable ______________
+
         public string InteractionPrompt { get { return "렌치 필요"; } }
 
         public bool CanInteract(IItemHolder itemHolder)
         {
-            return false;
+            return !IsSealed && IsRequirementMet(itemHolder);
         }
 
         public void Interact(IItemHolder itemHolder)
         {
         }
 
+        // __________ 플레이어가 수리할 때 호출하는 함수 ____________
         public void ApplyRepair(float amount)
         {
             if (IsSealed) return;
