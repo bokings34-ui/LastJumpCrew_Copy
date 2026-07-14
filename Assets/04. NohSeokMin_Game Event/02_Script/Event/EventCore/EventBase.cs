@@ -44,6 +44,12 @@ namespace SM
 
         }
 
+        // 스테이지 종료 시 강제 종료
+        public virtual void ForceTerminate()
+        {
+            _state = EventState.Resolve;
+        }
+
         protected void ChangeState(EventState nextState)
         {
             _state = nextState;
