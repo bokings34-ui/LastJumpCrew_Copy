@@ -2,6 +2,15 @@
 using System.Collections;
 using LastJumpCrew.Common;
 
+// 💡 [여기 추가됨!] 모든 미니게임이 공통으로 참조할 수 있도록 Base 스크립트 최상단에 배치했습니다.
+public enum MiniGameType
+{
+    DoorKeypad,
+    WireFix,
+    PowerSync,
+    Cannon
+}
+
 public abstract class MiniGameBase : MonoBehaviour
 {
     public MiniGameType gameType;
