@@ -8,7 +8,7 @@ namespace LastJumpCrew.ParkHanSol.Interaction
 {
     // 테스트 플레이어의 손 아이템 상태를 관리한다.
     // 아이템 지급, 줍기, 드롭, 소비, HUD 갱신이 이 컴포넌트를 통해 흐른다.
-    public sealed class TempPlayerItemHolder : MonoBehaviour, IItemHolder, LastJumpCrew.Common.IItemHolder
+    public sealed class TempPlayerItemHolder : MonoBehaviour, IItemHolder, IDebrisHolder, LastJumpCrew.Common.IItemHolder
     {
         [Header("Hold Points")]
 
@@ -43,9 +43,16 @@ namespace LastJumpCrew.ParkHanSol.Interaction
 
         // 현재 아이템의 데이터 캐시다. 빈손이면 null이다.
         private UtilityItemPrefabData currentItemPrefabData;
+        private DebrisItem heldDebris;
+        private Vector3 heldDebrisWorldScale;
+        private Collider[] heldDebrisColliders;
+        private bool[] heldDebrisColliderStates;
+        private bool[] heldDebrisTriggerStates;
         private NetworkObject networkObject;
 
         public UtilityItemPrefabData CurrentItemPrefabData => currentItemPrefabData;
+        public DebrisItem HeldDebris => heldDebris;
+        public float HeldDebrisMass => heldDebris == null ? 0f : heldDebris.Mass;
         LastJumpCrew.Common.IHoldableItem LastJumpCrew.Common.IItemHolder.CurrentItem => currentItemObject;
         public bool HasItem => currentItemPrefabData != null;
 
@@ -149,7 +156,78 @@ namespace LastJumpCrew.ParkHanSol.Interaction
                 return;
             }
 
+            if (utilityItemObject.TryGetComponent<DebrisItem>(out var debrisItem))
+            {
+                TryHoldDebris(debrisItem);
+                return;
+            }
+
             ReplaceHeldItem(utilityItemObject.ItemPrefabData, utilityItemObject.transform);
+        }
+
+        public bool TryHoldDebris(DebrisItem debrisItem)
+        {
+            if (!CanHoldDebris(debrisItem))
+            {
+                return false;
+            }
+
+            var itemObject = debrisItem.GetComponent<UtilityItemObject>();
+            PlaceCurrentItem();
+
+            var activeHoldPoint = ActiveHoldPoint;
+            heldDebris = debrisItem;
+            heldItemInstance = debrisItem.gameObject;
+            currentItemObject = itemObject;
+            currentItemPrefabData = itemObject.ItemPrefabData;
+            heldDebrisWorldScale = debrisItem.transform.lossyScale;
+            CacheAndPrepareHeldDebrisColliders();
+
+            heldItemInstance.transform.SetParent(activeHoldPoint, false);
+            heldItemInstance.transform.SetLocalPositionAndRotation(Vector3.zero, Quaternion.identity);
+            heldItemInstance.transform.localScale = GetCompensatedHeldItemScale(
+                heldDebrisWorldScale,
+                activeHoldPoint,
+                GetHeldItemScaleMultiplier());
+
+            currentItemObject.OnPickedUp(this);
+            RefreshHeldItemHud();
+            Debug.Log($"PHS_DEBRIS_HELD player={name} debris={debrisItem.name} mass={debrisItem.Mass:F2} value={debrisItem.Value}");
+            return true;
+        }
+
+        public bool CanHoldDebris(DebrisItem debrisItem)
+        {
+            if (debrisItem == null)
+            {
+                Debug.LogError($"PHS_DEBRIS_HOLD_FAILED reason=debris_missing player={name}");
+                return false;
+            }
+
+            if (ActiveHoldPoint == null)
+            {
+                Debug.LogError($"PHS_DEBRIS_HOLD_FAILED reason=hold_point_missing player={name}");
+                return false;
+            }
+
+            var itemObject = debrisItem.GetComponent<UtilityItemObject>();
+            if (itemObject == null || itemObject.ItemPrefabData == null)
+            {
+                Debug.LogError($"PHS_DEBRIS_HOLD_FAILED reason=item_setup_invalid player={name} debris={debrisItem.name}");
+                return false;
+            }
+
+            var colliders = debrisItem.GetComponentsInChildren<Collider>(true);
+            foreach (var targetCollider in colliders)
+            {
+                if (targetCollider is MeshCollider meshCollider && !meshCollider.convex)
+                {
+                    Debug.LogError($"PHS_DEBRIS_HOLD_FAILED reason=non_convex_mesh_collider player={name} debris={debrisItem.name} collider={targetCollider.name}");
+                    return false;
+                }
+            }
+
+            return true;
         }
 
         public void Drop()
@@ -195,6 +273,7 @@ namespace LastJumpCrew.ParkHanSol.Interaction
             heldItemInstance = null;
             currentItemObject = null;
             currentItemPrefabData = null;
+            ClearHeldDebrisState();
             RefreshHeldItemHud();
 
             Debug.Log($"PHS_TEMP_ITEM_CONSUMED player={name} item={itemId}");
@@ -211,6 +290,12 @@ namespace LastJumpCrew.ParkHanSol.Interaction
         {
             if (currentItemPrefabData == null)
             {
+                return;
+            }
+
+            if (heldDebris != null)
+            {
+                PlaceHeldDebris();
                 return;
             }
 
@@ -246,6 +331,73 @@ namespace LastJumpCrew.ParkHanSol.Interaction
             currentItemObject = null;
             currentItemPrefabData = null;
             RefreshHeldItemHud();
+        }
+
+        private void PlaceHeldDebris()
+        {
+            if (heldDebris == null || heldItemInstance == null || currentItemObject == null)
+            {
+                Debug.LogError($"PHS_DEBRIS_PLACE_FAILED reason=held_state_invalid player={name}");
+                return;
+            }
+
+            var source = dropPoint == null ? transform : dropPoint;
+            var position = source.TransformPoint(droppedLocalOffset);
+            var debrisName = heldDebris.name;
+            heldItemInstance.transform.SetParent(null, true);
+            heldItemInstance.transform.SetPositionAndRotation(position, source.rotation);
+            heldItemInstance.transform.localScale = heldDebrisWorldScale;
+            RestoreHeldDebrisColliders();
+            currentItemObject.OnDropped(position);
+
+            heldItemInstance = null;
+            currentItemObject = null;
+            currentItemPrefabData = null;
+            ClearHeldDebrisState();
+            RefreshHeldItemHud();
+            Debug.Log($"PHS_DEBRIS_PLACED player={name} debris={debrisName}");
+        }
+
+        private void CacheAndPrepareHeldDebrisColliders()
+        {
+            heldDebrisColliders = heldItemInstance.GetComponentsInChildren<Collider>(true);
+            heldDebrisColliderStates = new bool[heldDebrisColliders.Length];
+            heldDebrisTriggerStates = new bool[heldDebrisColliders.Length];
+            for (var index = 0; index < heldDebrisColliders.Length; index++)
+            {
+                heldDebrisColliderStates[index] = heldDebrisColliders[index].enabled;
+                heldDebrisTriggerStates[index] = heldDebrisColliders[index].isTrigger;
+                heldDebrisColliders[index].isTrigger = true;
+            }
+        }
+
+        private void RestoreHeldDebrisColliders()
+        {
+            if (heldDebrisColliders == null || heldDebrisColliderStates == null || heldDebrisTriggerStates == null
+                || heldDebrisColliders.Length != heldDebrisColliderStates.Length
+                || heldDebrisColliders.Length != heldDebrisTriggerStates.Length)
+            {
+                Debug.LogError($"PHS_DEBRIS_PLACE_FAILED reason=collider_state_invalid player={name}");
+                return;
+            }
+
+            for (var index = 0; index < heldDebrisColliders.Length; index++)
+            {
+                if (heldDebrisColliders[index] != null)
+                {
+                    heldDebrisColliders[index].enabled = heldDebrisColliderStates[index];
+                    heldDebrisColliders[index].isTrigger = heldDebrisTriggerStates[index];
+                }
+            }
+        }
+
+        private void ClearHeldDebrisState()
+        {
+            heldDebris = null;
+            heldDebrisWorldScale = Vector3.one;
+            heldDebrisColliders = null;
+            heldDebrisColliderStates = null;
+            heldDebrisTriggerStates = null;
         }
 
         private void RefreshHeldItemHud()
