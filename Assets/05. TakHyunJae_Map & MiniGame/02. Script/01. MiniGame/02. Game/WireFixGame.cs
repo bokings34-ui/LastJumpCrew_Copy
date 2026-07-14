@@ -44,6 +44,16 @@ public class WireFixGame : MiniGameBase
         SetupRandomColors();
     }
 
+    private Camera GetUICamera()
+    {
+        Canvas canvas = GetComponentInParent<Canvas>();
+        if (canvas != null && canvas.renderMode != RenderMode.ScreenSpaceOverlay)
+        {
+            return canvas.worldCamera;
+        }
+        return null;
+    }
+
     private void SetupRandomColors()
     {
         List<Color> leftColors = new List<Color>(baseColors);
@@ -81,7 +91,7 @@ public class WireFixGame : MiniGameBase
         timeRemaining -= Time.deltaTime;
         if (timerText != null) timerText.text = $"남은 시간: {timeRemaining:F1}초";
 
-        UpdateDangerPulse(); // 💡 붉은 깜빡임 활성화
+        UpdateDangerPulse();
 
         if (timeRemaining <= 0)
         {
@@ -91,6 +101,7 @@ public class WireFixGame : MiniGameBase
         }
 
         Vector2 mousePos = Mouse.current.position.ReadValue();
+        Camera uiCam = GetUICamera();
 
         // 마우스 클릭 시작
         if (Mouse.current.leftButton.wasPressedThisFrame)
@@ -99,8 +110,7 @@ public class WireFixGame : MiniGameBase
             {
                 if (leftPoints[i].color.a < 1f) continue;
 
-                // 💡 [카메라 캔버스 버그 해결] 세 번째 인자에 Camera.main 적용
-                if (RectTransformUtility.RectangleContainsScreenPoint(leftPoints[i].rectTransform, mousePos, Camera.main))
+                if (RectTransformUtility.RectangleContainsScreenPoint(leftPoints[i].rectTransform, mousePos, uiCam))
                 {
                     draggingIndex = i;
                     CreateWire(i);
@@ -114,11 +124,11 @@ public class WireFixGame : MiniGameBase
         // 드래그 중
         if (draggingIndex != -1 && Mouse.current.leftButton.isPressed)
         {
-            // 💡 [선 튕김 버그 해결] 화면 좌표를 월드 좌표로 변환하여 계산
-            RectTransformUtility.ScreenPointToWorldPointInRectangle(
-                (RectTransform)transform, mousePos, Camera.main, out Vector3 worldMousePos);
+            // 💡 [핵심 해결 1] WorldPoint가 아니라 LocalPoint(2D 도화지 좌표)로 바로 변환합니다!
+            RectTransformUtility.ScreenPointToLocalPointInRectangle(
+                (RectTransform)transform, mousePos, uiCam, out Vector2 localMousePos);
 
-            UpdateWire(worldMousePos);
+            UpdateWire(localMousePos);
         }
 
         // 마우스 클릭 해제
@@ -126,7 +136,7 @@ public class WireFixGame : MiniGameBase
         {
             if (draggingIndex != -1)
             {
-                CheckConnection(mousePos);
+                CheckConnection(mousePos, uiCam);
                 draggingIndex = -1;
             }
         }
@@ -147,24 +157,23 @@ public class WireFixGame : MiniGameBase
         currentLineRect.sizeDelta = new Vector2(0, wireThickness);
     }
 
-    // 💡 [로컬 좌표 정렬 공식] 캔버스 모드가 바뀌어도 선이 일직선으로 예쁘게 따라옵니다.
-    private void UpdateWire(Vector3 targetWorldPos)
+    // 💡 [핵심 해결 2] 인자값을 Vector3(월드)에서 Vector2(로컬)로 바꾸고 공식을 극도로 단순화했습니다.
+    private void UpdateWire(Vector2 targetLocalPos)
     {
         if (currentLineRect == null) return;
 
-        RectTransform panelRect = (RectTransform)transform;
+        // 시작점을 월드 좌표에서 변환할 필요 없이, 선의 현재 로컬 좌표를 그대로 쓰면 됩니다.
+        Vector2 localStart = currentLineRect.localPosition;
+        Vector2 localEnd = targetLocalPos;
 
-        Vector3 localStart = panelRect.InverseTransformPoint(currentLineRect.position);
-        Vector3 localEnd = panelRect.InverseTransformPoint(targetWorldPos);
-
-        Vector3 dir = localEnd - localStart;
+        Vector2 dir = localEnd - localStart;
 
         float angle = Mathf.Atan2(dir.y, dir.x) * Mathf.Rad2Deg;
         currentLineRect.localRotation = Quaternion.Euler(0, 0, angle);
         currentLineRect.sizeDelta = new Vector2(dir.magnitude, wireThickness);
     }
 
-    private void CheckConnection(Vector2 dropPosition)
+    private void CheckConnection(Vector2 dropPosition, Camera uiCam)
     {
         Color draggedColor = leftPoints[draggingIndex].color;
         bool isConnected = false;
@@ -174,20 +183,20 @@ public class WireFixGame : MiniGameBase
         {
             if (rightPoints[i].color.a < 1f) continue;
 
-            // 💡 여기도 똑같이 Camera.main 적용
-            if (RectTransformUtility.RectangleContainsScreenPoint(rightPoints[i].rectTransform, dropPosition, Camera.main))
+            if (RectTransformUtility.RectangleContainsScreenPoint(rightPoints[i].rectTransform, dropPosition, uiCam))
             {
                 if (SameColor(rightPoints[i].color, draggedColor))
                 {
                     isConnected = true;
                     connectedWires++;
 
-                    UpdateWire(rightPoints[i].transform.position);
+                    // 💡 [핵심 해결 3] 도착점의 월드 좌표도 패널 안의 2D 로컬 좌표로 변환해서 넘겨줍니다.
+                    Vector2 endLocalPos = ((RectTransform)transform).InverseTransformPoint(rightPoints[i].transform.position);
+                    UpdateWire(endLocalPos);
+
                     completedLines[draggingIndex] = currentDrawingLine;
 
                     PlaySFX(clickClip, true);
-
-                    // 💡 [파티클 추가] 선이 성공적으로 달라붙은 우측 도착점에서 파티클 폭발!
                     PlayParticle(rightPoints[i].rectTransform);
 
                     PunchUI(leftPoints[draggingIndex].rectTransform, 1.4f, 0.2f);
@@ -220,7 +229,6 @@ public class WireFixGame : MiniGameBase
                 PlaySFX(failClip, true);
                 StartCoroutine(ShakeUI(GetComponent<RectTransform>(), 8f, 0.15f));
             }
-
             if (currentDrawingLine != null) Destroy(currentDrawingLine);
         }
     }
