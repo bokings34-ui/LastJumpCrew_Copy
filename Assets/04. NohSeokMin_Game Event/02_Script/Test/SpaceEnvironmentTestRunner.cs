@@ -10,8 +10,8 @@ namespace SM
         {
             if (Keyboard.current == null) return;
 
-            // [ Q ] 키 → EventScheduler 시작
-            if (Keyboard.current.qKey.wasPressedThisFrame)
+            // [ Y ] 키 → EventScheduler 시작
+            if (Keyboard.current.yKey.wasPressedThisFrame)
             {
                 ZoneEventScheduler.Instance.SetCurrentZone(ZoneType.PatrolZone);
                 EventScheduler.Instance.StartScheduler();

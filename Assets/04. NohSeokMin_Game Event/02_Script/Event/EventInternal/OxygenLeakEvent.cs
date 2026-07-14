@@ -23,8 +23,6 @@ namespace SM
 
             _effect = OxygenLeakEffectPool.Instance.Get(point.position, LeakData);
             _effect.OnSealed += HandleSealed;
-
-            Debug.Log($"</color=lime>[{LeakData.EventName}]</color> 발생.");
         }
 
         public override void OnTick(float deltaTime)

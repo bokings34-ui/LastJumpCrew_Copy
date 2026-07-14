@@ -23,7 +23,7 @@ namespace SM
             _effectToPoint.Clear();
 
             SpawnNextFire();
-            Debug.Log($"<color=lime>[{FireData.EventName}]</color> 발생! 초기 레벨: {FireLevel}");
+            //Debug.Log($"<color=lime>[{FireData.EventName}]</color> 발생! 초기 레벨: {FireLevel}");
         }
 
         public override void OnTick(float deltaTime)
