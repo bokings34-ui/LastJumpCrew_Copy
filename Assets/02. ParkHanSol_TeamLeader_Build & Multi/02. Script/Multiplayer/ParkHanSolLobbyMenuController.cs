@@ -26,7 +26,9 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
         [SerializeField] private GameObject settingsLeftMenu;
         [SerializeField] private GameObject settingsApplyButton;
         [SerializeField] private GameObject sessionPanel;
-        [SerializeField] private NetworkSessionPanel sessionPanelController;
+        [SerializeField] private MultiplayerRoomService roomService;
+        [SerializeField] private MultiplayerRoomBrowser roomBrowser;
+        [SerializeField] private ProximityVoiceChatSession voiceChatSession;
 
         [Header("Main Buttons")]
         [SerializeField] private Button startButton;
@@ -37,7 +39,6 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
         [SerializeField] private Button createRoomButton;
         [SerializeField] private Button joinRoomButton;
         [SerializeField] private Button lobbyBackButton;
-        [SerializeField] private TMP_InputField lobbyJoinCodeInput;
         [SerializeField] private TMP_Text lobbyStatusText;
 
         [Header("Room Buttons")]
@@ -192,23 +193,32 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
             SetPanel(settingsLeftMenu, false);
             SetPanel(settingsApplyButton, false);
             SetPanel(sessionPanel, false);
+            roomBrowser?.ShowActionPanel();
         }
 
-        private async void ShowCreateRoom()
+        private void ShowCreateRoom()
         {
-            await CreateRoomAsync();
+            if (roomBrowser == null)
+            {
+                Debug.LogError("PHS_ROOM_UI_MISSING roomBrowser");
+                SetLobbyStatus("ROOM UI NOT READY");
+                return;
+            }
+
+            roomBrowser.ShowCreateRoomPanel();
         }
 
-        private async Task<bool> CreateRoomAsync()
+        private async Task<bool> CreateRoomAsync(string roomName = "Last Jump Crew Room", int maxPlayers = 8)
         {
-            if (sessionPanelController == null)
+            if (roomService == null)
             {
                 SetLobbyStatus("SESSION NOT READY");
+                Debug.LogError("PHS_ROOM_SERVICE_MISSING create");
                 return false;
             }
 
             SetLobbyStatus("CREATING ROOM");
-            if (!await sessionPanelController.StartRelayHostSessionAsync())
+            if (!await roomService.CreateRoomAsync(roomName, maxPlayers, string.Empty))
             {
                 SetLobbyStatus("CREATE FAILED");
                 return false;
@@ -220,24 +230,14 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
 
         private async void ShowJoinRoom()
         {
-            if (sessionPanelController == null)
+            if (roomBrowser == null)
             {
-                SetLobbyStatus("SESSION NOT READY");
+                SetLobbyStatus("ROOM UI NOT READY");
+                Debug.LogError("PHS_ROOM_UI_MISSING roomBrowser");
                 return;
             }
 
-            var joinCode = lobbyJoinCodeInput == null ? string.Empty : lobbyJoinCodeInput.text;
-            if (string.IsNullOrWhiteSpace(joinCode))
-            {
-                SetLobbyStatus("ENTER ROOM CODE");
-                return;
-            }
-
-            SetLobbyStatus("JOINING ROOM");
-            if (!await sessionPanelController.StartRelayClientSessionAsync(joinCode))
-            {
-                SetLobbyStatus("JOIN FAILED");
-            }
+            await roomBrowser.ShowRoomListAsync();
         }
 
         public void ShowRoom()
@@ -250,14 +250,42 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
             SetPanel(settingsApplyButton, false);
             SetPanel(sessionPanel, false);
             SetLocalGameplayInput(false);
+            ConfigureVoiceChannel();
             Debug.Log($"PHS_ONLINE_ROOM scene={SceneManager.GetActiveScene().name} clients={GetConnectedClientCount()}");
         }
 
-        private void LeaveRoom()
+        private async void LeaveRoom()
         {
-            sessionPanelController?.ShutdownSession();
+            if (voiceChatSession != null)
+            {
+                await voiceChatSession.LeaveAsync();
+            }
+
+            if (roomService == null)
+            {
+                Debug.LogError("PHS_ROOM_SERVICE_MISSING leave");
+                return;
+            }
+
+            if (!await roomService.LeaveRoomAsync())
+            {
+                SetLobbyStatus("LEAVE FAILED");
+                return;
+            }
+
             SetLocalGameplayInput(false);
             ShowLobbySelection();
+        }
+
+        private void ConfigureVoiceChannel()
+        {
+            if (voiceChatSession == null || roomService == null || string.IsNullOrWhiteSpace(roomService.SessionCode))
+            {
+                Debug.LogError("PHS_ROOM_VOICE_CHANNEL_FAILED missing_reference_or_session_code");
+                return;
+            }
+
+            voiceChatSession.SetVoiceChannel(roomService.SessionCode);
         }
 
         private void StartGame()
@@ -341,20 +369,14 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
             yield return null;
             ShowLobbySelection();
 
-            if (lobbyJoinCodeInput != null)
-            {
-                lobbyJoinCodeInput.text = joinCode;
-            }
-
             Debug.Log($"PHS_AUTO_JOIN_BEGIN code={joinCode}");
-            ShowJoinRoom();
+            _ = JoinRoomFromCommandLineAsync(joinCode);
         }
 
         private async Task CreateRoomFromCommandLineAsync()
         {
             var created = await CreateRoomAsync();
-            var relayConnector = FindObjectOfType<RelaySessionConnector>();
-            var joinCode = relayConnector == null ? string.Empty : relayConnector.JoinCode;
+            var joinCode = roomService == null ? string.Empty : roomService.SessionCode;
             Debug.Log(created
                 ? $"PHS_AUTO_HOST_READY code={joinCode}"
                 : "PHS_AUTO_HOST_FAILED");
@@ -362,6 +384,20 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
             if (created && HasCommandLineFlag(Environment.GetCommandLineArgs(), "-phsAutoStartGame"))
             {
                 StartCoroutine(StartGameFromCommandLineWhenReady());
+            }
+        }
+
+        private async Task JoinRoomFromCommandLineAsync(string joinCode)
+        {
+            if (roomService == null)
+            {
+                Debug.LogError("PHS_AUTO_JOIN_FAILED room_service_missing");
+                return;
+            }
+
+            if (!await roomService.JoinRoomByCodeAsync(joinCode, string.Empty))
+            {
+                Debug.LogError($"PHS_AUTO_JOIN_FAILED code={joinCode}");
             }
         }
 

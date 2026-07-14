@@ -9,7 +9,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
     public sealed class NetworkLobbyPlayerListPresenter : MonoBehaviour
     {
         [SerializeField] private NetworkManager networkManager;
-        [SerializeField] private RelaySessionConnector relayConnector;
+        [SerializeField] private MultiplayerRoomService roomService;
         [SerializeField] private TMP_Text roomCodeText;
         [SerializeField] private TMP_Text pingText;
         [SerializeField] private TMP_Text playerCountText;
@@ -103,12 +103,12 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
 
         private string GetRoomCode()
         {
-            if (relayConnector != null && !string.IsNullOrWhiteSpace(relayConnector.JoinCode))
+            if (roomService != null && !string.IsNullOrWhiteSpace(roomService.SessionCode))
             {
-                return $"CODE  {relayConnector.JoinCode}";
+                return $"CODE  {roomService.SessionCode}";
             }
 
-            return "CODE  LOCAL";
+            return "CODE  UNAVAILABLE";
         }
 
         private void ResolveNetworkManager()
