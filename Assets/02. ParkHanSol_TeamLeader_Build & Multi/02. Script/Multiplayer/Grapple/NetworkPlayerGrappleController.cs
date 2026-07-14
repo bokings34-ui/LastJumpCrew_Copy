@@ -710,16 +710,14 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
                     maximumDistance,
                     out _,
                     out var point,
-                    out var normal)
+                    out _)
                 || Vector3.Distance(transform.position, point) <= stopDistance)
             {
                 SetAimMarkerVisible(false);
                 return;
             }
 
-            aimMarker.position = point + normal * 0.025f;
-            aimMarker.rotation = Quaternion.LookRotation(normal, transform.up);
-            SetAimMarkerVisible(true);
+            SetAimMarkerVisible(false);
             SetAimReticleState(true, true);
         }
 
