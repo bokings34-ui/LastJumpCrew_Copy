@@ -11,11 +11,15 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
         [SerializeField] private TMP_Text playerCountText;
         [SerializeField] private GameObject lockIcon;
         [SerializeField] private Button joinButton;
+        [SerializeField] private ParkHanSolLobbySelectionTarget selectionTarget;
 
         private RoomSessionInfo roomInfo;
         private Action<RoomSessionInfo> joinRequested;
 
-        public void Configure(RoomSessionInfo info, Action<RoomSessionInfo> onJoinRequested)
+        public void Configure(
+            RoomSessionInfo info,
+            Action<RoomSessionInfo> onJoinRequested,
+            ParkHanSolLobbySelectionIndicator selectionIndicator)
         {
             joinButton.onClick.RemoveListener(HandleJoinClicked);
 
@@ -24,6 +28,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
             roomNameText.text = info.Name;
             playerCountText.text = $"{info.PlayerCount}/{info.MaxPlayers}";
             lockIcon.SetActive(info.HasPassword);
+            selectionTarget.SetIndicator(selectionIndicator);
 
             joinButton.onClick.AddListener(HandleJoinClicked);
         }

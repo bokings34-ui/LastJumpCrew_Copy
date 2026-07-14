@@ -2,6 +2,7 @@ using System.Collections.Generic;
 using TMPro;
 using Unity.Netcode;
 using UnityEngine;
+using UnityEngine.Serialization;
 using UnityEngine.UI;
 
 namespace LastJumpCrew.ParkHanSol.Multiplayer
@@ -10,7 +11,8 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
     {
         [SerializeField] private NetworkManager networkManager;
         [SerializeField] private MultiplayerRoomService roomService;
-        [SerializeField] private TMP_Text roomCodeText;
+        [FormerlySerializedAs("roomCodeText")]
+        [SerializeField] private TMP_Text roomNameText;
         [SerializeField] private TMP_Text pingText;
         [SerializeField] private TMP_Text playerCountText;
         [SerializeField] private PlayerSlotView[] playerSlots;
@@ -67,7 +69,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
 
             var clientIds = GetClientIds();
             SetText(playerCountText, $"{clientIds.Count}/8 CREW");
-            SetText(roomCodeText, GetRoomCode());
+            SetText(roomNameText, GetRoomName());
             SetText(pingText, GetPingLabel(networkManager == null ? null : networkManager.LocalClientId));
 
             for (var i = 0; i < playerSlots.Length; i++)
@@ -101,14 +103,14 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
             return $"PLAYER {clientId:00}   {role}{local}";
         }
 
-        private string GetRoomCode()
+        private string GetRoomName()
         {
-            if (roomService != null && !string.IsNullOrWhiteSpace(roomService.SessionCode))
+            if (roomService != null && !string.IsNullOrWhiteSpace(roomService.SessionName))
             {
-                return $"CODE  {roomService.SessionCode}";
+                return $"ROOM  {roomService.SessionName}";
             }
 
-            return "CODE  UNAVAILABLE";
+            return "ROOM  UNAVAILABLE";
         }
 
         private void ResolveNetworkManager()

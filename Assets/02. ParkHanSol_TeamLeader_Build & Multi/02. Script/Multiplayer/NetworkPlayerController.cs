@@ -44,9 +44,9 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
         [SerializeField, Min(0.1f)] private float thrusterAudioReleaseSpeed = 2.5f;
         [SerializeField] private ParkHanSolPlayHudMockPresenter playHudPresenter;
         public const string MouseSensitivityPreferenceKey = "PHS_MouseSensitivity";
-        public const float DefaultMouseSensitivity = 1.1f;
+        public const float DefaultMouseSensitivity = 0.8f;
         public const float MinimumMouseSensitivity = 0.1f;
-        public const float MaximumMouseSensitivity = 3f;
+        public const float MaximumMouseSensitivity = 1.5f;
 
         [SerializeField, Range(MinimumMouseSensitivity, MaximumMouseSensitivity)] private float mouseSensitivity = DefaultMouseSensitivity;
         [SerializeField, Min(1f)] private float maxMouseDeltaPerFrame = 18f;

@@ -32,6 +32,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
 
         public IReadOnlyList<RoomSessionInfo> Rooms => rooms;
         public string SessionCode => activeSession == null ? string.Empty : activeSession.Code;
+        public string SessionName => activeSession == null ? string.Empty : activeSession.Name;
         public bool IsHost => activeSession != null && activeSession.IsHost;
         public bool IsActive => activeSession != null;
 
@@ -115,9 +116,14 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
 
             try
             {
-                if (!ValidateCreateRequest(roomName, maxPlayers, password)
-                    || !await InitializeServicesAsync()
+                if (!await InitializeServicesAsync()
                     || !ValidateNetworkManager())
+                {
+                    return false;
+                }
+
+                roomName = ResolveRoomName(roomName);
+                if (!ValidateCreateRequest(roomName, maxPlayers, password))
                 {
                     return false;
                 }
@@ -329,6 +335,16 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
             }
 
             return ValidatePassword(password);
+        }
+
+        private static string ResolveRoomName(string roomName)
+        {
+            if (!string.IsNullOrWhiteSpace(roomName))
+            {
+                return roomName.Trim();
+            }
+
+            return $"Host-{UnityEngine.Random.Range(100000, 1000000)}";
         }
 
         private bool ValidatePassword(string password)

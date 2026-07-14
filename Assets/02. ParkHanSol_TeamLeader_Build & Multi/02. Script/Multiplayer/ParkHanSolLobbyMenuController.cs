@@ -73,7 +73,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
                 masterVolumeSlider.value = AudioListener.volume;
             }
 
-            ShowStart();
+            ShowStartImmediate();
         }
 
         private void Start()
@@ -116,14 +116,24 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
 
         private void ShowStart()
         {
+            SetStartPanels(false);
+        }
+
+        private void ShowStartImmediate()
+        {
+            SetStartPanels(true);
+        }
+
+        private void SetStartPanels(bool immediate)
+        {
             settingsReturnTarget = SettingsReturnTarget.Start;
-            SetPanel(startPanel, true);
-            SetPanel(lobbyPanel, false);
-            SetPanel(roomPanel, false);
-            SetPanel(settingsPanel, false);
-            SetPanel(settingsLeftMenu, false);
-            SetPanel(settingsApplyButton, false);
-            SetPanel(sessionPanel, false);
+            SetPanel(startPanel, true, immediate);
+            SetPanel(lobbyPanel, false, immediate);
+            SetPanel(roomPanel, false, immediate);
+            SetPanel(settingsPanel, false, immediate);
+            SetPanel(settingsLeftMenu, false, immediate);
+            SetPanel(settingsApplyButton, false, immediate);
+            SetPanel(sessionPanel, false, immediate);
         }
 
         private void ShowSettingsFromStart()
@@ -326,8 +336,14 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
 #endif
         }
 
-        private static void SetPanel(GameObject panel, bool active)
+        private static void SetPanel(GameObject panel, bool active, bool immediate = false)
         {
+            if (panel != null && panel.TryGetComponent<ParkHanSolLobbyPanelTransition>(out var transition))
+            {
+                transition.SetVisible(active, immediate);
+                return;
+            }
+
             if (panel != null)
             {
                 panel.SetActive(active);

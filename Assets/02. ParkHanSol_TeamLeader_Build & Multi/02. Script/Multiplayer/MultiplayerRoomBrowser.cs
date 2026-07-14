@@ -12,6 +12,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
         [Header("Dependencies")]
         [SerializeField] private MultiplayerRoomService roomService;
         [SerializeField] private ParkHanSolLobbyMenuController lobbyMenuController;
+        [SerializeField] private ParkHanSolLobbySelectionIndicator selectionIndicator;
 
         [Header("Panels")]
         [SerializeField] private GameObject actionPanel;
@@ -133,6 +134,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
             var missing = new List<string>();
             Require(roomService, nameof(roomService), missing);
             Require(lobbyMenuController, nameof(lobbyMenuController), missing);
+            Require(selectionIndicator, nameof(selectionIndicator), missing);
             Require(actionPanel, nameof(actionPanel), missing);
             Require(createRoomPanel, nameof(createRoomPanel), missing);
             Require(roomListPanel, nameof(roomListPanel), missing);
@@ -199,7 +201,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
             foreach (var room in roomService.Rooms)
             {
                 var entry = Instantiate(entryPrefab, roomListContent);
-                entry.Configure(room, SelectRoom);
+                entry.Configure(room, SelectRoom, selectionIndicator);
                 spawnedEntries.Add(entry);
             }
         }
@@ -291,6 +293,12 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
 
         private static void SetPanel(GameObject panel, bool active)
         {
+            if (panel.TryGetComponent<ParkHanSolLobbyPanelTransition>(out var transition))
+            {
+                transition.SetVisible(active);
+                return;
+            }
+
             if (panel.activeSelf != active)
             {
                 panel.SetActive(active);
