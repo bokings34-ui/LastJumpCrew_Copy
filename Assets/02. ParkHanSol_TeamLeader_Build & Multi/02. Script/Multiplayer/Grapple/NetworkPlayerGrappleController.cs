@@ -22,6 +22,11 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
         [SerializeField] private Transform hookVisual;
         [SerializeField] private GrappleClawVisual clawVisual;
         [SerializeField] private Transform aimMarker;
+        [SerializeField] private Transform aimReticle;
+        [SerializeField] private Renderer aimReticleRenderer;
+        [SerializeField] private Color aimReticleIdleColor = Color.white;
+        [SerializeField] private Color aimReticleValidColor = new(0.18f, 1f, 0.65f, 1f);
+        [SerializeField, Min(1f)] private float aimReticleValidScaleMultiplier = 1.35f;
         [Header("Item Collection")]
         [SerializeField] private MonoBehaviour itemHolderBehaviour;
         [SerializeField] private Transform itemCollectionPoint;
@@ -58,6 +63,8 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
         private bool pullRequested;
         private float lastLaunchTime = float.NegativeInfinity;
         private bool setupErrorLogged;
+        private Vector3 aimReticleInitialScale;
+        private MaterialPropertyBlock aimReticlePropertyBlock;
 
         private void Awake()
         {
@@ -80,6 +87,12 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
                 clawVisual.SetPhase(GrappleClawPhase.Hidden);
             }
             SetAimMarkerVisible(false);
+            if (aimReticle != null)
+            {
+                aimReticleInitialScale = aimReticle.localScale;
+            }
+            aimReticlePropertyBlock = new MaterialPropertyBlock();
+            SetAimReticleState(false, false);
         }
 
         private void Update()
@@ -181,6 +194,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
                 clawVisual.SetPhase(GrappleClawPhase.Hidden);
             }
             SetAimMarkerVisible(false);
+            SetAimReticleState(false, false);
         }
 
         private void HandleLocalInput()
@@ -193,6 +207,12 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
             if (Keyboard.current[hookKey].wasPressedThisFrame)
             {
                 HandleHookPressed();
+            }
+
+            // Grapple input is hold-to-use. Release must always detach the server-owned grapple state.
+            if (Keyboard.current[hookKey].wasReleasedThisFrame)
+            {
+                RequestStopGrapple();
             }
 
         }
@@ -679,9 +699,11 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
             if (!playerController.CanAcceptLocalInput || IsGrappleActive())
             {
                 SetAimMarkerVisible(false);
+                SetAimReticleState(false, false);
                 return;
             }
 
+            SetAimReticleState(true, false);
             if (!TryFindFirstGrappleHit(
                     ropeOrigin.position,
                     aimCamera.transform.forward,
@@ -698,6 +720,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
             aimMarker.position = point + normal * 0.025f;
             aimMarker.rotation = Quaternion.LookRotation(normal, transform.up);
             SetAimMarkerVisible(true);
+            SetAimReticleState(true, true);
         }
 
         private void SetRopeVisible(bool visible)
@@ -731,6 +754,28 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
             aimMarker.gameObject.SetActive(visible);
         }
 
+        private void SetAimReticleState(bool visible, bool hasValidTarget)
+        {
+            if (aimReticle == null || aimReticleRenderer == null)
+            {
+                return;
+            }
+
+            aimReticle.gameObject.SetActive(visible);
+            if (!visible)
+            {
+                return;
+            }
+
+            aimReticle.localScale = aimReticleInitialScale
+                * (hasValidTarget ? aimReticleValidScaleMultiplier : 1f);
+            var color = hasValidTarget ? aimReticleValidColor : aimReticleIdleColor;
+            aimReticleRenderer.GetPropertyBlock(aimReticlePropertyBlock);
+            aimReticlePropertyBlock.SetColor("_BaseColor", color);
+            aimReticlePropertyBlock.SetColor("_Color", color);
+            aimReticleRenderer.SetPropertyBlock(aimReticlePropertyBlock);
+        }
+
         private bool ValidateSetup()
         {
             if (playerController != null
@@ -740,6 +785,8 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
                 && hookVisual != null
                 && clawVisual != null
                 && aimMarker != null
+                && aimReticle != null
+                && aimReticleRenderer != null
                 && itemHolder != null
                 && itemCollectionPoint != null)
             {
@@ -749,7 +796,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
             if (!setupErrorLogged)
             {
                 setupErrorLogged = true;
-                Debug.LogError($"PHS_GRAPPLE_SETUP_FAILED player={name} controller={playerController != null} camera={aimCamera != null} ropeOrigin={ropeOrigin != null} ropeRenderer={ropeRenderer != null} hookVisual={hookVisual != null} clawVisual={clawVisual != null} aimMarker={aimMarker != null} itemHolder={itemHolder != null} itemCollectionPoint={itemCollectionPoint != null}");
+                Debug.LogError($"PHS_GRAPPLE_SETUP_FAILED player={name} controller={playerController != null} camera={aimCamera != null} ropeOrigin={ropeOrigin != null} ropeRenderer={ropeRenderer != null} hookVisual={hookVisual != null} clawVisual={clawVisual != null} aimMarker={aimMarker != null} aimReticle={aimReticle != null} aimReticleRenderer={aimReticleRenderer != null} itemHolder={itemHolder != null} itemCollectionPoint={itemCollectionPoint != null}");
             }
 
             return false;
