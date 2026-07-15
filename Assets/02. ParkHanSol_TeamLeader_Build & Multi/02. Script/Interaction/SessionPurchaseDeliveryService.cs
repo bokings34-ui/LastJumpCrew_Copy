@@ -16,8 +16,21 @@ namespace LastJumpCrew.ParkHanSol.Interaction
 
         public int PendingCount => pendingItems.Count;
 
+        [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
+        private static void ResetStatics()
+        {
+            Instance = null;
+            pendingItems.Clear();
+        }
+
         private void Awake()
         {
+            if (Instance != null && Instance != this)
+            {
+                enabled = false;
+                return;
+            }
+
             Instance = this;
         }
 

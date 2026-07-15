@@ -14,8 +14,20 @@ namespace LastJumpCrew.ParkHanSol.Interaction
         public int Credits => credits;
         public event Action<int> CreditsChanged;
 
+        [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
+        private static void ResetStatics()
+        {
+            Instance = null;
+        }
+
         private void Awake()
         {
+            if (Instance != null && Instance != this)
+            {
+                enabled = false;
+                return;
+            }
+
             Instance = this;
         }
 

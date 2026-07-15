@@ -5,33 +5,50 @@ using UnityEngine;
 
 namespace LastJumpCrew.ParkHanSol.Interaction
 {
-    // 계산대 위 감지 구역에 들어온 아이템 가격을 합산하는 테스트용 계산대 컴포넌트다.
-    // 실제 결제, 재화 차감, 함선 이동은 아직 연결하지 않고 로그와 가격 표시까지만 담당한다.
-    public sealed class ShopCheckoutZone : MonoBehaviour, IInteractable
+    /// <summary>Calculates physical shop items from ShopProductData and queues paid items for ship delivery.</summary>
+    public sealed class ShopCheckoutZone : MonoBehaviour
     {
-        // checkoutTrigger는 계산대 본체가 아니라 아이템을 올려두는 감지용 Trigger다.
-        // 플레이어 Raycast를 막지 않도록 NoPlayerInteract 레이어에 두고, Inspector에서 직접 연결한다.
-        [SerializeField] private string interactionPrompt = "Checkout";
+        private readonly struct CheckoutEntry
+        {
+            public CheckoutEntry(UtilityItemObject itemObject, ShopProductData productData)
+            {
+                ItemObject = itemObject;
+                ProductData = productData;
+            }
+
+            public UtilityItemObject ItemObject { get; }
+            public ShopProductData ProductData { get; }
+        }
+
         [SerializeField] private BoxCollider checkoutTrigger;
         [SerializeField] private TMP_Text priceText;
         [SerializeField] private string pricePrefix = "TOTAL";
+        [SerializeField] private ShopProductData[] products;
+        [SerializeField] private SessionPartyCreditsWallet wallet;
+        [SerializeField, Min(0.1f)] private float statusDuration = 2f;
 
         private readonly HashSet<UtilityItemObject> checkoutItems = new();
+        private readonly Dictionary<UtilityItemPrefabData, ShopProductData> productsByItem = new();
         private int lastDisplayedPrice = -1;
+        private string temporaryStatus;
+        private float temporaryStatusUntil;
 
-        public string InteractionPrompt => interactionPrompt;
         public int CurrentTotalPrice => CalculateTotalPrice();
 
         private void Awake()
         {
+            RebuildProductLookup(true);
             ValidateSetup();
             RefreshPriceText(true);
         }
 
+        private void OnValidate()
+        {
+            RebuildProductLookup(false);
+        }
+
         private void Update()
         {
-            // Trigger 이벤트만 의존하면 이미 안에 있던 아이템이나 Rigidbody 누락 상황을 놓칠 수 있다.
-            // 테스트 안정성을 위해 매 프레임 현재 박스 안 Collider를 다시 스캔한다.
             RefreshCheckoutItemsFromZone();
             RefreshPriceText(false);
         }
@@ -40,67 +57,175 @@ namespace LastJumpCrew.ParkHanSol.Interaction
         {
             if (other == null)
             {
-                Debug.LogError($"PHS_SHOP_CHECKOUT_TRACK_FAILED reason=collider_missing zone={name}");
                 return;
             }
 
             var itemObject = other.GetComponentInParent<UtilityItemObject>();
-            if (itemObject == null)
+            if (itemObject != null)
             {
-                return;
+                checkoutItems.Add(itemObject);
+                RefreshPriceText(true);
             }
-
-            checkoutItems.Add(itemObject);
-            Debug.Log($"PHS_SHOP_CHECKOUT_ITEM_ENTER zone={name} item={itemObject.ItemId}");
-            RefreshPriceText(true);
         }
 
         private void OnTriggerExit(Collider other)
         {
             if (other == null)
             {
-                Debug.LogError($"PHS_SHOP_CHECKOUT_UNTRACK_FAILED reason=collider_missing zone={name}");
                 return;
             }
 
             var itemObject = other.GetComponentInParent<UtilityItemObject>();
-            if (itemObject == null)
+            if (itemObject != null)
             {
-                return;
+                checkoutItems.Remove(itemObject);
+                RefreshPriceText(true);
             }
-
-            checkoutItems.Remove(itemObject);
-            Debug.Log($"PHS_SHOP_CHECKOUT_ITEM_EXIT zone={name} item={itemObject.ItemId}");
-            RefreshPriceText(true);
         }
 
-        public bool CanInteract(IItemHolder itemHolder)
+        public bool CanCheckout()
+        {
+            if (!IsTriggerConfigured())
+            {
+                return false;
+            }
+
+            RefreshCheckoutItemsFromZone();
+            return BuildCheckoutSnapshot(null, out var totalPrice, false) && totalPrice > 0;
+        }
+
+        public bool TryCheckout()
         {
             if (!ValidateSetup())
             {
+                ShowTemporaryStatus("CHECKOUT ERROR");
                 return false;
             }
 
-            if (CalculateTotalPrice() <= 0)
+            RefreshCheckoutItemsFromZone();
+            var entries = new List<CheckoutEntry>();
+            if (!BuildCheckoutSnapshot(entries, out var totalPrice, true) || totalPrice <= 0)
             {
-                Debug.LogWarning($"PHS_SHOP_CHECKOUT_FAILED reason=no_priced_items zone={name}");
+                ShowTemporaryStatus("NO SHOP ITEMS");
                 return false;
             }
 
+            wallet ??= SessionPartyCreditsWallet.Instance;
+            if (wallet == null)
+            {
+                Debug.LogError($"PHS_SHOP_CHECKOUT_FAILED reason=wallet_missing zone={name}");
+                ShowTemporaryStatus("WALLET OFFLINE");
+                return false;
+            }
+
+            var deliveryService = SessionPurchaseDeliveryService.Instance;
+            if (deliveryService == null)
+            {
+                Debug.LogError($"PHS_SHOP_CHECKOUT_FAILED reason=delivery_service_missing zone={name}");
+                ShowTemporaryStatus("DELIVERY OFFLINE");
+                return false;
+            }
+
+            if (!wallet.TrySpendCredits(totalPrice))
+            {
+                ShowTemporaryStatus($"NEED {totalPrice} CR");
+                return false;
+            }
+
+            foreach (var entry in entries)
+            {
+                deliveryService.QueueDelivery(entry.ProductData.ItemPrefabData);
+                checkoutItems.Remove(entry.ItemObject);
+                Destroy(entry.ItemObject.gameObject);
+            }
+
+            Debug.Log($"PHS_SHOP_CHECKOUT_COMPLETED zone={name} totalPrice={totalPrice} itemCount={entries.Count} pendingDelivery={deliveryService.PendingCount}");
+            ShowTemporaryStatus($"PAID {totalPrice} CR\nSHIP DELIVERY");
             return true;
         }
 
-        public void Interact(IItemHolder itemHolder)
+        private bool BuildCheckoutSnapshot(List<CheckoutEntry> entries, out int totalPrice, bool shouldLog)
         {
-            if (!CanInteract(itemHolder))
+            totalPrice = 0;
+            RemoveMissingItems();
+
+            foreach (var itemObject in checkoutItems)
+            {
+                if (!TryResolveProduct(itemObject, out var productData, shouldLog))
+                {
+                    continue;
+                }
+
+                entries?.Add(new CheckoutEntry(itemObject, productData));
+                totalPrice += productData.PurchasePrice;
+            }
+
+            return totalPrice > 0;
+        }
+
+        private bool TryResolveProduct(UtilityItemObject itemObject, out ShopProductData productData, bool shouldLog)
+        {
+            productData = null;
+            if (itemObject == null || itemObject.IsHeld)
+            {
+                return false;
+            }
+
+            var itemPrefabData = itemObject.ItemPrefabData;
+            if (itemPrefabData == null)
+            {
+                if (shouldLog)
+                {
+                    Debug.LogError($"PHS_SHOP_CHECKOUT_ITEM_FAILED reason=item_data_missing zone={name} item={itemObject.name}");
+                }
+
+                return false;
+            }
+
+            if (!productsByItem.TryGetValue(itemPrefabData, out productData))
+            {
+                if (shouldLog)
+                {
+                    Debug.LogWarning($"PHS_SHOP_CHECKOUT_ITEM_IGNORED reason=product_missing zone={name} item={itemPrefabData.ItemId}");
+                }
+
+                return false;
+            }
+
+            return productData.IsConfigured;
+        }
+
+        private int CalculateTotalPrice()
+        {
+            BuildCheckoutSnapshot(null, out var totalPrice, false);
+            return totalPrice;
+        }
+
+        private void RebuildProductLookup(bool shouldLog)
+        {
+            productsByItem.Clear();
+            if (products == null)
             {
                 return;
             }
 
-            // 현재 단계에서는 구매 확정 후 아이템 삭제/이동을 하지 않는다.
-            // 함선/재화 시스템이 붙으면 이 지점에서 후처리를 연결한다.
-            var totalPrice = CalculateTotalPrice();
-            Debug.Log($"PHS_SHOP_CHECKOUT_CONFIRMED zone={name} totalPrice={totalPrice} itemCount={CountPricedItems()}");
+            foreach (var productData in products)
+            {
+                if (productData == null || !productData.IsConfigured)
+                {
+                    if (shouldLog)
+                    {
+                        Debug.LogError($"PHS_SHOP_PRODUCT_SETUP_FAILED reason=product_invalid zone={name}", this);
+                    }
+
+                    continue;
+                }
+
+                if (!productsByItem.TryAdd(productData.ItemPrefabData, productData) && shouldLog)
+                {
+                    Debug.LogError($"PHS_SHOP_PRODUCT_SETUP_FAILED reason=item_duplicate zone={name} item={productData.ItemPrefabData.ItemId}", productData);
+                }
+            }
         }
 
         private void RefreshPriceText(bool force)
@@ -110,6 +235,13 @@ namespace LastJumpCrew.ParkHanSol.Interaction
                 return;
             }
 
+            if (!string.IsNullOrEmpty(temporaryStatus) && Time.unscaledTime < temporaryStatusUntil)
+            {
+                priceText.text = temporaryStatus;
+                return;
+            }
+
+            temporaryStatus = string.Empty;
             var totalPrice = CalculateTotalPrice();
             if (!force && totalPrice == lastDisplayedPrice)
             {
@@ -120,86 +252,34 @@ namespace LastJumpCrew.ParkHanSol.Interaction
             priceText.text = $"{pricePrefix} ${totalPrice}";
         }
 
+        private void ShowTemporaryStatus(string message)
+        {
+            temporaryStatus = message;
+            temporaryStatusUntil = Time.unscaledTime + statusDuration;
+            lastDisplayedPrice = -1;
+            RefreshPriceText(true);
+        }
+
         private bool ValidateSetup()
         {
-            if (checkoutTrigger == null)
+            var isValid = IsTriggerConfigured();
+            if (!isValid)
             {
-                Debug.LogError($"PHS_SHOP_CHECKOUT_SETUP_FAILED reason=checkoutTrigger_missing zone={name}");
-                return false;
+                Debug.LogError($"PHS_SHOP_CHECKOUT_SETUP_FAILED reason=checkout_trigger_invalid zone={name}");
             }
 
-            if (!checkoutTrigger.isTrigger)
+            if (productsByItem.Count == 0)
             {
-                Debug.LogError($"PHS_SHOP_CHECKOUT_SETUP_FAILED reason=checkoutTrigger_not_trigger zone={name}");
-                return false;
+                Debug.LogError($"PHS_SHOP_CHECKOUT_SETUP_FAILED reason=products_missing zone={name}");
+                isValid = false;
             }
 
-            return true;
+            return isValid;
         }
 
-        private int CalculateTotalPrice()
+        private bool IsTriggerConfigured()
         {
-            var totalPrice = 0;
-            RemoveMissingItems();
-
-            foreach (var itemObject in checkoutItems)
-            {
-                if (!TryGetPricedItem(itemObject, out var itemPrefabData))
-                {
-                    continue;
-                }
-
-                totalPrice += itemPrefabData.Price;
-            }
-
-            return totalPrice;
-        }
-
-        private int CountPricedItems()
-        {
-            var count = 0;
-            RemoveMissingItems();
-
-            foreach (var itemObject in checkoutItems)
-            {
-                if (TryGetPricedItem(itemObject, out _))
-                {
-                    count++;
-                }
-            }
-
-            return count;
-        }
-
-        private bool TryGetPricedItem(UtilityItemObject itemObject, out UtilityItemPrefabData itemPrefabData)
-        {
-            itemPrefabData = null;
-
-            if (itemObject == null)
-            {
-                return false;
-            }
-
-            if (itemObject.IsHeld)
-            {
-                // 손에 들린 아이템은 계산대 안에 겹쳐도 구매 대상에서 제외한다.
-                return false;
-            }
-
-            itemPrefabData = itemObject.ItemPrefabData;
-            if (itemPrefabData == null)
-            {
-                Debug.LogError($"PHS_SHOP_CHECKOUT_ITEM_FAILED reason=itemData_missing zone={name} item={itemObject.name}");
-                return false;
-            }
-
-            if (itemPrefabData.Price <= 0)
-            {
-                Debug.LogWarning($"PHS_SHOP_CHECKOUT_ITEM_FAILED reason=price_not_set zone={name} item={itemPrefabData.ItemId}");
-                return false;
-            }
-
-            return true;
+            return checkoutTrigger != null && checkoutTrigger.isTrigger;
         }
 
         private void RemoveMissingItems()
@@ -215,7 +295,6 @@ namespace LastJumpCrew.ParkHanSol.Interaction
             }
 
             checkoutItems.Clear();
-
             var center = checkoutTrigger.transform.TransformPoint(checkoutTrigger.center);
             var halfExtents = Vector3.Scale(checkoutTrigger.size, checkoutTrigger.transform.lossyScale) * 0.5f;
             var colliders = Physics.OverlapBox(
@@ -227,7 +306,6 @@ namespace LastJumpCrew.ParkHanSol.Interaction
 
             foreach (var itemCollider in colliders)
             {
-                // 아이템 모델의 자식 Collider가 잡혀도 루트 UtilityItemObject 기준으로 계산한다.
                 var itemObject = itemCollider.GetComponentInParent<UtilityItemObject>();
                 if (itemObject != null)
                 {

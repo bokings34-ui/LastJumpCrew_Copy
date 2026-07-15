@@ -38,6 +38,8 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
             Bind(exitGameButton, ExitToLobby);
             if (mouseSensitivitySlider != null)
             {
+                mouseSensitivitySlider.minValue = NetworkPlayerController.MinimumMouseSensitivity;
+                mouseSensitivitySlider.maxValue = NetworkPlayerController.MaximumMouseSensitivity;
                 mouseSensitivitySlider.onValueChanged.AddListener(SetMouseSensitivity);
             }
 
@@ -153,7 +155,11 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
             }
 
             SetExitButtonInteractable(false);
-            await LeaveLocalSessionAsync();
+            if (!await LeaveLocalSessionAsync())
+            {
+                SetExitButtonInteractable(true);
+                return;
+            }
 
             if (!Application.CanStreamedLevelBeLoaded(lobbySceneName))
             {
@@ -165,18 +171,37 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
             SceneManager.LoadScene(lobbySceneName, LoadSceneMode.Single);
         }
 
-        private async System.Threading.Tasks.Task LeaveLocalSessionAsync()
+        private async System.Threading.Tasks.Task<bool> LeaveLocalSessionAsync()
         {
+            var networkManager = NetworkManager.Singleton;
+            var roomService = networkManager == null
+                ? null
+                : networkManager.GetComponent<MultiplayerRoomService>();
+            if (roomService != null && roomService.IsActive)
+            {
+                if (!await roomService.LeaveRoomAsync())
+                {
+                    Debug.LogError("PHS_PAUSE_EXIT_FAILED reason=room_leave_failed");
+                    return false;
+                }
+            }
+
             if (ProximityVoiceChatSession.ActiveSession != null)
             {
                 await ProximityVoiceChatSession.ActiveSession.LeaveAsync();
             }
 
-            var networkManager = NetworkManager.Singleton;
             if (networkManager != null && networkManager.IsListening)
             {
                 networkManager.Shutdown();
             }
+
+            if (networkManager != null)
+            {
+                Destroy(networkManager.gameObject);
+            }
+
+            return true;
         }
 
         private void PlayOpenAnimation()

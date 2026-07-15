@@ -8,16 +8,31 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
     [RequireComponent(typeof(Selectable))]
     public sealed class ParkHanSolLobbySelectionTarget : MonoBehaviour,
         IPointerEnterHandler,
+        IPointerDownHandler,
+        IPointerUpHandler,
+        IPointerClickHandler,
+        IPointerExitHandler,
         ISelectHandler,
         ISubmitHandler
     {
+        [Header("References")]
         [SerializeField] private ParkHanSolLobbySelectionIndicator indicator;
         [SerializeField] private Selectable selectable;
         [SerializeField] private RectTransform visualTarget;
         [SerializeField] private Graphic focusGraphic;
 
+        [Header("Button Press Motion")]
+        [SerializeField, Range(0.8f, 1f)] private float pressedScale = 0.96f;
+        [SerializeField, Min(0.01f)] private float pressDuration = 0.06f;
+        [SerializeField, Min(0.01f)] private float releaseDuration = 0.12f;
+        [SerializeField] private Ease pressEase = Ease.OutQuad;
+        [SerializeField] private Ease releaseEase = Ease.OutBack;
+
         private Color defaultGraphicColor;
         private bool hasDefaultGraphicColor;
+        private Vector3 defaultVisualScale;
+        private bool hasDefaultVisualScale;
+        private Tween pressTween;
 
         public RectTransform VisualTarget => visualTarget;
 
@@ -40,6 +55,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
             }
 
             CaptureDefaultGraphicColor();
+            CaptureDefaultVisualScale();
         }
 
         private void OnEnable()
@@ -51,6 +67,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
         {
             indicator?.Unregister(this);
             SetFocused(false, Color.black, 0f, true);
+            ResetPressVisual(true);
         }
 
         public void OnPointerEnter(PointerEventData eventData)
@@ -64,6 +81,44 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
             indicator?.Focus(this);
         }
 
+        public void OnPointerDown(PointerEventData eventData)
+        {
+            if (eventData.button != PointerEventData.InputButton.Left || !IsAvailable)
+            {
+                return;
+            }
+
+            Select();
+            indicator?.Focus(this);
+            PlayPressMotion();
+        }
+
+        public void OnPointerUp(PointerEventData eventData)
+        {
+            if (eventData.button == PointerEventData.InputButton.Left)
+            {
+                ResetPressVisual(false);
+            }
+        }
+
+        public void OnPointerClick(PointerEventData eventData)
+        {
+            if (eventData.button != PointerEventData.InputButton.Left || !IsAvailable)
+            {
+                return;
+            }
+
+            Select();
+            indicator?.Focus(this);
+            indicator?.PlaySubmitFeedback();
+            ResetPressVisual(false);
+        }
+
+        public void OnPointerExit(PointerEventData eventData)
+        {
+            ResetPressVisual(false);
+        }
+
         public void OnSelect(BaseEventData eventData)
         {
             indicator?.Focus(this);
@@ -72,6 +127,27 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
         public void OnSubmit(BaseEventData eventData)
         {
             indicator?.PlaySubmitFeedback();
+            PlaySubmitMotion();
+        }
+
+        public void SetIndicator(ParkHanSolLobbySelectionIndicator value)
+        {
+            if (indicator == value)
+            {
+                return;
+            }
+
+            if (isActiveAndEnabled)
+            {
+                indicator?.Unregister(this);
+            }
+
+            indicator = value;
+
+            if (isActiveAndEnabled)
+            {
+                indicator?.Register(this);
+            }
         }
 
         public void Select()
@@ -115,9 +191,82 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
             hasDefaultGraphicColor = true;
         }
 
+        private void CaptureDefaultVisualScale()
+        {
+            if (hasDefaultVisualScale || visualTarget == null)
+            {
+                return;
+            }
+
+            defaultVisualScale = visualTarget.localScale;
+            hasDefaultVisualScale = true;
+        }
+
+        private void PlayPressMotion()
+        {
+            if (selectable is not Button || visualTarget == null)
+            {
+                return;
+            }
+
+            CaptureDefaultVisualScale();
+            KillPressTween();
+            pressTween = visualTarget
+                .DOScale(defaultVisualScale * pressedScale, pressDuration)
+                .SetEase(pressEase)
+                .SetUpdate(true)
+                .SetLink(gameObject);
+        }
+
+        private void PlaySubmitMotion()
+        {
+            if (selectable is not Button || visualTarget == null)
+            {
+                return;
+            }
+
+            CaptureDefaultVisualScale();
+            KillPressTween();
+            pressTween = DOTween.Sequence()
+                .SetUpdate(true)
+                .SetLink(gameObject)
+                .Append(visualTarget.DOScale(defaultVisualScale * pressedScale, pressDuration).SetEase(pressEase))
+                .Append(visualTarget.DOScale(defaultVisualScale, releaseDuration).SetEase(releaseEase));
+        }
+
+        private void ResetPressVisual(bool immediate)
+        {
+            if (selectable is not Button || visualTarget == null)
+            {
+                return;
+            }
+
+            CaptureDefaultVisualScale();
+            KillPressTween();
+            if (immediate || !gameObject.activeInHierarchy)
+            {
+                visualTarget.localScale = defaultVisualScale;
+                return;
+            }
+
+            pressTween = visualTarget
+                .DOScale(defaultVisualScale, releaseDuration)
+                .SetEase(releaseEase)
+                .SetUpdate(true)
+                .SetLink(gameObject);
+        }
+
+        private void KillPressTween()
+        {
+            pressTween?.Kill();
+            pressTween = null;
+        }
+
         private void OnDestroy()
         {
+            KillPressTween();
             focusGraphic?.DOKill();
+            visualTarget?.DOKill();
         }
     }
 }
