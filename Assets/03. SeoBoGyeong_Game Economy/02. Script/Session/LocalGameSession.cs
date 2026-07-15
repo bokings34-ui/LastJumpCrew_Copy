@@ -40,6 +40,7 @@ namespace LastJumpCrew.SeoBoGyeong
         {
             // IAuthority는 네트워크 역할(나중 NetworkBehaviour.IsServer 매핑)이라 로컬 소유 유지.
             authority = new LocalAuthority();
+            
         }
 
         /// <summary>
@@ -56,7 +57,7 @@ namespace LastJumpCrew.SeoBoGyeong
             rules = new GameLoopController(state, ship, deathGate);
 
             // Credit 지갑은 세션 소유(런타임 수명 일치). 나중 NetworkVariable<int> 로 승격.
-            creditWallet = new CreditWallet(0);
+            creditWallet = new CreditWallet(500);//임시로 500
             registry.Register<IWallet>(creditWallet);
         }
 
