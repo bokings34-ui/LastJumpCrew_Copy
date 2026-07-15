@@ -1,4 +1,5 @@
 using UnityEngine;
+using UnityEngine.InputSystem;
 
 namespace LastJumpCrew.ParkHanSol.Multiplayer
 {
@@ -6,6 +7,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
     {
         [SerializeField] private NetworkPlayerController playerController;
         [SerializeField] private Transform resetPoint;
+        [SerializeField] private ShipGravityZoneController shipGravityController;
         private void Awake()
         {
             if (playerController == null)
@@ -28,6 +30,29 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
             }
 
             ResetPlayerForCinematicControlTest();
+        }
+
+        private void Update()
+        {
+            if (Keyboard.current == null || shipGravityController == null)
+            {
+                return;
+            }
+
+            if (Keyboard.current.digit1Key.wasPressedThisFrame)
+            {
+                shipGravityController.TurnGravityOn();
+                Debug.Log("PHS_GRAVITY_TEST_MODE mode=ship_gravity input=1");
+            }
+            else if (Keyboard.current.digit2Key.wasPressedThisFrame)
+            {
+                shipGravityController.TurnGravityOff();
+                Debug.Log("PHS_GRAVITY_TEST_MODE mode=zero_gravity input=2");
+            }
+            else if (Keyboard.current.rKey.wasPressedThisFrame)
+            {
+                ResetPlayerForCinematicControlTest();
+            }
         }
 
         private void ResetPlayerForCinematicControlTest()

@@ -14,9 +14,13 @@ namespace SM
 
         private void Update()
         {
-            foreach (var evt in _activeEvents.Values)
+            var activeEvents = new List<EventBase>(_activeEvents.Values);
+            foreach (var evt in activeEvents)
             {
-                evt.OnTick(Time.deltaTime);
+                if (_activeEvents.ContainsKey(evt.Id))
+                {
+                    evt.OnTick(Time.deltaTime);
+                }
             }
         }
 
@@ -25,32 +29,39 @@ namespace SM
             return _activeEvents.ContainsKey(id);
         }
 
-        public void SpawnEvent(EventId id, IRoom targetRoom, Action<EventBase, bool> onFinished = null)
+        public bool SpawnEvent(EventId id, IRoom targetRoom, Action<EventBase, bool> onFinished = null)
         {
             if (_activeEvents.ContainsKey(id))
             {
                 Debug.Log($"<color=lime>[EventManager]</color> {id}는 이미 진행 중입니다.");
-                return;
+                return false;
             }
 
             var data = registry.GetData(id);
 
             if (data == null)
             {
-                Debug.Log($"<color=lime>[EventManager]</color> {id}에 대한 EventDataSO가 Registry에 없습니다.");
-                return;
+                Debug.LogError($"[EventManager] {id}에 대한 EventDataSO가 Registry에 없습니다.", this);
+                return false;
             }
 
             var evt = EventFactory.Create(id);
+            if (evt == null)
+            {
+                Debug.LogError($"[EventManager] {id} 이벤트 생성에 실패했습니다.", this);
+                return false;
+            }
+
             var context = new EventContext(targetRoom, this);
 
             evt.OnFinished += HandleEventFinished;
             if (onFinished != null) evt.OnFinished += onFinished;
 
             evt.Initialize(data, context);
+            _activeEvents[id] = evt;
             evt.OnTrigger();
 
-            _activeEvents[id] = evt;
+            return true;
         }
 
         private void HandleEventFinished(EventBase evt, bool success)

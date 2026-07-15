@@ -1,5 +1,6 @@
 using System.Collections.Generic;
 using LastJumpCrew.ParkHanSol.Items;
+using LastJumpCrew.ParkHanSol.Shop;
 using UnityEngine;
 
 namespace LastJumpCrew.ParkHanSol.Interaction
@@ -7,13 +8,16 @@ namespace LastJumpCrew.ParkHanSol.Interaction
     public sealed class DebrisSellZone : MonoBehaviour
     {
         [SerializeField] private BoxCollider sellTrigger;
-        [SerializeField] private MonoBehaviour partyWallet;
+        [SerializeField] private MonoBehaviour shopWalletSource;
         [SerializeField] private string debrisTag = "Debris";
 
         private readonly HashSet<DebrisItem> pendingItems = new();
+        private readonly HashSet<string> soldItemIds = new();
+        private IShopWallet shopWallet;
 
         private void Awake()
         {
+            shopWallet = shopWalletSource as IShopWallet;
             ValidateSetup();
         }
 
@@ -41,6 +45,13 @@ namespace LastJumpCrew.ParkHanSol.Interaction
                     continue;
                 }
 
+                var debrisInstanceId = debrisItem.GetEntityId().ToString();
+                if (soldItemIds.Contains(debrisInstanceId))
+                {
+                    Debug.LogError($"PHS_DEBRIS_SELL_FAILED reason=duplicate_sale zone={name} debris={debrisItem.name}");
+                    continue;
+                }
+
                 var consumedHeldDebris = TryConsumeHeldDebris(debrisItem, out var isHeldDebris);
                 if (isHeldDebris && !consumedHeldDebris)
                 {
@@ -49,7 +60,13 @@ namespace LastJumpCrew.ParkHanSol.Interaction
                     continue;
                 }
 
-                ResolvePartyWallet().AddCredits(debrisItem.Value);
+                if (!shopWallet.TryAddCredits(debrisItem.Value))
+                {
+                    Debug.LogError($"PHS_DEBRIS_SELL_FAILED reason=wallet_rejected zone={name} debris={debrisItem.name} value={debrisItem.Value}");
+                    continue;
+                }
+
+                soldItemIds.Add(debrisInstanceId);
                 Debug.Log($"PHS_DEBRIS_SOLD zone={name} debris={debrisItem.name} value={debrisItem.Value}");
 
                 // 월드 데브리만 여기서 직접 제거한다. 손에 든 데브리는 Holder가
@@ -141,23 +158,13 @@ namespace LastJumpCrew.ParkHanSol.Interaction
                 return false;
             }
 
-            if (ResolvePartyWallet() == null)
+            if (shopWallet == null)
             {
-                Debug.LogError($"PHS_DEBRIS_SELL_SETUP_FAILED reason=party_wallet_missing zone={name}");
+                Debug.LogError($"PHS_DEBRIS_SELL_SETUP_FAILED reason=shop_wallet_missing zone={name}");
                 return false;
             }
 
             return true;
-        }
-
-        private IPartyCreditsWallet ResolvePartyWallet()
-        {
-            if (partyWallet is IPartyCreditsWallet configuredWallet)
-            {
-                return configuredWallet;
-            }
-
-            return SessionPartyCreditsWallet.Instance;
         }
     }
 }

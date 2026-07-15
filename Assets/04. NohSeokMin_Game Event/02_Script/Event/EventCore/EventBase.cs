@@ -41,7 +41,7 @@ namespace SM
         // 실패
         public virtual void OnFail()
         {
-
+            ChangeState(EventState.Fail);
         }
 
         // 스테이지 종료 시 강제 종료

@@ -155,6 +155,16 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
             hudFeedbackController?.SetGravityWarning(isVisible);
         }
 
+        public void SetHazardWarning(string message)
+        {
+            hudFeedbackController?.SetHazardWarning(message);
+        }
+
+        public void ClearHazardWarning()
+        {
+            hudFeedbackController?.ClearHazardWarning();
+        }
+
         public void ShowSpeakingPlayer(string playerName)
         {
             ShowSpeakingPlayer(playerName, speakingPlayerVisibleSeconds);

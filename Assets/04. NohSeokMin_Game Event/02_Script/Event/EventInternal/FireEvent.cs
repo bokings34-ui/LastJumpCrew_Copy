@@ -23,6 +23,11 @@ namespace SM
             _effectToPoint.Clear();
 
             SpawnNextFire();
+            if (_activeEffects.Count == 0)
+            {
+                Debug.LogError($"[{FireData.EventName}] 사용 가능한 화재 스폰 포인트가 없습니다.");
+                OnFail();
+            }
             //Debug.Log($"<color=lime>[{FireData.EventName}]</color> 발생! 초기 레벨: {FireLevel}");
         }
 

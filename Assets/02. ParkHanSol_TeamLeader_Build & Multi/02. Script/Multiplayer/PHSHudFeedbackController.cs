@@ -29,6 +29,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
         [Header("Ship Alert")]
         [SerializeField] private RectTransform gravityWarningRoot;
         [SerializeField] private CanvasGroup gravityWarningGroup;
+        [SerializeField] private TMP_Text gravityWarningText;
 
         [Header("Timing")]
         [SerializeField, Min(0.01f)] private float showDuration = 0.16f;
@@ -49,6 +50,9 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
         private bool previousHeldItemState;
         private string previousInteractionPrompt;
         private bool isGravityWarningVisible;
+        private bool isHazardWarningVisible;
+        private bool isWarningPanelVisible;
+        private string defaultGravityWarningText;
         private Vector2 interactionPromptShownPosition;
         private Vector2 gravityWarningShownPosition;
 
@@ -62,6 +66,15 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
             if (gravityWarningRoot != null)
             {
                 gravityWarningShownPosition = gravityWarningRoot.anchoredPosition;
+            }
+
+            if (gravityWarningText == null)
+            {
+                Debug.LogError($"PHS_HUD_SETUP_FAILED reason=gravity_warning_text_missing hud={name}", this);
+            }
+            else
+            {
+                defaultGravityWarningText = gravityWarningText.text;
             }
 
             SetPanelImmediate(interactionPromptRoot, interactionPromptGroup, false, interactionPromptShownPosition);
@@ -188,8 +201,44 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
             }
 
             isGravityWarningVisible = isVisible;
-            AnimatePanel(gravityWarningRoot, gravityWarningGroup, isVisible, gravityWarningShownPosition);
-            if (isVisible && gravityWarningRoot != null)
+            RefreshWarningPanel();
+        }
+
+        public void SetHazardWarning(string message)
+        {
+            if (gravityWarningText == null)
+            {
+                Debug.LogError($"PHS_HUD_HAZARD_WARNING_FAILED reason=text_missing hud={name}", this);
+                return;
+            }
+
+            isHazardWarningVisible = !string.IsNullOrWhiteSpace(message);
+            gravityWarningText.text = isHazardWarningVisible ? message.Trim() : defaultGravityWarningText;
+            RefreshWarningPanel();
+        }
+
+        public void ClearHazardWarning()
+        {
+            isHazardWarningVisible = false;
+            if (gravityWarningText != null)
+            {
+                gravityWarningText.text = defaultGravityWarningText;
+            }
+
+            RefreshWarningPanel();
+        }
+
+        private void RefreshWarningPanel()
+        {
+            var shouldShow = isGravityWarningVisible || isHazardWarningVisible;
+            if (isWarningPanelVisible == shouldShow)
+            {
+                return;
+            }
+
+            isWarningPanelVisible = shouldShow;
+            AnimatePanel(gravityWarningRoot, gravityWarningGroup, shouldShow, gravityWarningShownPosition);
+            if (shouldShow && gravityWarningRoot != null)
             {
                 gravityWarningRoot.DOPunchScale(new Vector3(0.06f, 0.06f, 0f), 0.22f, 5, 0.55f)
                     .SetUpdate(true)

@@ -1,4 +1,5 @@
 using LastJumpCrew.ParkHanSol.Multiplayer;
+using LastJumpCrew.ParkHanSol.Shop;
 using UnityEngine;
 
 namespace LastJumpCrew.ParkHanSol.Interaction
@@ -6,6 +7,7 @@ namespace LastJumpCrew.ParkHanSol.Interaction
     public sealed class NetworkScenePortalInteractable : MonoBehaviour, IInteractable
     {
         [SerializeField] private string destinationSceneName;
+        [SerializeField] private ShopSceneTransitionMode shopTransitionMode;
         [SerializeField] private string interactionPrompt = "Travel To Exterior Shop";
 
         public string InteractionPrompt => interactionPrompt;
@@ -29,7 +31,7 @@ namespace LastJumpCrew.ParkHanSol.Interaction
             }
 
             var player = ((Component)itemHolder).GetComponent<NetworkPlayerController>();
-            player.RequestGameplaySceneTransition(destinationSceneName);
+            player.RequestGameplaySceneTransition(destinationSceneName, shopTransitionMode);
         }
     }
 }
