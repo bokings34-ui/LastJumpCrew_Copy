@@ -32,6 +32,32 @@ public class MiniGameManager : MonoBehaviour
         { MiniGameType.PowerSync, "EnemyScout" }
     };
 
+    private sealed class CompositeMiniGameTarget : IMiniGameTarget
+    {
+        private readonly IMiniGameTarget eventTarget;
+        private readonly IMiniGameTarget terminalTarget;
+
+        public CompositeMiniGameTarget(IMiniGameTarget eventTarget, IMiniGameTarget terminalTarget)
+        {
+            this.eventTarget = eventTarget;
+            this.terminalTarget = terminalTarget;
+        }
+
+        public string MiniGameTargetId => $"{eventTarget.MiniGameTargetId}+{terminalTarget.MiniGameTargetId}";
+
+        public void OnMiniGameSucceeded()
+        {
+            eventTarget.OnMiniGameSucceeded();
+            terminalTarget.OnMiniGameSucceeded();
+        }
+
+        public void OnMiniGameFailed()
+        {
+            eventTarget.OnMiniGameFailed();
+            terminalTarget.OnMiniGameFailed();
+        }
+    }
+
     private void Awake()
     {
         if (Instance == null) Instance = this;
@@ -58,10 +84,11 @@ public class MiniGameManager : MonoBehaviour
     // 💡 큐브 단말기(MiniGameTerminal)에서 쏘아 올려줄 핵심 오픈 함수!
     public void OpenMiniGame(MiniGameType type, IMiniGameTarget target)
     {
-        // 석민 추가 (이벤트 -> 미니게임 연결)
-        if (target == null && _gameToEventMap.TryGetValue(type, out string targetId))
+        IMiniGameTarget resolvedTarget = ResolveTarget(type, target);
+        if (resolvedTarget == null)
         {
-            target = EventManager.Instance.GetMiniGameTarget(targetId);
+            Debug.LogError($"[MiniGameManager] {type} 미니게임 결과를 받을 대상이 없습니다.", this);
+            return;
         }
 
         canvasRoot.SetActive(true);
@@ -71,7 +98,7 @@ public class MiniGameManager : MonoBehaviour
             if (mg.gameType == type)
             {
                 mg.gameObject.SetActive(true);
-                mg.StartGame(target); // 미니게임 시작 및 큐브(Target) 연결
+                mg.StartGame(resolvedTarget); // 미니게임 시작 및 큐브/이벤트 대상 연결
                 activeGame = mg;
 
                 // 열릴 때: 위에서 아래로 스무스하게 떨어지기
@@ -83,6 +110,31 @@ public class MiniGameManager : MonoBehaviour
                 mg.gameObject.SetActive(false); // 선택되지 않은 다른 미니게임은 확실히 꺼둠
             }
         }
+    }
+
+    private IMiniGameTarget ResolveTarget(MiniGameType type, IMiniGameTarget terminalTarget)
+    {
+        if (!_gameToEventMap.TryGetValue(type, out string eventTargetId))
+        {
+            return terminalTarget;
+        }
+
+        EventManager eventManager = EventManager.Instance;
+        IMiniGameTarget eventTarget = eventManager != null
+            ? eventManager.GetMiniGameTarget(eventTargetId)
+            : null;
+
+        if (eventTarget == null)
+        {
+            return terminalTarget;
+        }
+
+        if (terminalTarget == null || ReferenceEquals(eventTarget, terminalTarget))
+        {
+            return eventTarget;
+        }
+
+        return new CompositeMiniGameTarget(eventTarget, terminalTarget);
     }
 
     private IEnumerator SlideDownRoutine(RectTransform panelRect)
