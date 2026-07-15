@@ -6,7 +6,7 @@ using LastJumpCrew.Common;
 namespace SM
 {
     [RequireComponent(typeof(Collider))]
-    public class FireEffectInstance : MonoBehaviour, IInteractable
+    public class FireEffectInstance : MonoBehaviour, IInteractable, IRequireHeldItem
     {
         [Header("데미지 틱 설정")]
         [SerializeField] private float tickInterval = 1f;
@@ -70,17 +70,29 @@ namespace SM
             if (damageable != null) _targetsInRange.Remove(damageable);
         }
 
+        // __________ IRequireHeldItem ______________
+
+        public string RequiredItemId { get { return ItemType.FireExtinguisher.ToString(); } }
+
+        public bool IsRequirementMet(IItemHolder itemHolder)
+        {
+            return itemHolder.HasItem && itemHolder.CurrentItem.ItemId == RequiredItemId;
+        }
+
+        // __________ IInteractable ______________
+
         public string InteractionPrompt { get { return "소화기 필요"; } }
 
         public bool CanInteract(IItemHolder itemHolder)
         {
-            return false;
+            return !IsRepaired && IsRequirementMet(itemHolder);
         }
 
         public void Interact(IItemHolder itemHolder)
         {
         }
 
+        // ___________ 플레이어가 수리할 때 호출하는 함수 ____________
         public void ApplyRepair(float amount)
         {
             if (IsRepaired) return;

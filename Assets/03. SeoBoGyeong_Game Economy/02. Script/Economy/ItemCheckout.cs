@@ -1,115 +1,139 @@
-using LastJumpCrew.Common;
-using LastJumpCrew.SeBoGyeong.Economy;
 using System.Collections.Generic;
+using LastJumpCrew.Common;
+using Economy = LastJumpCrew.SeoBoGyeong.Economy;
 using UnityEngine;
+using InterAct = LastJumpCrew.ParkHanSol.Interaction;
 
 namespace LastJumpCrew.SeoBoGyeong
 {
-    // °è»ê´ë À§ °¨Áö ±¸¿ª¿¡ µé¾î¿Â ¾ÆÀÌÅÛ °¡°İÀ» ÇÕ»êÇÏ´Â ÄÄÆ÷³ÍÆ®
-    public class ItemCheckout : MonoBehaviour, IInteractable
+    /// <summary>
+    /// ìƒì  ê³„ì‚°ëŒ€. ê³„ì‚° êµ¬ì—­(íŠ¸ë¦¬ê±°) ì•ˆì˜ ì§„ì—´ ì•„ì´í…œ(ShopItemTag)ì„ ëª¨ì•„
+    /// F ìƒí˜¸ì‘ìš© ì‹œ GameCore.Commands.RequestPurchase ë¡œ êµ¬ë§¤ë¥¼ ìš”ì²­í•œë‹¤.
+    /// ê°€ê²©Â·ì”ì•¡ ê²€ì¦ê³¼ Credit ì°¨ê°ì€ ì„¸ì…˜(ê¶Œìœ„)ì´ ìˆ˜í–‰ â€” ì—¬ê¸°ëŠ” ìš”ì²­ + ê²°ê³¼ ë°˜ì˜ë§Œ(ì„œë²„ ê¶Œìœ„ ì›ì¹™).
+    /// </summary>
+    public class ItemCheckout : MonoBehaviour, IInteractable, InterAct.IInteractable
     {
-        
-        private List<int> _purchaseItem = new List<int>();
-        private HashSet<GameObject> _shoppingList = new HashSet<GameObject>();
-        private int _totalPrice;
-        
-        //ÀÓ½Ã
-        private CreditWallet creditWallet = new CreditWallet(500);
-        private List<string> _buyItem = new List<string>();
+        private readonly List<Economy.ShopItemTag> basket = new();
+
+        // ê·œìœ¨: Services resolve ëŠ” ì‹œì‘ ì‹œ 1íšŒ ìºì‹±(ë§¤ í”„ë ˆì„ ì¡°íšŒ ê¸ˆì§€)
+        private IGameCommands commands;
+        private IGameStateProvider state;
+
+        public List<int> requestItem;
+
+
+
+        private void Start()
+        {
+            commands = GameCore.Instance.Commands;
+            state = GameCore.Instance.State;
+            state.PurchaseResolved += OnPurchaseResolved;
+        }
+
+        private void OnDestroy()
+        {
+            if (state != null) state.PurchaseResolved -= OnPurchaseResolved;
+        }
 
         // interface ---
+        #region Common IInteractable
         public string InteractionPrompt => "Check Out";
 
         public bool CanInteract(IItemHolder itemHolder)
         {
-            if (itemHolder == null) return false;
-            if(_purchaseItem.Count<=0) return false;
+            if (basket.Count <= 0) return false;
 
             return true;
         }
 
-        
         public void Interact(IItemHolder itemHolder)
         {
+            Debug.Log("[ItemCheckout] ì¸í„°ë ‰ì…˜ ì‹¤í–‰");
             if (!CanInteract(itemHolder)) return;
-            // ±¸¸Å °úÁ¤
 
-            //TODO :±İ¾× Â÷°¨
-            if (!creditWallet.SpendCredits(_totalPrice))
+            // ìŠ¤ëƒ…ìƒ· ìˆœíšŒ â€” ë¡œì»¬ì—ì„  ê²°ê³¼ ì´ë²¤íŠ¸ê°€ ë™ê¸°ë¡œ ëŒì•„ì™€ ìˆœíšŒ ì¤‘ basket ì´ ë³€í•œë‹¤
+            var snapshot = basket.ToArray();
+            foreach (var tag in snapshot)
             {
-                Debug.Log("[»óÁ¡] ±¸¸ÅºÒ°¡. ¿øÀÎ : ÀÜ¾× ºÎÁ·");
-                return;
+                if (tag == null) continue; // íŒŒê´´ëœ ì§„ì—´í’ˆ ë°©ì–´
+                commands.RequestPurchase(tag.ItemId);
             }
-            //TODO :Æ®¸®°Å ¾ÈÀÇ ¿ÀºêÁ§Æ® »èÁ¦ & ¿¬Ãâ
-            PurchaseItem();
+        }
+        #endregion
 
-            //TODO :ÀÌÆåÆ®
+        #region 01.Interact IInteractable
+        public bool CanInteract(InterAct.IItemHolder itemHolder)
+        {
+            if (basket.Count <= 0) return false;
 
+            return true;
         }
 
-        // ---
-        [ContextMenu("Purchase Item")]
-        private void TestBuy()
-        { 
-            //ÀÓ½Ã
-            _totalPrice = 100;
-            if (!creditWallet.SpendCredits(_totalPrice))
+        public void Interact(InterAct.IItemHolder itemHolder)
+        {
+            Debug.Log("[ItemCheckout] ì¸í„°ë ‰ì…˜ ì‹¤í–‰");
+            if (!CanInteract(itemHolder)) return;
+
+            // ìŠ¤ëƒ…ìƒ· ìˆœíšŒ â€” ë¡œì»¬ì—ì„  ê²°ê³¼ ì´ë²¤íŠ¸ê°€ ë™ê¸°ë¡œ ëŒì•„ì™€ ìˆœíšŒ ì¤‘ basket ì´ ë³€í•œë‹¤
+            var snapshot = basket.ToArray();
+            foreach (var tag in snapshot)
             {
-                Debug.Log("[»óÁ¡] ±¸¸ÅºÒ°¡. ¿øÀÎ : ÀÜ¾× ºÎÁ·");
+                if (tag == null) continue; // íŒŒê´´ëœ ì§„ì—´í’ˆ ë°©ì–´
+                commands.RequestPurchase(tag.ItemId);
+            }
+        }
+        #endregion
+
+
+        /// <summary>êµ¬ë§¤ ê²°ê³¼ ìˆ˜ì‹ . ì„±ê³µí•œ itemId ì™€ ì¼ì¹˜í•˜ëŠ” ì§„ì—´í’ˆ 1ê°œë¥¼ ì§€ê¸‰ ì²˜ë¦¬(ì§„ì—´ ì œê±°).</summary>
+        private void OnPurchaseResolved(int itemId, bool success)
+        {
+            if (!success) return; // ê±°ë¶€ ì‚¬ìœ ëŠ” ì„¸ì…˜ì´ ë¡œê·¸ë¡œ ì¶œë ¥
+
+            for (int i = 0; i < basket.Count; i++)
+            {
+                var tag = basket[i];
+                if (tag == null || tag.ItemId != itemId) continue;
+
+                // TODO: êµ¬ë§¤ ì„±ê³µ ì•„ì´í…œì˜ IHoldableItem ì§€ê¸‰/íšë“ ì²˜ë¦¬ ì—°ê²°
+                requestItem.Add(itemId);
+                basket.RemoveAt(i);
+                Destroy(tag.gameObject);
+
                 return;
             }
-            PurchaseItem();
         }
-
-        //TODO : »óÁ¡ ³»ÀÇ ÆÇ¸Å ¾ÆÀÌÅÛÀ» ÀÎ½Ä
-        //TODO : Æ®¸®°Å¿¡¼­ ÆÇº°ÇÒ Á¤º¸ÀÇ Á¾·ù
-
 
         private void OnTriggerEnter(Collider other)
         {
-            //Á¦¿Ü ¸ñ·Ï : ¼Õ¿¡ µé¸°°Å. ¿ø·¡ ÇÃ·¹ÀÌ¾î°¡ °¡Áö°í ÀÖ´ø ¾ÆÀÌÅÛ
+            // ê³„ì‚° êµ¬ì—­ ì¸ì‹: ShopItemTag ê°€ ë¶™ì€ ì§„ì—´í’ˆë§Œ ì¥ë°”êµ¬ë‹ˆì— ë‹´ëŠ”ë‹¤
+            var tag = other.GetComponentInParent<Economy.ShopItemTag>();
+            if (tag == null || basket.Contains(tag)) return;
 
-            Debug.Log($"ÁøÀÔ : {other.gameObject.name}");
-            _shoppingList.Add(other.gameObject);
-            //_purchaseItem.Add(other.Id);
+            basket.Add(tag);
         }
 
         private void OnTriggerExit(Collider other)
         {
-            Debug.Log($"ÅğÀå : {other.gameObject.name}");
-            _shoppingList.Remove(other.gameObject);
+            var tag = other.GetComponentInParent<Economy.ShopItemTag>();
+            if (tag == null) return;
+
+            basket.Remove(tag);
         }
 
-        
-        public void PurchaseItem()
+        [ContextMenu("Try buy")]
+        private void DebugTool()
         {
-            foreach (var item in _shoppingList)
+            Debug.Log($"ë¦¬ìŠ¤íŠ¸ : [{string.Join(',', basket)}]");
+
+            // ìŠ¤ëƒ…ìƒ· ìˆœíšŒ â€” ë¡œì»¬ì—ì„  ê²°ê³¼ ì´ë²¤íŠ¸ê°€ ë™ê¸°ë¡œ ëŒì•„ì™€ ìˆœíšŒ ì¤‘ basket ì´ ë³€í•œë‹¤
+            var snapshot = basket.ToArray();
+            foreach (var tag in snapshot)
             {
-                // TODO: ¾ÆÀÌÅÛ id ³Ñ±â±â
-                //ÀÓ½Ã·Î gameObject.name  / SO¿¬°áÇÏ¸é _purchaseItem.Add ·Î ¼öÁ¤
-                string tmp = item.gameObject.name;
-                _buyItem.Add(tmp);
-                Destroy(item);
+                if (tag == null) continue;
+                OnPurchaseResolved(tag.ItemId, true);
             }
-            _shoppingList.Clear();
-
-        }
-
-        [ContextMenu("List text")]
-        private void DebugText()
-        {
-            Debug.Log($"[Credit] ÀÜ¾× : {creditWallet.Credits}");
-            Debug.Log($"Àå¹Ù±¸´Ï : {_shoppingList.Count}°³ / {string.Join(',', _shoppingList)}");
-
-            if (_purchaseItem.Count > 0)
-            {
-                Debug.Log($"±¸¸ÅÇÑ »óÇ° id : {string.Join(',', _purchaseItem)}");
-            }
-
-            if (_buyItem.Count > 0)
-            {
-                Debug.Log($"±¸¸ÅÇÑ »óÇ° : {string.Join(',', _buyItem)}");
-            }
+            Debug.Log($"ìš”ì²­ ëª©ë¡ : {string.Join(',', requestItem)}");
         }
     }
 }

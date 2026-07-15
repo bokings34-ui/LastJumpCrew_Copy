@@ -6,7 +6,7 @@ namespace SM
     public class OxygenLeakEventDataSO : EventDataSO
     {
         [Header("흡입 범위 설정")]
-        public float outerPullRadius = 8f;
+        public float outerPullRadius = 5f;
         public float innerDamageRadius = 1.5f;
         public float pullSpeed = 2f;
 

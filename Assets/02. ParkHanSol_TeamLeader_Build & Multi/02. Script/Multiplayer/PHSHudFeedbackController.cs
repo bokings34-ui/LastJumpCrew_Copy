@@ -10,7 +10,6 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
         [Header("Value Motion")]
         [SerializeField] private ParkHanSolHudTextMotion healthMotion;
         [SerializeField] private ParkHanSolHudTextMotion boostMotion;
-        [SerializeField] private ParkHanSolHudTextMotion moneyMotion;
         [SerializeField] private ParkHanSolHudTextMotion bankMotion;
         [FormerlySerializedAs("quotaMotion")]
         [SerializeField] private ParkHanSolHudTextMotion warpMotion;
@@ -38,7 +37,6 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
 
         private int previousHealth;
         private int previousBoost;
-        private int previousMoney;
         private int previousBank;
         private int previousWarpPercent;
         private int previousShipHp;
@@ -95,14 +93,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
 
         public void SetEconomy(int money, int bank)
         {
-            moneyMotion?.SetValue($"${money:N0}", 1f);
             bankMotion?.SetValue($"${bank:N0}", 1f);
-
-            if (hasEconomy && money != previousMoney)
-            {
-                if (money > previousMoney) moneyMotion?.PlayIncreaseFeedback();
-                else moneyMotion?.PlayDecreaseFeedback();
-            }
 
             if (hasEconomy && bank != previousBank)
             {
@@ -110,7 +101,6 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
                 else bankMotion?.PlayDecreaseFeedback();
             }
 
-            previousMoney = money;
             previousBank = bank;
             hasEconomy = true;
         }

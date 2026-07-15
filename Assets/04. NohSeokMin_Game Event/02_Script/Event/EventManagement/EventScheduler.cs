@@ -6,12 +6,14 @@ namespace SM
 {
     public class EventScheduler : MonoSingleton<EventScheduler>
     {
-        [Header("사고 발생 풀")]
-        [SerializeField]
-        private List<EventId> eventPool = new List<EventId>
+        [Header("내부 사고 이벤트 발생 풀")]
+        [SerializeField] private List<EventId> eventPool = new List<EventId>
         {
             EventId.Fire,
             EventId.EnemySpawn,
+            EventId.OxygenLeak,
+
+            // TODO :: PowerOff, EngineBreak, MicDestroy 구현 완료 후 추가
         };
 
         private const float TotalTime = 300f;
@@ -39,6 +41,19 @@ namespace SM
         public void StopScheduler()
         {
             _isRunning = false;
+        }
+
+        // 스테이지 종료 시 GameManager가 호출할 것 (스케줄러 정지, 진행 중이던 모든 사고 강제 종료)
+        public void ForceClearAll()
+        {
+            _isRunning = false;
+            StopAllCoroutines();
+            _activeEventCount = 0;
+            _waitQueue.Clear();
+
+            EventManager.Instance.ForceClearAll();
+
+            Debug.Log("[IncidentScheduler] 스테이지 종료 - 강제 클리어 완료.");
         }
 
         private void Update()
@@ -69,7 +84,7 @@ namespace SM
         {
             for (int i = 0; i < count; i++)
             {
-                TrySpawnEvent();
+                TryTriggerRandomEvent();
 
                 if (i < count - 1)
                 {
@@ -78,26 +93,30 @@ namespace SM
             }
         }
 
-        private void TrySpawnEvent()
+        private void TryTriggerRandomEvent()
         {
             var eventId = GetRandomEventId();
+            if (eventId == null) return;
 
-            if (eventId == null)
+            TrySpawnEvent(eventId.Value);
+        }
+
+        public void TrySpawnEvent(EventId eventId)
+        {
+            if (EventManager.Instance.IsActive(eventId) || _waitQueue.Contains(eventId))
             {
-                Debug.Log($"<color=lime>[EventScheduler]</color> 발생 가능한 이벤트가 없음.");
+                Debug.Log($"<color=lime>[EventScheduler]</color> {eventId}는 이미 진행 중이거나 대기 중, 요청 무시.");
                 return;
             }
 
             if (_activeEventCount >= MaxActiveEvents)
             {
-                _waitQueue.Enqueue(eventId.Value);
-
-                Debug.Log($"<color=lime>[EventScheduler]</color> 활성 사고 최대치({MaxActiveEvents}) 도달. " +
-                    $"/ 대기열 등록 : {eventId.Value}");
+                _waitQueue.Enqueue(eventId);
+                Debug.Log($"<color=lime>[EventScheduler]</color> 활성 사고 최대치 / 대기열 등록: {eventId}");
                 return;
             }
 
-            SpawnEvent(eventId.Value);
+            SpawnEvent(eventId);
         }
 
         private void SpawnEvent(EventId eventId)
@@ -112,6 +131,8 @@ namespace SM
 
             EventManager.Instance.SpawnEvent(eventId, room, HandleEventFinished);
             _activeEventCount++;
+
+            Debug.Log($"<color=lime>[EventScheduler]</color> {eventId} 발생!");
         }
 
         private void HandleEventFinished(EventBase evt, bool success)

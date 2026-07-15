@@ -23,8 +23,6 @@ namespace SM
 
             _effect = OxygenLeakEffectPool.Instance.Get(point.position, LeakData);
             _effect.OnSealed += HandleSealed;
-
-            Debug.Log($"</color=lime>[{LeakData.EventName}]</color> 발생.");
         }
 
         public override void OnTick(float deltaTime)
@@ -47,6 +45,18 @@ namespace SM
         {
             ChangeState(EventState.Resolve);
             Debug.Log($"<color=lime>[{LeakData.EventName}]</color> 누출 부위 수리 완료.");
+        }
+
+        public override void ForceTerminate()
+        {
+            if (_effect != null)
+            {
+                _effect.OnSealed -= HandleSealed;
+                OxygenLeakEffectPool.Instance.Return(_effect);
+                _effect = null;
+            }
+
+            base.ForceTerminate();
         }
     }
 }

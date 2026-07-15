@@ -30,6 +30,9 @@ namespace LastJumpCrew.ParkHanSol.Interaction
         // 멀티에서 내 소유 플레이어만 입력과 초점 표시를 처리하기 위한 NetworkObject다.
         private NetworkObject networkObject;
 
+        // 로컬 일시정지 메뉴가 열린 동안 상호작용 입력을 막기 위한 플레이어 제어기다.
+        private NetworkPlayerController playerController;
+
         // 현재 바라보는 툴박스 슬롯이다. 슬롯 자체 glowOutlineRoot 제어에 사용한다.
         private UtilityToolBoxStorageSlotInteractable focusedToolBoxSlot;
 
@@ -41,6 +44,7 @@ namespace LastJumpCrew.ParkHanSol.Interaction
             itemHolder = GetComponent<IItemHolder>();
             commonItemHolder = GetComponent<CommonInteraction.IItemHolder>();
             networkObject = GetComponent<NetworkObject>();
+            playerController = GetComponent<NetworkPlayerController>();
         }
 
         private void Update()
@@ -49,6 +53,14 @@ namespace LastJumpCrew.ParkHanSol.Interaction
             if (networkObject != null && networkObject.IsSpawned && !networkObject.IsOwner)
             {
                 ClearToolBoxSlotFocus();
+                ClearInteractionPrompt();
+                return;
+            }
+
+            if (playerController != null && !playerController.CanAcceptLocalInput)
+            {
+                ClearToolBoxSlotFocus();
+                ClearInteractableFocusGlow();
                 ClearInteractionPrompt();
                 return;
             }

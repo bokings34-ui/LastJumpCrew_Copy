@@ -1,42 +1,53 @@
+using System;
 using UnityEngine;
-namespace LastJumpCrew.SeBoGyeong.Economy
+
+namespace LastJumpCrew.SeoBoGyeong.Economy
 {
     /// <summary>
-    /// ³×Æ®¿öÅ©¿¡¼­ °øÀ¯µÇ´Â È­Æó
+    /// ëŸ°íƒ€ì„ ì„¸ì…˜ ì¬í™”(Credit) ì§€ê°‘. íŒ ì•ˆì—ì„œë§Œ ì¡´ì¬í•˜ëŠ” íŒŒí‹° ê³µìœ  ì¬í™” â€” ì„¸ì…˜ì´ ì†Œìœ í•˜ê³ 
+    /// StartGame() ì‹œ ì´ˆê¸°í™”, ì„¸ì…˜ ì¢…ë£Œ ì‹œ ì†Œë©¸í•œë‹¤(ì €ì¥í•˜ì§€ ì•ŠìŒ).
+    /// ë‚˜ì¤‘ NGO ì—°ê²° ì‹œ NetworkGameSession ì—ì„œ NetworkVariable&lt;int&gt; ë¡œ ìŠ¹ê²©í•œë‹¤.
     /// </summary>
-    public class CreditWallet
+    public class CreditWallet : IWallet
     {
-        private int credits; // $ : InGame PlayÀÇ ÀÏ¹İ È­Æó. °ø¿ë.
+        private int balance;
 
-        public CreditWallet(int initialCredits = 0)
+        public int Balance => balance;
+
+        /// <summary>ì”ì•¡ ë³€ê²½ ì‹œ ë°œí–‰(UI ê°±ì‹ ìš©).</summary>
+        public event Action<int> BalanceChanged;
+
+        public CreditWallet(int initialBalance = 0)
         {
-            Credits = initialCredits;
+            balance = Mathf.Max(0, initialBalance);
         }
 
-        public int Credits
-        {
-            get => credits;
-            set => credits = Mathf.Max(0, value); // À½¼ö ¹æÁö
-        }
-
-        public void AddCredits(int amount)
+        public void Add(int amount)
         {
             if (amount < 0)
             {
-                Debug.LogWarning("[Credit] Add¿¡ À½¼ö´ÜÀ§¸¦ Áö¿øÇÏÁö ¾ÊÀ½.");
+                Debug.LogWarning("[Credit] Add ì— ìŒìˆ˜ëŠ” ì‚¬ìš©í•  ìˆ˜ ì—†ë‹¤.");
                 return;
             }
-            Credits += amount;
+            balance += amount;
+            BalanceChanged?.Invoke(balance);
         }
 
-        public bool SpendCredits(int amount)
+        public bool TrySpend(int amount)
         {
-            if (Credits >= amount)
-            {
-                Credits -= amount;
-                return true;
-            }
-            return false;
+            if (amount < 0) return false;
+            if (balance < amount) return false;
+
+            balance -= amount;
+            BalanceChanged?.Invoke(balance);
+            return true;
+        }
+
+        /// <summary>ì”ì•¡ì„ ì§€ì •ê°’ìœ¼ë¡œ ì¬ì„¤ì •. ì„¸ì…˜ StartGame() ì´ˆê¸°í™” ì „ìš©(ì†Œìœ ìë§Œ í˜¸ì¶œ).</summary>
+        public void ResetBalance(int value)
+        {
+            balance = Mathf.Max(0, value);
+            BalanceChanged?.Invoke(balance);
         }
     }
 }

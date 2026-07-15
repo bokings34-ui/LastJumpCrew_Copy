@@ -23,7 +23,7 @@ namespace SM
             _effectToPoint.Clear();
 
             SpawnNextFire();
-            Debug.Log($"<color=lime>[{FireData.EventName}]</color> 발생! 초기 레벨: {FireLevel}");
+            //Debug.Log($"<color=lime>[{FireData.EventName}]</color> 발생! 초기 레벨: {FireLevel}");
         }
 
         public override void OnTick(float deltaTime)
@@ -103,6 +103,20 @@ namespace SM
         {
             ChangeState(EventState.Resolve);
             Debug.Log($"<color=lime>[{FireData.EventName}]</color> 종료.");
+        }
+
+        public override void ForceTerminate()
+        {
+            foreach (var effect in _activeEffects)
+            {
+                effect.OnRemove -= HandleRemoveFire;
+                FireEffectPool.Instance.Return(effect);
+            }
+            _activeEffects.Clear();
+            _occupiedPoints.Clear();
+            _effectToPoint.Clear();
+
+            base.ForceTerminate();
         }
     }
 }

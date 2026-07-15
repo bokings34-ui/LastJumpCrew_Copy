@@ -1,17 +1,21 @@
-using LastJumpCrew.Common;
 using UnityEngine;
-using UnityEngine.InputSystem;
 
 namespace LastJumpCrew.ParkHanSol.Multiplayer
 {
     public sealed class ZeroGravityControlTestSwitcher : MonoBehaviour
     {
         [SerializeField] private NetworkPlayerController playerController;
+        [SerializeField] private Transform resetPoint;
         private void Awake()
         {
             if (playerController == null)
             {
                 Debug.LogError($"PHS_ZERO_GRAVITY_SWITCHER_SETUP_FAILED reason=player_controller_missing switcher={name}");
+            }
+
+            if (resetPoint == null)
+            {
+                Debug.LogError($"PHS_ZERO_GRAVITY_SWITCHER_SETUP_FAILED reason=reset_point_missing switcher={name}");
             }
 
         }
@@ -23,26 +27,19 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
                 return;
             }
 
-            ApplyZeroGravityPreset(ZeroGravityControlPreset.Thruster);
+            ResetPlayerForCinematicControlTest();
         }
 
-        private void Update()
+        private void ResetPlayerForCinematicControlTest()
         {
-            if (Keyboard.current == null || playerController == null)
+            if (resetPoint == null)
             {
+                Debug.LogError("PHS_ZERO_GRAVITY_TEST_SETUP_FAILED reason=reset_point_missing");
                 return;
             }
 
-            if (Keyboard.current.digit5Key.wasPressedThisFrame)
-            {
-                ApplyZeroGravityPreset(ZeroGravityControlPreset.Thruster);
-            }
-        }
-
-        private void ApplyZeroGravityPreset(ZeroGravityControlPreset preset)
-        {
-            playerController.SetZeroGravityControlPreset(preset);
-            playerController.ApplyGravityState(GravityState.Spacewalk(100));
+            playerController.RequestTestTeleport(resetPoint.position, resetPoint.rotation);
+            Debug.Log($"PHS_ZERO_GRAVITY_TEST_READY control=cinematic_spacebar_thruster position={resetPoint.position}");
         }
     }
 }

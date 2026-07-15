@@ -5,7 +5,7 @@ using UnityEngine;
 public class TestDevice : MonoBehaviour, IDevice, IDamageable
 {
     [Header("체력 설정")]
-    [SerializeField] private int maxHealth = 10;
+    [SerializeField] private int maxHealth = 99999;
     private int _currentHealth;
     public bool IsAlive => _currentHealth > 0;
 

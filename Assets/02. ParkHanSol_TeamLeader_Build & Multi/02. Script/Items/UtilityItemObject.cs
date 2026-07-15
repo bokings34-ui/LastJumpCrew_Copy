@@ -17,6 +17,9 @@ namespace LastJumpCrew.ParkHanSol.Items
         // null이면 바닥/보관함/씬에 놓인 상태로 본다.
         // 네트워크 소유권이나 실제 장비 슬롯 로직은 아직 여기에서 처리하지 않는다.
         private IItemHolder currentHolder;
+        private bool heldRigidbodyStateCached;
+        private bool cachedUseGravity;
+        private bool cachedIsKinematic;
 
         public UtilityItemPrefabData ItemPrefabData => itemPrefabData;
         public string ItemId => itemPrefabData == null ? string.Empty : itemPrefabData.ItemId;
@@ -51,6 +54,17 @@ namespace LastJumpCrew.ParkHanSol.Items
                 return false;
             }
 
+            if (TryGetComponent<ParkInteraction.DebrisItem>(out var debrisItem))
+            {
+                if (itemHolder is not ParkInteraction.IDebrisHolder debrisHolder)
+                {
+                    Debug.LogError($"PHS_DEBRIS_HOLD_FAILED reason=holder_unsupported debris={name}");
+                    return false;
+                }
+
+                return debrisHolder.CanHoldDebris(debrisItem);
+            }
+
             return itemHolder.CanReplaceHeldItem(itemPrefabData);
         }
 
@@ -58,6 +72,22 @@ namespace LastJumpCrew.ParkHanSol.Items
         {
             if (!CanInteract(itemHolder))
             {
+                return;
+            }
+
+            if (TryGetComponent<ParkInteraction.DebrisItem>(out var debrisItem))
+            {
+                if (itemHolder is not ParkInteraction.IDebrisHolder debrisHolder)
+                {
+                    Debug.LogError($"PHS_DEBRIS_HOLD_FAILED reason=holder_unsupported debris={name}");
+                    return;
+                }
+
+                if (!debrisHolder.TryHoldDebris(debrisItem))
+                {
+                    Debug.LogError($"PHS_DEBRIS_HOLD_FAILED reason=holder_rejected debris={name}");
+                }
+
                 return;
             }
 
@@ -91,6 +121,9 @@ namespace LastJumpCrew.ParkHanSol.Items
 
             if (TryGetComponent<Rigidbody>(out var rigidbody))
             {
+                cachedUseGravity = rigidbody.useGravity;
+                cachedIsKinematic = rigidbody.isKinematic;
+                heldRigidbodyStateCached = true;
                 // 손에 들린 아이템은 물리 시뮬레이션을 끈다.
                 // 중력/충돌 힘이 켜진 채 손에 붙으면 캐릭터나 카메라가 튀는 문제가 생긴다.
                 rigidbody.useGravity = false;
@@ -107,10 +140,12 @@ namespace LastJumpCrew.ParkHanSol.Items
 
             if (TryGetComponent<Rigidbody>(out var rigidbody))
             {
-                // 드롭된 아이템은 다시 물리 영향을 받게 한다.
-                // Rigidbody가 없는 아이템은 정적인 오브젝트처럼 위치만 잡힌다.
-                rigidbody.useGravity = false;
-                rigidbody.isKinematic = false;
+                if (heldRigidbodyStateCached)
+                {
+                    rigidbody.useGravity = cachedUseGravity;
+                    rigidbody.isKinematic = cachedIsKinematic;
+                    heldRigidbodyStateCached = false;
+                }
             }
         }
     }
