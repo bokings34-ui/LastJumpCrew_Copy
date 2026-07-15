@@ -25,7 +25,7 @@ namespace LastJumpCrew.SeoBoGyeong.Economy
         private string prefix = "Total : $ ";
         private void Awake()
         {
-            _data = GameCore.Instance.Data;
+            if(GameCore.Instance != null) _data = GameCore.Instance.Data;
             RefreshTotalPrice();
         }
 
@@ -41,7 +41,7 @@ namespace LastJumpCrew.SeoBoGyeong.Economy
                 // 계산 구역 인식: ShopItemTag 가 붙은 진열품만 장바구니에 담는다
                 var tag = other.GetComponentInParent<ShopItemTag>();
                 if (tag == null || basket.Contains(tag)) return;
-
+                Debug.Log($"[TradeStation] 아이템 {tag.gameObject}");
                 basket.Add(tag);
                 ChaingePrice(tag);
             }

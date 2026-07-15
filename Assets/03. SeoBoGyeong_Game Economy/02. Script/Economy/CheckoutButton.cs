@@ -52,13 +52,13 @@ namespace LastJumpCrew.SeoBoGyeong.Economy
         public bool CanInteract(IItemHolder itemHolder)
         {
             bool value= detector.CheckBasket();
-            Debug.Log($"[ItemCheckout] 인터렉션 체크 : {value}");
+            Debug.Log($"[ItemCheckout/C] 인터렉션 체크 : {value}");
             return value;
         }
 
         public void Interact(IItemHolder itemHolder)
         {
-            Debug.Log("[ItemCheckout] 인터렉션 실행");
+            Debug.Log("[ItemCheckout/C] 인터렉션 실행");
             if (!CanInteract(itemHolder)) return;
 
             // 스냅샷 순회 ? 로컬에선 결과 이벤트가 동기로 돌아와 순회 중 basket 이 변한다
@@ -74,12 +74,14 @@ namespace LastJumpCrew.SeoBoGyeong.Economy
         #region 01.Interact IInteractable
         public bool CanInteract(InterAct.IItemHolder itemHolder)
         {
-           return detector.CheckBasket();
+            bool value = detector.CheckBasket();
+            Debug.Log($"[ItemCheckout/P] 인터렉션 체크 : {value}");
+            return value;
         }
 
         public void Interact(InterAct.IItemHolder itemHolder)
         {
-            Debug.Log("[ItemCheckout] 인터렉션 실행");
+            Debug.Log("[ItemCheckout/P] 인터렉션 실행");
             if (!CanInteract(itemHolder)) return;
 
             // 스냅샷 순회 ? 로컬에선 결과 이벤트가 동기로 돌아와 순회 중 basket 이 변한다
