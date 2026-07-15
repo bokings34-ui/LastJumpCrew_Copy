@@ -165,6 +165,47 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
             hudFeedbackController?.ClearHazardWarning();
         }
 
+        public void SetRespawnCountdown(float seconds)
+        {
+            if (!RequireHudFeedbackController(nameof(SetRespawnCountdown)))
+            {
+                return;
+            }
+
+            hudFeedbackController.SetRespawnCountdown(seconds);
+        }
+
+        public void SetWarpRespawnPending()
+        {
+            if (!RequireHudFeedbackController(nameof(SetWarpRespawnPending)))
+            {
+                return;
+            }
+
+            hudFeedbackController.SetWarpRespawnPending();
+        }
+
+        public void ClearRespawnStatus()
+        {
+            if (!RequireHudFeedbackController(nameof(ClearRespawnStatus)))
+            {
+                return;
+            }
+
+            hudFeedbackController.ClearRespawnStatus();
+        }
+
+        private bool RequireHudFeedbackController(string operation)
+        {
+            if (hudFeedbackController != null)
+            {
+                return true;
+            }
+
+            Debug.LogError($"PHS_HUD_RESPAWN_SETUP_FAILED reason=hud_feedback_controller_missing operation={operation} presenter={name}", this);
+            return false;
+        }
+
         public void ShowSpeakingPlayer(string playerName)
         {
             ShowSpeakingPlayer(playerName, speakingPlayerVisibleSeconds);

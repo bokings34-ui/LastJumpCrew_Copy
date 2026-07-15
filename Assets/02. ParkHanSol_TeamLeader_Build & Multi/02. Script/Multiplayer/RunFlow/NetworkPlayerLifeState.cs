@@ -10,6 +10,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
     public sealed class NetworkPlayerLifeState : NetworkBehaviour, INetworkPlayerLifeState, IDamageable
     {
         [SerializeField, Min(1)] private int maximumHealth = 100;
+        [SerializeField, Min(0.1f)] private float automaticRespawnSeconds = 5f;
 
         private readonly NetworkVariable<int> synchronizedHealth = new(
             100,
@@ -27,18 +28,27 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
             -1f,
             NetworkVariableReadPermission.Everyone,
             NetworkVariableWritePermission.Server);
+        private readonly NetworkVariable<float> synchronizedRespawnSeconds = new(
+            -1f,
+            NetworkVariableReadPermission.Everyone,
+            NetworkVariableWritePermission.Server);
 
         private NetworkPlayerController playerController;
         private CharacterController characterController;
         private Renderer[] renderers;
         private bool[] rendererStatesBeforeDeath;
-        private bool characterControllerWasEnabled;
         private bool presentationIsDead;
         private float deadZoneDeadline = -1f;
+        private float automaticRespawnDeadline = -1f;
         private float nextWarningSyncTime;
+        private float nextRespawnSyncTime;
 
         public bool IsAlive => synchronizedAlive.Value;
         public bool IsWaitingForWarpRevive => synchronizedWarpRevivePending.Value;
+        public bool IsWaitingForAutomaticRespawn => !synchronizedAlive.Value
+            && !synchronizedWarpRevivePending.Value
+            && synchronizedRespawnSeconds.Value >= 0f;
+        public float RespawnRemainingSeconds => synchronizedRespawnSeconds.Value;
 
         private void Awake()
         {
@@ -51,7 +61,9 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
         public override void OnNetworkSpawn()
         {
             synchronizedAlive.OnValueChanged += HandleAliveChanged;
+            synchronizedWarpRevivePending.OnValueChanged += HandleWarpRevivePendingChanged;
             synchronizedDeadZoneSeconds.OnValueChanged += HandleWarningChanged;
+            synchronizedRespawnSeconds.OnValueChanged += HandleRespawnSecondsChanged;
             if (IsServer)
             {
                 synchronizedHealth.Value = maximumHealth;
@@ -59,18 +71,37 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
 
             ApplyAlivePresentation(synchronizedAlive.Value);
             ApplyWarningPresentation(synchronizedDeadZoneSeconds.Value);
+            ApplyRespawnPresentation();
         }
 
         public override void OnNetworkDespawn()
         {
             synchronizedAlive.OnValueChanged -= HandleAliveChanged;
+            synchronizedWarpRevivePending.OnValueChanged -= HandleWarpRevivePendingChanged;
             synchronizedDeadZoneSeconds.OnValueChanged -= HandleWarningChanged;
+            synchronizedRespawnSeconds.OnValueChanged -= HandleRespawnSecondsChanged;
             base.OnNetworkDespawn();
         }
 
         private void Update()
         {
-            if (!IsSpawned || !IsServer || !synchronizedAlive.Value || deadZoneDeadline < 0f)
+            if (!IsSpawned || !IsServer)
+            {
+                return;
+            }
+
+            if (synchronizedAlive.Value)
+            {
+                TickDeadZoneWarning();
+                return;
+            }
+
+            TickAutomaticRespawn();
+        }
+
+        private void TickDeadZoneWarning()
+        {
+            if (deadZoneDeadline < 0f)
             {
                 return;
             }
@@ -82,11 +113,36 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
                 synchronizedDeadZoneSeconds.Value = remaining;
             }
 
-            if (remaining <= 0f)
+            if (remaining > 0f)
             {
-                deadZoneDeadline = -1f;
-                Kill("dead_zone", false);
+                return;
             }
+
+            deadZoneDeadline = -1f;
+            Kill("dead_zone", false);
+        }
+
+        private void TickAutomaticRespawn()
+        {
+            if (synchronizedWarpRevivePending.Value || automaticRespawnDeadline < 0f)
+            {
+                return;
+            }
+
+            var remaining = Mathf.Max(0f, automaticRespawnDeadline - Time.time);
+            if (Time.time >= nextRespawnSyncTime || remaining <= 0f)
+            {
+                nextRespawnSyncTime = Time.time + 0.1f;
+                synchronizedRespawnSeconds.Value = remaining;
+            }
+
+            if (remaining > 0f)
+            {
+                return;
+            }
+
+            automaticRespawnDeadline = -1f;
+            TryReviveAtSceneRespawnPoint("automatic");
         }
 
         public void ApplyDamage(int amount, GameObject attacker)
@@ -135,10 +191,21 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
 
         public void KillForWarp()
         {
-            if (RequireServer(nameof(KillForWarp)))
+            if (!RequireServer(nameof(KillForWarp)))
             {
-                Kill("warp_outside_safe_zone", true);
+                return;
             }
+
+            if (!synchronizedAlive.Value)
+            {
+                automaticRespawnDeadline = -1f;
+                synchronizedRespawnSeconds.Value = -1f;
+                synchronizedWarpRevivePending.Value = true;
+                Debug.Log($"PHS_PLAYER_WARP_REVIVE_QUEUED player={name} clientId={OwnerClientId}", this);
+                return;
+            }
+
+            Kill("warp_outside_safe_zone", true);
         }
 
         public bool TryReviveAfterWarp()
@@ -148,20 +215,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
                 return false;
             }
 
-            var context = GameplaySceneContext.FindForScene(SceneManager.GetActiveScene());
-            if (context == null || !context.TryGetSpawnPoint(OwnerClientId, out var spawnPoint))
-            {
-                Debug.LogError($"PHS_PLAYER_REVIVE_FAILED reason=spawn_point_missing player={name} scene={SceneManager.GetActiveScene().name}", this);
-                return false;
-            }
-
-            TeleportTo(spawnPoint.position, spawnPoint.rotation);
-            synchronizedHealth.Value = maximumHealth;
-            synchronizedWarpRevivePending.Value = false;
-            synchronizedAlive.Value = true;
-            synchronizedDeadZoneSeconds.Value = -1f;
-            Debug.Log($"PHS_PLAYER_REVIVED reason=warp_complete player={name} clientId={OwnerClientId}", this);
-            return true;
+            return TryReviveAtSceneRespawnPoint("warp_complete");
         }
 
         private void Kill(string reason, bool reviveAfterWarp)
@@ -172,11 +226,39 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
             }
 
             deadZoneDeadline = -1f;
+            automaticRespawnDeadline = reviveAfterWarp
+                ? -1f
+                : Time.time + automaticRespawnSeconds;
             synchronizedHealth.Value = 0;
             synchronizedDeadZoneSeconds.Value = -1f;
             synchronizedWarpRevivePending.Value = reviveAfterWarp;
+            synchronizedRespawnSeconds.Value = reviveAfterWarp
+                ? -1f
+                : automaticRespawnSeconds;
             synchronizedAlive.Value = false;
             Debug.Log($"PHS_PLAYER_DIED reason={reason} player={name} clientId={OwnerClientId} warpRevive={reviveAfterWarp}", this);
+        }
+
+        private bool TryReviveAtSceneRespawnPoint(string reason)
+        {
+            var activeScene = SceneManager.GetActiveScene();
+            var context = GameplaySceneContext.FindForScene(activeScene);
+            if (context == null || !context.TryGetRespawnPoint(out var respawnPoint))
+            {
+                synchronizedRespawnSeconds.Value = -1f;
+                Debug.LogError($"PHS_PLAYER_REVIVE_FAILED reason=respawn_point_missing player={name} scene={activeScene.name}", this);
+                return false;
+            }
+
+            playerController.ResetMovementForRespawn();
+            TeleportTo(respawnPoint.position, respawnPoint.rotation);
+            synchronizedHealth.Value = maximumHealth;
+            synchronizedWarpRevivePending.Value = false;
+            synchronizedRespawnSeconds.Value = -1f;
+            synchronizedDeadZoneSeconds.Value = -1f;
+            synchronizedAlive.Value = true;
+            Debug.Log($"PHS_PLAYER_REVIVED reason={reason} player={name} clientId={OwnerClientId}", this);
+            return true;
         }
 
         private void TeleportTo(Vector3 position, Quaternion rotation)
@@ -199,9 +281,19 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
             ApplyAlivePresentation(currentValue);
         }
 
+        private void HandleWarpRevivePendingChanged(bool previousValue, bool currentValue)
+        {
+            ApplyRespawnPresentation();
+        }
+
         private void HandleWarningChanged(float previousValue, float currentValue)
         {
             ApplyWarningPresentation(currentValue);
+        }
+
+        private void HandleRespawnSecondsChanged(float previousValue, float currentValue)
+        {
+            ApplyRespawnPresentation();
         }
 
         private void ApplyAlivePresentation(bool alive)
@@ -210,7 +302,6 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
             if (!alive && !presentationIsDead)
             {
                 presentationIsDead = true;
-                characterControllerWasEnabled = characterController != null && characterController.enabled;
                 if (characterController != null)
                 {
                     characterController.enabled = false;
@@ -230,7 +321,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
                 presentationIsDead = false;
                 if (characterController != null)
                 {
-                    characterController.enabled = characterControllerWasEnabled;
+                    characterController.enabled = true;
                 }
 
                 for (var index = 0; index < renderers.Length; index++)
@@ -242,17 +333,35 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
                 }
             }
 
-            if (IsOwner && !alive)
+            ApplyRespawnPresentation();
+        }
+
+        private void ApplyRespawnPresentation()
+        {
+            if (!IsOwner)
             {
-                playerController.ShowLifeStateMessage(
-                    synchronizedWarpRevivePending.Value
-                        ? "사망 - 워프 완료 후 자동 부활"
-                        : "사망");
+                return;
             }
-            else if (IsOwner && alive)
+
+            if (synchronizedAlive.Value)
             {
-                playerController.ClearLifeStateMessage();
+                playerController.ClearRespawnStatus();
+                return;
             }
+
+            if (synchronizedWarpRevivePending.Value)
+            {
+                playerController.ShowWarpRespawnPending();
+                return;
+            }
+
+            if (synchronizedRespawnSeconds.Value >= 0f)
+            {
+                playerController.ShowRespawnCountdown(synchronizedRespawnSeconds.Value);
+                return;
+            }
+
+            playerController.ClearRespawnStatus();
         }
 
         private void ApplyWarningPresentation(float remainingSeconds)

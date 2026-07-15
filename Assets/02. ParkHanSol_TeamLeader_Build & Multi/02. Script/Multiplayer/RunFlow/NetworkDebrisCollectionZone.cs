@@ -11,6 +11,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
         [SerializeField, Min(0.1f)] private float deadZoneWarningSeconds = 5f;
 
         private readonly HashSet<ulong> playersInside = new();
+        private readonly HashSet<ulong> playersInsideSafeVolume = new();
 
         public bool IsPlayerInside(ulong clientId) => playersInside.Contains(clientId);
 
@@ -43,7 +44,14 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
             }
 
             coordinator.SetPlayerInsideDebrisZone(player.OwnerClientId, true);
-            lifeState.BeginDeadZoneWarning(deadZoneWarningSeconds);
+            if (playersInsideSafeVolume.Contains(player.OwnerClientId))
+            {
+                lifeState.CancelDeadZoneWarning();
+            }
+            else
+            {
+                lifeState.BeginDeadZoneWarning(deadZoneWarningSeconds);
+            }
         }
 
         private void OnTriggerExit(Collider other)
@@ -54,6 +62,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
             }
 
             playersInside.Remove(player.OwnerClientId);
+            playersInsideSafeVolume.Remove(player.OwnerClientId);
             lifeState.CancelDeadZoneWarning();
             var coordinator = NetworkRunFlowCoordinator.Instance;
             if (coordinator == null)
@@ -67,7 +76,21 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
 
         public void SetPlayerInInnerSafeVolume(NetworkPlayerController player, bool isInside)
         {
-            if (player == null || !playersInside.Contains(player.OwnerClientId))
+            if (player == null)
+            {
+                return;
+            }
+
+            if (isInside)
+            {
+                playersInsideSafeVolume.Add(player.OwnerClientId);
+            }
+            else
+            {
+                playersInsideSafeVolume.Remove(player.OwnerClientId);
+            }
+
+            if (!playersInside.Contains(player.OwnerClientId))
             {
                 return;
             }

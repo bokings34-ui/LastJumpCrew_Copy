@@ -31,6 +31,10 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
         [SerializeField] private CanvasGroup gravityWarningGroup;
         [SerializeField] private TMP_Text gravityWarningText;
 
+        [Header("Respawn Status")]
+        [SerializeField] private GameObject respawnStatusPanel;
+        [SerializeField] private TMP_Text respawnStatusText;
+
         [Header("Timing")]
         [SerializeField, Min(0.01f)] private float showDuration = 0.16f;
         [SerializeField, Min(0.01f)] private float hideDuration = 0.12f;
@@ -79,6 +83,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
 
             SetPanelImmediate(interactionPromptRoot, interactionPromptGroup, false, interactionPromptShownPosition);
             SetPanelImmediate(gravityWarningRoot, gravityWarningGroup, false, gravityWarningShownPosition);
+            ClearRespawnStatus();
         }
 
         public void SetVitals(int health, int maxHealth, int stamina, int maxStamina)
@@ -226,6 +231,58 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
             }
 
             RefreshWarningPanel();
+        }
+
+        public void SetRespawnCountdown(float seconds)
+        {
+            if (!RequireRespawnUi(nameof(SetRespawnCountdown)))
+            {
+                return;
+            }
+
+            var remainingSeconds = Mathf.Max(0, Mathf.CeilToInt(seconds));
+            respawnStatusText.text = $"부활까지 {remainingSeconds}초";
+            respawnStatusPanel.SetActive(true);
+        }
+
+        public void SetWarpRespawnPending()
+        {
+            if (!RequireRespawnUi(nameof(SetWarpRespawnPending)))
+            {
+                return;
+            }
+
+            respawnStatusText.text = "워프 완료 후 자동 부활";
+            respawnStatusPanel.SetActive(true);
+        }
+
+        public void ClearRespawnStatus()
+        {
+            if (!RequireRespawnUi(nameof(ClearRespawnStatus)))
+            {
+                return;
+            }
+
+            respawnStatusText.text = string.Empty;
+            respawnStatusPanel.SetActive(false);
+        }
+
+        private bool RequireRespawnUi(string operation)
+        {
+            var isReady = true;
+            if (respawnStatusPanel == null)
+            {
+                Debug.LogError($"PHS_HUD_RESPAWN_SETUP_FAILED reason=respawn_status_panel_missing operation={operation} hud={name}", this);
+                isReady = false;
+            }
+
+            if (respawnStatusText == null)
+            {
+                Debug.LogError($"PHS_HUD_RESPAWN_SETUP_FAILED reason=respawn_status_text_missing operation={operation} hud={name}", this);
+                isReady = false;
+            }
+
+            return isReady;
         }
 
         private void RefreshWarningPanel()

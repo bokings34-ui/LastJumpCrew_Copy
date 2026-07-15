@@ -76,6 +76,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
         private bool thrusterAudioReferenceErrorLogged;
         private bool gameplayInputEnabled;
         private bool pauseInputBlocked;
+        private bool lifeInputBlocked;
         private bool autoMoveEnabled;
         private float autoMoveSeconds;
         private float autoMoveEndTime;
@@ -432,13 +433,14 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
             var spacebarPressedThisFrame = Keyboard.current != null
                 && Keyboard.current.spaceKey.wasPressedThisFrame;
             var jump = spacebarPressedThisFrame;
-            var thruster = Keyboard.current != null
-                && Keyboard.current.spaceKey.isPressed
-                && gravityMode != NetworkPlayerGravityMode.ShipGravity;
-            var thrusterFeedback = gravityMode != NetworkPlayerGravityMode.ShipGravity
-                && (thruster || move.sqrMagnitude > 0.01f || Mathf.Abs(verticalMove) > 0.01f);
-            var sprint = Keyboard.current != null
+            var shiftPressed = Keyboard.current != null
                 && Keyboard.current.leftShiftKey.isPressed;
+            var ascend = gravityMode != NetworkPlayerGravityMode.ShipGravity
+                && shiftPressed;
+            var thrusterFeedback = gravityMode != NetworkPlayerGravityMode.ShipGravity
+                && (ascend || move.sqrMagnitude > 0.01f || Mathf.Abs(verticalMove) > 0.01f);
+            var sprint = gravityMode == NetworkPlayerGravityMode.ShipGravity
+                && shiftPressed;
             var deltaTime = Time.deltaTime;
             HasMoveInput = gravityMode == NetworkPlayerGravityMode.ShipGravity
                 ? move.sqrMagnitude > 0.01f || Mathf.Abs(verticalMove) > 0.01f
@@ -450,11 +452,11 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
 
             if (!IsSpawned || IsServer)
             {
-                MoveOnServer(move, verticalMove, look.x, cameraPitch, jump, thruster, sprint, deltaTime);
+                MoveOnServer(move, verticalMove, look.x, cameraPitch, jump, ascend, sprint, deltaTime);
             }
             else
             {
-                SubmitInputServerRpc(move, verticalMove, look.x, cameraPitch, jump, thruster, sprint, deltaTime);
+                SubmitInputServerRpc(move, verticalMove, look.x, cameraPitch, jump, ascend, sprint, deltaTime);
             }
         }
 
@@ -610,14 +612,59 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
         }
 
         [ServerRpc]
-        private void SubmitInputServerRpc(Vector2 move, float verticalMove, float yawInput, float lookPitch, bool jump, bool thruster, bool sprint, float deltaTime)
+        private void SubmitInputServerRpc(Vector2 move, float verticalMove, float yawInput, float lookPitch, bool jump, bool ascend, bool sprint, float deltaTime)
         {
-            MoveOnServer(move, verticalMove, yawInput, lookPitch, jump, thruster, sprint, Mathf.Clamp(deltaTime, 0f, 0.05f));
+            MoveOnServer(move, verticalMove, yawInput, lookPitch, jump, ascend, sprint, Mathf.Clamp(deltaTime, 0f, 0.05f));
         }
 
         public void SetLifeInputBlocked(bool blocked)
         {
-            SetPauseInputBlocked(blocked);
+            if (IsSpawned && !IsOwner)
+            {
+                return;
+            }
+
+            lifeInputBlocked = blocked;
+            if (blocked)
+            {
+                HasMoveInput = false;
+                IsRunning = false;
+                UpdateLocalThrusterFeedback(false);
+            }
+        }
+
+        public void ResetMovementForRespawn()
+        {
+            HasMoveInput = false;
+            IsRunning = false;
+            PlanarVelocity = Vector3.zero;
+            verticalVelocity = 0f;
+            zeroGravityVelocity = Vector3.zero;
+            UpdateLocalThrusterFeedback(false);
+        }
+
+        public void ShowRespawnCountdown(float remainingSeconds)
+        {
+            if (IsOwner && playHudPresenter != null)
+            {
+                playHudPresenter.SetRespawnCountdown(remainingSeconds);
+            }
+        }
+
+        public void ShowWarpRespawnPending()
+        {
+            if (IsOwner && playHudPresenter != null)
+            {
+                playHudPresenter.SetWarpRespawnPending();
+            }
+        }
+
+        public void ClearRespawnStatus()
+        {
+            if (IsOwner && playHudPresenter != null)
+            {
+                playHudPresenter.ClearRespawnStatus();
+            }
         }
 
         public void ShowDeadZoneWarning(float remainingSeconds)
@@ -657,7 +704,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
             }
         }
 
-        private void MoveOnServer(Vector2 move, float verticalMove, float yawInput, float lookPitch, bool jump, bool thruster, bool sprint, float deltaTime)
+        private void MoveOnServer(Vector2 move, float verticalMove, float yawInput, float lookPitch, bool jump, bool ascend, bool sprint, float deltaTime)
         {
             if (playerLifeState != null && !playerLifeState.IsAlive)
             {
@@ -674,7 +721,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
 
             if (gravityMode != NetworkPlayerGravityMode.ShipGravity)
             {
-                MoveZeroGravity(move, verticalMove, lookPitch, thruster, sprint, deltaTime);
+                MoveZeroGravity(move, verticalMove, lookPitch, ascend, false, deltaTime);
                 return;
             }
 
@@ -1107,10 +1154,10 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
         {
             if (!IsSpawned)
             {
-                return true;
+                return !pauseInputBlocked && !lifeInputBlocked;
             }
 
-            return IsOwner && gameplayInputEnabled && !pauseInputBlocked;
+            return IsOwner && gameplayInputEnabled && !pauseInputBlocked && !lifeInputBlocked;
         }
 
         private static float ReadVerticalMove()
@@ -1121,7 +1168,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
             }
 
             var verticalMove = 0f;
-            if (Keyboard.current.leftCtrlKey.isPressed || Keyboard.current.cKey.isPressed) verticalMove -= 1f;
+            if (Keyboard.current.leftCtrlKey.isPressed) verticalMove -= 1f;
             return Mathf.Clamp(verticalMove, -1f, 1f);
         }
 
