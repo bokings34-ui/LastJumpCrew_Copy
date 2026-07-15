@@ -1,8 +1,10 @@
-﻿using UnityEngine;
-using UnityEngine.UI;
-using UnityEngine.InputSystem;
+﻿using LastJumpCrew.Common;
+using SM;
 using System.Collections;
-using LastJumpCrew.Common;
+using System.Collections.Generic;
+using UnityEngine;
+using UnityEngine.InputSystem;
+using UnityEngine.UI;
 
 public class MiniGameManager : MonoBehaviour
 {
@@ -21,6 +23,14 @@ public class MiniGameManager : MonoBehaviour
     private MiniGameBase activeGame = null;
     private bool isFlashing = false;    // 연출 중 키보드 입력 방지
     private Coroutine slideCoroutine = null;
+
+    // 석민 추가 (미니게임과 이벤트 1:1 연결 매핑)
+    private readonly Dictionary<MiniGameType, string> _gameToEventMap = new()
+    {
+        { MiniGameType.Cannon, "MeteorAttack" },
+        { MiniGameType.WireFix, "EmpAttack" },
+        { MiniGameType.PowerSync, "EnemyScout" }
+    };
 
     private void Awake()
     {
@@ -48,6 +58,12 @@ public class MiniGameManager : MonoBehaviour
     // 💡 큐브 단말기(MiniGameTerminal)에서 쏘아 올려줄 핵심 오픈 함수!
     public void OpenMiniGame(MiniGameType type, IMiniGameTarget target)
     {
+        // 석민 추가 (이벤트 -> 미니게임 연결)
+        if (target == null && _gameToEventMap.TryGetValue(type, out string targetId))
+        {
+            target = EventManager.Instance.GetMiniGameTarget(targetId);
+        }
+
         canvasRoot.SetActive(true);
 
         foreach (var mg in miniGames)
