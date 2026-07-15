@@ -11,12 +11,30 @@ namespace SM
         [SerializeField] private EventRegistrySO registry;
 
         private readonly Dictionary<EventId, EventBase> _activeEvents = new Dictionary<EventId, EventBase>();
+        private readonly List<EventBase> _eventsToTickCache = new List<EventBase>();
 
         private void Update()
         {
+            //foreach (var evt in _activeEvents.Values)
+            //{
+            //    evt.OnTick(Time.deltaTime);
+            //}
+
+            _eventsToTickCache.Clear();
+
             foreach (var evt in _activeEvents.Values)
             {
-                evt.OnTick(Time.deltaTime);
+                _eventsToTickCache.Add(evt);
+            }
+
+            for (int i = 0; i < _eventsToTickCache.Count; i++)
+            {
+                var evt = _eventsToTickCache[i];
+
+                if (_activeEvents.ContainsKey(evt.Id))
+                {
+                    evt.OnTick(Time.deltaTime);
+                }
             }
         }
 
