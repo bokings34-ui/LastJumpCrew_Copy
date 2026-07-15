@@ -83,8 +83,35 @@ namespace LastJumpCrew.ParkHanSol.Interaction
             }
 
             var eventManager = EventManager.Instance;
+            var finishedDuringSpawn = false;
+            var spawnCallCompleted = false;
+
+            void HandleSpawnFinished(EventBase finishedEvent, bool isSuccess)
+            {
+                if (!spawnCallCompleted)
+                {
+                    finishedDuringSpawn = true;
+                }
+
+                HandleEventFinished(finishedEvent, isSuccess);
+            }
+
             isEventInProgress = true;
-            eventManager.SpawnEvent(eventId, room, HandleEventFinished);
+            eventManager.SpawnEvent(eventId, room, HandleSpawnFinished);
+            spawnCallCompleted = true;
+
+            if (finishedDuringSpawn)
+            {
+                if (eventManager.IsActive(eventId))
+                {
+                    Debug.LogError(
+                        $"[{nameof(ShipAccidentEventTerminal)}] 즉시 종료된 {eventId} 이벤트가 EventManager에 활성 상태로 남았습니다. " +
+                        "EventManager의 이벤트 등록 순서를 확인해야 합니다.",
+                        this);
+                }
+
+                return;
+            }
 
             if (!eventManager.IsActive(eventId))
             {
