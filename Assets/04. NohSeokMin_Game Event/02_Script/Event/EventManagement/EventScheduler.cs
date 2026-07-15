@@ -129,14 +129,8 @@ namespace SM
                 return;
             }
 
+            EventManager.Instance.SpawnEvent(eventId, room, HandleEventFinished);
             _activeEventCount++;
-
-            if (!EventManager.Instance.SpawnEvent(eventId, room, HandleEventFinished))
-            {
-                _activeEventCount--;
-                Debug.LogError($"[EventScheduler] {eventId} 생성 요청이 거부되었습니다.", this);
-                return;
-            }
 
             Debug.Log($"<color=lime>[EventScheduler]</color> {eventId} 발생!");
         }

@@ -11,12 +11,26 @@ namespace SM
         [SerializeField] private EventRegistrySO registry;
 
         private readonly Dictionary<EventId, EventBase> _activeEvents = new Dictionary<EventId, EventBase>();
+        private readonly List<EventBase> _eventsToTickCache = new List<EventBase>();
 
         private void Update()
         {
-            var activeEvents = new List<EventBase>(_activeEvents.Values);
-            foreach (var evt in activeEvents)
+            //foreach (var evt in _activeEvents.Values)
+            //{
+            //    evt.OnTick(Time.deltaTime);
+            //}
+
+            _eventsToTickCache.Clear();
+
+            foreach (var evt in _activeEvents.Values)
             {
+                _eventsToTickCache.Add(evt);
+            }
+
+            for (int i = 0; i < _eventsToTickCache.Count; i++)
+            {
+                var evt = _eventsToTickCache[i];
+
                 if (_activeEvents.ContainsKey(evt.Id))
                 {
                     evt.OnTick(Time.deltaTime);
@@ -29,39 +43,32 @@ namespace SM
             return _activeEvents.ContainsKey(id);
         }
 
-        public bool SpawnEvent(EventId id, IRoom targetRoom, Action<EventBase, bool> onFinished = null)
+        public void SpawnEvent(EventId id, IRoom targetRoom, Action<EventBase, bool> onFinished = null)
         {
             if (_activeEvents.ContainsKey(id))
             {
                 Debug.Log($"<color=lime>[EventManager]</color> {id}는 이미 진행 중입니다.");
-                return false;
+                return;
             }
 
             var data = registry.GetData(id);
 
             if (data == null)
             {
-                Debug.LogError($"[EventManager] {id}에 대한 EventDataSO가 Registry에 없습니다.", this);
-                return false;
+                Debug.Log($"<color=lime>[EventManager]</color> {id}에 대한 EventDataSO가 Registry에 없습니다.");
+                return;
             }
 
             var evt = EventFactory.Create(id);
-            if (evt == null)
-            {
-                Debug.LogError($"[EventManager] {id} 이벤트 생성에 실패했습니다.", this);
-                return false;
-            }
-
             var context = new EventContext(targetRoom, this);
 
             evt.OnFinished += HandleEventFinished;
             if (onFinished != null) evt.OnFinished += onFinished;
 
             evt.Initialize(data, context);
-            _activeEvents[id] = evt;
             evt.OnTrigger();
 
-            return true;
+            _activeEvents[id] = evt;
         }
 
         private void HandleEventFinished(EventBase evt, bool success)

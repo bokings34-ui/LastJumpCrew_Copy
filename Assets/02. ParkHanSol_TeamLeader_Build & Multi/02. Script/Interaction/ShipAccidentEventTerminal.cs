@@ -82,8 +82,11 @@ namespace LastJumpCrew.ParkHanSol.Interaction
                 return;
             }
 
+            var eventManager = EventManager.Instance;
             isEventInProgress = true;
-            if (!EventManager.Instance.SpawnEvent(eventId, room, HandleEventFinished))
+            eventManager.SpawnEvent(eventId, room, HandleEventFinished);
+
+            if (!eventManager.IsActive(eventId))
             {
                 isEventInProgress = false;
                 Debug.LogError($"[{nameof(ShipAccidentEventTerminal)}] 함선 사고 생성 실패: {eventId}", this);
