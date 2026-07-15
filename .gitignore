@@ -76,3 +76,7 @@ crashlytics-build.properties
 /[Ll]ibrary/[Pp]ackage[Cc]ache/com.anklebreaker.unity-mcp*/
 /ProjectSettings/Packages/com.unity.services.vivox
 ProjectSettings/Packages/com.unity.services.vivox/Settings.json
+
+# Ignore assets and packages
+/[Aa]ssets/04. NohSeokMin_Game Event/06_IgnoreAssets/
+/[Aa]ssets/04. NohSeokMin_Game Event/06_IgnoreAssets.meta

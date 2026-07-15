@@ -70,7 +70,6 @@ namespace SM
                 Debug.Log("<color=lime>[ZoneEventScheduler]</color> 성운지대 : 미니맵 끄기 신호 발행.");
                 return;
             }
-
             EventScheduler.Instance.TrySpawnEvent(_currentEntry.eventId);
         }
     }

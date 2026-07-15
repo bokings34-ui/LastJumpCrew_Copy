@@ -36,38 +36,38 @@ namespace SM
             if (uiPanel == null) return;
             if (Keyboard.current == null) return;
 
-            // [ 0 ] 키 -> UI 껐다 키기
-            if (Keyboard.current.digit0Key.wasPressedThisFrame)
+            // [ 5 ] 키 -> UI 껐다 키기
+            if (Keyboard.current.digit5Key.wasPressedThisFrame)
             {
                 ToggleUIPanel();
             }
 
-            // [ 1 ] 키 → 이벤트 스케줄러 시작(30초마다 한번씩 발생)
-            if (Keyboard.current.digit1Key.wasPressedThisFrame)
+            // [ 6 ] 키 → 이벤트 스케줄러 시작(30초마다 한번씩 발생)
+            if (Keyboard.current.digit6Key.wasPressedThisFrame)
             {
                 StartAll();
             }
 
-            // [ 2 ] 키 → 이벤트 스케줄러 강제 종료
-            if (Keyboard.current.digit2Key.wasPressedThisFrame)
+            // [ 7 ] 키 → 이벤트 스케줄러 강제 종료
+            if (Keyboard.current.digit7Key.wasPressedThisFrame)
             {
                 StopAll();
             }
 
-            // [ 3 ] 키 → 화재 이벤트 강제 발생
-            if (Keyboard.current.digit3Key.wasPressedThisFrame)
+            // [ 8 ] 키 → 화재 이벤트 강제 발생
+            if (Keyboard.current.digit8Key.wasPressedThisFrame)
             {
                 SpawnForceEvent(EventId.Fire, "화재");
             }
 
-            // [ 4 ] 키 → 적 침투 이벤트 강제 발생
-            if (Keyboard.current.digit4Key.wasPressedThisFrame)
+            // [ 9 ] 키 → 적 침투 이벤트 강제 발생
+            if (Keyboard.current.digit9Key.wasPressedThisFrame)
             {
                 SpawnForceEvent(EventId.EnemySpawn, "적 침투");
             }
 
-            // [ 5 ] 키 → 산소 유출 이벤트 강제 발생
-            if (Keyboard.current.digit5Key.wasPressedThisFrame)
+            // [ 0 ] 키 → 산소 유출 이벤트 강제 발생
+            if (Keyboard.current.digit0Key.wasPressedThisFrame)
             {
                 SpawnForceEvent(EventId.OxygenLeak, "산소 유출");
             }
@@ -76,14 +76,14 @@ namespace SM
         private void StartAll()
         {
             EventScheduler.Instance.StartScheduler();
-            //ZoneEventScheduler.Instance.StartScheduler();
+            ZoneEventScheduler.Instance.StartScheduler();
             Debug.Log("<color=lime>[함선 사고 이벤트 테스트]</color> 이벤트/존 스케줄러 시작.");
         }
 
         private void StopAll()
         {
             EventScheduler.Instance.ForceClearAll();
-            //ZoneEventScheduler.Instance.StopScheduler();
+            ZoneEventScheduler.Instance.StopScheduler();
             Debug.Log("<color=lime>[함선 사고 이벤트 테스트]</color> 이벤트/존 스케줄러 종료 및 강제 클리어.");
         }
 
