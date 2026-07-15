@@ -1,9 +1,9 @@
 /*
 
-빨간 박스 = 불 이펙트 / 노란 캡슐 = 적 / 보라색 구체 = 산소 유출 이펙트(함선 구멍)
+주황색 캡슐 = 적 / 보라색 구체 = 산소 유출 이펙트(함선 구멍)
 
 1.
-0710_Map_Ver1 기준으로 GameEventManager(빈 오브젝트) 의 Transform 위치가 (X:-378.6103 , Y:0 , Z:-14.3925) 면
+0710_Map_Ver1 기준으로 GameEventManager(빈 오브젝트) 의 Transform.Position 위치가 (X:-378.6103 , Y:0 , Z:-14.3925) 면
 SpawnPoint가 완벽히 맞긴 합니다.
 
 2.

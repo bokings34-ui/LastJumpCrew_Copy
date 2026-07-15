@@ -47,9 +47,9 @@ namespace SM
         {
             if (State != EventState.InProgress) return;
 
-            foreach (var enemy in _activeEnemies)
+            for (int i = _activeEnemies.Count - 1; i >= 0; i--)
             {
-                enemy.Tick(deltaTime);
+                _activeEnemies[i].Tick(deltaTime);
             }
 
             if (_spawnedCount >= SpawnData.enemyCount) return;
