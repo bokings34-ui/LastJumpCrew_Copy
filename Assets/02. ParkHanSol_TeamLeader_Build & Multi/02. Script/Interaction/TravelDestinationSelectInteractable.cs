@@ -5,7 +5,7 @@ namespace LastJumpCrew.ParkHanSol.Interaction
     public sealed class TravelDestinationSelectInteractable : MonoBehaviour, IInteractable
     {
         [SerializeField] private NetworkTravelConsoleController console;
-        [SerializeField] private TravelConsoleDestination destination;
+        [SerializeField] private TravelConsoleSide side;
         [SerializeField] private string interactionPrompt = "목적지 선택";
 
         public string InteractionPrompt => interactionPrompt;
@@ -14,18 +14,18 @@ namespace LastJumpCrew.ParkHanSol.Interaction
         {
             return console != null
                 && itemHolder is Component
-                && console.CanSelectDestination(destination);
+                && console.CanSelectSide(side);
         }
 
         public void Interact(IItemHolder itemHolder)
         {
             if (!CanInteract(itemHolder))
             {
-                Debug.LogWarning($"PHS_TRAVEL_SELECT_FAILED reason=interaction_invalid destination={destination}", this);
+                Debug.LogWarning($"PHS_TRAVEL_SELECT_FAILED reason=interaction_invalid side={side}", this);
                 return;
             }
 
-            console.RequestSelectDestination(itemHolder, destination);
+            console.RequestSelectSide(itemHolder, side);
         }
     }
 }

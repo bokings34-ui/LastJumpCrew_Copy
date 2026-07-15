@@ -52,6 +52,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
         private bool sceneLoadRequested;
         private bool finalShopCompleted;
         private float scheduledWarpReviveTime = -1f;
+        private int pendingNextZoneId;
 
         public static NetworkRunFlowCoordinator Instance { get; private set; }
 
@@ -164,6 +165,32 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
 
             ExecuteReadyWarp();
             reason = null;
+            return true;
+        }
+
+        public bool TrySelectNextZone(int zoneId, out string reason)
+        {
+            if (!IsSpawned || !IsServer)
+            {
+                reason = "server_required";
+                return false;
+            }
+
+            if (synchronizedPhase.Value != NetworkRunPhase.WarpReady)
+            {
+                reason = "warp_ready_required";
+                return false;
+            }
+
+            if (zoneId <= 0)
+            {
+                reason = "invalid_zone_id";
+                return false;
+            }
+
+            pendingNextZoneId = zoneId;
+            reason = null;
+            Debug.Log($"PHS_RUN_FLOW_NEXT_ZONE_SELECTED zone={zoneId}");
             return true;
         }
 
@@ -299,8 +326,11 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
             rearmElapsed = 0f;
             chargeElapsed = 0f;
             synchronizedWarpCharge.Value = 0f;
-            var nextZoneId = Mathf.Clamp(gameState.ClearedZoneCount + 1, 1, GameLoopState.TOTAL_ZONES);
+            var nextZoneId = pendingNextZoneId > 0
+                ? pendingNextZoneId
+                : Mathf.Clamp(gameState.ClearedZoneCount + 1, 1, GameLoopState.TOTAL_ZONES);
             gameCommands.SelectZone(nextZoneId);
+            pendingNextZoneId = 0;
             Debug.Log($"PHS_RUN_FLOW_ZONE_STARTED zone={nextZoneId} cleared={gameState.ClearedZoneCount}");
         }
 

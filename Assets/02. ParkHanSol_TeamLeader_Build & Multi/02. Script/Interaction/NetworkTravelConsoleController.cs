@@ -1,5 +1,7 @@
+using System.Collections.Generic;
 using LastJumpCrew.ParkHanSol.Multiplayer;
 using LastJumpCrew.ParkHanSol.Shop;
+using LastJumpCrew.SeoBoGyeong;
 using TMPro;
 using Unity.Netcode;
 using UnityEngine;
@@ -8,9 +10,18 @@ namespace LastJumpCrew.ParkHanSol.Interaction
 {
     public enum TravelConsoleDestination : byte
     {
-        None,
-        DebrisCollection,
-        Shop
+        None = 0,
+        DebrisCollection = 1,
+        Shop = 2,
+        LeftMap = 3,
+        RightMap = 4
+    }
+
+    public enum TravelConsoleSide : byte
+    {
+        None = 0,
+        Left = 1,
+        Right = 2
     }
 
     [RequireComponent(typeof(NetworkObject))]
@@ -21,10 +32,17 @@ namespace LastJumpCrew.ParkHanSol.Interaction
         [SerializeField] private string shopSceneName = "PHS_ExteriorShopScene";
         [SerializeField, Min(1f)] private float serverInteractionDistance = 4f;
 
+        [Header("Temporary Map Options")]
+        [SerializeField] private ZoneData[] temporaryMapOptions;
+
         [Header("World Screens")]
         [SerializeField] private TMP_Text debrisScreenText;
         [SerializeField] private TMP_Text shopScreenText;
         [SerializeField] private TMP_Text actionScreenText;
+        [SerializeField] private Light readyStatusLight;
+
+        [Header("Shop-only Presentation")]
+        [SerializeField] private GameObject[] debrisChoiceObjects;
 
         [Header("Button Renderers")]
         [SerializeField] private Renderer debrisButtonRenderer;
@@ -42,8 +60,18 @@ namespace LastJumpCrew.ParkHanSol.Interaction
             TravelConsoleDestination.None,
             NetworkVariableReadPermission.Everyone,
             NetworkVariableWritePermission.Server);
+        private readonly NetworkVariable<int> synchronizedLeftMapIndex = new(
+            -1,
+            NetworkVariableReadPermission.Everyone,
+            NetworkVariableWritePermission.Server);
+        private readonly NetworkVariable<int> synchronizedRightMapIndex = new(
+            -1,
+            NetworkVariableReadPermission.Everyone,
+            NetworkVariableWritePermission.Server);
+
         private bool setupValid;
         private bool sceneLoadRequested;
+        private NetworkRunPhase lastServerPhase = (NetworkRunPhase)byte.MaxValue;
 
         public TravelConsoleDestination SelectedDestination => synchronizedDestination.Value;
 
@@ -53,7 +81,7 @@ namespace LastJumpCrew.ParkHanSol.Interaction
             {
                 var runFlow = NetworkRunFlowCoordinator.Instance;
                 return runFlow != null && runFlow.Phase == NetworkRunPhase.WarpReady
-                    ? "워프 기동"
+                    ? "워프 실행"
                     : "선택 목적지로 이동";
             }
         }
@@ -63,6 +91,7 @@ namespace LastJumpCrew.ParkHanSol.Interaction
             setupValid = debrisScreenText != null
                 && shopScreenText != null
                 && actionScreenText != null
+                && readyStatusLight != null
                 && debrisButtonRenderer != null
                 && shopButtonRenderer != null
                 && actionButtonRenderer != null
@@ -71,62 +100,63 @@ namespace LastJumpCrew.ParkHanSol.Interaction
                 && shopSelectedMaterial != null
                 && actionReadyMaterial != null
                 && disabledButtonMaterial != null
+                && HasValidObjects(debrisChoiceObjects)
+                && HasValidMapOptions(temporaryMapOptions)
                 && !string.IsNullOrWhiteSpace(debrisSceneName)
                 && !string.IsNullOrWhiteSpace(shopSceneName);
             if (!setupValid)
             {
                 Debug.LogError($"PHS_TRAVEL_CONSOLE_SETUP_FAILED console={name}", this);
                 enabled = false;
+                return;
             }
+
+            readyStatusLight.enabled = false;
         }
 
         public override void OnNetworkSpawn()
         {
             base.OnNetworkSpawn();
             synchronizedDestination.OnValueChanged += HandleDestinationChanged;
+            synchronizedLeftMapIndex.OnValueChanged += HandleMapOptionChanged;
+            synchronizedRightMapIndex.OnValueChanged += HandleMapOptionChanged;
             RefreshPresentation();
         }
 
         public override void OnNetworkDespawn()
         {
             synchronizedDestination.OnValueChanged -= HandleDestinationChanged;
+            synchronizedLeftMapIndex.OnValueChanged -= HandleMapOptionChanged;
+            synchronizedRightMapIndex.OnValueChanged -= HandleMapOptionChanged;
             base.OnNetworkDespawn();
         }
 
         private void Update()
         {
+            var runFlow = NetworkRunFlowCoordinator.Instance;
+            if (IsSpawned && IsServer && runFlow != null && runFlow.Phase != lastServerPhase)
+            {
+                HandleServerPhaseChanged(runFlow.Phase);
+            }
+
             RefreshPresentation();
         }
 
-        public bool CanSelectDestination(TravelConsoleDestination destination)
+        public bool CanSelectSide(TravelConsoleSide side)
         {
-            if (!setupValid || !IsSpawned || destination == TravelConsoleDestination.None)
-            {
-                return false;
-            }
-
-            var runFlow = NetworkRunFlowCoordinator.Instance;
-            if (destination == TravelConsoleDestination.DebrisCollection)
-            {
-                return runFlow != null
-                    && runFlow.Phase != NetworkRunPhase.Shop
-                    && runFlow.Phase != NetworkRunPhase.FinalShop
-                    && runFlow.Phase != NetworkRunPhase.Clear
-                    && runFlow.Phase != NetworkRunPhase.GameOver;
-            }
-
-            return runFlow != null
-                && (runFlow.Phase == NetworkRunPhase.Shop
-                    || runFlow.Phase == NetworkRunPhase.FinalShop);
+            return setupValid
+                && IsSpawned
+                && side != TravelConsoleSide.None
+                && TryResolveDestination(side, out _);
         }
 
-        public void RequestSelectDestination(IItemHolder itemHolder, TravelConsoleDestination destination)
+        public void RequestSelectSide(IItemHolder itemHolder, TravelConsoleSide side)
         {
-            if (!CanSelectDestination(destination)
+            if (!CanSelectSide(side)
                 || itemHolder is not Component holderComponent
                 || holderComponent.GetComponent<NetworkPlayerController>() is not { } player)
             {
-                Debug.LogWarning($"PHS_TRAVEL_SELECT_FAILED reason=destination_locked destination={destination}", this);
+                Debug.LogWarning($"PHS_TRAVEL_SELECT_FAILED reason=side_locked side={side}", this);
                 return;
             }
 
@@ -138,16 +168,16 @@ namespace LastJumpCrew.ParkHanSol.Interaction
                     return;
                 }
 
-                SetDestination(destination);
+                SelectSideOnServer(side);
                 return;
             }
 
-            RequestSelectDestinationServerRpc(destination);
+            RequestSelectSideServerRpc(side);
         }
 
         public bool CanExecute(IItemHolder itemHolder)
         {
-            if (!setupValid || !IsSpawned || SelectedDestination == TravelConsoleDestination.None
+            if (!setupValid || !IsSpawned
                 || itemHolder is not Component holderComponent
                 || holderComponent.GetComponent<NetworkPlayerController>() == null)
             {
@@ -155,27 +185,7 @@ namespace LastJumpCrew.ParkHanSol.Interaction
             }
 
             var runFlow = NetworkRunFlowCoordinator.Instance;
-            if (runFlow == null)
-            {
-                return false;
-            }
-
-            if (runFlow.Phase == NetworkRunPhase.WarpReady)
-            {
-                return true;
-            }
-
-            if (runFlow.Phase == NetworkRunPhase.Charging)
-            {
-                return SelectedDestination == TravelConsoleDestination.DebrisCollection;
-            }
-
-            if (runFlow.Phase == NetworkRunPhase.Shop || runFlow.Phase == NetworkRunPhase.FinalShop)
-            {
-                return SelectedDestination == TravelConsoleDestination.Shop;
-            }
-
-            return false;
+            return runFlow != null && IsDestinationExecutable(runFlow);
         }
 
         public void Execute(IItemHolder itemHolder)
@@ -197,8 +207,8 @@ namespace LastJumpCrew.ParkHanSol.Interaction
         }
 
         [ServerRpc(RequireOwnership = false)]
-        private void RequestSelectDestinationServerRpc(
-            TravelConsoleDestination destination,
+        private void RequestSelectSideServerRpc(
+            TravelConsoleSide side,
             ServerRpcParams rpcParams = default)
         {
             if (!TryGetNearbyPlayer(rpcParams.Receive.SenderClientId, out _))
@@ -207,19 +217,87 @@ namespace LastJumpCrew.ParkHanSol.Interaction
                 return;
             }
 
-            if (!CanSelectDestination(destination))
+            if (!CanSelectSide(side))
             {
-                Debug.LogWarning($"PHS_TRAVEL_SELECT_FAILED reason=destination_locked destination={destination}", this);
+                Debug.LogWarning($"PHS_TRAVEL_SELECT_FAILED reason=side_locked side={side}", this);
                 return;
             }
 
-            SetDestination(destination);
+            SelectSideOnServer(side);
         }
 
         [ServerRpc(RequireOwnership = false)]
         private void RequestExecuteServerRpc(ServerRpcParams rpcParams = default)
         {
             ExecuteOnServer(rpcParams.Receive.SenderClientId);
+        }
+
+        private void SelectSideOnServer(TravelConsoleSide side)
+        {
+            if (!TryResolveDestination(side, out var destination))
+            {
+                Debug.LogWarning($"PHS_TRAVEL_SELECT_FAILED reason=destination_unavailable side={side}", this);
+                return;
+            }
+
+            SetDestination(destination);
+        }
+
+        private bool TryResolveDestination(
+            TravelConsoleSide side,
+            out TravelConsoleDestination destination)
+        {
+            destination = TravelConsoleDestination.None;
+            var runFlow = NetworkRunFlowCoordinator.Instance;
+            if (runFlow == null)
+            {
+                return false;
+            }
+
+            if (runFlow.Phase == NetworkRunPhase.Charging && side == TravelConsoleSide.Right)
+            {
+                destination = TravelConsoleDestination.DebrisCollection;
+                return true;
+            }
+
+            if (runFlow.Phase == NetworkRunPhase.WarpReady && AreMapChoicesReady())
+            {
+                destination = side == TravelConsoleSide.Left
+                    ? TravelConsoleDestination.LeftMap
+                    : TravelConsoleDestination.RightMap;
+                return true;
+            }
+
+            if ((runFlow.Phase == NetworkRunPhase.Shop || runFlow.Phase == NetworkRunPhase.FinalShop)
+                && side == TravelConsoleSide.Left)
+            {
+                destination = TravelConsoleDestination.Shop;
+                return true;
+            }
+
+            return false;
+        }
+
+        private bool IsDestinationExecutable(NetworkRunFlowCoordinator runFlow)
+        {
+            if (runFlow.Phase == NetworkRunPhase.WarpReady)
+            {
+                return (SelectedDestination == TravelConsoleDestination.LeftMap
+                        || SelectedDestination == TravelConsoleDestination.RightMap)
+                    && TryGetSelectedMapData(out _);
+            }
+
+            if (runFlow.Phase == NetworkRunPhase.Charging)
+            {
+                return SelectedDestination == TravelConsoleDestination.DebrisCollection;
+            }
+
+            if (runFlow.Phase == NetworkRunPhase.Shop || runFlow.Phase == NetworkRunPhase.FinalShop)
+            {
+                return SelectedDestination == TravelConsoleDestination.Shop;
+            }
+
+            return false;
         }
 
         private void ExecuteOnServer(ulong clientId)
@@ -244,6 +322,18 @@ namespace LastJumpCrew.ParkHanSol.Interaction
 
             if (runFlow.Phase == NetworkRunPhase.WarpReady)
             {
+                if (!TryGetSelectedMapData(out var mapData))
+                {
+                    Debug.LogWarning("PHS_TRAVEL_EXECUTE_FAILED reason=map_choice_missing", this);
+                    return;
+                }
+
+                if (!runFlow.TrySelectNextZone(mapData.id, out var selectionReason))
+                {
+                    Debug.LogWarning($"PHS_TRAVEL_EXECUTE_FAILED reason={selectionReason}", this);
+                    return;
+                }
+
                 if (!runFlow.TryActivateWarp(clientId, out var warpReason))
                 {
                     Debug.LogWarning($"PHS_TRAVEL_EXECUTE_FAILED reason={warpReason}", this);
@@ -285,7 +375,9 @@ namespace LastJumpCrew.ParkHanSol.Interaction
             }
 
             sceneLoadRequested = true;
-            var status = NetworkManager.SceneManager.LoadScene(sceneName, UnityEngine.SceneManagement.LoadSceneMode.Single);
+            var status = NetworkManager.SceneManager.LoadScene(
+                sceneName,
+                UnityEngine.SceneManagement.LoadSceneMode.Single);
             if (status != SceneEventProgressStatus.Started)
             {
                 sceneLoadRequested = false;
@@ -306,7 +398,36 @@ namespace LastJumpCrew.ParkHanSol.Interaction
             }
 
             playerObject = client.PlayerObject;
-            return Vector3.Distance(playerObject.transform.position, transform.position) <= serverInteractionDistance;
+            return Vector3.Distance(playerObject.transform.position, transform.position)
+                <= serverInteractionDistance;
+        }
+
+        private void HandleServerPhaseChanged(NetworkRunPhase phase)
+        {
+            lastServerPhase = phase;
+            synchronizedDestination.Value = TravelConsoleDestination.None;
+            if (phase == NetworkRunPhase.WarpReady)
+            {
+                RollMapChoices();
+            }
+
+            RefreshPresentation();
+        }
+
+        private void RollMapChoices()
+        {
+            var leftIndex = Random.Range(0, temporaryMapOptions.Length);
+            var rightIndex = Random.Range(0, temporaryMapOptions.Length - 1);
+            if (rightIndex >= leftIndex)
+            {
+                rightIndex++;
+            }
+
+            synchronizedLeftMapIndex.Value = leftIndex;
+            synchronizedRightMapIndex.Value = rightIndex;
+            Debug.Log(
+                $"PHS_TRAVEL_MAP_CHOICES_ROLLED left={temporaryMapOptions[leftIndex].id} right={temporaryMapOptions[rightIndex].id}",
+                this);
         }
 
         private void SetDestination(TravelConsoleDestination destination)
@@ -323,6 +444,44 @@ namespace LastJumpCrew.ParkHanSol.Interaction
             RefreshPresentation();
         }
 
+        private void HandleMapOptionChanged(int previous, int current)
+        {
+            RefreshPresentation();
+        }
+
+        private bool AreMapChoicesReady()
+        {
+            return IsValidMapIndex(synchronizedLeftMapIndex.Value)
+                && IsValidMapIndex(synchronizedRightMapIndex.Value)
+                && synchronizedLeftMapIndex.Value != synchronizedRightMapIndex.Value;
+        }
+
+        private bool TryGetSelectedMapData(out ZoneData mapData)
+        {
+            mapData = null;
+            var index = SelectedDestination switch
+            {
+                TravelConsoleDestination.LeftMap => synchronizedLeftMapIndex.Value,
+                TravelConsoleDestination.RightMap => synchronizedRightMapIndex.Value,
+                _ => -1
+            };
+
+            if (!IsValidMapIndex(index))
+            {
+                return false;
+            }
+
+            mapData = temporaryMapOptions[index];
+            return mapData != null;
+        }
+
+        private bool IsValidMapIndex(int index)
+        {
+            return index >= 0
+                && temporaryMapOptions != null
+                && index < temporaryMapOptions.Length;
+        }
+
         private void RefreshPresentation()
         {
             if (!setupValid)
@@ -334,32 +493,44 @@ namespace LastJumpCrew.ParkHanSol.Interaction
             var shopAvailable = runFlow != null
                 && (runFlow.Phase == NetworkRunPhase.Shop
                     || runFlow.Phase == NetworkRunPhase.FinalShop);
+            var mapChoicesReady = runFlow != null
+                && runFlow.Phase == NetworkRunPhase.WarpReady
+                && AreMapChoicesReady();
 
-            debrisScreenText.text = SelectedDestination == TravelConsoleDestination.DebrisCollection
-                ? "데브리 회수존\n선택됨"
-                : "데브리 회수존\n선택 가능";
-            shopScreenText.text = shopAvailable
-                ? SelectedDestination == TravelConsoleDestination.Shop
-                    ? "상점\n선택됨"
-                    : "상점\n선택 가능"
-                : "상점\n3번째 워프 후 활성";
+            SetObjectsActive(debrisChoiceObjects, !shopAvailable);
+            readyStatusLight.enabled = mapChoicesReady || shopAvailable;
 
-            debrisButtonRenderer.sharedMaterial = SelectedDestination == TravelConsoleDestination.DebrisCollection
-                ? debrisSelectedMaterial
-                : idleButtonMaterial;
-            shopButtonRenderer.sharedMaterial = !shopAvailable
-                ? disabledButtonMaterial
-                : SelectedDestination == TravelConsoleDestination.Shop
-                    ? shopSelectedMaterial
-                    : idleButtonMaterial;
+            if (shopAvailable)
+            {
+                shopScreenText.text = "상점";
+            }
+            else if (mapChoicesReady)
+            {
+                shopScreenText.text = FormatMapOption(
+                    temporaryMapOptions[synchronizedLeftMapIndex.Value],
+                    SelectedDestination == TravelConsoleDestination.LeftMap);
+                debrisScreenText.text = FormatMapOption(
+                    temporaryMapOptions[synchronizedRightMapIndex.Value],
+                    SelectedDestination == TravelConsoleDestination.RightMap);
+            }
+            else
+            {
+                shopScreenText.text = "워프 충전 중\n선택 대기";
+                debrisScreenText.text = runFlow != null && runFlow.Phase == NetworkRunPhase.Charging
+                    ? "데브리 회수존\n이동 가능"
+                    : "다음 워프\n준비 중";
+            }
 
-            var canExecute = runFlow != null
-                && SelectedDestination != TravelConsoleDestination.None
-                && (runFlow.Phase == NetworkRunPhase.WarpReady
-                    || runFlow.Phase == NetworkRunPhase.Charging
-                        && SelectedDestination == TravelConsoleDestination.DebrisCollection
-                    || (runFlow.Phase == NetworkRunPhase.Shop || runFlow.Phase == NetworkRunPhase.FinalShop)
-                        && SelectedDestination == TravelConsoleDestination.Shop);
+            shopButtonRenderer.sharedMaterial = GetLeftButtonMaterial(
+                runFlow,
+                shopAvailable,
+                mapChoicesReady);
+            debrisButtonRenderer.sharedMaterial = GetRightButtonMaterial(
+                runFlow,
+                shopAvailable,
+                mapChoicesReady);
+
+            var canExecute = runFlow != null && IsDestinationExecutable(runFlow);
             actionButtonRenderer.sharedMaterial = canExecute
                 ? actionReadyMaterial
                 : disabledButtonMaterial;
@@ -368,27 +539,143 @@ namespace LastJumpCrew.ParkHanSol.Interaction
             {
                 actionScreenText.text = "이동 시스템\n오프라인";
             }
-            else if (SelectedDestination == TravelConsoleDestination.None)
-            {
-                actionScreenText.text = "목적지를 먼저\n선택하십시오";
-            }
-            else if (runFlow.Phase == NetworkRunPhase.WarpReady)
-            {
-                actionScreenText.text = "워프 준비 완료\n실행 버튼 입력";
-            }
             else if (canExecute)
             {
-                actionScreenText.text = $"{GetDestinationLabel(SelectedDestination)}\n실행 버튼 입력";
+                actionScreenText.text = $"{GetDestinationLabel()}\n실행 버튼 입력";
+            }
+            else if (mapChoicesReady)
+            {
+                actionScreenText.text = "왼쪽/오른쪽\n맵 선택";
+            }
+            else if (shopAvailable)
+            {
+                actionScreenText.text = "상점 선택 후\n실행";
             }
             else
             {
-                actionScreenText.text = $"워프 충전\n{Mathf.RoundToInt(runFlow.WarpChargeNormalized * 100f)}%";
+                actionScreenText.text = "워프 충전 중\n선택 대기";
             }
         }
 
-        private static string GetDestinationLabel(TravelConsoleDestination destination)
+        private Material GetLeftButtonMaterial(
+            NetworkRunFlowCoordinator runFlow,
+            bool shopAvailable,
+            bool mapChoicesReady)
         {
-            return destination == TravelConsoleDestination.Shop ? "상점 이동" : "데브리 회수존 이동";
+            if (shopAvailable)
+            {
+                return SelectedDestination == TravelConsoleDestination.Shop
+                    ? shopSelectedMaterial
+                    : idleButtonMaterial;
+            }
+
+            if (mapChoicesReady)
+            {
+                return SelectedDestination == TravelConsoleDestination.LeftMap
+                    ? shopSelectedMaterial
+                    : idleButtonMaterial;
+            }
+
+            return disabledButtonMaterial;
+        }
+
+        private Material GetRightButtonMaterial(
+            NetworkRunFlowCoordinator runFlow,
+            bool shopAvailable,
+            bool mapChoicesReady)
+        {
+            if (shopAvailable)
+            {
+                return disabledButtonMaterial;
+            }
+
+            if (mapChoicesReady)
+            {
+                return SelectedDestination == TravelConsoleDestination.RightMap
+                    ? debrisSelectedMaterial
+                    : idleButtonMaterial;
+            }
+
+            if (runFlow != null && runFlow.Phase == NetworkRunPhase.Charging)
+            {
+                return SelectedDestination == TravelConsoleDestination.DebrisCollection
+                    ? debrisSelectedMaterial
+                    : idleButtonMaterial;
+            }
+
+            return disabledButtonMaterial;
+        }
+
+        private string GetDestinationLabel()
+        {
+            if (SelectedDestination == TravelConsoleDestination.Shop)
+            {
+                return "상점";
+            }
+
+            if (SelectedDestination == TravelConsoleDestination.DebrisCollection)
+            {
+                return "데브리 회수존";
+            }
+
+            return TryGetSelectedMapData(out var mapData)
+                ? mapData.zoneName
+                : "선택 목적지";
+        }
+
+        private static string FormatMapOption(ZoneData mapData, bool selected)
+        {
+            return selected
+                ? $"{mapData.zoneName}\n선택됨"
+                : $"{mapData.zoneName}\n구역 {mapData.id}";
+        }
+
+        private static bool HasValidMapOptions(ZoneData[] mapOptions)
+        {
+            if (mapOptions == null || mapOptions.Length < 2)
+            {
+                return false;
+            }
+
+            var ids = new HashSet<int>();
+            foreach (var mapOption in mapOptions)
+            {
+                if (mapOption == null || mapOption.id <= 0 || !ids.Add(mapOption.id))
+                {
+                    return false;
+                }
+            }
+
+            return true;
+        }
+
+        private static bool HasValidObjects(GameObject[] objects)
+        {
+            if (objects == null || objects.Length == 0)
+            {
+                return false;
+            }
+
+            foreach (var target in objects)
+            {
+                if (target == null)
+                {
+                    return false;
+                }
+            }
+
+            return true;
+        }
+
+        private static void SetObjectsActive(GameObject[] objects, bool isActive)
+        {
+            foreach (var target in objects)
+            {
+                if (target.activeSelf != isActive)
+                {
+                    target.SetActive(isActive);
+                }
+            }
         }
     }
 }
