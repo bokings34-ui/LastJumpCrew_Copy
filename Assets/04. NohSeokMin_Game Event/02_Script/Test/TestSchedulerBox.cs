@@ -75,7 +75,7 @@ namespace SM
 
         private void StartAll()
         {
-            ZoneEventScheduler.Instance.SetCurrentZone(ZoneType.PatrolZone);
+            ZoneEventScheduler.Instance.SetCurrentZone(ZoneType.PlanetZone);
             EventScheduler.Instance.StartScheduler();
             ZoneEventScheduler.Instance.StartScheduler();
             Debug.Log("<color=lime>[함선 사고 이벤트 테스트]</color> 이벤트/존 스케줄러 시작.");
