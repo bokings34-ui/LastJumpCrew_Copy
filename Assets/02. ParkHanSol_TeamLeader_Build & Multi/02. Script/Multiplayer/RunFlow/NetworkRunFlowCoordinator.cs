@@ -118,6 +118,62 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
             return true;
         }
 
+        public bool RequestCompleteWarpChargeForDebug()
+        {
+            if (!Debug.isDebugBuild || !IsSpawned)
+            {
+                return false;
+            }
+
+            if (IsServer)
+            {
+                return TryCompleteWarpChargeForDebug(out _);
+            }
+
+            CompleteWarpChargeForDebugServerRpc();
+            return true;
+        }
+
+        [ServerRpc(RequireOwnership = false)]
+        private void CompleteWarpChargeForDebugServerRpc(ServerRpcParams rpcParams = default)
+        {
+            if (!TryCompleteWarpChargeForDebug(out var reason))
+            {
+                Debug.LogWarning(
+                    $"PHS_RUN_FLOW_DEBUG_CHARGE_REJECTED reason={reason} client={rpcParams.Receive.SenderClientId}",
+                    this);
+            }
+        }
+
+        private bool TryCompleteWarpChargeForDebug(out string reason)
+        {
+            if (!Debug.isDebugBuild)
+            {
+                reason = "non_development_build";
+                return false;
+            }
+
+            if (!IsSpawned || !IsServer)
+            {
+                reason = "server_unavailable";
+                return false;
+            }
+
+            if (synchronizedPhase.Value != NetworkRunPhase.Charging
+                && synchronizedPhase.Value != NetworkRunPhase.WarpReady)
+            {
+                reason = $"phase_invalid:{synchronizedPhase.Value}";
+                return false;
+            }
+
+            chargeElapsed = warpChargeSeconds;
+            synchronizedWarpCharge.Value = 1f;
+            SetPhase(NetworkRunPhase.WarpReady);
+            reason = string.Empty;
+            Debug.Log("PHS_RUN_FLOW_DEBUG_CHARGE_COMPLETED input=Digit1", this);
+            return true;
+        }
+
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
         private static void ResetStatics()
         {

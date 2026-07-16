@@ -29,8 +29,6 @@ namespace LastJumpCrew.ParkHanSol.Editor
             "Assets/02. ParkHanSol_TeamLeader_Build & Multi/01. Scene/0715/PHS_Map_ver1.unity";
         private const string ShopScenePath =
             "Assets/02. ParkHanSol_TeamLeader_Build & Multi/01. Scene/0715/PHS_ExteriorShopScene.unity";
-        private const string DebrisScenePath =
-            "Assets/02. ParkHanSol_TeamLeader_Build & Multi/01. Scene/0715/PHS_DebrisCollectionScene.unity";
         private const string GravityScenePath =
             "Assets/02. ParkHanSol_TeamLeader_Build & Multi/01. Scene/0715/ParkHanSol_GravitySpaceTestScene_0715.unity";
         private const string SellStationPrefabPath =
@@ -52,8 +50,7 @@ namespace LastJumpCrew.ParkHanSol.Editor
         {
             LobbyScenePath,
             MapScenePath,
-            ShopScenePath,
-            DebrisScenePath
+            ShopScenePath
         };
 
         private static readonly Type[] GravityDuplicateGuardTypes =
@@ -89,7 +86,6 @@ namespace LastJumpCrew.ParkHanSol.Editor
                 ValidateMapScene(errors);
                 ValidateShopScene(errors);
                 ValidateShopPresentationPrefabs(errors);
-                ValidateDebrisScene(errors);
                 ValidateGravityScene(errors);
                 ValidateSellStationPrefab(errors);
                 ValidatePlayHudPrefab(errors);
@@ -112,7 +108,7 @@ namespace LastJumpCrew.ParkHanSol.Editor
                 throw new InvalidOperationException(message);
             }
 
-            const string success = "PHS_0715_VALIDATE_OK errors=0 scenes=5 prefabs=10";
+            const string success = "PHS_0715_VALIDATE_OK errors=0 scenes=4 prefabs=10";
             Debug.Log(success);
             return success;
         }
@@ -194,17 +190,53 @@ namespace LastJumpCrew.ParkHanSol.Editor
                     $"map_minigame_indicator_missing terminal={terminal.name}", errors);
             }
 
+            var localDebrisPortals = UnityEngine.Object.FindObjectsByType<ExteriorTestTeleportInteractable>(
+                FindObjectsInactive.Include,
+                FindObjectsSortMode.None);
+            Require(localDebrisPortals.Length >= 2, "map_debris_portal_pair_missing", errors);
+            foreach (var portal in localDebrisPortals)
+            {
+                var serializedPortal = new SerializedObject(portal);
+                RequireObject(
+                    serializedPortal,
+                    "destination",
+                    $"map_debris_portal_destination_missing portal={portal.name}",
+                    errors);
+            }
+
+            FindOne<WarpChargeDebugInput>("map_warp_charge_debug_input", errors);
+            ValidateSceneSellZones("map", errors);
+
+            var enemyDeviceTargets = UnityEngine.Object.FindObjectsByType<EnemyDeviceTarget>(
+                FindObjectsInactive.Include,
+                FindObjectsSortMode.None);
             Require(
-                UnityEngine.Object.FindObjectsByType<NetworkScenePortalInteractable>(
-                    FindObjectsInactive.Include,
-                    FindObjectsSortMode.None).Any(portal =>
-                    {
-                        var serializedPortal = new SerializedObject(portal);
-                        return serializedPortal.FindProperty("destinationSceneName")?.stringValue
-                            == "PHS_DebrisCollectionScene";
-                    }),
-                "map_debris_portal_connection_missing",
+                enemyDeviceTargets.Length >= 4,
+                $"map_enemy_device_targets_insufficient actual={enemyDeviceTargets.Length}",
                 errors);
+            foreach (var deviceTarget in enemyDeviceTargets)
+            {
+                var serializedDeviceTarget = new SerializedObject(deviceTarget);
+                RequireObject(
+                    serializedDeviceTarget,
+                    "visualRoot",
+                    $"map_enemy_device_visual_missing target={deviceTarget.name}",
+                    errors);
+                Require(
+                    serializedDeviceTarget.FindProperty("destructionAccident")?.enumValueIndex
+                        != (int)PHSShipAccidentId.None,
+                    $"map_enemy_device_accident_missing target={deviceTarget.name}",
+                    errors);
+                Require(
+                    !string.IsNullOrWhiteSpace(
+                        serializedDeviceTarget.FindProperty("requestedAnchorId")?.stringValue),
+                    $"map_enemy_device_anchor_missing target={deviceTarget.name}",
+                    errors);
+                Require(
+                    deviceTarget.GetComponentInChildren<Collider>(true) != null,
+                    $"map_enemy_device_collider_missing target={deviceTarget.name}",
+                    errors);
+            }
 
             foreach (var safeZone in UnityEngine.Object.FindObjectsByType<NetworkWarpSafeZone>(
                          FindObjectsInactive.Include,
@@ -468,7 +500,6 @@ namespace LastJumpCrew.ParkHanSol.Editor
             }
 
             ValidateShopCatalog(errors);
-            ValidateSceneSellZone("shop", errors);
             ValidatePartyCreditsWiring(
                 "shop",
                 FindOne<PartyCreditsHudBinder>("shop_party_credits_hud_binder", errors),
@@ -717,32 +748,6 @@ namespace LastJumpCrew.ParkHanSol.Editor
             }
         }
 
-        private static void ValidateDebrisScene(ICollection<string> errors)
-        {
-            OpenAndValidateScene(DebrisScenePath, errors);
-            ValidateGameplayContext("debris", errors);
-            FindOne<NetworkDebrisCollectionZone>("debris_collection_zone", errors);
-
-            var safeVolume = FindOne<NetworkDebrisSafeVolume>("debris_safe_volume", errors);
-            if (safeVolume != null)
-            {
-                var serializedSafeVolume = new SerializedObject(safeVolume);
-                RequireObject(serializedSafeVolume, "collectionZone", "debris_safe_collection_zone_missing", errors);
-                RequireObject(serializedSafeVolume, "safeTrigger", "debris_safe_trigger_missing", errors);
-            }
-
-            var returnPortal = FindOne<NetworkScenePortalInteractable>("debris_return_portal", errors);
-            if (returnPortal != null)
-            {
-                var serializedReturnPortal = new SerializedObject(returnPortal);
-                Require(
-                    serializedReturnPortal.FindProperty("destinationSceneName")?.stringValue == "PHS_Map_ver1",
-                    "debris_return_portal_destination_invalid",
-                    errors);
-            }
-            ValidateSceneSellZone("debris", errors);
-        }
-
         private static void ValidateGravityScene(ICollection<string> errors)
         {
             OpenAndValidateScene(GravityScenePath, errors);
@@ -803,6 +808,10 @@ namespace LastJumpCrew.ParkHanSol.Editor
             Require(prefab.GetComponent<NetworkObject>() != null, "player_network_object_missing", errors);
             Require(prefab.GetComponent<NetworkPlayerController>() != null, "player_controller_missing", errors);
             Require(prefab.GetComponent<NetworkPlayerLifeState>() != null, "player_life_state_missing", errors);
+            Require(
+                prefab.GetComponent<PlayerEnemyTargetRegistration>() != null,
+                "player_enemy_target_registration_missing",
+                errors);
             Require(prefab.GetComponent<NetworkPlayerItemRecord>() != null, "player_item_record_missing", errors);
             Require(prefab.GetComponent<TempPlayerItemHolder>() != null, "player_item_holder_missing", errors);
             Require(
@@ -1189,18 +1198,31 @@ namespace LastJumpCrew.ParkHanSol.Editor
             }
         }
 
-        private static void ValidateSceneSellZone(string sceneLabel, ICollection<string> errors)
+        private static void ValidateSceneSellZones(string sceneLabel, ICollection<string> errors)
         {
-            var sellZone = FindOne<DebrisSellZone>($"{sceneLabel}_sell_zone", errors);
-            if (sellZone == null)
+            var sellZones = UnityEngine.Object.FindObjectsByType<DebrisSellZone>(
+                FindObjectsInactive.Include,
+                FindObjectsSortMode.None);
+            Require(sellZones.Length > 0, $"{sceneLabel}_sell_zone_missing", errors);
+            foreach (var sellZone in sellZones)
             {
-                return;
+                Require(
+                    sellZone.GetComponent<NetworkObject>() != null,
+                    $"{sceneLabel}_sell_zone_network_object_missing zone={sellZone.name}",
+                    errors);
+                var serializedZone = new SerializedObject(sellZone);
+                RequireObject(
+                    serializedZone,
+                    "shopWalletSource",
+                    $"{sceneLabel}_sell_wallet_missing zone={sellZone.name}",
+                    errors);
+                RequireArray(
+                    serializedZone,
+                    "sellableDebris",
+                    5,
+                    $"{sceneLabel}_sellable_debris_insufficient zone={sellZone.name}",
+                    errors);
             }
-
-            Require(sellZone.GetComponent<NetworkObject>() != null, $"{sceneLabel}_sell_zone_network_object_missing", errors);
-            var serializedZone = new SerializedObject(sellZone);
-            RequireObject(serializedZone, "shopWalletSource", $"{sceneLabel}_sell_wallet_missing", errors);
-            RequireArray(serializedZone, "sellableDebris", 5, $"{sceneLabel}_sellable_debris_insufficient", errors);
         }
 
         private static void ValidateGameplayContext(string sceneLabel, ICollection<string> errors)
