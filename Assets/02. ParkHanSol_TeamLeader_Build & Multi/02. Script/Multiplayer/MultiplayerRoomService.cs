@@ -354,7 +354,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
                 return true;
             }
 
-            if (password.Length >= 8 && password.Length <= 64)
+            if (password.Length >= 8 && password.Length <= 12)
             {
                 return true;
             }

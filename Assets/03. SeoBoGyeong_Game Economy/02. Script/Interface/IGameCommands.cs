@@ -9,6 +9,7 @@ namespace LastJumpCrew.SeoBoGyeong
         void StartGame();
         void SelectZone(int zoneId);
         void RequestJump();                          // 점프(워프) 버튼
+        void SetStageTimerPaused(bool paused);       // 안전구역 재정비 중 스테이지 타이머 정지
         void CloseShop();
         void ReportGameOver(GameOverReason reason);  // 함선 파괴/전멸 등 외부 실패 보고
 

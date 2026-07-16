@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using TMPro;
 using UnityEngine;
+using LastJumpCrew.ParkHanSol.Multiplayer.ShipAccidents;
 
 namespace LastJumpCrew.ParkHanSol.Multiplayer.Events
 {
@@ -89,6 +90,8 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Events
 
         private bool hasValidatedSetup;
         private bool isConfigured;
+        private string externalAlertText = string.Empty;
+        private string internalAccidentAlertText = string.Empty;
 
         public bool IsConfigured
         {
@@ -112,8 +115,8 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Events
                 return;
             }
 
-            eventAlertRoot.SetActive(viewModel.IsAlertVisible);
-            eventAlertText.text = viewModel.AlertText;
+            externalAlertText = viewModel.AlertText;
+            RefreshAlertText();
 
             foreach (var roomView in roomViews)
             {
@@ -152,8 +155,9 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Events
 
         public void HideOffline()
         {
-            if (eventAlertRoot != null) eventAlertRoot.SetActive(false);
-            if (eventAlertText != null) eventAlertText.text = string.Empty;
+            externalAlertText = string.Empty;
+            internalAccidentAlertText = string.Empty;
+            RefreshAlertText();
             if (shipMapRoot != null) shipMapRoot.SetActive(false);
 
             if (roomViews == null)
@@ -165,6 +169,55 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Events
             {
                 roomView?.Clear(true);
             }
+        }
+
+        public void SetInternalAccidentLines(IReadOnlyList<PHSShipAccidentHudLine> lines)
+        {
+            if (!IsConfigured)
+            {
+                return;
+            }
+
+            if (lines == null || lines.Count == 0)
+            {
+                internalAccidentAlertText = string.Empty;
+                RefreshAlertText();
+                return;
+            }
+
+            var builder = new System.Text.StringBuilder(128);
+            builder.Append("내부 사고");
+            foreach (var line in lines)
+            {
+                builder.Append('\n');
+                builder.Append("• ");
+                builder.Append(line.DisplayName);
+                builder.Append(" · ");
+                builder.Append(line.ModuleName);
+                builder.Append(" · ");
+                builder.Append(line.RepairProgress);
+                builder.Append('/');
+                builder.Append(line.RequiredRepairProgress);
+            }
+
+            internalAccidentAlertText = builder.ToString();
+            RefreshAlertText();
+        }
+
+        private void RefreshAlertText()
+        {
+            if (eventAlertRoot == null || eventAlertText == null)
+            {
+                return;
+            }
+
+            var text = string.IsNullOrWhiteSpace(externalAlertText)
+                ? internalAccidentAlertText
+                : string.IsNullOrWhiteSpace(internalAccidentAlertText)
+                    ? externalAlertText
+                    : $"{externalAlertText}\n{internalAccidentAlertText}";
+            eventAlertRoot.SetActive(!string.IsNullOrWhiteSpace(text));
+            eventAlertText.text = text;
         }
 
         private bool ValidateSetup()

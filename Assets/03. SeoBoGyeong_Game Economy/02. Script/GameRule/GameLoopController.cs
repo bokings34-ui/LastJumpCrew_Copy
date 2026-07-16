@@ -21,6 +21,7 @@ namespace LastJumpCrew.SeoBoGyeong
         private readonly IShipStatus ship;
         private readonly IDeathEventGate deathGate;
         private readonly CountdownTimer stageTimer = new();
+        private bool stageTimerPaused;
 
         public GameLoopController(GameLoopState loop, IShipStatus ship, IDeathEventGate deathGate)
         {
@@ -34,6 +35,7 @@ namespace LastJumpCrew.SeoBoGyeong
         {
             loop.ClearedZoneCount = 0;
             stageTimer.Stop();
+            stageTimerPaused = false;
             SetPhase(GamePhase.ZoneSelect);
         }
 
@@ -41,6 +43,7 @@ namespace LastJumpCrew.SeoBoGyeong
         public void OnZoneSelected(int zoneId)
         {
             loop.SelectedZoneId = zoneId;
+            stageTimerPaused = false;
             stageTimer.Start(GameLoopState.STAGE_TIME_LIMIT);
             loop.StageTimeRemaining = stageTimer.Remaining;
             SetPhase(GamePhase.Play);
@@ -54,6 +57,7 @@ namespace LastJumpCrew.SeoBoGyeong
         public bool TickStageTimer(float deltaTime)
         {
             if (loop.Phase != GamePhase.Play) return false;
+            if (stageTimerPaused) return false;
             if (!stageTimer.IsRunning) return false;
 
             bool justExpired = stageTimer.Tick(deltaTime);
@@ -75,6 +79,11 @@ namespace LastJumpCrew.SeoBoGyeong
                 deathGate.ExecuteConfirmedDeath();
             }
             return true;
+        }
+
+        public void SetStageTimerPaused(bool paused)
+        {
+            stageTimerPaused = paused;
         }
 
         /// <summary>

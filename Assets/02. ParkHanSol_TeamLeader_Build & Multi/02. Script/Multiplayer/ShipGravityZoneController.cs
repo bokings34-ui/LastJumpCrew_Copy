@@ -184,7 +184,9 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
                 return;
             }
 
-            generatorRenderer.enabled = isEnabled;
+            // Generator body remains visible during a gravity failure. State feedback belongs
+            // to its dedicated indicator, not the only renderer on the placed model.
+            generatorRenderer.enabled = true;
             if (changed)
             {
                 GravityStateChanged?.Invoke(isEnabled);

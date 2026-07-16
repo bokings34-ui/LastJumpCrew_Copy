@@ -185,6 +185,11 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
 
             if (synchronizedPhase.Value == NetworkRunPhase.WarpSafe)
             {
+                if (TryBindGameFlow() && gameState.Phase == GamePhase.GameOver)
+                {
+                    SetPhase(NetworkRunPhase.GameOver);
+                }
+
                 return;
             }
 
@@ -492,14 +497,12 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
         {
             if (!departingWarpSafeZone)
             {
-                if (!TryMovePlayersToWarpSafeZone(out var safeZoneReason))
-                {
-                    SetPhase(NetworkRunPhase.WarpReady);
-                    Debug.LogError($"PHS_RUN_FLOW_WARP_SAFE_ENTRY_FAILED reason={safeZoneReason}", this);
-                    return;
-                }
-
+                safePlayerIds.Clear();
+                debrisPlayerIds.Clear();
+                RefreshSafePlayerCount();
                 SetPhase(NetworkRunPhase.WarpSafe);
+                gameCommands.SetStageTimerPaused(true);
+                NetworkEventCoordinator.Instance?.TryStopSchedulerServer();
                 Debug.Log("PHS_RUN_FLOW_WARP_SAFE_ENTERED", this);
                 return;
             }
@@ -544,6 +547,14 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
 
         private float CalculateWarpChargeSpeedMultiplier()
         {
+            var shipSystemsState = NetworkShipSystemsState.Instance;
+            if (shipSystemsState != null
+                && shipSystemsState.TryGetModuleSnapshot(NetworkShipModuleId.Engine, out var engineSnapshot)
+                && engineSnapshot.CurrentHp <= 0)
+            {
+                return 0f;
+            }
+
             if (!mapCatalog.TryResolve(ActiveMapId, out var profile))
             {
                 return 1f;
@@ -841,10 +852,10 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
                     return false;
                 }
 
+                safePlayerIds.Add(pair.Key);
                 slot++;
             }
 
-            safePlayerIds.Clear();
             debrisPlayerIds.Clear();
             RefreshSafePlayerCount();
             reason = null;

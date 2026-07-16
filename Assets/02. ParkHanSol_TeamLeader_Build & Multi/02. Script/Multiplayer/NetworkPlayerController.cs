@@ -23,7 +23,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
         [SerializeField, Min(0.1f)] private float maximumFallSpeed = 14f;
         [Header("Cinematic Zero Gravity Thruster")]
         [SerializeField, Min(1f)] private float thrusterFuelCapacity = 100f;
-        [SerializeField, Min(0.1f)] private float thrusterFuelUsePerSecond = 30f;
+        [SerializeField, Min(0.1f)] private float thrusterFuelUsePerSecond = 7.5f;
         [SerializeField, Min(0f)] private float thrusterFuelRecoveryDelay = 1f;
         [SerializeField, Min(0.1f)] private float thrusterFuelRecoveryPerSecond = 18f;
         [SerializeField, Min(0.1f)] private float thrusterAcceleration = 7f;
@@ -604,6 +604,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
             SetGameplayInputEnabled(isGameplayScene);
             if (isGameplayScene)
             {
+                ReleaseWarpInputForShop();
                 hudBindingErrorLogTime = Time.time + 0.5f;
                 MoveToGameplaySpawnPointIfServer(activeScene);
             }
@@ -615,6 +616,16 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
             }
 
             Debug.Log($"PHS_PLAYER_SCENE_STATE scene={SceneManager.GetActiveScene().name} owner={IsOwner} input={gameplayInputEnabled}");
+        }
+
+        private void ReleaseWarpInputForShop()
+        {
+            if (SceneManager.GetActiveScene().name != "PHS_ExteriorShopScene")
+            {
+                return;
+            }
+
+            SetWarpInputBlocked(false);
         }
 
         private void LateUpdate()

@@ -42,6 +42,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.ShipAccidents
 
         public int ActiveAccidentCount => activeAccidents.Count;
         public static PHSNetworkShipAccidentCoordinator Instance { get; private set; }
+        public event Action ActiveAccidentsChanged;
 
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
         private static void ResetStatics()
@@ -57,6 +58,19 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.ShipAccidents
             }
 
             return activeAccidents[index];
+        }
+
+        public bool TryGetAccidentDefinition(
+            PHSShipAccidentId accidentId,
+            out PHSShipAccidentDefinitionSO definition)
+        {
+            if (accidentCatalog != null && accidentCatalog.TryResolve(accidentId, out definition))
+            {
+                return true;
+            }
+
+            definition = null;
+            return false;
         }
 
         private void Awake()
@@ -88,6 +102,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.ShipAccidents
             Instance = this;
             activeAccidents.OnListChanged += HandleAccidentListChanged;
             RefreshPresentations();
+            ActiveAccidentsChanged?.Invoke();
         }
 
         public override void OnNetworkDespawn()
@@ -663,6 +678,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.ShipAccidents
             NetworkListEvent<NetworkShipAccidentSnapshot> changeEvent)
         {
             RefreshPresentations();
+            ActiveAccidentsChanged?.Invoke();
         }
 
         private void RefreshPresentations()
