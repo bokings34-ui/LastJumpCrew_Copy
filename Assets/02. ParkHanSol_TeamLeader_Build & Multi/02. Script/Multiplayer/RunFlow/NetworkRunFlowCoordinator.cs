@@ -14,7 +14,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
     public sealed class NetworkRunFlowCoordinator : NetworkBehaviour, IRunFlowStatus
     {
         [Header("Run Rules")]
-        [SerializeField, Min(1f)] private float warpChargeSeconds = 30f;
+        [SerializeField, Min(1f)] private float warpChargeSeconds = 120f;
         [SerializeField, Min(0.1f)] private float warpTransitionSeconds = 1.5f;
         [SerializeField, Min(0.1f)] private float warpArrivalSeconds = 1f;
         [SerializeField, Min(0f)] private float rearmSeconds = 8f;
