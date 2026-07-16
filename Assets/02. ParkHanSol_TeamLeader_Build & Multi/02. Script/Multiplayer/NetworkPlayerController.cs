@@ -1061,6 +1061,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
 
         private void TeleportTo(Vector3 targetPosition, Quaternion targetRotation)
         {
+            ResetGravityTracking();
             var wasEnabled = characterController != null && characterController.enabled;
             if (characterController != null)
             {
@@ -1078,6 +1079,16 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
             }
 
             Debug.Log($"PHS_PLAYER_TELEPORT_OK player={name} pos={targetPosition}");
+        }
+
+        private void ResetGravityTracking()
+        {
+            gravityAreas.Clear();
+            ApplyGravityAreaMode();
+            if (TryGetComponent<PlayerGravityReceiver>(out var gravityReceiver))
+            {
+                gravityReceiver.ResetGravitySources();
+            }
         }
 
         private void ApplyLocalLook(Vector2 look)

@@ -54,6 +54,12 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
             ApplyCurrentGravity();
         }
 
+        public void ResetGravitySources()
+        {
+            gravitySources.Clear();
+            ApplyCurrentGravity();
+        }
+
         private void ApplyCurrentGravity()
         {
             if (playerController == null)

@@ -207,24 +207,55 @@ namespace LastJumpCrew.ParkHanSol.Editor
             FindOne<WarpChargeDebugInput>("map_warp_charge_debug_input", errors);
             ValidateSceneSellZones("map", errors);
 
-            var debrisGravityArea = UnityEngine.Object.FindObjectsByType<NetworkPlayerGravityArea>(
+            var debrisServiceGravityArea = UnityEngine.Object.FindObjectsByType<NetworkPlayerGravityArea>(
                     FindObjectsInactive.Include,
                     FindObjectsSortMode.None)
                 .FirstOrDefault(area => area.name == "PHS_ServiceGravityArea");
-            Require(debrisGravityArea != null, "map_debris_gravity_area_missing", errors);
-            if (debrisGravityArea != null)
+            Require(debrisServiceGravityArea != null, "map_debris_service_gravity_area_missing", errors);
+            if (debrisServiceGravityArea != null)
             {
-                var serializedGravityArea = new SerializedObject(debrisGravityArea);
+                var serializedGravityArea = new SerializedObject(debrisServiceGravityArea);
                 Require(
                     serializedGravityArea.FindProperty("gravityMode")?.enumValueIndex
-                        == (int)NetworkPlayerGravityMode.Spacewalk,
-                    "map_debris_gravity_mode_invalid",
+                        == (int)NetworkPlayerGravityMode.ShipGravity,
+                    "map_debris_service_gravity_mode_invalid expected=ShipGravity",
                     errors);
                 Require(
-                    serializedGravityArea.FindProperty("priority")?.intValue >= 1000,
-                    "map_debris_gravity_priority_invalid",
+                    serializedGravityArea.FindProperty("priority")?.intValue == 1000,
+                    "map_debris_service_gravity_priority_invalid expected=1000",
                     errors);
             }
+
+            var exteriorGravityArea = UnityEngine.Object.FindObjectsByType<NetworkPlayerGravityArea>(
+                    FindObjectsInactive.Include,
+                    FindObjectsSortMode.None)
+                .FirstOrDefault(area => area.name == "PHS_Exterior_ZeroGravityArea");
+            Require(exteriorGravityArea != null, "map_exterior_gravity_area_missing", errors);
+            if (exteriorGravityArea != null)
+            {
+                var serializedExteriorArea = new SerializedObject(exteriorGravityArea);
+                Require(
+                    serializedExteriorArea.FindProperty("gravityMode")?.enumValueIndex
+                        == (int)NetworkPlayerGravityMode.Spacewalk,
+                    "map_exterior_gravity_area_mode_invalid expected=Spacewalk",
+                    errors);
+            }
+
+            var gravityZones = UnityEngine.Object.FindObjectsByType<GravityZone>(
+                FindObjectsInactive.Include,
+                FindObjectsSortMode.None);
+            ValidateGravityZone(
+                gravityZones.FirstOrDefault(zone => zone.name == "PHS_Exterior_ZeroGravityArea"),
+                LastJumpCrew.Common.GravityMode.Spacewalk,
+                0,
+                "map_exterior_gravity_zone",
+                errors);
+            ValidateGravityZone(
+                gravityZones.FirstOrDefault(zone => zone.name == "PHS_ServiceGravityArea"),
+                LastJumpCrew.Common.GravityMode.ShipGravity,
+                1000,
+                "map_debris_service_gravity_zone",
+                errors);
 
             var enemyDeviceTargets = UnityEngine.Object.FindObjectsByType<EnemyDeviceTarget>(
                 FindObjectsInactive.Include,
@@ -831,6 +862,17 @@ namespace LastJumpCrew.ParkHanSol.Editor
                 prefab.GetComponent<PlayerEnemyTargetRegistration>() != null,
                 "player_enemy_target_registration_missing",
                 errors);
+            var gravityReceiver = prefab.GetComponent<PlayerGravityReceiver>();
+            Require(gravityReceiver != null, "player_gravity_receiver_missing", errors);
+            if (gravityReceiver != null)
+            {
+                var serializedGravityReceiver = new SerializedObject(gravityReceiver);
+                Require(
+                    serializedGravityReceiver.FindProperty("defaultGravityMode")?.enumValueIndex
+                        == (int)LastJumpCrew.Common.GravityMode.ShipGravity,
+                    "player_default_gravity_mode_invalid expected=ShipGravity",
+                    errors);
+            }
             var combatController = prefab.GetComponent<NetworkPlayerCombatController>();
             Require(combatController != null, "player_combat_controller_missing", errors);
             if (combatController != null)
@@ -1069,6 +1111,30 @@ namespace LastJumpCrew.ParkHanSol.Editor
             {
                 PrefabUtility.UnloadPrefabContents(prefab);
             }
+        }
+
+        private static void ValidateGravityZone(
+            GravityZone zone,
+            LastJumpCrew.Common.GravityMode expectedMode,
+            int expectedPriority,
+            string errorPrefix,
+            ICollection<string> errors)
+        {
+            Require(zone != null, $"{errorPrefix}_missing", errors);
+            if (zone == null)
+            {
+                return;
+            }
+
+            var serializedZone = new SerializedObject(zone);
+            Require(
+                serializedZone.FindProperty("gravityMode")?.enumValueIndex == (int)expectedMode,
+                $"{errorPrefix}_mode_invalid expected={expectedMode}",
+                errors);
+            Require(
+                serializedZone.FindProperty("priority")?.intValue == expectedPriority,
+                $"{errorPrefix}_priority_invalid expected={expectedPriority}",
+                errors);
         }
 
         private static void ValidateShipPowerWiring(ICollection<string> errors)
