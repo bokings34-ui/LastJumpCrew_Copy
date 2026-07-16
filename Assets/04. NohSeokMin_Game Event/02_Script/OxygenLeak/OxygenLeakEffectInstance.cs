@@ -10,15 +10,19 @@ namespace SM
         [Header("벽 무시 레이어 설정")]
         [SerializeField] private LayerMask _wallLayerMask;
 
+        [Header("흡입력 감소 설정")]
+        [SerializeField] private float pullActiveDuration = 5f;
+
         private float _outerPullRadius;
         private float _innerDamageRadius;
-        private float _pullSpeed;
+        private float _initialPullSpeed;
         private int _centerDamage;
         private float _damageTickInterval;
         private float _maxRepairProgress;
 
         private float _repairProgress;
         private float _damageTimer;
+        private float _elapsedSinceSpawn;
 
         public bool IsSealed { get; private set; }
         public event Action<OxygenLeakEffectInstance> OnSealed;
@@ -30,13 +34,14 @@ namespace SM
         {
             _outerPullRadius = data.outerPullRadius;
             _innerDamageRadius = data.innerDamageRadius;
-            _pullSpeed = data.pullSpeed;
+            _initialPullSpeed = data.pullSpeed;
             _centerDamage = data.centerDamage;
             _damageTickInterval = data.damageTickInterval;
             _maxRepairProgress = data.maxRepairProgress;
 
             _repairProgress = 0f;
             _damageTimer = 0f;
+            _elapsedSinceSpawn = 0f;
             IsSealed = false;
 
             gameObject.SetActive(true);
@@ -52,9 +57,19 @@ namespace SM
         {
             if (IsSealed) return;
 
+            _elapsedSinceSpawn += Time.deltaTime;
+
             FindPlayersInRange();
             PullPlayers();
             ApplyCenterDamage();
+        }
+
+        private float GetCurrentPullSpeed()
+        {
+            if (_elapsedSinceSpawn >= pullActiveDuration) return 0f;
+
+            float t = _elapsedSinceSpawn / pullActiveDuration;
+            return Mathf.Lerp(_initialPullSpeed, 0f, t);
         }
 
         private void FindPlayersInRange()
@@ -82,6 +97,9 @@ namespace SM
 
         private void PullPlayers()
         {
+            float currentPullSpeed = GetCurrentPullSpeed();
+            if (currentPullSpeed <= 0f) return;
+
             foreach (var kvp in _playersInRange)
             {
                 var playerTransform = kvp.Key;
@@ -92,7 +110,7 @@ namespace SM
 
                 if (direction.sqrMagnitude < 0.01f) continue;
 
-                Vector3 pullMotion = direction.normalized * _pullSpeed * Time.deltaTime;
+                Vector3 pullMotion = direction.normalized * currentPullSpeed * Time.deltaTime;
                 controller.Move(pullMotion);
             }
         }
