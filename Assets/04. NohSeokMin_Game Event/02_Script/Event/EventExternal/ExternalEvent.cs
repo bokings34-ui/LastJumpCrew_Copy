@@ -28,7 +28,7 @@ namespace SM
 
             if (_elapsedTime >= MiniGameTimeLimit)
             {
-                Debug.Log($"[{Id}] 제한 시간({MiniGameTimeLimit}초) 초과, 실패.");
+                Debug.Log($"<color=lime>[{Id}]</color> 제한 시간({MiniGameTimeLimit}초) 초과, 실패.");
                 OnFail();
             }
         }
