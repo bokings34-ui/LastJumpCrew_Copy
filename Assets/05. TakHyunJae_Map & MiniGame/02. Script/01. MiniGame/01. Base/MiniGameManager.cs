@@ -6,14 +6,6 @@ using UnityEngine;
 using UnityEngine.InputSystem;
 using UnityEngine.UI;
 
-public enum MiniGameType
-{
-    DoorKeypad,
-    WireFix,
-    PowerSync,
-    Cannon
-}
-
 public class MiniGameManager : MonoBehaviour
 {
     public static MiniGameManager Instance;
@@ -54,23 +46,16 @@ public class MiniGameManager : MonoBehaviour
         // 💡 연출(점멸 및 슬라이드)이 진행 중일 때는 모든 입력을 막아서 버그 방지
         if (Keyboard.current == null || isFlashing) return;
 
-        if (Keyboard.current.digit1Key.wasPressedThisFrame) HandleInput(MiniGameType.DoorKeypad);
-        if (Keyboard.current.digit2Key.wasPressedThisFrame) HandleInput(MiniGameType.WireFix);
-        if (Keyboard.current.digit3Key.wasPressedThisFrame) HandleInput(MiniGameType.PowerSync);
-        if (Keyboard.current.digit4Key.wasPressedThisFrame) HandleInput(MiniGameType.Cannon);
+        // ❌ [삭제됨] 기존에 있던 1, 2, 3, 4 숫자 키 입력 코드를 완전히 삭제했습니다!
 
+        // 💡 (선택) 미니게임 도중 ESC를 누르면 강제로 실패(종료) 처리하는 기능만 남겨두었습니다.
         if (Keyboard.current.escapeKey.wasPressedThisFrame && activeGame != null)
         {
             activeGame.ForceFail();
         }
     }
 
-    private void HandleInput(MiniGameType type)
-    {
-        if (activeGame != null) activeGame.ForceFail();
-        else OpenMiniGame(type, null);
-    }
-
+    // 💡 큐브 단말기(MiniGameTerminal)에서 쏘아 올려줄 핵심 오픈 함수!
     public void OpenMiniGame(MiniGameType type, IMiniGameTarget target)
     {
         // 석민 추가 (이벤트 -> 미니게임 연결)
@@ -86,16 +71,16 @@ public class MiniGameManager : MonoBehaviour
             if (mg.gameType == type)
             {
                 mg.gameObject.SetActive(true);
-                mg.StartGame(target);
+                mg.StartGame(target); // 미니게임 시작 및 큐브(Target) 연결
                 activeGame = mg;
 
-                // 💡 열릴 때: 위에서 아래로 떨어지기
+                // 열릴 때: 위에서 아래로 스무스하게 떨어지기
                 if (slideCoroutine != null) StopCoroutine(slideCoroutine);
                 slideCoroutine = StartCoroutine(SlideDownRoutine(mg.GetComponent<RectTransform>()));
             }
             else
             {
-                mg.gameObject.SetActive(false);
+                mg.gameObject.SetActive(false); // 선택되지 않은 다른 미니게임은 확실히 꺼둠
             }
         }
     }
@@ -120,7 +105,7 @@ public class MiniGameManager : MonoBehaviour
         panelRect.anchoredPosition = endPos;
     }
 
-    // 💡 미니게임 종료 호출부
+    // 💡 미니게임 종료 시 호출부
     public void EndMiniGame(bool isSuccess)
     {
         if (isFlashing) return;
@@ -132,10 +117,9 @@ public class MiniGameManager : MonoBehaviour
     {
         isFlashing = true; // 연출 시작 (입력 차단)
 
-        // 1단계: 화면 번쩍임 (파란색 / 빨간색)
+        // 1단계: 화면 번쩍임 (성공 시 파란색 / 실패 시 빨간색)
         if (flashScreen != null)
         {
-            // 색상을 투명도가 약간 있는 색으로 덮어씌우면 더 예쁩니다.
             flashScreen.color = isSuccess ? new Color(0f, 0.5f, 1f, 0.7f) : new Color(1f, 0f, 0f, 0.7f);
             flashScreen.gameObject.SetActive(true);
         }
@@ -158,7 +142,7 @@ public class MiniGameManager : MonoBehaviour
         isFlashing = false; // 연출 끝 (입력 허용)
     }
 
-    // 💡 밑에서 위로 슉! 올라가는 애니메이션
+    // 💡 밑에서 위로 슉! 올라가는 닫기 애니메이션
     private IEnumerator SlideUpRoutine(RectTransform panelRect)
     {
         if (panelRect == null) yield break;

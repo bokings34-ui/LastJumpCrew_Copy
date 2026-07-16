@@ -7,7 +7,7 @@ namespace LastJumpCrew.ParkHanSol.Interaction
     public sealed class DebrisSellZone : MonoBehaviour
     {
         [SerializeField] private BoxCollider sellTrigger;
-        [SerializeField] private PartyDebrisWallet partyWallet;
+        [SerializeField] private MonoBehaviour partyWallet;
         [SerializeField] private string debrisTag = "Debris";
 
         private readonly HashSet<DebrisItem> pendingItems = new();
@@ -49,7 +49,7 @@ namespace LastJumpCrew.ParkHanSol.Interaction
                     continue;
                 }
 
-                partyWallet.AddCredits(debrisItem.Value);
+                ResolvePartyWallet().AddCredits(debrisItem.Value);
                 Debug.Log($"PHS_DEBRIS_SOLD zone={name} debris={debrisItem.name} value={debrisItem.Value}");
 
                 // 월드 데브리만 여기서 직접 제거한다. 손에 든 데브리는 Holder가
@@ -141,13 +141,23 @@ namespace LastJumpCrew.ParkHanSol.Interaction
                 return false;
             }
 
-            if (partyWallet == null)
+            if (ResolvePartyWallet() == null)
             {
                 Debug.LogError($"PHS_DEBRIS_SELL_SETUP_FAILED reason=party_wallet_missing zone={name}");
                 return false;
             }
 
             return true;
+        }
+
+        private IPartyCreditsWallet ResolvePartyWallet()
+        {
+            if (partyWallet is IPartyCreditsWallet configuredWallet)
+            {
+                return configuredWallet;
+            }
+
+            return SessionPartyCreditsWallet.Instance;
         }
     }
 }

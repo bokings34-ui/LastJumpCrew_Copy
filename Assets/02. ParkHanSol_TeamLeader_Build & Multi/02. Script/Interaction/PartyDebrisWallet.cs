@@ -28,6 +28,18 @@ namespace LastJumpCrew.ParkHanSol.Interaction
             Debug.Log($"PHS_DEBRIS_WALLET_CREDITS_ADDED wallet={name} value={value} total={credits}");
         }
 
+        public bool TrySpendCredits(int value)
+        {
+            if (value <= 0 || credits < value)
+            {
+                return false;
+            }
+
+            credits -= value;
+            RefreshHud();
+            return true;
+        }
+
         private void RefreshHud()
         {
             if (playHudPresenter == null)

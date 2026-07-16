@@ -64,6 +64,19 @@ namespace LastJumpCrew.ParkHanSol.Interaction
 
         public string InteractionPrompt => interactionPrompt;
 
+        public bool TryReceiveDelivery(UtilityItemPrefabData itemPrefabData)
+        {
+            if (storedItemPrefabData != null || !CanDisplayItem(itemPrefabData))
+            {
+                return false;
+            }
+
+            storedItemPrefabData = itemPrefabData;
+            RefreshVisual();
+            Debug.Log($"PHS_TOOL_BOX_SLOT_DELIVERY_RECEIVED slot={name} item={itemPrefabData.ItemId}");
+            return true;
+        }
+
         private void Awake()
         {
             RefreshVisual();
