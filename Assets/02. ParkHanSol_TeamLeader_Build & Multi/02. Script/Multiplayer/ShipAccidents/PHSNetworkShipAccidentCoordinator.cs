@@ -126,7 +126,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.ShipAccidents
             }
 
             nextSpawnTime = NetworkManager.ServerTime.Time + RollNextInterval();
-            if (activeAccidents.Count >= maximumActiveAccidents)
+            if (maximumActiveAccidents > 0 && activeAccidents.Count >= maximumActiveAccidents)
             {
                 return;
             }
@@ -858,7 +858,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.ShipAccidents
                 return false;
             }
 
-            if (candidateMaximumActiveAccidents <= 0)
+            if (candidateMaximumActiveAccidents < 0)
             {
                 reason = "maximum_active_accidents_invalid";
                 return false;

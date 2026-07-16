@@ -47,13 +47,15 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Maps
         [FormerlySerializedAs("eventIntervalMaxSeconds")]
         [SerializeField, Min(0.1f)] private float externalThreatIntervalMaxSeconds = 60f;
         [FormerlySerializedAs("maximumActiveEvents")]
-        [SerializeField, Min(1)] private int maximumActiveExternalThreats = 1;
+        [Tooltip("0 = no limit")]
+        [SerializeField, Min(0)] private int maximumActiveExternalThreats;
 
         [Header("Internal Accident Schedule")]
         [SerializeField] private List<PHSMapShipAccidentWeight> internalAccidentWeights = new();
         [SerializeField, Min(0.1f)] private float internalAccidentIntervalMinSeconds = 35f;
         [SerializeField, Min(0.1f)] private float internalAccidentIntervalMaxSeconds = 55f;
-        [SerializeField, Min(1)] private int maximumActiveInternalAccidents = 2;
+        [Tooltip("0 = no limit")]
+        [SerializeField, Min(0)] private int maximumActiveInternalAccidents;
         [SerializeField, Min(0.01f)] private float internalModuleDamageMultiplier = 1f;
         [SerializeField, Min(0.01f)] private float internalShipDamageMultiplier = 1f;
 
@@ -213,9 +215,9 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Maps
                 return false;
             }
 
-            if (maximumActiveExternalThreats <= 0)
+            if (maximumActiveExternalThreats < 0)
             {
-                reason = $"maximum_active_external_threats_not_positive:value={maximumActiveExternalThreats}";
+                reason = $"maximum_active_external_threats_negative:value={maximumActiveExternalThreats}";
                 return false;
             }
 
@@ -255,9 +257,9 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Maps
                 return false;
             }
 
-            if (maximumActiveInternalAccidents <= 0)
+            if (maximumActiveInternalAccidents < 0)
             {
-                reason = $"maximum_active_internal_accidents_not_positive:value={maximumActiveInternalAccidents}";
+                reason = $"maximum_active_internal_accidents_negative:value={maximumActiveInternalAccidents}";
                 return false;
             }
 

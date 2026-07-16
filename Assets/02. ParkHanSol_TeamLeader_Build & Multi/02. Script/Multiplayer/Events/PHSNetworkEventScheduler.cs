@@ -23,7 +23,8 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Events
         [FormerlySerializedAs("spawnIntervalSeconds")]
         [SerializeField, Min(1f)] private float intervalMinSeconds = 30f;
         [SerializeField, Min(1f)] private float intervalMaxSeconds = 30f;
-        [SerializeField, Min(1)] private int maximumActiveEvents = 2;
+        [Tooltip("0 = no limit")]
+        [SerializeField, Min(0)] private int maximumActiveEvents;
 
         private float nextSpawnTime;
         private bool isRunning;
@@ -56,7 +57,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Events
             }
 
             nextSpawnTime = Time.time + RollNextInterval();
-            if (CountActiveEvents() >= maximumActiveEvents)
+            if (maximumActiveEvents > 0 && CountActiveEvents() >= maximumActiveEvents)
             {
                 return;
             }
@@ -348,7 +349,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Events
                 return false;
             }
 
-            if (candidateMaximumActiveEvents <= 0)
+            if (candidateMaximumActiveEvents < 0)
             {
                 reason = "maximum_active_events_invalid";
                 return false;
