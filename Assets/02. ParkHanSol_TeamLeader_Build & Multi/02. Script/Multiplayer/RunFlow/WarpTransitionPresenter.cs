@@ -1,9 +1,13 @@
 using System.Collections;
+using LastJumpCrew.ParkHanSol.Multiplayer.Maps;
 using UnityEngine;
 
 namespace LastJumpCrew.ParkHanSol.Multiplayer
 {
-    public sealed class WarpTransitionPresenter : MonoBehaviour, IWarpTransitionView
+    public sealed class WarpTransitionPresenter :
+        MonoBehaviour,
+        IWarpTransitionView,
+        IMapPresentationConfigurator
     {
         [Header("Run Flow")]
         [SerializeField] private NetworkRunFlowCoordinator runFlowCoordinator;
@@ -106,6 +110,36 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
             warpVisualRoot.SetActive(true);
             ApplySkybox(arrivalSkybox);
             transitionRoutine = StartCoroutine(PlayArrival());
+        }
+
+        public bool TryConfigureMapPresentation(
+            Material gameplaySkybox,
+            Material mapArrivalSkybox,
+            out string reason)
+        {
+            if (gameplaySkybox == null)
+            {
+                reason = "gameplay_skybox_missing";
+                return false;
+            }
+
+            if (mapArrivalSkybox == null)
+            {
+                reason = "arrival_skybox_missing";
+                return false;
+            }
+
+            normalSkybox = gameplaySkybox;
+            arrivalSkybox = mapArrivalSkybox;
+            if (runFlowCoordinator == null
+                || runFlowCoordinator.Phase != NetworkRunPhase.Warping
+                && runFlowCoordinator.Phase != NetworkRunPhase.WarpArrival)
+            {
+                ApplySkybox(normalSkybox);
+            }
+
+            reason = null;
+            return true;
         }
 
         private void HandlePhaseChanged(NetworkRunPhase previousPhase, NetworkRunPhase currentPhase)

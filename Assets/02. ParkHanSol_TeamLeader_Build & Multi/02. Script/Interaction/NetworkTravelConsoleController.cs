@@ -1,7 +1,7 @@
 using System.Collections.Generic;
 using LastJumpCrew.ParkHanSol.Multiplayer;
+using LastJumpCrew.ParkHanSol.Multiplayer.Maps;
 using LastJumpCrew.ParkHanSol.Shop;
-using LastJumpCrew.SeoBoGyeong;
 using TMPro;
 using Unity.Netcode;
 using UnityEngine;
@@ -32,8 +32,8 @@ namespace LastJumpCrew.ParkHanSol.Interaction
         [SerializeField] private string shopSceneName = "PHS_ExteriorShopScene";
         [SerializeField, Min(1f)] private float serverInteractionDistance = 4f;
 
-        [Header("Temporary Map Options")]
-        [SerializeField] private ZoneData[] temporaryMapOptions;
+        [Header("Map Options")]
+        [SerializeField] private PHSMapCatalogSO mapCatalog;
 
         [Header("World Screens")]
         [SerializeField] private TMP_Text debrisScreenText;
@@ -60,15 +60,16 @@ namespace LastJumpCrew.ParkHanSol.Interaction
             TravelConsoleDestination.None,
             NetworkVariableReadPermission.Everyone,
             NetworkVariableWritePermission.Server);
-        private readonly NetworkVariable<int> synchronizedLeftMapIndex = new(
-            -1,
+        private readonly NetworkVariable<int> synchronizedLeftMapId = new(
+            0,
             NetworkVariableReadPermission.Everyone,
             NetworkVariableWritePermission.Server);
-        private readonly NetworkVariable<int> synchronizedRightMapIndex = new(
-            -1,
+        private readonly NetworkVariable<int> synchronizedRightMapId = new(
+            0,
             NetworkVariableReadPermission.Everyone,
             NetworkVariableWritePermission.Server);
 
+        private readonly List<PHSMapProfileSO> selectableProfiles = new();
         private bool setupValid;
         private bool sceneLoadRequested;
         private NetworkRunPhase lastServerPhase = (NetworkRunPhase)byte.MaxValue;
@@ -85,16 +86,15 @@ namespace LastJumpCrew.ParkHanSol.Interaction
                 return false;
             }
 
-            var left = temporaryMapOptions[synchronizedLeftMapIndex.Value];
-            var right = temporaryMapOptions[synchronizedRightMapIndex.Value];
-            if (left == null || right == null)
+            leftZoneId = synchronizedLeftMapId.Value;
+            rightZoneId = synchronizedRightMapId.Value;
+            if (!mapCatalog.TryResolve(leftZoneId, out _)
+                || !mapCatalog.TryResolve(rightZoneId, out _))
             {
                 return false;
             }
 
-            leftZoneId = left.id;
-            rightZoneId = right.id;
-            return leftZoneId > 0 && rightZoneId > 0;
+            return leftZoneId > 0 && rightZoneId > 0 && leftZoneId != rightZoneId;
         }
 
         public string ActionPrompt
@@ -123,7 +123,7 @@ namespace LastJumpCrew.ParkHanSol.Interaction
                 && actionReadyMaterial != null
                 && disabledButtonMaterial != null
                 && HasValidObjects(debrisChoiceObjects)
-                && HasValidMapOptions(temporaryMapOptions)
+                && TryBuildSelectableProfiles()
                 && !string.IsNullOrWhiteSpace(debrisSceneName)
                 && !string.IsNullOrWhiteSpace(shopSceneName);
             if (!setupValid)
@@ -140,16 +140,16 @@ namespace LastJumpCrew.ParkHanSol.Interaction
         {
             base.OnNetworkSpawn();
             synchronizedDestination.OnValueChanged += HandleDestinationChanged;
-            synchronizedLeftMapIndex.OnValueChanged += HandleMapOptionChanged;
-            synchronizedRightMapIndex.OnValueChanged += HandleMapOptionChanged;
+            synchronizedLeftMapId.OnValueChanged += HandleMapOptionChanged;
+            synchronizedRightMapId.OnValueChanged += HandleMapOptionChanged;
             RefreshPresentation();
         }
 
         public override void OnNetworkDespawn()
         {
             synchronizedDestination.OnValueChanged -= HandleDestinationChanged;
-            synchronizedLeftMapIndex.OnValueChanged -= HandleMapOptionChanged;
-            synchronizedRightMapIndex.OnValueChanged -= HandleMapOptionChanged;
+            synchronizedLeftMapId.OnValueChanged -= HandleMapOptionChanged;
+            synchronizedRightMapId.OnValueChanged -= HandleMapOptionChanged;
             base.OnNetworkDespawn();
         }
 
@@ -306,7 +306,7 @@ namespace LastJumpCrew.ParkHanSol.Interaction
             {
                 return (SelectedDestination == TravelConsoleDestination.LeftMap
                         || SelectedDestination == TravelConsoleDestination.RightMap)
-                    && TryGetSelectedMapData(out _)
+                    && TryGetSelectedMapProfile(out _)
                     && runFlow.IsWarpSafetySatisfied;
             }
 
@@ -345,13 +345,13 @@ namespace LastJumpCrew.ParkHanSol.Interaction
 
             if (runFlow.Phase == NetworkRunPhase.WarpReady)
             {
-                if (!TryGetSelectedMapData(out var mapData))
+                if (!TryGetSelectedMapProfile(out var mapProfile))
                 {
                     Debug.LogWarning("PHS_TRAVEL_EXECUTE_FAILED reason=map_choice_missing", this);
                     return;
                 }
 
-                if (!runFlow.TrySelectNextZone(mapData.id, out var selectionReason))
+                if (!runFlow.TrySelectNextZone(mapProfile.MapId, out var selectionReason))
                 {
                     Debug.LogWarning($"PHS_TRAVEL_EXECUTE_FAILED reason={selectionReason}", this);
                     return;
@@ -435,8 +435,8 @@ namespace LastJumpCrew.ParkHanSol.Interaction
             }
             else
             {
-                synchronizedLeftMapIndex.Value = -1;
-                synchronizedRightMapIndex.Value = -1;
+                synchronizedLeftMapId.Value = 0;
+                synchronizedRightMapId.Value = 0;
             }
 
             RefreshPresentation();
@@ -444,17 +444,25 @@ namespace LastJumpCrew.ParkHanSol.Interaction
 
         private void RollMapChoices()
         {
-            var leftIndex = Random.Range(0, temporaryMapOptions.Length);
-            var rightIndex = Random.Range(0, temporaryMapOptions.Length - 1);
+            if (selectableProfiles.Count < 2)
+            {
+                Debug.LogError("PHS_TRAVEL_MAP_ROLL_FAILED reason=selectable_profiles_insufficient", this);
+                return;
+            }
+
+            var leftIndex = Random.Range(0, selectableProfiles.Count);
+            var rightIndex = Random.Range(0, selectableProfiles.Count - 1);
             if (rightIndex >= leftIndex)
             {
                 rightIndex++;
             }
 
-            synchronizedLeftMapIndex.Value = leftIndex;
-            synchronizedRightMapIndex.Value = rightIndex;
+            var leftProfile = selectableProfiles[leftIndex];
+            var rightProfile = selectableProfiles[rightIndex];
+            synchronizedLeftMapId.Value = leftProfile.MapId;
+            synchronizedRightMapId.Value = rightProfile.MapId;
             Debug.Log(
-                $"PHS_TRAVEL_MAP_CHOICES_ROLLED left={temporaryMapOptions[leftIndex].id} right={temporaryMapOptions[rightIndex].id}",
+                $"PHS_TRAVEL_MAP_CHOICES_ROLLED left={leftProfile.MapId} right={rightProfile.MapId}",
                 this);
         }
 
@@ -479,35 +487,33 @@ namespace LastJumpCrew.ParkHanSol.Interaction
 
         private bool AreMapChoicesReady()
         {
-            return IsValidMapIndex(synchronizedLeftMapIndex.Value)
-                && IsValidMapIndex(synchronizedRightMapIndex.Value)
-                && synchronizedLeftMapIndex.Value != synchronizedRightMapIndex.Value;
+            var leftMapId = synchronizedLeftMapId.Value;
+            var rightMapId = synchronizedRightMapId.Value;
+            return leftMapId > 0
+                && rightMapId > 0
+                && leftMapId != rightMapId
+                && mapCatalog.TryResolve(leftMapId, out var leftProfile)
+                && leftProfile.Selectable
+                && mapCatalog.TryResolve(rightMapId, out var rightProfile)
+                && rightProfile.Selectable;
         }
 
-        private bool TryGetSelectedMapData(out ZoneData mapData)
+        private bool TryGetSelectedMapProfile(out PHSMapProfileSO mapProfile)
         {
-            mapData = null;
-            var index = SelectedDestination switch
+            mapProfile = null;
+            var mapId = SelectedDestination switch
             {
-                TravelConsoleDestination.LeftMap => synchronizedLeftMapIndex.Value,
-                TravelConsoleDestination.RightMap => synchronizedRightMapIndex.Value,
-                _ => -1
+                TravelConsoleDestination.LeftMap => synchronizedLeftMapId.Value,
+                TravelConsoleDestination.RightMap => synchronizedRightMapId.Value,
+                _ => 0
             };
 
-            if (!IsValidMapIndex(index))
+            if (mapId <= 0 || !mapCatalog.TryResolve(mapId, out mapProfile))
             {
                 return false;
             }
 
-            mapData = temporaryMapOptions[index];
-            return mapData != null;
-        }
-
-        private bool IsValidMapIndex(int index)
-        {
-            return index >= 0
-                && temporaryMapOptions != null
-                && index < temporaryMapOptions.Length;
+            return mapProfile.Selectable;
         }
 
         private void RefreshPresentation()
@@ -535,10 +541,10 @@ namespace LastJumpCrew.ParkHanSol.Interaction
             else if (mapChoicesReady)
             {
                 shopScreenText.text = FormatMapOption(
-                    temporaryMapOptions[synchronizedLeftMapIndex.Value],
+                    ResolveProfileOrLog(synchronizedLeftMapId.Value),
                     SelectedDestination == TravelConsoleDestination.LeftMap);
                 debrisScreenText.text = FormatMapOption(
-                    temporaryMapOptions[synchronizedRightMapIndex.Value],
+                    ResolveProfileOrLog(synchronizedRightMapId.Value),
                     SelectedDestination == TravelConsoleDestination.RightMap);
             }
             else
@@ -649,35 +655,73 @@ namespace LastJumpCrew.ParkHanSol.Interaction
                 return "데브리 회수존";
             }
 
-            return TryGetSelectedMapData(out var mapData)
-                ? mapData.zoneName
+            return TryGetSelectedMapProfile(out var mapProfile)
+                ? mapProfile.DisplayName
                 : "선택 목적지";
         }
 
-        private static string FormatMapOption(ZoneData mapData, bool selected)
+        private static string FormatMapOption(PHSMapProfileSO mapProfile, bool selected)
         {
+            if (mapProfile == null)
+            {
+                return "맵 데이터 오류";
+            }
+
             return selected
-                ? $"{mapData.zoneName}\n선택됨"
-                : $"{mapData.zoneName}\n구역 {mapData.id}";
+                ? $"{mapProfile.DisplayName}\n선택됨"
+                : $"{mapProfile.DisplayName}\n구역 {mapProfile.MapId}";
         }
 
-        private static bool HasValidMapOptions(ZoneData[] mapOptions)
+        private bool TryBuildSelectableProfiles()
         {
-            if (mapOptions == null || mapOptions.Length < 2)
+            selectableProfiles.Clear();
+            if (mapCatalog == null || mapCatalog.Profiles == null)
             {
+                Debug.LogError("PHS_TRAVEL_CONSOLE_SETUP_FAILED reason=map_catalog_missing", this);
+                return false;
+            }
+
+            if (!mapCatalog.TryValidate(out var catalogReason))
+            {
+                Debug.LogError(
+                    $"PHS_TRAVEL_CONSOLE_SETUP_FAILED reason=map_catalog_invalid detail={catalogReason}",
+                    this);
                 return false;
             }
 
             var ids = new HashSet<int>();
-            foreach (var mapOption in mapOptions)
+            foreach (var profile in mapCatalog.Profiles)
             {
-                if (mapOption == null || mapOption.id <= 0 || !ids.Add(mapOption.id))
+                if (profile == null || profile.MapId <= 0 || !ids.Add(profile.MapId))
                 {
+                    Debug.LogError("PHS_TRAVEL_CONSOLE_SETUP_FAILED reason=map_catalog_invalid", this);
                     return false;
+                }
+
+                if (profile.Selectable)
+                {
+                    selectableProfiles.Add(profile);
                 }
             }
 
+            if (selectableProfiles.Count < 2)
+            {
+                Debug.LogError("PHS_TRAVEL_CONSOLE_SETUP_FAILED reason=selectable_profiles_insufficient", this);
+                return false;
+            }
+
             return true;
+        }
+
+        private PHSMapProfileSO ResolveProfileOrLog(int mapId)
+        {
+            if (mapCatalog.TryResolve(mapId, out var profile))
+            {
+                return profile;
+            }
+
+            Debug.LogError($"PHS_TRAVEL_PRESENTATION_FAILED reason=map_profile_missing mapId={mapId}", this);
+            return null;
         }
 
         private static bool HasValidObjects(GameObject[] objects)

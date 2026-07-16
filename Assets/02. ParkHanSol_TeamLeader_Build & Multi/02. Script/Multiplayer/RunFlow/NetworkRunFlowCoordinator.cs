@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using LastJumpCrew.ParkHanSol.Multiplayer.Maps;
 using LastJumpCrew.SeoBoGyeong;
 using Unity.Netcode;
 using UnityEngine;
@@ -15,6 +16,9 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
         [SerializeField, Min(0.1f)] private float warpTransitionSeconds = 1.5f;
         [SerializeField, Min(0.1f)] private float warpArrivalSeconds = 1f;
         [SerializeField, Min(0f)] private float rearmSeconds = 8f;
+        [SerializeField] private PHSMapCatalogSO mapCatalog;
+        [SerializeField, Range(PHSMapProfileSO.MinimumMapId, PHSMapProfileSO.MaximumMapId)]
+        private int initialMapId = PHSMapProfileSO.MinimumMapId;
         [SerializeField] private string mapSceneName = "PHS_Map_ver1";
         [SerializeField] private string shopSceneName = "PHS_ExteriorShopScene";
         [SerializeField] private bool automaticallyLoadShop;
@@ -36,7 +40,15 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
             0,
             NetworkVariableReadPermission.Everyone,
             NetworkVariableWritePermission.Server);
-        private readonly NetworkVariable<int> synchronizedSelectedZoneId = new(
+        private readonly NetworkVariable<int> synchronizedSelectedNextMapId = new(
+            0,
+            NetworkVariableReadPermission.Everyone,
+            NetworkVariableWritePermission.Server);
+        private readonly NetworkVariable<int> synchronizedActiveMapId = new(
+            0,
+            NetworkVariableReadPermission.Everyone,
+            NetworkVariableWritePermission.Server);
+        private readonly NetworkVariable<uint> synchronizedActiveMapRevision = new(
             0,
             NetworkVariableReadPermission.Everyone,
             NetworkVariableWritePermission.Server);
@@ -66,7 +78,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
         private float scheduledWarpExecutionTime = -1f;
         private float scheduledWarpArrivalEndTime = -1f;
         private float scheduledWarpReviveTime = -1f;
-        private int pendingNextZoneId;
+        private int pendingNextMapId;
 
         public static NetworkRunFlowCoordinator Instance { get; private set; }
 
@@ -74,7 +86,9 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
         public float WarpChargeNormalized => synchronizedWarpCharge.Value;
         public int ClearedZoneCount => synchronizedClearedZones.Value;
         public int CompletedShopCycleCount => synchronizedShopCycles.Value;
-        public int SelectedZoneId => synchronizedSelectedZoneId.Value;
+        public int SelectedNextMapId => synchronizedSelectedNextMapId.Value;
+        public int ActiveMapId => synchronizedActiveMapId.Value;
+        public int SelectedZoneId => ActiveMapId;
         public int SafePlayerCount => synchronizedSafePlayers.Value;
         public int RequiredSafePlayerCount => synchronizedRequiredSafePlayers.Value;
         public bool IsFinalShopPending => synchronizedFinalShopPending.Value;
@@ -82,6 +96,8 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
         public bool IsWarpSafetySatisfied => !requireAllConnectedAlivePlayersSafe ||
             (RequiredSafePlayerCount > 0 && SafePlayerCount >= RequiredSafePlayerCount);
         public event Action<NetworkRunPhase, NetworkRunPhase> PhaseChanged;
+        public event Action<int, int> ActiveMapChanged;
+        public event Action<int> ActiveMapCommitted;
 
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
         private static void ResetStatics()
@@ -106,10 +122,22 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
             }
 
             Instance = this;
+            if (!ValidateMapCatalog())
+            {
+                enabled = false;
+                return;
+            }
+
             synchronizedPhase.OnValueChanged += HandleSynchronizedPhaseChanged;
+            synchronizedActiveMapId.OnValueChanged += HandleSynchronizedActiveMapChanged;
+            synchronizedActiveMapRevision.OnValueChanged += HandleSynchronizedActiveMapRevisionChanged;
             SceneManager.activeSceneChanged += HandleActiveSceneChanged;
             if (IsServer)
             {
+                synchronizedActiveMapId.Value = initialMapId;
+                synchronizedSelectedNextMapId.Value = initialMapId;
+                pendingNextMapId = initialMapId;
+                synchronizedActiveMapRevision.Value++;
                 TryBindGameFlow();
             }
         }
@@ -117,6 +145,8 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
         public override void OnNetworkDespawn()
         {
             synchronizedPhase.OnValueChanged -= HandleSynchronizedPhaseChanged;
+            synchronizedActiveMapId.OnValueChanged -= HandleSynchronizedActiveMapChanged;
+            synchronizedActiveMapRevision.OnValueChanged -= HandleSynchronizedActiveMapRevisionChanged;
             SceneManager.activeSceneChanged -= HandleActiveSceneChanged;
             UnbindGameFlow();
             if (Instance == this)
@@ -240,8 +270,22 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
                 return false;
             }
 
-            pendingNextZoneId = zoneId;
-            synchronizedSelectedZoneId.Value = zoneId;
+            if (!mapCatalog.TryResolve(zoneId, out var profile))
+            {
+                reason = $"map_profile_missing:{zoneId}";
+                Debug.LogError($"PHS_RUN_FLOW_MAP_SELECT_FAILED reason={reason}", this);
+                return false;
+            }
+
+            if (!profile.Selectable)
+            {
+                reason = $"map_not_selectable:{zoneId}";
+                Debug.LogError($"PHS_RUN_FLOW_MAP_SELECT_FAILED reason={reason}", this);
+                return false;
+            }
+
+            pendingNextMapId = zoneId;
+            synchronizedSelectedNextMapId.Value = zoneId;
             reason = null;
             Debug.Log($"PHS_RUN_FLOW_NEXT_ZONE_SELECTED zone={zoneId}");
             return true;
@@ -364,7 +408,12 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
 
         private void TickRearm(float deltaTime)
         {
-            if (SceneManager.GetActiveScene().name != mapSceneName)
+            if (!TryResolveMapScene(ActiveMapId, out _, out var activeMapSceneName))
+            {
+                return;
+            }
+
+            if (SceneManager.GetActiveScene().name != activeMapSceneName)
             {
                 return;
             }
@@ -379,11 +428,32 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
             rearmElapsed = 0f;
             chargeElapsed = 0f;
             synchronizedWarpCharge.Value = 0f;
-            var nextZoneId = pendingNextZoneId > 0
-                ? pendingNextZoneId
-                : Mathf.Clamp(gameState.ClearedZoneCount + 1, 1, GameLoopState.TOTAL_ZONES);
+            if (pendingNextMapId <= 0)
+            {
+                Debug.LogError("PHS_RUN_FLOW_ZONE_START_FAILED reason=next_map_not_selected", this);
+                return;
+            }
+
+            if (!mapCatalog.TryResolve(pendingNextMapId, out var profile))
+            {
+                Debug.LogError(
+                    $"PHS_RUN_FLOW_ZONE_START_FAILED reason=map_profile_missing mapId={pendingNextMapId}",
+                    this);
+                return;
+            }
+
+            if (!profile.Selectable)
+            {
+                Debug.LogError(
+                    $"PHS_RUN_FLOW_ZONE_START_FAILED reason=map_not_selectable mapId={pendingNextMapId}",
+                    this);
+                return;
+            }
+
+            var nextZoneId = pendingNextMapId;
             gameCommands.SelectZone(nextZoneId);
-            pendingNextZoneId = 0;
+            pendingNextMapId = 0;
+            synchronizedSelectedNextMapId.Value = 0;
             Debug.Log($"PHS_RUN_FLOW_ZONE_STARTED zone={nextZoneId} cleared={gameState.ClearedZoneCount}");
         }
 
@@ -664,27 +734,32 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
                 return;
             }
 
-            if (!Application.CanStreamedLevelBeLoaded(mapSceneName))
+            if (!TryResolveMapScene(SelectedNextMapId, out _, out var targetSceneName))
+            {
+                return;
+            }
+
+            if (!Application.CanStreamedLevelBeLoaded(targetSceneName))
             {
                 Debug.LogError(
-                    $"PHS_RUN_FLOW_MAP_REFRESH_FAILED reason=scene_not_in_build scene={mapSceneName}",
+                    $"PHS_RUN_FLOW_MAP_REFRESH_FAILED reason=scene_not_in_build scene={targetSceneName}",
                     this);
                 return;
             }
 
             sceneLoadRequested = true;
-            var status = NetworkManager.SceneManager.LoadScene(mapSceneName, LoadSceneMode.Single);
+            var status = NetworkManager.SceneManager.LoadScene(targetSceneName, LoadSceneMode.Single);
             if (status != SceneEventProgressStatus.Started)
             {
                 sceneLoadRequested = false;
                 Debug.LogError(
-                    $"PHS_RUN_FLOW_MAP_REFRESH_FAILED reason={status} scene={mapSceneName}",
+                    $"PHS_RUN_FLOW_MAP_REFRESH_FAILED reason={status} scene={targetSceneName}",
                     this);
                 return;
             }
 
             Debug.Log(
-                $"PHS_RUN_FLOW_MAP_REFRESH_STARTED scene={mapSceneName} zone={SelectedZoneId}",
+                $"PHS_RUN_FLOW_MAP_REFRESH_STARTED scene={targetSceneName} mapId={SelectedNextMapId}",
                 this);
         }
 
@@ -697,12 +772,29 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
             {
                 synchronizedSafePlayers.Value = 0;
                 synchronizedRequiredSafePlayers.Value = 0;
-                if (synchronizedPhase.Value == NetworkRunPhase.WarpArrival
-                    && currentScene.name == mapSceneName)
+                if (synchronizedPhase.Value == NetworkRunPhase.WarpArrival)
                 {
+                    if (!TryResolveMapScene(SelectedNextMapId, out _, out var targetSceneName))
+                    {
+                        return;
+                    }
+
+                    if (currentScene.name != targetSceneName)
+                    {
+                        Debug.LogError(
+                            $"PHS_RUN_FLOW_MAP_COMMIT_FAILED reason=scene_mismatch expected={targetSceneName} actual={currentScene.name}",
+                            this);
+                        return;
+                    }
+
+                    if (!TryCommitActiveMap())
+                    {
+                        return;
+                    }
+
                     scheduledWarpArrivalEndTime = Time.time + warpArrivalSeconds;
                     Debug.Log(
-                        $"PHS_RUN_FLOW_WARP_ARRIVAL scene={currentScene.name} zone={SelectedZoneId} duration={warpArrivalSeconds:0.##}",
+                        $"PHS_RUN_FLOW_WARP_ARRIVAL scene={currentScene.name} mapId={ActiveMapId} duration={warpArrivalSeconds:0.##}",
                         this);
                 }
             }
@@ -713,6 +805,145 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
             NetworkRunPhase currentPhase)
         {
             PhaseChanged?.Invoke(previousPhase, currentPhase);
+        }
+
+        private void HandleSynchronizedActiveMapChanged(int previousMapId, int currentMapId)
+        {
+            ActiveMapChanged?.Invoke(previousMapId, currentMapId);
+        }
+
+        private bool TryCommitActiveMap()
+        {
+            var selectedMapId = synchronizedSelectedNextMapId.Value;
+            if (selectedMapId <= 0)
+            {
+                Debug.LogError("PHS_RUN_FLOW_MAP_COMMIT_FAILED reason=next_map_not_selected", this);
+                return false;
+            }
+
+            if (!mapCatalog.TryResolve(selectedMapId, out var profile))
+            {
+                Debug.LogError(
+                    $"PHS_RUN_FLOW_MAP_COMMIT_FAILED reason=map_profile_missing mapId={selectedMapId}",
+                    this);
+                return false;
+            }
+
+            if (!profile.Selectable)
+            {
+                Debug.LogError(
+                    $"PHS_RUN_FLOW_MAP_COMMIT_FAILED reason=map_not_selectable mapId={selectedMapId}",
+                    this);
+                return false;
+            }
+
+            synchronizedActiveMapId.Value = selectedMapId;
+            synchronizedActiveMapRevision.Value++;
+            Debug.Log($"PHS_RUN_FLOW_MAP_COMMITTED mapId={selectedMapId}", this);
+            return true;
+        }
+
+        private void HandleSynchronizedActiveMapRevisionChanged(uint previousRevision, uint currentRevision)
+        {
+            ActiveMapCommitted?.Invoke(ActiveMapId);
+        }
+
+        private bool ValidateMapCatalog()
+        {
+            if (mapCatalog == null)
+            {
+                Debug.LogError("PHS_RUN_FLOW_SETUP_FAILED reason=map_catalog_missing", this);
+                return false;
+            }
+
+            if (!mapCatalog.TryValidate(out var catalogReason))
+            {
+                Debug.LogError(
+                    $"PHS_RUN_FLOW_SETUP_FAILED reason=map_catalog_invalid detail={catalogReason}",
+                    this);
+                return false;
+            }
+
+            foreach (var profile in mapCatalog.Profiles)
+            {
+                if (!TryResolveProfileSceneName(profile, out _))
+                {
+                    return false;
+                }
+            }
+
+            if (initialMapId <= 0 || !mapCatalog.TryResolve(initialMapId, out _))
+            {
+                Debug.LogError(
+                    $"PHS_RUN_FLOW_SETUP_FAILED reason=initial_map_missing mapId={initialMapId}",
+                    this);
+                return false;
+            }
+
+            return true;
+        }
+
+        private bool TryResolveMapScene(
+            int mapId,
+            out PHSMapProfileSO profile,
+            out string sceneName)
+        {
+            profile = null;
+            sceneName = null;
+            if (mapId <= 0)
+            {
+                Debug.LogError("PHS_RUN_FLOW_MAP_SCENE_FAILED reason=map_id_missing", this);
+                return false;
+            }
+
+            if (!mapCatalog.TryResolve(mapId, out profile))
+            {
+                Debug.LogError($"PHS_RUN_FLOW_MAP_SCENE_FAILED reason=profile_missing mapId={mapId}", this);
+                return false;
+            }
+
+            return TryResolveProfileSceneName(profile, out sceneName);
+        }
+
+        private bool TryResolveProfileSceneName(PHSMapProfileSO profile, out string sceneName)
+        {
+            sceneName = null;
+            if (profile == null)
+            {
+                Debug.LogError("PHS_RUN_FLOW_MAP_SCENE_FAILED reason=profile_missing", this);
+                return false;
+            }
+
+            switch (profile.SceneMode)
+            {
+                case PHSMapSceneMode.SharedSceneEnvironment:
+                    if (!string.Equals(profile.SceneName, mapSceneName, StringComparison.Ordinal))
+                    {
+                        Debug.LogError(
+                            $"PHS_RUN_FLOW_MAP_SCENE_FAILED reason=shared_scene_mismatch mapId={profile.MapId} profile={profile.SceneName} configured={mapSceneName}",
+                            this);
+                        return false;
+                    }
+
+                    sceneName = mapSceneName;
+                    return true;
+                case PHSMapSceneMode.SeparateScene:
+                    if (string.IsNullOrWhiteSpace(profile.SceneName))
+                    {
+                        Debug.LogError(
+                            $"PHS_RUN_FLOW_MAP_SCENE_FAILED reason=separate_scene_missing mapId={profile.MapId}",
+                            this);
+                        return false;
+                    }
+
+                    sceneName = profile.SceneName;
+                    return true;
+                default:
+                    Debug.LogError(
+                        $"PHS_RUN_FLOW_MAP_SCENE_FAILED reason=scene_mode_invalid mapId={profile.MapId} mode={(int)profile.SceneMode}",
+                        this);
+                    return false;
+            }
         }
 
         private void SetPhase(NetworkRunPhase phase)
