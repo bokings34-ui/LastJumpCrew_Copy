@@ -15,10 +15,6 @@ namespace SM
         Removed = 1
     }
 
-    /// <summary>
-    /// Keeps the event domain independent from the active runtime transport.
-    /// Offline scenes leave this bridge unset; network scenes provide a server-authoritative bridge.
-    /// </summary>
     public interface IEventRuntimeBridge
     {
         bool IsAuthoritative { get; }
@@ -45,10 +41,6 @@ namespace SM
             bool success);
     }
 
-    /// <summary>
-    /// Server-owned effect replication contract. Gameplay instances stay authoritative while
-    /// remote peers consume presentation-only snapshots.
-    /// </summary>
     public interface IEventEffectRuntimeBridge
     {
         uint AllocateEffectInstanceId(ulong eventInstanceId);
@@ -68,10 +60,6 @@ namespace SM
         void PublishEffectRemoved(ulong eventInstanceId, uint effectInstanceId);
     }
 
-    /// <summary>
-    /// Server-owned ship power sink used by the PowerOff event.
-    /// The event domain only knows this contract and does not depend on the active ship implementation.
-    /// </summary>
     public interface IShipPowerEventRuntimeBridge
     {
         bool TryApplyPowerOff(ulong eventInstanceId, out string reason);

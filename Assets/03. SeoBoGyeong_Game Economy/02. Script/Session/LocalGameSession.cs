@@ -61,56 +61,6 @@ namespace LastJumpCrew.SeoBoGyeong
             registry.Register<IWallet>(creditWallet);
         }
 
-        /// <summary>
-        /// Replaces only the ship-status dependency. The existing loop state and credit wallet
-        /// remain intact; only the rules object that consumes IShipStatus is recreated.
-        /// </summary>
-        public bool TryRebindShipStatus(IShipStatus replacement)
-        {
-            if (replacement == null)
-            {
-                Debug.LogError("PHS_GAME_SESSION_SHIP_STATUS_REBIND_FAILED reason=replacement_missing", this);
-                return false;
-            }
-
-            if (deathGate == null)
-            {
-                Debug.LogError("PHS_GAME_SESSION_SHIP_STATUS_REBIND_FAILED reason=session_not_bound", this);
-                return false;
-            }
-
-            if (ReferenceEquals(ship, replacement))
-            {
-                return true;
-            }
-
-            ship = replacement;
-            rules = new GameLoopController(state, ship, deathGate);
-            Debug.Log(
-                $"PHS_GAME_SESSION_SHIP_STATUS_REBOUND provider={replacement.GetType().Name} phase={state.Phase} credits={creditWallet?.Balance ?? 0}",
-                this);
-            return true;
-        }
-
-        /// <summary>
-        /// Detaches the exact network provider without silently restoring the always-alive mock.
-        /// Gameplay rules stay unavailable until the authoritative provider reconnects.
-        /// </summary>
-        public bool TryReleaseShipStatus(IShipStatus expected)
-        {
-            if (expected == null || !ReferenceEquals(ship, expected))
-            {
-                return false;
-            }
-
-            ship = null;
-            rules = null;
-            Debug.LogWarning(
-                $"PHS_GAME_SESSION_SHIP_STATUS_RELEASED provider={expected.GetType().Name} waiting_for_reconnect=true phase={state.Phase}",
-                this);
-            return true;
-        }
-
         private void Update()
         {
             if (rules == null) return;   // Bind 이전 프레임 방어

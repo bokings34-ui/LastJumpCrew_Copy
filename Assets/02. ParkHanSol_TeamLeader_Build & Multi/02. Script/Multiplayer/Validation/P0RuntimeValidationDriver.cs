@@ -452,7 +452,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Validation
             var coordinator = FindAnyObjectByType<NetworkEventCoordinator>(FindObjectsInactive.Include);
             var manager = EventManager.Peek();
             if (coordinator == null || !coordinator.IsSpawned || !coordinator.IsServer ||
-                manager == null || !manager.HasRuntimeBridge || !manager.IsRuntimeAuthority)
+                manager == null || !manager.HasRuntimeBridge() || !manager.IsRuntimeAuthority())
             {
                 Fail("event_lifecycle_setup_missing");
                 yield break;
@@ -773,7 +773,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Validation
             if (validationBatteryItem == null || !validationBatteryItem.HasHeldPrefab
                 || string.IsNullOrWhiteSpace(validationBatteryItem.ItemId)
                 || eventCoordinator == null || !eventCoordinator.IsSpawned || !eventCoordinator.IsServer
-                || eventManager == null || !eventManager.HasRuntimeBridge || !eventManager.IsRuntimeAuthority
+                || eventManager == null || !eventManager.HasRuntimeBridge() || !eventManager.IsRuntimeAuthority()
                 || shipState == null || !shipState.IsSpawned || !shipState.IsServer
                 || miniGameTerminal == null || batterySocket == null
                 || !NetworkManager.ConnectedClients.TryGetValue(

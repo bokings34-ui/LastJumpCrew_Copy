@@ -113,7 +113,11 @@ namespace LastJumpCrew.ParkHanSol.Interaction
             }
 
             isEventInProgress = true;
-            var spawnAccepted = eventManager.SpawnEvent(eventId, room, HandleSpawnFinished);
+            var spawnAccepted = eventManager.TrySpawnEvent(
+                eventId,
+                room,
+                HandleSpawnFinished,
+                out _);
             spawnCallCompleted = true;
 
             if (!spawnAccepted)

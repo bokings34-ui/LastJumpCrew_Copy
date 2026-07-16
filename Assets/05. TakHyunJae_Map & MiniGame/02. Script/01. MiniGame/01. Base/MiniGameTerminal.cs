@@ -18,85 +18,38 @@ public class MiniGameTerminal : MonoBehaviour, IMiniGameTarget, LastJumpCrew.Par
     public UnityEvent onMiniGameOpened;
     public UnityEvent onMiniGameClosed;
 
-    [Header("이벤트 활성 표시")]
-    [SerializeField] private Renderer availabilityRenderer;
-    [SerializeField] private Collider interactionCollider;
-
     private NetworkPlayerController activePlayer;
-    private bool lastAvailability;
 
     public string InteractionPrompt => promptText;
-
-    private void Start()
-    {
-        RefreshAvailability(true);
-    }
-
-    private void Update()
-    {
-        RefreshAvailability(false);
-    }
 
     // ==========================================
     // 1️⃣ 팀장님 전용 상호작용 규칙 
     // ==========================================
-    public bool CanInteract(LastJumpCrew.ParkHanSol.Interaction.IItemHolder itemHolder)
-    {
-        return MiniGameManager.Instance != null
-            && MiniGameManager.Instance.IsMiniGameAvailable(miniGameType);
-    }
+    public bool CanInteract(LastJumpCrew.ParkHanSol.Interaction.IItemHolder itemHolder) => true;
 
     public void Interact(LastJumpCrew.ParkHanSol.Interaction.IItemHolder itemHolder)
     {
-        if (!CanInteract(itemHolder))
-        {
-            return;
-        }
-
         if (itemHolder is Component component)
         {
             activePlayer = component.GetComponent<NetworkPlayerController>();
-        }
-
-        if (OpenTerminal())
-        {
             LockPlayerAndFixCamera();
         }
-        else
-        {
-            activePlayer = null;
-        }
+        OpenTerminal();
     }
 
     // ==========================================
     // 2️⃣ 공용(Common) 상호작용 규칙
     // ==========================================
-    bool LastJumpCrew.Common.IInteractable.CanInteract(LastJumpCrew.Common.IItemHolder itemHolder)
-    {
-        return MiniGameManager.Instance != null
-            && MiniGameManager.Instance.IsMiniGameAvailable(miniGameType);
-    }
+    bool LastJumpCrew.Common.IInteractable.CanInteract(LastJumpCrew.Common.IItemHolder itemHolder) => true;
 
     void LastJumpCrew.Common.IInteractable.Interact(LastJumpCrew.Common.IItemHolder itemHolder)
     {
-        if (!((LastJumpCrew.Common.IInteractable)this).CanInteract(itemHolder))
-        {
-            return;
-        }
-
         if (itemHolder is Component component)
         {
             activePlayer = component.GetComponent<NetworkPlayerController>();
-        }
-
-        if (OpenTerminal())
-        {
             LockPlayerAndFixCamera();
         }
-        else
-        {
-            activePlayer = null;
-        }
+        OpenTerminal();
     }
 
     // ==========================================
@@ -121,16 +74,13 @@ public class MiniGameTerminal : MonoBehaviour, IMiniGameTarget, LastJumpCrew.Par
     // ==========================================
     // 🚀 실제 미니게임 켜기 로직
     // ==========================================
-    private bool OpenTerminal()
+    private void OpenTerminal()
     {
-        if (MiniGameManager.Instance == null
-            || !MiniGameManager.Instance.TryOpenMiniGame(miniGameType, this))
+        if (MiniGameManager.Instance != null)
         {
-            return false;
+            MiniGameManager.Instance.OpenMiniGame(miniGameType, this);
+            onMiniGameOpened?.Invoke();
         }
-
-        onMiniGameOpened?.Invoke();
-        return true;
     }
 
     // ==========================================
@@ -169,34 +119,5 @@ public class MiniGameTerminal : MonoBehaviour, IMiniGameTarget, LastJumpCrew.Par
         }
 
         onMiniGameClosed?.Invoke();
-    }
-
-    private void RefreshAvailability(bool force)
-    {
-        var manager = MiniGameManager.Instance;
-        if (manager == null || !manager.IsEventDrivenMiniGame(miniGameType))
-        {
-            return;
-        }
-
-        if (availabilityRenderer == null || interactionCollider == null)
-        {
-            if (force)
-            {
-                Debug.LogError($"[{nameof(MiniGameTerminal)}] 이벤트 활성 표시 Inspector 연결이 누락되었습니다.", this);
-            }
-
-            return;
-        }
-
-        var isAvailable = manager.IsMiniGameAvailable(miniGameType);
-        if (!force && isAvailable == lastAvailability)
-        {
-            return;
-        }
-
-        lastAvailability = isAvailable;
-        availabilityRenderer.enabled = isAvailable;
-        interactionCollider.enabled = isAvailable;
     }
 }

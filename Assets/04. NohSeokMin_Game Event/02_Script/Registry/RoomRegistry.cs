@@ -9,27 +9,7 @@ namespace SM
 
         public void Register(IRoom room)
         {
-            if (room == null || _rooms.Contains(room))
-            {
-                return;
-            }
-
-            if (string.IsNullOrWhiteSpace(room.RoomId))
-            {
-                Debug.LogError("[RoomRegistry] RoomId is empty.");
-                return;
-            }
-
-            foreach (var registeredRoom in _rooms)
-            {
-                if (registeredRoom != null && registeredRoom.RoomId == room.RoomId)
-                {
-                    Debug.LogError($"[RoomRegistry] Duplicate RoomId: {room.RoomId}");
-                    return;
-                }
-            }
-
-            _rooms.Add(room);
+            if (!_rooms.Contains(room)) _rooms.Add(room);
         }
 
         public void Unregister(IRoom room)
@@ -41,21 +21,6 @@ namespace SM
         {
             if (_rooms.Count == 0) return null;
             return _rooms[Random.Range(0, _rooms.Count)];
-        }
-
-        public bool TryGetRoom(string roomId, out IRoom room)
-        {
-            foreach (var registeredRoom in _rooms)
-            {
-                if (registeredRoom != null && registeredRoom.RoomId == roomId)
-                {
-                    room = registeredRoom;
-                    return true;
-                }
-            }
-
-            room = null;
-            return false;
         }
     }
 }

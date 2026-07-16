@@ -30,6 +30,6 @@ namespace SM
 
     public interface IEventSpawner
     {
-        bool SpawnEvent(EventId id, IRoom targetRoom, Action<EventBase, bool> onFinished = null);
+        void SpawnEvent(EventId id, IRoom targetRoom, Action<EventBase, bool> onFinished = null);
     }
 }

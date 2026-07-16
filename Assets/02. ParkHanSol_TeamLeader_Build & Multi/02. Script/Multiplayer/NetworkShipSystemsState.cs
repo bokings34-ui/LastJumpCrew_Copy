@@ -51,6 +51,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
             NetworkVariableWritePermission.Server);
 
         private bool isRegisteredWithGameCore;
+        private IShipStatus previousShipStatus;
         private float nextRegistrationAttemptTime;
 
         public static NetworkShipSystemsState Instance { get; private set; }
@@ -603,16 +604,13 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
         private void TryRegisterWithGameCore()
         {
             var gameCore = GameCore.Instance;
-            if (gameCore == null)
+            if (gameCore == null || gameCore.Services == null)
             {
                 return;
             }
 
-            if (!gameCore.TryInstallShipStatus(this))
-            {
-                return;
-            }
-
+            gameCore.Services.TryGet(out previousShipStatus);
+            gameCore.Services.Register<IShipStatus>(this);
             isRegisteredWithGameCore = true;
             Debug.Log(
                 $"PHS_SHIP_STATUS_CONNECTED provider={GetType().Name} server={IsServer}",
@@ -627,12 +625,26 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
             }
 
             var gameCore = GameCore.Instance;
-            if (gameCore != null)
+            if (gameCore == null || gameCore.Services == null)
             {
-                gameCore.TryReleaseShipStatus(this);
+                Debug.LogError("PHS_SHIP_STATUS_DISCONNECT_FAILED reason=service_registry_missing", this);
+            }
+            else if (!gameCore.Services.TryGet<IShipStatus>(out var currentShipStatus)
+                     || !ReferenceEquals(currentShipStatus, this))
+            {
+                Debug.LogError("PHS_SHIP_STATUS_DISCONNECT_FAILED reason=provider_replaced", this);
+            }
+            else if (previousShipStatus == null)
+            {
+                Debug.LogError("PHS_SHIP_STATUS_DISCONNECT_FAILED reason=previous_provider_missing", this);
+            }
+            else
+            {
+                gameCore.Services.Register(previousShipStatus);
             }
 
             isRegisteredWithGameCore = false;
+            previousShipStatus = null;
             Debug.LogWarning(
                 $"PHS_SHIP_STATUS_DISCONNECTED provider={GetType().Name} waiting_for_reconnect=true",
                 this);

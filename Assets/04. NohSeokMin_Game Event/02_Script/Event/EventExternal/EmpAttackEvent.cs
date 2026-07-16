@@ -4,7 +4,9 @@ namespace SM
     {
         protected override EventId GetNextEventId()
         {
-            return EventId.PowerOff;
+            // TODO :: 원래 PowerOff 인데 아직 미구현이라 Fire로 임시 변경
+            // return EventId.PowerOff;
+            return EventId.Fire;
         }
 
         public override void OnResolve()
