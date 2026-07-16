@@ -7,6 +7,7 @@ using UnityEngine.InputSystem;
 using System;
 using System.Collections;
 using System.Threading.Tasks;
+using LastJumpCrew.SeoBoGyeong;
 
 namespace LastJumpCrew.ParkHanSol.Multiplayer
 {
@@ -305,13 +306,51 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
             {
                 if (networkManager.IsServer)
                 {
+                    if (!TryBeginGameRun())
+                    {
+                        return;
+                    }
+
                     networkManager.SceneManager.LoadScene(playSceneName, LoadSceneMode.Single);
                 }
 
                 return;
             }
 
+            if (!TryBeginGameRun())
+            {
+                return;
+            }
+
             SceneManager.LoadScene(playSceneName);
+        }
+
+        private static bool TryBeginGameRun()
+        {
+            var gameCore = GameCore.Instance;
+            if (gameCore == null || gameCore.Services == null)
+            {
+                Debug.LogError("PHS_GAME_START_FAILED reason=game_core_missing");
+                return false;
+            }
+
+            var commands = gameCore.Services.Get<IGameCommands>();
+            var state = gameCore.Services.Get<IGameStateProvider>();
+            if (commands == null || state == null)
+            {
+                Debug.LogError("PHS_GAME_START_FAILED reason=economy_services_missing");
+                return false;
+            }
+
+            commands.StartGame();
+            if (state.Phase != GamePhase.ZoneSelect)
+            {
+                Debug.LogError($"PHS_GAME_START_FAILED reason=phase_{state.Phase}");
+                return false;
+            }
+
+            Debug.Log($"PHS_GAME_RUN_STARTED phase={state.Phase} clearedZones={state.ClearedZoneCount}");
+            return true;
         }
 
         private static void SetMasterVolume(float value)

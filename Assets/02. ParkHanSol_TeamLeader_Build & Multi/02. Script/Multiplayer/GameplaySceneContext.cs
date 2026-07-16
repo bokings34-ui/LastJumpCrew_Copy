@@ -6,6 +6,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
     public sealed class GameplaySceneContext : MonoBehaviour, IGameplaySceneContext
     {
         [SerializeField] private Transform spawnPointsRoot;
+        [SerializeField] private Transform respawnPoint;
         [SerializeField] private bool isGameplayScene = true;
 
         public bool IsGameplayScene => isActiveAndEnabled && isGameplayScene;
@@ -35,6 +36,18 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
             var index = (int)(ownerClientId % (ulong)spawnPointsRoot.childCount);
             spawnPoint = spawnPointsRoot.GetChild(index);
             return spawnPoint != null;
+        }
+
+        public bool TryGetRespawnPoint(out Transform respawnPoint)
+        {
+            respawnPoint = this.respawnPoint;
+            if (respawnPoint != null)
+            {
+                return true;
+            }
+
+            Debug.LogError($"PHS_RESPAWN_POINT_MISSING scene={gameObject.scene.name} context={name}", this);
+            return false;
         }
     }
 }

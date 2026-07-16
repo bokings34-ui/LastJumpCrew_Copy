@@ -1,15 +1,13 @@
+using LastJumpCrew.ParkHanSol.Items;
 using UnityEngine;
-using UnityEngine.Serialization;
 
 namespace LastJumpCrew.ParkHanSol.Interaction
 {
     [RequireComponent(typeof(Rigidbody))]
     public sealed class DebrisItem : MonoBehaviour
     {
-        [SerializeField, FormerlySerializedAs("value"), Min(1)] private int referenceValue = 100;
-        [SerializeField, Min(0.01f)] private float referenceMass = 1f;
-        [SerializeField, Min(0.001f)] private float referenceVolume = 1f;
-        [SerializeField, Range(0f, 1f)] private float massValueWeight = 0.6f;
+        [Tooltip("판매 가격을 가진 데브리 아이템 데이터. Inspector에서 직접 연결한다.")]
+        [SerializeField] private UtilityItemPrefabData debrisData;
         [SerializeField] private bool recalculateMassFromVolume = true;
         [SerializeField, Min(0.01f)] private float materialDensity = 2f;
 
@@ -19,7 +17,7 @@ namespace LastJumpCrew.ParkHanSol.Interaction
 
         public float Mass => targetRigidbody == null ? 0f : Mathf.Max(0.1f, targetRigidbody.mass);
         public float PhysicalVolume => physicalVolume;
-        public int Value => setupValid ? CalculateValue() : 0;
+        public int Value => setupValid && debrisData != null ? debrisData.Price : 0;
 
         private void Awake()
         {
@@ -31,19 +29,16 @@ namespace LastJumpCrew.ParkHanSol.Interaction
                 Debug.LogError($"PHS_DEBRIS_SETUP_FAILED reason=rigidbody_missing debris={name}");
             }
 
+            if (debrisData == null || debrisData.Price <= 0)
+            {
+                setupValid = false;
+                Debug.LogError($"PHS_DEBRIS_SETUP_FAILED reason=debris_data_invalid debris={name}");
+            }
+
             if (setupValid && recalculateMassFromVolume)
             {
                 targetRigidbody.mass = Mathf.Max(0.1f, physicalVolume * materialDensity);
             }
-        }
-
-        private int CalculateValue()
-        {
-            var massRatio = Mass / Mathf.Max(0.01f, referenceMass);
-            var volumeRatio = physicalVolume / Mathf.Max(0.001f, referenceVolume);
-            var valueRatio = massRatio * massValueWeight
-                + volumeRatio * (1f - massValueWeight);
-            return Mathf.Max(1, Mathf.RoundToInt(referenceValue * valueRatio));
         }
 
         private bool TryCalculatePhysicalVolume(out float volume)
