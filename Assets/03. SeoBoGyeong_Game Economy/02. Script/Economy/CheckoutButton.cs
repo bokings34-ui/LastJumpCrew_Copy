@@ -7,9 +7,9 @@ namespace LastJumpCrew.SeoBoGyeong.Economy
     public class CheckoutButton : MonoBehaviour ,IInteractable, InterAct.IInteractable
     {
         [SerializeField] private CheckoutDetector detector;
+        [SerializeField] private string prompt = "Check Out";
 
         private List<ShopItemTag> basket => detector.basket;
-        private List<int> requestItem = new();
 
         private IGameCommands commands;
         private IGameStateProvider state;
@@ -27,47 +27,44 @@ namespace LastJumpCrew.SeoBoGyeong.Economy
             if (state != null) state.PurchaseResolved -= OnPurchaseResolved;
         }
 
-        private void OnPurchaseResolved(int itemId, bool success)
+        // ì¼ê´„ ê²°ì œ ê²°ê³¼ í†µì§€. ì „ë¶€-ì•„ë‹ˆë©´-ì „ë¬´ì´ë¯€ë¡œ success == true ì¼ ë•Œë§Œ
+        // êµ¬ë§¤ëœ id ë“¤ì„ ë°”êµ¬ë‹ˆì—ì„œ ì œê±°í•˜ê³  ì§„ì—´í’ˆ(GameObject)ì„ íŒŒê´´í•œë‹¤.
+        // (ê±°ë¶€ ì‚¬ìœ ëŠ” ì„¸ì…˜ì´ ë¡œê·¸ë¡œ ì¶œë ¥. íŒŒê´´ëœ ìƒí’ˆì€ ë‹¤ìŒ ìŠ¤ìº”ì—ì„œë„ ìë™ ì œì™¸ë¨.)
+        private void OnPurchaseResolved(List<int> itemIds, bool success)
         {
-            if (!success) return; // °ÅºÎ »çÀ¯´Â ¼¼¼ÇÀÌ ·Î±×·Î Ãâ·Â
+            if (!success || itemIds == null) return;
 
-            for (int i = 0; i < basket.Count; i++)
+            foreach (int id in itemIds)
             {
-                var tag = basket[i];
-                if (tag == null || tag.ItemId != itemId) continue;
+                // ê°™ì€ id ì§„ì—´í’ˆì´ ì—¬ëŸ¬ ê°œì¼ ìˆ˜ ìˆìœ¼ë‹ˆ, í•˜ë‚˜ ì°¾ìœ¼ë©´ ì œê±°í•˜ê³  ë‹¤ìŒ id ë¡œ ë„˜ì–´ê°„ë‹¤.
+                for (int i = basket.Count - 1; i >= 0; i--)
+                {
+                    var tag = basket[i];
+                    if (tag == null || tag.ItemId != id) continue;
 
-                // TODO: ±¸¸Å ¼º°ø ¾ÆÀÌÅÛÀÇ IHoldableItem Áö±Ş/È¹µæ Ã³¸® ¿¬°á
-                requestItem.Add(itemId);
-
-                basket.RemoveAt(i);
-                Destroy(tag.gameObject);
-
-                return;
+                    // TODO: êµ¬ë§¤ ì„±ê³µ ì•„ì´í…œì˜ IHoldableItem ì§€ê¸‰/íšë“ ì²˜ë¦¬ ì—°ê²°
+                    basket.RemoveAt(i);
+                    Destroy(tag.gameObject);
+                    break;
+                }
             }
         }
 
         #region Common IInteractable
-        public string InteractionPrompt => "Check Out";
+        public string InteractionPrompt => prompt;
 
         public bool CanInteract(IItemHolder itemHolder)
         {
-            bool value= detector.CheckBasket();
-            Debug.Log($"[ItemCheckout/C] ÀÎÅÍ·º¼Ç Ã¼Å© : {value}");
+            bool value = detector.CheckBasket();
+            Debug.Log($"[ItemCheckout/C] ì¸í„°ë ‰ì…˜ ì²´í¬ : {value}");
             return value;
         }
 
         public void Interact(IItemHolder itemHolder)
         {
-            Debug.Log("[ItemCheckout/C] ÀÎÅÍ·º¼Ç ½ÇÇà");
+            Debug.Log("[ItemCheckout/C] ì¸í„°ë ‰ì…˜ ì‹¤í–‰");
             if (!CanInteract(itemHolder)) return;
-
-            // ½º³À¼¦ ¼øÈ¸ ? ·ÎÄÃ¿¡¼± °á°ú ÀÌº¥Æ®°¡ µ¿±â·Î µ¹¾Æ¿Í ¼øÈ¸ Áß basket ÀÌ º¯ÇÑ´Ù
-            var snapshot = detector.GetBasket();
-            foreach (var tag in snapshot)
-            {
-                if (tag == null) continue; // ÆÄ±«µÈ Áø¿­Ç° ¹æ¾î
-                commands.RequestPurchase(tag.ItemId);
-            }
+            RequestPurchaseBasket();
         }
         #endregion
 
@@ -75,24 +72,33 @@ namespace LastJumpCrew.SeoBoGyeong.Economy
         public bool CanInteract(InterAct.IItemHolder itemHolder)
         {
             bool value = detector.CheckBasket();
-            Debug.Log($"[ItemCheckout/P] ÀÎÅÍ·º¼Ç Ã¼Å© : {value}");
+            //Debug.Log($"[ItemCheckout/P] ì¸í„°ë ‰ì…˜ ì²´í¬ : {value}");
             return value;
         }
 
         public void Interact(InterAct.IItemHolder itemHolder)
         {
-            Debug.Log("[ItemCheckout/P] ÀÎÅÍ·º¼Ç ½ÇÇà");
+            Debug.Log("[ItemCheckout/P] ì¸í„°ë ‰ì…˜ ì‹¤í–‰");
             if (!CanInteract(itemHolder)) return;
-
-            // ½º³À¼¦ ¼øÈ¸ ? ·ÎÄÃ¿¡¼± °á°ú ÀÌº¥Æ®°¡ µ¿±â·Î µ¹¾Æ¿Í ¼øÈ¸ Áß basket ÀÌ º¯ÇÑ´Ù
-            var snapshot = detector.GetBasket();
-            foreach (var tag in snapshot)
-            {
-                if (tag == null) continue; // ÆÄ±«µÈ Áø¿­Ç° ¹æ¾î
-                commands.RequestPurchase(tag.ItemId);
-            }
+            RequestPurchaseBasket();
         }
         #endregion
+
+        // ë°”êµ¬ë‹ˆ(êµ¬ì—­ ë°•ìŠ¤ ì•ˆì—ì„œ ì¸ì§€ëœ ìƒí’ˆ) ì „ì²´ì˜ id ë¥¼ ëª¨ì•„ í•œ ë²ˆì— ê²°ì œë¥¼ ìš”ì²­í•œë‹¤.
+        // ë‚±ê°œë¡œ ì—¬ëŸ¬ ë²ˆ ë¶€ë¥´ë˜ ê²ƒì„ 1íšŒ í˜¸ì¶œë¡œ ë°”ê¿”, ì”ì•¡ í™•ì¸Â·ì°¨ê°Â·ì‚­ì œê°€ ëª¨ë‘ í•œ ë²ˆì— ì¼ì–´ë‚œë‹¤.
+        // ê²°ê³¼ëŠ” OnPurchaseResolved ë¡œ ëŒì•„ì˜¨ë‹¤(ë¡œì»¬ì€ ë™ê¸° ì‹¤í–‰).
+        private void RequestPurchaseBasket()
+        {
+            var snapshot = detector.GetBasket();          // ìˆœíšŒ ì¤‘ basket ì´ ë³€í•  ìˆ˜ ìˆì–´ ìŠ¤ëƒ…ìƒ· ì‚¬ìš©
+            var ids = new List<int>(snapshot.Length);
+            foreach (var tag in snapshot)
+            {
+                if (tag == null) continue;                // íŒŒê´´ëœ ì§„ì—´í’ˆ ë°©ì–´
+                ids.Add(tag.ItemId);
+            }
+            if (ids.Count == 0) return;
+
+            commands.RequestPurchase(ids);
+        }
     }
 }
-

@@ -1,3 +1,5 @@
+using System.Collections.Generic;
+
 namespace LastJumpCrew.SeoBoGyeong
 {
     /// <summary>
@@ -16,6 +18,6 @@ namespace LastJumpCrew.SeoBoGyeong
         /// 상점 구매 요청. 권위측이 가격·잔액을 검증해 Credit 차감 후
         /// 결과를 IGameStateProvider.PurchaseResolved 로 알린다.
         /// </summary>
-        void RequestPurchase(int itemId);
+        void RequestPurchase(List<int> itemId);
     }
 }

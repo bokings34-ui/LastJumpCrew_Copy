@@ -120,7 +120,7 @@ namespace LastJumpCrew.SeoBoGyeong
         private void SpawnDisplayItem(int prefabIndex, Vector3 pos, Quaternion rot)
         {
             var go = Instantiate(_itemPrefabs[prefabIndex], pos, rot);
-            go.AddComponent<ShopItemTag>().Init(_itemIds[prefabIndex]);
+            go.AddComponent<ShopItemTag>().Init(_itemIds[prefabIndex], _tools.Get(_itemIds[prefabIndex]).Price);
         }
 
         [ContextMenu("Spawn Item")]
