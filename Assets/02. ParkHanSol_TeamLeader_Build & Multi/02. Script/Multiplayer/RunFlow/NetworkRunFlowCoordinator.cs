@@ -183,6 +183,11 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
                 return;
             }
 
+            if (synchronizedPhase.Value == NetworkRunPhase.WarpSafe)
+            {
+                return;
+            }
+
             if (TryBindGameFlow())
             {
                 TickServerFlow(Time.deltaTime);
