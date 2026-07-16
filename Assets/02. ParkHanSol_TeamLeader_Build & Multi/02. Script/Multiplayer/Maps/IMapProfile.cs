@@ -10,6 +10,12 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Maps
         SeparateScene = 1
     }
 
+    public enum PHSMapSkyboxMode : byte
+    {
+        ProfileMaterials = 0,
+        DedicatedSceneGameplayWithProfileArrival = 1
+    }
+
     public interface IMapProfile
     {
         int MapId { get; }
@@ -21,6 +27,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Maps
         PHSMapSceneMode SceneMode { get; }
         string SceneName { get; }
         GameObject EnvironmentRootPrefab { get; }
+        PHSMapSkyboxMode SkyboxMode { get; }
         Material GameplaySkybox { get; }
         Material ArrivalSkybox { get; }
         IReadOnlyList<PHSMapEventWeight> ExternalThreatWeights { get; }

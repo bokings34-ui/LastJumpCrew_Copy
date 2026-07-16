@@ -24,11 +24,19 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Maps
         [SerializeField, Min(1f)] private float stageTimeLimitSeconds = 180f;
         [SerializeField, Min(0)] private int clearRewardCredits;
 
-        [Header("Scene And Environment")]
+        [Header("Map Loading")]
+        [Tooltip("Shared: 공용 맵 씬에 Environment Prefab을 교체합니다. Separate: Scene Name의 전용 우주 맵 씬을 로드합니다.")]
         [SerializeField] private PHSMapSceneMode sceneMode = PHSMapSceneMode.SharedSceneEnvironment;
         [SerializeField] private string sceneName = "PHS_Map_ver1";
+        [Tooltip("SharedSceneEnvironment에서만 사용합니다. 맵 외형 루트 프리팹을 드래그해 교체합니다.")]
         [SerializeField] private GameObject environmentRootPrefab;
+
+        [Header("Skybox Materials - Drag And Drop")]
+        [Tooltip("ProfileMaterials: 아래 두 재질을 사용합니다. DedicatedSceneGameplayWithProfileArrival: 전용 씬의 RenderSettings.skybox를 플레이 배경으로 사용합니다.")]
+        [SerializeField] private PHSMapSkyboxMode skyboxMode = PHSMapSkyboxMode.ProfileMaterials;
+        [Tooltip("ProfileMaterials에서 플레이 중 사용할 Skybox Material입니다.")]
         [SerializeField] private Material gameplaySkybox;
+        [Tooltip("워프 도착 연출에 사용할 Skybox Material입니다. 모든 모드에서 필수입니다.")]
         [SerializeField] private Material arrivalSkybox;
 
         [Header("External Threat Schedule")]
@@ -58,6 +66,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Maps
         public PHSMapSceneMode SceneMode => sceneMode;
         public string SceneName => sceneName;
         public GameObject EnvironmentRootPrefab => environmentRootPrefab;
+        public PHSMapSkyboxMode SkyboxMode => skyboxMode;
         public Material GameplaySkybox => gameplaySkybox;
         public Material ArrivalSkybox => arrivalSkybox;
         public IReadOnlyList<PHSMapEventWeight> ExternalThreatWeights => externalThreatWeights;
@@ -131,7 +140,20 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Maps
                 return false;
             }
 
-            if (gameplaySkybox == null)
+            if (!System.Enum.IsDefined(typeof(PHSMapSkyboxMode), skyboxMode))
+            {
+                reason = $"skybox_mode_invalid:value={(int)skyboxMode}";
+                return false;
+            }
+
+            if (skyboxMode == PHSMapSkyboxMode.DedicatedSceneGameplayWithProfileArrival
+                && sceneMode != PHSMapSceneMode.SeparateScene)
+            {
+                reason = "dedicated_scene_skybox_mode_requires_separate_scene";
+                return false;
+            }
+
+            if (skyboxMode == PHSMapSkyboxMode.ProfileMaterials && gameplaySkybox == null)
             {
                 reason = "gameplay_skybox_missing";
                 return false;

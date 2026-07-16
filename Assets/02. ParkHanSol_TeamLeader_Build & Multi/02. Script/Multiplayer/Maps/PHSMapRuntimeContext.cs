@@ -182,8 +182,16 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Maps
                 return false;
             }
 
+            if (!TryResolveGameplaySkybox(profile, out var gameplaySkybox, out var skyboxReason))
+            {
+                Debug.LogError(
+                    $"PHS_MAP_RUNTIME_APPLY_FAILED reason={skyboxReason} mapId={mapId}",
+                    this);
+                return false;
+            }
+
             if (!warpTransitionPresenter.TryConfigureMapPresentation(
-                    profile.GameplaySkybox,
+                    gameplaySkybox,
                     profile.ArrivalSkybox,
                     out var presentationReason))
             {
@@ -205,6 +213,34 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Maps
             CurrentProfileChanged?.Invoke(profile);
             Debug.Log($"PHS_MAP_RUNTIME_APPLIED mapId={mapId} name={profile.DisplayName}", this);
             return true;
+        }
+
+        private static bool TryResolveGameplaySkybox(
+            PHSMapProfileSO profile,
+            out Material gameplaySkybox,
+            out string reason)
+        {
+            switch (profile.SkyboxMode)
+            {
+                case PHSMapSkyboxMode.ProfileMaterials:
+                    gameplaySkybox = profile.GameplaySkybox;
+                    reason = null;
+                    return true;
+                case PHSMapSkyboxMode.DedicatedSceneGameplayWithProfileArrival:
+                    gameplaySkybox = RenderSettings.skybox;
+                    if (gameplaySkybox == null)
+                    {
+                        reason = "dedicated_scene_render_settings_skybox_missing";
+                        return false;
+                    }
+
+                    reason = null;
+                    return true;
+                default:
+                    gameplaySkybox = null;
+                    reason = $"skybox_mode_unsupported:{profile.SkyboxMode}";
+                    return false;
+            }
         }
 
         private bool TryApplyEnvironment(PHSMapProfileSO profile, out string reason)
