@@ -75,6 +75,28 @@ namespace LastJumpCrew.ParkHanSol.Interaction
 
         public TravelConsoleDestination SelectedDestination => synchronizedDestination.Value;
 
+        public bool TryGetCurrentMapChoices(out int leftZoneId, out int rightZoneId)
+        {
+            leftZoneId = 0;
+            rightZoneId = 0;
+            var runFlow = NetworkRunFlowCoordinator.Instance;
+            if (runFlow == null || runFlow.Phase != NetworkRunPhase.WarpReady || !AreMapChoicesReady())
+            {
+                return false;
+            }
+
+            var left = temporaryMapOptions[synchronizedLeftMapIndex.Value];
+            var right = temporaryMapOptions[synchronizedRightMapIndex.Value];
+            if (left == null || right == null)
+            {
+                return false;
+            }
+
+            leftZoneId = left.id;
+            rightZoneId = right.id;
+            return leftZoneId > 0 && rightZoneId > 0;
+        }
+
         public string ActionPrompt
         {
             get
@@ -284,7 +306,8 @@ namespace LastJumpCrew.ParkHanSol.Interaction
             {
                 return (SelectedDestination == TravelConsoleDestination.LeftMap
                         || SelectedDestination == TravelConsoleDestination.RightMap)
-                    && TryGetSelectedMapData(out _);
+                    && TryGetSelectedMapData(out _)
+                    && runFlow.IsWarpSafetySatisfied;
             }
 
             if (runFlow.Phase == NetworkRunPhase.Charging)
@@ -409,6 +432,11 @@ namespace LastJumpCrew.ParkHanSol.Interaction
             if (phase == NetworkRunPhase.WarpReady)
             {
                 RollMapChoices();
+            }
+            else
+            {
+                synchronizedLeftMapIndex.Value = -1;
+                synchronizedRightMapIndex.Value = -1;
             }
 
             RefreshPresentation();
@@ -545,7 +573,10 @@ namespace LastJumpCrew.ParkHanSol.Interaction
             }
             else if (mapChoicesReady)
             {
-                actionScreenText.text = "왼쪽/오른쪽\n맵 선택";
+                actionScreenText.text = runFlow.RequiresAllConnectedAlivePlayersSafe &&
+                    !runFlow.IsWarpSafetySatisfied
+                        ? $"안전 구역 집결\n{runFlow.SafePlayerCount}/{runFlow.RequiredSafePlayerCount}"
+                        : "왼쪽/오른쪽\n맵 선택";
             }
             else if (shopAvailable)
             {

@@ -237,7 +237,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
 
             if (IsServer)
             {
-                LoadGameplaySceneForAll(destinationSceneName, shopTransitionMode);
+                LoadGameplaySceneForAll(OwnerClientId, destinationSceneName, shopTransitionMode);
                 return;
             }
 
@@ -256,10 +256,11 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
                 return;
             }
 
-            LoadGameplaySceneForAll(destinationSceneName, shopTransitionMode);
+            LoadGameplaySceneForAll(rpcParams.Receive.SenderClientId, destinationSceneName, shopTransitionMode);
         }
 
         private static void LoadGameplaySceneForAll(
+            ulong activatorClientId,
             string destinationSceneName,
             ShopSceneTransitionMode shopTransitionMode)
         {
@@ -267,6 +268,36 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
             if (networkManager == null || !networkManager.IsListening || !networkManager.IsServer)
             {
                 Debug.LogError($"PHS_NETWORK_PORTAL_FAILED reason=server_unavailable scene={destinationSceneName}");
+                return;
+            }
+
+            if (!networkManager.ConnectedClients.TryGetValue(activatorClientId, out var client) ||
+                client.PlayerObject == null)
+            {
+                Debug.LogError(
+                    $"PHS_NETWORK_PORTAL_FAILED reason=player_missing clientId={activatorClientId} scene={destinationSceneName}");
+                return;
+            }
+
+            var matchingPortal = false;
+            foreach (var portal in UnityEngine.Object.FindObjectsByType<NetworkScenePortalInteractable>(
+                         UnityEngine.FindObjectsInactive.Exclude,
+                         UnityEngine.FindObjectsSortMode.None))
+            {
+                if (portal.MatchesServerRequest(
+                        client.PlayerObject.transform,
+                        destinationSceneName,
+                        shopTransitionMode))
+                {
+                    matchingPortal = true;
+                    break;
+                }
+            }
+
+            if (!matchingPortal)
+            {
+                Debug.LogWarning(
+                    $"PHS_NETWORK_PORTAL_FAILED reason=portal_missing_or_out_of_range clientId={activatorClientId} scene={destinationSceneName} mode={shopTransitionMode}");
                 return;
             }
 

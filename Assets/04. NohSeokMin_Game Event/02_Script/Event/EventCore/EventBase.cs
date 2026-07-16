@@ -14,8 +14,10 @@ namespace SM
         protected EventDataSO _data;
         protected EventContext Context { get; private set; }
 
+        public ulong InstanceId { get { return Context?.InstanceId ?? 0UL; } }
         public EventType Type { get { return _data.Type; } }
         public EventId Id { get { return _data.Id; } }
+        public string RoomId { get { return Context?.Room?.RoomId ?? string.Empty; } }
 
         public event Action<EventBase, bool> OnFinished;
 
@@ -47,12 +49,23 @@ namespace SM
         // 스테이지 종료 시 강제 종료
         public virtual void ForceTerminate()
         {
-            _state = EventState.Resolve;
+            ChangeState(EventState.Resolve);
         }
 
         protected void ChangeState(EventState nextState)
         {
+            if (_state == EventState.Resolve || _state == EventState.Fail)
+            {
+                return;
+            }
+
             _state = nextState;
+
+            Context?.RuntimeBridge?.PublishEventStateChanged(
+                InstanceId,
+                Id,
+                RoomId,
+                nextState);
 
             if (nextState == EventState.Resolve)
             {

@@ -45,14 +45,44 @@ namespace LastJumpCrew.ParkHanSol.Interaction
 
         public bool TryQueueDelivery(UtilityItemPrefabData itemPrefabData)
         {
-            if (itemPrefabData == null)
+            return TryQueueDeliveries(new[] { itemPrefabData });
+        }
+
+        public bool CanQueueDeliveries(IReadOnlyList<UtilityItemPrefabData> itemPrefabData)
+        {
+            if (itemPrefabData == null || itemPrefabData.Count == 0)
             {
-                Debug.LogError($"PHS_PURCHASE_DELIVERY_QUEUE_FAILED reason=item_missing service={name}");
+                Debug.LogError($"PHS_PURCHASE_DELIVERY_QUEUE_FAILED reason=items_missing service={name}");
                 return false;
             }
 
-            pendingItems.Enqueue(itemPrefabData);
-            Debug.Log($"PHS_PURCHASE_DELIVERY_QUEUED service={name} item={itemPrefabData.ItemId} pending={pendingItems.Count}");
+            for (var index = 0; index < itemPrefabData.Count; index++)
+            {
+                if (itemPrefabData[index] == null)
+                {
+                    Debug.LogError(
+                        $"PHS_PURCHASE_DELIVERY_QUEUE_FAILED reason=item_missing service={name} index={index}");
+                    return false;
+                }
+            }
+
+            return true;
+        }
+
+        public bool TryQueueDeliveries(IReadOnlyList<UtilityItemPrefabData> itemPrefabData)
+        {
+            if (!CanQueueDeliveries(itemPrefabData))
+            {
+                return false;
+            }
+
+            foreach (var item in itemPrefabData)
+            {
+                pendingItems.Enqueue(item);
+            }
+
+            Debug.Log(
+                $"PHS_PURCHASE_DELIVERY_BATCH_QUEUED service={name} count={itemPrefabData.Count} pending={pendingItems.Count}");
             return true;
         }
 

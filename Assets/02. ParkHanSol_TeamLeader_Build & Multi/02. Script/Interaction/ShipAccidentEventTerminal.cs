@@ -1,4 +1,6 @@
 using SM;
+using LastJumpCrew.ParkHanSol.Multiplayer.Events;
+using Unity.Netcode;
 using UnityEngine;
 using CommonInteraction = LastJumpCrew.Common;
 
@@ -12,18 +14,16 @@ namespace LastJumpCrew.ParkHanSol.Interaction
 
         [Header("상호작용 안내")]
         [SerializeField] private string interactionPrompt = "함선 사고 발생시키기";
+        [SerializeField, Min(1f)] private float serverInteractionDistance = 4f;
 
         private bool isEventInProgress;
 
         public string InteractionPrompt => interactionPrompt;
+        public EventId ConfiguredEventId => eventId;
 
         public bool CanInteract(IItemHolder itemHolder)
         {
-            return IsSupportedEvent(eventId)
-                && !isEventInProgress
-                && EventManager.Instance != null
-                && RoomRegistry.Instance != null
-                && !EventManager.Instance.IsActive(eventId);
+            return CanInteractCore();
         }
 
         public void Interact(IItemHolder itemHolder)
@@ -38,11 +38,7 @@ namespace LastJumpCrew.ParkHanSol.Interaction
 
         bool CommonInteraction.IInteractable.CanInteract(CommonInteraction.IItemHolder itemHolder)
         {
-            return IsSupportedEvent(eventId)
-                && !isEventInProgress
-                && EventManager.Instance != null
-                && RoomRegistry.Instance != null
-                && !EventManager.Instance.IsActive(eventId);
+            return CanInteractCore();
         }
 
         void CommonInteraction.IInteractable.Interact(CommonInteraction.IItemHolder itemHolder)
@@ -60,6 +56,26 @@ namespace LastJumpCrew.ParkHanSol.Interaction
             if (!IsSupportedEvent(eventId))
             {
                 Debug.LogError($"[{nameof(ShipAccidentEventTerminal)}] 구현되지 않은 사고 이벤트입니다: {eventId}", this);
+                return;
+            }
+
+            if (IsNetworkSessionActive(out var networkCoordinator))
+            {
+                if (networkCoordinator == null || !networkCoordinator.IsSpawned)
+                {
+                    Debug.LogError(
+                        $"PHS_EVENT_TERMINAL_NETWORK_REJECTED reason=coordinator_missing event={eventId}",
+                        this);
+                    return;
+                }
+
+                if (!networkCoordinator.RequestEventFromTerminal(eventId))
+                {
+                    Debug.LogWarning(
+                        $"PHS_EVENT_TERMINAL_NETWORK_REJECTED reason=request_not_accepted event={eventId}",
+                        this);
+                }
+
                 return;
             }
 
@@ -97,8 +113,15 @@ namespace LastJumpCrew.ParkHanSol.Interaction
             }
 
             isEventInProgress = true;
-            eventManager.SpawnEvent(eventId, room, HandleSpawnFinished);
+            var spawnAccepted = eventManager.SpawnEvent(eventId, room, HandleSpawnFinished);
             spawnCallCompleted = true;
+
+            if (!spawnAccepted)
+            {
+                isEventInProgress = false;
+                Debug.LogError($"[{nameof(ShipAccidentEventTerminal)}] 함선 사고 생성 실패: {eventId}", this);
+                return;
+            }
 
             if (finishedDuringSpawn)
             {
@@ -108,6 +131,10 @@ namespace LastJumpCrew.ParkHanSol.Interaction
                         $"[{nameof(ShipAccidentEventTerminal)}] 즉시 종료된 {eventId} 이벤트가 EventManager에 활성 상태로 남았습니다. " +
                         "EventManager의 이벤트 등록 순서를 확인해야 합니다.",
                         this);
+                }
+                else
+                {
+                    Debug.Log($"[{nameof(ShipAccidentEventTerminal)}] 함선 사고가 즉시 종료되었습니다: {eventId}", this);
                 }
 
                 return;
@@ -132,6 +159,52 @@ namespace LastJumpCrew.ParkHanSol.Interaction
 
             isEventInProgress = false;
             Debug.Log($"[{nameof(ShipAccidentEventTerminal)}] 함선 사고 종료: {eventId}, success={isSuccess}", this);
+        }
+
+        public bool IsServerRequestValid(EventId requestedEventId, Vector3 playerPosition)
+        {
+            if (!isActiveAndEnabled
+                || requestedEventId != eventId
+                || !IsSupportedEvent(requestedEventId))
+            {
+                return false;
+            }
+
+            return (transform.position - playerPosition).sqrMagnitude
+                <= serverInteractionDistance * serverInteractionDistance;
+        }
+
+        private bool CanInteractCore()
+        {
+            if (!IsSupportedEvent(eventId))
+            {
+                return false;
+            }
+
+            if (IsNetworkSessionActive(out var networkCoordinator))
+            {
+                return networkCoordinator != null
+                    && networkCoordinator.IsSpawned
+                    && !networkCoordinator.IsEventActive(eventId);
+            }
+
+            return !isEventInProgress
+                && EventManager.Instance != null
+                && RoomRegistry.Instance != null
+                && !EventManager.Instance.IsActive(eventId);
+        }
+
+        private static bool IsNetworkSessionActive(out NetworkEventCoordinator networkCoordinator)
+        {
+            var networkManager = NetworkManager.Singleton;
+            if (networkManager == null || !networkManager.IsListening)
+            {
+                networkCoordinator = null;
+                return false;
+            }
+
+            networkCoordinator = NetworkEventCoordinator.Instance;
+            return true;
         }
 
         private static bool IsSupportedEvent(EventId value)

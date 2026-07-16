@@ -11,6 +11,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
     {
         [SerializeField, Min(1)] private int maximumHealth = 100;
         [SerializeField, Min(0.1f)] private float automaticRespawnSeconds = 5f;
+        [SerializeField, Min(0.1f)] private float missingRespawnPointRetrySeconds = 0.5f;
 
         private readonly NetworkVariable<int> synchronizedHealth = new(
             100,
@@ -48,6 +49,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
         public bool IsWaitingForAutomaticRespawn => !synchronizedAlive.Value
             && !synchronizedWarpRevivePending.Value
             && synchronizedRespawnSeconds.Value >= 0f;
+        public float DeadZoneWarningRemainingSeconds => synchronizedDeadZoneSeconds.Value;
         public float RespawnRemainingSeconds => synchronizedRespawnSeconds.Value;
 
         private void Awake()
@@ -142,7 +144,11 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
             }
 
             automaticRespawnDeadline = -1f;
-            TryReviveAtSceneRespawnPoint("automatic");
+            if (!TryReviveAtSceneRespawnPoint("automatic"))
+            {
+                automaticRespawnDeadline = Time.time + missingRespawnPointRetrySeconds;
+                synchronizedRespawnSeconds.Value = missingRespawnPointRetrySeconds;
+            }
         }
 
         public void ApplyDamage(int amount, GameObject attacker)

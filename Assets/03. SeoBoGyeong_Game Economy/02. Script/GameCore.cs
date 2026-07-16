@@ -81,5 +81,63 @@ namespace LastJumpCrew.SeoBoGyeong
             Services.Register<IGameStateProvider>(session);
             Services.Register<IGameCommands>(session);
         }
+
+        /// <summary>
+        /// Installs the current authoritative ship-status provider and rebinds the existing
+        /// session without replacing its state or wallet.
+        /// </summary>
+        public bool TryInstallShipStatus(IShipStatus provider)
+        {
+            if (provider == null || Services == null || session == null)
+            {
+                Debug.LogError("PHS_GAME_CORE_SHIP_STATUS_INSTALL_FAILED reason=core_not_ready", this);
+                return false;
+            }
+
+            if (Services.TryGet<IShipStatus>(out var current)
+                && ReferenceEquals(current, provider))
+            {
+                return true;
+            }
+
+            if (!session.TryRebindShipStatus(provider))
+            {
+                return false;
+            }
+
+            Services.Register<IShipStatus>(provider);
+            Debug.Log($"PHS_GAME_CORE_SHIP_STATUS_INSTALLED provider={provider.GetType().Name}", this);
+            return true;
+        }
+
+        /// <summary>
+        /// Releases only the provider that is still registered. No mock fallback is installed;
+        /// a later authoritative network replica must reconnect explicitly.
+        /// </summary>
+        public bool TryReleaseShipStatus(IShipStatus provider)
+        {
+            if (provider == null || Services == null || session == null
+                || !Services.TryGet<IShipStatus>(out var current)
+                || !ReferenceEquals(current, provider))
+            {
+                return false;
+            }
+
+            if (!session.TryReleaseShipStatus(provider))
+            {
+                return false;
+            }
+
+            if (!Services.TryUnregister<IShipStatus>(provider))
+            {
+                Debug.LogError("PHS_GAME_CORE_SHIP_STATUS_RELEASE_FAILED reason=registry_mismatch", this);
+                return false;
+            }
+
+            Debug.LogWarning(
+                $"PHS_GAME_CORE_SHIP_STATUS_RELEASED provider={provider.GetType().Name} waiting_for_reconnect=true",
+                this);
+            return true;
+        }
     }
 }

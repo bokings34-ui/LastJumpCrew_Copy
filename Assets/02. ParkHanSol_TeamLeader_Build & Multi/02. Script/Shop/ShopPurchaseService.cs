@@ -147,6 +147,7 @@ namespace LastJumpCrew.ParkHanSol.Shop
 
             var requestIds = new HashSet<string>(StringComparer.Ordinal);
             var onePerVisitOfferIds = new HashSet<string>(StringComparer.Ordinal);
+            var deliveryItems = new List<UtilityItemPrefabData>(requests.Count);
             var totalPrice = 0;
             foreach (var request in requests)
             {
@@ -181,6 +182,13 @@ namespace LastJumpCrew.ParkHanSol.Shop
                 {
                     return Fail("price_overflow", totalPrice, out result);
                 }
+
+                deliveryItems.Add(request.Product.ItemPrefabData);
+            }
+
+            if (!deliveryService.CanQueueDeliveries(deliveryItems))
+            {
+                return Fail("delivery_rejected", totalPrice, out result);
             }
 
             if (!wallet.TrySpendCredits(totalPrice))
@@ -188,16 +196,20 @@ namespace LastJumpCrew.ParkHanSol.Shop
                 return Fail("insufficient_credits", totalPrice, out result);
             }
 
-            foreach (var request in requests)
+            if (!deliveryService.TryQueueDeliveries(deliveryItems))
             {
-                if (!deliveryService.TryQueueDelivery(request.Product.ItemPrefabData))
+                if (!wallet.TryAddCredits(totalPrice))
                 {
                     Debug.LogError(
-                        $"PHS_SHOP_PURCHASE_INVARIANT_FAILED reason=delivery_rejected_after_payment service={name} purchaseId={request.PurchaseId}",
+                        $"PHS_SHOP_PURCHASE_INVARIANT_FAILED reason=payment_rollback_failed service={name} totalPrice={totalPrice}",
                         this);
-                    return Fail("delivery_rejected_after_payment", totalPrice, out result);
                 }
 
+                return Fail("delivery_rejected_after_payment", totalPrice, out result);
+            }
+
+            foreach (var request in requests)
+            {
                 completedPurchaseIds.Add(request.PurchaseId);
                 if (request.Product.StockPolicy == ShopStockPolicy.OnePerVisit)
                 {

@@ -1,57 +1,87 @@
-﻿using UnityEngine;
-using LastJumpCrew.Common;
 using LastJumpCrew.ParkHanSol.Interaction;
+using LastJumpCrew.ParkHanSol.Multiplayer;
+using UnityEngine;
 
-// 💡 [핵심] 미니게임처럼 IInteractable 명찰을 똑같이 달아줍니다!
-public class WarpTerminal : MonoBehaviour, LastJumpCrew.ParkHanSol.Interaction.IInteractable, LastJumpCrew.Common.IInteractable
+public class WarpTerminal : MonoBehaviour,
+    LastJumpCrew.ParkHanSol.Interaction.IInteractable,
+    LastJumpCrew.Common.IInteractable
 {
     [Header("상호작용 안내 문구")]
     [SerializeField] private string promptText = "워프 장치 가동하기";
 
-    private bool isWarping = false; // 현재 워프 상태 저장
+    [Header("워프 진행 연결")]
+    [SerializeField] private NetworkTravelConsoleController travelConsole;
+    [SerializeField] private Renderer availabilityRenderer;
+    [SerializeField] private Collider interactionCollider;
 
-    // 플레이어가 가까이 가면 화면에 띄워줄 문구
+    private bool lastAvailability;
+
     public string InteractionPrompt => promptText;
 
-    // ==========================================
-    // 1️⃣ 팀장님 전용 상호작용 규칙 (F키 누르면 여기가 실행됨!)
-    // ==========================================
-    public bool CanInteract(LastJumpCrew.ParkHanSol.Interaction.IItemHolder itemHolder) => true;
+    private void Awake()
+    {
+        if (travelConsole == null || availabilityRenderer == null || interactionCollider == null)
+        {
+            Debug.LogError($"[{nameof(WarpTerminal)}] Inspector 연결이 누락되었습니다.", this);
+            enabled = false;
+            return;
+        }
+
+        RefreshAvailability(true);
+    }
+
+    private void Update()
+    {
+        RefreshAvailability(false);
+    }
+
+    public bool CanInteract(LastJumpCrew.ParkHanSol.Interaction.IItemHolder itemHolder)
+    {
+        return IsWarpControllerAvailable()
+            && travelConsole != null
+            && travelConsole.CanExecute(itemHolder);
+    }
 
     public void Interact(LastJumpCrew.ParkHanSol.Interaction.IItemHolder itemHolder)
     {
-        ToggleWarpEffect();
+        if (CanInteract(itemHolder))
+        {
+            travelConsole.Execute(itemHolder);
+        }
     }
 
-    // ==========================================
-    // 2️⃣ 공용(Common) 상호작용 규칙
-    // ==========================================
-    bool LastJumpCrew.Common.IInteractable.CanInteract(LastJumpCrew.Common.IItemHolder itemHolder) => true;
+    bool LastJumpCrew.Common.IInteractable.CanInteract(LastJumpCrew.Common.IItemHolder itemHolder)
+    {
+        return itemHolder is Component component
+            && component is LastJumpCrew.ParkHanSol.Interaction.IItemHolder parkHanSolHolder
+            && CanInteract(parkHanSolHolder);
+    }
 
     void LastJumpCrew.Common.IInteractable.Interact(LastJumpCrew.Common.IItemHolder itemHolder)
     {
-        ToggleWarpEffect();
+        if (itemHolder is Component component
+            && component is LastJumpCrew.ParkHanSol.Interaction.IItemHolder parkHanSolHolder)
+        {
+            Interact(parkHanSolHolder);
+        }
     }
 
-    // ==========================================
-    // 🚀 워프 켜고 끄는 핵심 로직
-    // ==========================================
-    private void ToggleWarpEffect()
+    private bool IsWarpControllerAvailable()
     {
-        isWarping = !isWarping; // 상태 뒤집기 (켬 <-> 끔)
+        var runFlow = NetworkRunFlowCoordinator.Instance;
+        return runFlow != null && runFlow.Phase == NetworkRunPhase.WarpReady;
+    }
 
-        if (WarpManager.Instance != null)
+    private void RefreshAvailability(bool force)
+    {
+        var isAvailable = IsWarpControllerAvailable();
+        if (!force && isAvailable == lastAvailability)
         {
-            if (isWarping)
-            {
-                WarpManager.Instance.StartWarp();
-                Debug.Log("워프 가동!");
-            }
-            else
-            {
-                WarpManager.Instance.StopWarp();
-                Debug.Log("워프 중지!");
-            }
+            return;
         }
+
+        lastAvailability = isAvailable;
+        availabilityRenderer.enabled = isAvailable;
+        interactionCollider.enabled = isAvailable;
     }
 }

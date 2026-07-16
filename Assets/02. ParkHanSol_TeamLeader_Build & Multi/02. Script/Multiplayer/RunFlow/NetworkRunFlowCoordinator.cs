@@ -15,6 +15,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
         [SerializeField] private string mapSceneName = "PHS_Map_ver1";
         [SerializeField] private string shopSceneName = "PHS_ExteriorShopScene";
         [SerializeField] private bool automaticallyLoadShop;
+        [SerializeField] private bool requireAllConnectedAlivePlayersSafe = true;
 
         private readonly NetworkVariable<NetworkRunPhase> synchronizedPhase = new(
             NetworkRunPhase.Waiting,
@@ -33,6 +34,10 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
             NetworkVariableReadPermission.Everyone,
             NetworkVariableWritePermission.Server);
         private readonly NetworkVariable<int> synchronizedSafePlayers = new(
+            0,
+            NetworkVariableReadPermission.Everyone,
+            NetworkVariableWritePermission.Server);
+        private readonly NetworkVariable<int> synchronizedRequiredSafePlayers = new(
             0,
             NetworkVariableReadPermission.Everyone,
             NetworkVariableWritePermission.Server);
@@ -61,7 +66,11 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
         public int ClearedZoneCount => synchronizedClearedZones.Value;
         public int CompletedShopCycleCount => synchronizedShopCycles.Value;
         public int SafePlayerCount => synchronizedSafePlayers.Value;
+        public int RequiredSafePlayerCount => synchronizedRequiredSafePlayers.Value;
         public bool IsFinalShopPending => synchronizedFinalShopPending.Value;
+        public bool RequiresAllConnectedAlivePlayersSafe => requireAllConnectedAlivePlayersSafe;
+        public bool IsWarpSafetySatisfied => !requireAllConnectedAlivePlayersSafe ||
+            (RequiredSafePlayerCount > 0 && SafePlayerCount >= RequiredSafePlayerCount);
 
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
         private static void ResetStatics()
@@ -113,6 +122,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
             }
 
             TickScheduledWarpRevives();
+            RefreshSafePlayerCount();
 
             if (TryBindGameFlow())
             {
@@ -139,7 +149,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
             }
 
             RemoveDisconnectedPlayers();
-            synchronizedSafePlayers.Value = safePlayerIds.Count;
+            RefreshSafePlayerCount();
         }
 
         public bool TryActivateWarp(ulong activatorClientId, out string reason)
@@ -160,6 +170,13 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
             if (chargeElapsed < warpChargeSeconds)
             {
                 reason = "warp_charge_incomplete";
+                return false;
+            }
+
+            if (requireAllConnectedAlivePlayersSafe &&
+                !AreAllConnectedAlivePlayersSafe(out var safePlayers, out var requiredPlayers))
+            {
+                reason = $"players_not_safe:{safePlayers}/{requiredPlayers}";
                 return false;
             }
 
@@ -213,7 +230,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
             }
 
             RemoveDisconnectedPlayers();
-            synchronizedSafePlayers.Value = safePlayerIds.Count;
+            RefreshSafePlayerCount();
         }
 
         public bool TryCompleteFinalShop(out string reason)
@@ -430,6 +447,65 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
             warpRevivePlayerIds.RemoveWhere(clientId => !NetworkManager.ConnectedClients.ContainsKey(clientId));
         }
 
+        private bool AreAllConnectedAlivePlayersSafe(out int safePlayers, out int requiredPlayers)
+        {
+            safePlayers = 0;
+            requiredPlayers = 0;
+            foreach (var pair in NetworkManager.ConnectedClients)
+            {
+                var playerObject = pair.Value.PlayerObject;
+                if (playerObject == null)
+                {
+                    continue;
+                }
+
+                var lifeState = playerObject.GetComponent<NetworkPlayerLifeState>();
+                if (lifeState != null && !lifeState.IsAlive)
+                {
+                    continue;
+                }
+
+                requiredPlayers++;
+                if (safePlayerIds.Contains(pair.Key))
+                {
+                    safePlayers++;
+                }
+            }
+
+            synchronizedSafePlayers.Value = safePlayers;
+            synchronizedRequiredSafePlayers.Value = requiredPlayers;
+            return requiredPlayers > 0 && safePlayers == requiredPlayers;
+        }
+
+        private void RefreshSafePlayerCount()
+        {
+            var safePlayers = 0;
+            var requiredPlayers = 0;
+            foreach (var pair in NetworkManager.ConnectedClients)
+            {
+                var playerObject = pair.Value.PlayerObject;
+                if (playerObject == null)
+                {
+                    continue;
+                }
+
+                var lifeState = playerObject.GetComponent<NetworkPlayerLifeState>();
+                if (lifeState != null && !lifeState.IsAlive)
+                {
+                    continue;
+                }
+
+                requiredPlayers++;
+                if (safePlayerIds.Contains(pair.Key))
+                {
+                    safePlayers++;
+                }
+            }
+
+            synchronizedSafePlayers.Value = safePlayers;
+            synchronizedRequiredSafePlayers.Value = requiredPlayers;
+        }
+
         private void TickFinalShop()
         {
             if (finalShopCompleted)
@@ -499,6 +575,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
             if (IsServer)
             {
                 synchronizedSafePlayers.Value = 0;
+                synchronizedRequiredSafePlayers.Value = 0;
             }
         }
 

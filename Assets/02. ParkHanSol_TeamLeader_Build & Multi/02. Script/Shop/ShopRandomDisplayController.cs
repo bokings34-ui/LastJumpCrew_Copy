@@ -24,6 +24,36 @@ namespace LastJumpCrew.ParkHanSol.Shop
         private IShopPurchaseService purchaseService;
         private bool hasPopulatedThisVisit;
 
+        public int SlotCount => displaySlots?.Length ?? 0;
+        public int DisplayedProductCount
+        {
+            get
+            {
+                var count = 0;
+                if (displaySlots == null)
+                {
+                    return count;
+                }
+
+                foreach (var slot in displaySlots)
+                {
+                    if (slot != null && slot.CurrentProduct != null)
+                    {
+                        count++;
+                    }
+                }
+
+                return count;
+            }
+        }
+
+        public ShopProductData GetDisplayedProductAt(int slotIndex)
+        {
+            return displaySlots != null && slotIndex >= 0 && slotIndex < displaySlots.Length
+                ? displaySlots[slotIndex]?.CurrentProduct
+                : null;
+        }
+
         private void Awake()
         {
             purchaseService = purchaseServiceSource as IShopPurchaseService;
@@ -59,12 +89,14 @@ namespace LastJumpCrew.ParkHanSol.Shop
             base.OnNetworkDespawn();
         }
 
-        private void OnDestroy()
+        public override void OnDestroy()
         {
             if (purchaseService != null)
             {
                 purchaseService.ProductPurchased -= HandleProductPurchased;
             }
+
+            base.OnDestroy();
         }
 
         public void PopulateDisplays()
@@ -257,7 +289,7 @@ namespace LastJumpCrew.ParkHanSol.Shop
 
         private void HandleProductPurchased(ShopProductData product)
         {
-            if (product == null || product.StockPolicy != ShopStockPolicy.OnePerVisit)
+            if (product == null)
             {
                 return;
             }

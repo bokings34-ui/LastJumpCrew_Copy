@@ -1,19 +1,29 @@
 using System.Collections.Generic;
 using LastJumpCrew.ParkHanSol.Items;
+using LastJumpCrew.ParkHanSol.Multiplayer;
 using LastJumpCrew.ParkHanSol.Shop;
+using Unity.Collections;
+using Unity.Netcode;
 using UnityEngine;
 
 namespace LastJumpCrew.ParkHanSol.Interaction
 {
-    public sealed class DebrisSellZone : MonoBehaviour
+    [RequireComponent(typeof(NetworkObject))]
+    public sealed class DebrisSellZone : NetworkBehaviour
     {
         [SerializeField] private BoxCollider sellTrigger;
         [SerializeField] private MonoBehaviour shopWalletSource;
+        [SerializeField] private UtilityItemPrefabData[] sellableDebris;
         [SerializeField] private string debrisTag = "Debris";
+        [SerializeField, Min(0.1f)] private float maximumSaleDistance = 6f;
+        [SerializeField, Min(0.05f)] private float retrySeconds = 0.25f;
 
         private readonly HashSet<DebrisItem> pendingItems = new();
         private readonly HashSet<string> soldItemIds = new();
+        private readonly HashSet<string> completedNetworkSales = new();
         private IShopWallet shopWallet;
+        private bool networkSalePending;
+        private float nextNetworkSaleTime;
 
         private void Awake()
         {
@@ -28,11 +38,36 @@ namespace LastJumpCrew.ParkHanSol.Interaction
                 return;
             }
 
+            if (IsNetworkSessionActive())
+            {
+                TryRequestNetworkSale(debrisItem);
+                return;
+            }
+
             pendingItems.Add(debrisItem);
+        }
+
+        private void OnTriggerStay(Collider other)
+        {
+            if (!IsNetworkSessionActive() || networkSalePending || Time.unscaledTime < nextNetworkSaleTime)
+            {
+                return;
+            }
+
+            if (TryGetDebrisItem(other, out var debrisItem))
+            {
+                TryRequestNetworkSale(debrisItem);
+            }
         }
 
         private void FixedUpdate()
         {
+            if (IsNetworkSessionActive())
+            {
+                pendingItems.Clear();
+                return;
+            }
+
             if (pendingItems.Count == 0)
             {
                 return;
@@ -78,6 +113,183 @@ namespace LastJumpCrew.ParkHanSol.Interaction
             }
 
             pendingItems.Clear();
+        }
+
+        private void TryRequestNetworkSale(DebrisItem debrisItem)
+        {
+            if (networkSalePending || Time.unscaledTime < nextNetworkSaleTime)
+            {
+                return;
+            }
+
+            if (!IsSpawned)
+            {
+                Debug.LogError($"PHS_DEBRIS_SELL_FAILED reason=zone_not_spawned zone={name}", this);
+                nextNetworkSaleTime = Time.unscaledTime + retrySeconds;
+                return;
+            }
+
+            var itemObject = debrisItem.GetComponentInParent<UtilityItemObject>();
+            var itemHolder = debrisItem.GetComponentInParent<TempPlayerItemHolder>();
+            var playerNetworkObject = itemHolder == null ? null : itemHolder.GetComponent<NetworkObject>();
+            var itemData = itemObject == null ? null : itemObject.ItemPrefabData;
+            if (itemObject == null || !itemObject.IsHeld || itemHolder == null ||
+                playerNetworkObject == null || !playerNetworkObject.IsOwner || itemData == null ||
+                string.IsNullOrWhiteSpace(itemData.ItemId))
+            {
+                return;
+            }
+
+            networkSalePending = true;
+            nextNetworkSaleTime = Time.unscaledTime + retrySeconds;
+            RequestSaleServerRpc(new FixedString64Bytes(itemData.ItemId));
+        }
+
+        [ServerRpc(RequireOwnership = false)]
+        private void RequestSaleServerRpc(
+            FixedString64Bytes requestedItemId,
+            ServerRpcParams rpcParams = default)
+        {
+            var senderClientId = rpcParams.Receive.SenderClientId;
+            var itemId = requestedItemId.ToString();
+            var success = TryCompleteNetworkSale(senderClientId, itemId, out var reason);
+            SendSaleResult(senderClientId, requestedItemId, success, reason);
+        }
+
+        private bool TryCompleteNetworkSale(ulong senderClientId, string itemId, out string reason)
+        {
+            reason = null;
+            if (!ValidateSetup() || !shopWallet.IsReady)
+            {
+                reason = "wallet_not_ready";
+                return false;
+            }
+
+            if (!TryResolveSellableDebris(itemId, out var itemData) || itemData.Price <= 0)
+            {
+                reason = "item_not_sellable";
+                return false;
+            }
+
+            var networkManager = NetworkManager.Singleton;
+            if (networkManager == null ||
+                !networkManager.ConnectedClients.TryGetValue(senderClientId, out var client) ||
+                client.PlayerObject == null)
+            {
+                reason = "player_missing";
+                return false;
+            }
+
+            if ((client.PlayerObject.transform.position - sellTrigger.transform.position).sqrMagnitude >
+                maximumSaleDistance * maximumSaleDistance)
+            {
+                reason = "player_too_far";
+                return false;
+            }
+
+            var itemRecord = client.PlayerObject.GetComponent<NetworkPlayerItemRecord>();
+            if (itemRecord == null || itemRecord.HeldItemId != itemId)
+            {
+                reason = "held_item_mismatch";
+                return false;
+            }
+
+            var saleKey = $"{senderClientId}:{itemRecord.Revision}";
+            if (!completedNetworkSales.Add(saleKey))
+            {
+                reason = "duplicate_sale";
+                return false;
+            }
+
+            if (!itemRecord.TryConsumeHeldItemServer(itemId, itemRecord.Revision))
+            {
+                completedNetworkSales.Remove(saleKey);
+                reason = "record_consume_failed";
+                return false;
+            }
+
+            if (!shopWallet.TryAddCredits(itemData.Price))
+            {
+                Debug.LogError(
+                    $"PHS_DEBRIS_SELL_INVARIANT_FAILED reason=wallet_rejected_after_record_consume zone={name} owner={senderClientId} item={itemId}",
+                    this);
+                reason = "wallet_rejected";
+                return false;
+            }
+
+            Debug.Log(
+                $"PHS_DEBRIS_SOLD zone={name} owner={senderClientId} item={itemId} value={itemData.Price}",
+                this);
+            return true;
+        }
+
+        private void SendSaleResult(
+            ulong targetClientId,
+            FixedString64Bytes itemId,
+            bool success,
+            string reason)
+        {
+            var clientRpcParams = new ClientRpcParams
+            {
+                Send = new ClientRpcSendParams
+                {
+                    TargetClientIds = new[] { targetClientId }
+                }
+            };
+
+            CompleteSaleClientRpc(
+                itemId,
+                success,
+                new FixedString64Bytes(reason ?? string.Empty),
+                clientRpcParams);
+        }
+
+        [ClientRpc]
+        private void CompleteSaleClientRpc(
+            FixedString64Bytes itemId,
+            bool success,
+            FixedString64Bytes reason,
+            ClientRpcParams clientRpcParams = default)
+        {
+            networkSalePending = false;
+            nextNetworkSaleTime = Time.unscaledTime + retrySeconds;
+            if (!success)
+            {
+                Debug.LogWarning(
+                    $"PHS_DEBRIS_SELL_FAILED reason={reason} zone={name} item={itemId}",
+                    this);
+                return;
+            }
+
+            var networkManager = NetworkManager.Singleton;
+            var localPlayer = networkManager == null ? null : networkManager.LocalClient?.PlayerObject;
+            var itemHolder = localPlayer == null ? null : localPlayer.GetComponent<TempPlayerItemHolder>();
+            if (itemHolder == null || !itemHolder.TryConsumeHeldItem(itemId.ToString()))
+            {
+                Debug.LogError(
+                    $"PHS_DEBRIS_SELL_CLIENT_APPLY_FAILED reason=held_item_consume_failed zone={name} item={itemId}",
+                    this);
+            }
+        }
+
+        private bool TryResolveSellableDebris(string itemId, out UtilityItemPrefabData itemData)
+        {
+            itemData = null;
+            if (sellableDebris == null || string.IsNullOrWhiteSpace(itemId))
+            {
+                return false;
+            }
+
+            foreach (var candidate in sellableDebris)
+            {
+                if (candidate != null && candidate.ItemId == itemId)
+                {
+                    itemData = candidate;
+                    return true;
+                }
+            }
+
+            return false;
         }
 
         private bool TryGetDebrisItem(Collider other, out DebrisItem debrisItem)
@@ -164,7 +376,19 @@ namespace LastJumpCrew.ParkHanSol.Interaction
                 return false;
             }
 
+            if (sellableDebris == null || sellableDebris.Length == 0)
+            {
+                Debug.LogError($"PHS_DEBRIS_SELL_SETUP_FAILED reason=sellable_debris_missing zone={name}");
+                return false;
+            }
+
             return true;
+        }
+
+        private static bool IsNetworkSessionActive()
+        {
+            var networkManager = NetworkManager.Singleton;
+            return networkManager != null && networkManager.IsListening;
         }
     }
 }

@@ -42,5 +42,21 @@ namespace LastJumpCrew.SeoBoGyeong
             impl = null;
             return false;
         }
+
+        /// <summary>
+        /// Removes a service only when the caller still owns the current registration.
+        /// This prevents a despawning network replica from removing a newer replacement.
+        /// </summary>
+        public bool TryUnregister<T>(T expected) where T : class
+        {
+            if (expected == null
+                || !services.TryGetValue(typeof(T), out var current)
+                || !ReferenceEquals(current, expected))
+            {
+                return false;
+            }
+
+            return services.Remove(typeof(T));
+        }
     }
 }

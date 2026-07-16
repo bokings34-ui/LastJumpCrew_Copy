@@ -31,6 +31,12 @@ namespace SM
 
         public void StartScheduler()
         {
+            if (EventManager.Instance != null && !EventManager.Instance.IsRuntimeAuthority)
+            {
+                Debug.LogWarning("PHS_EVENT_SCHEDULER_START_REJECTED reason=not_authority", this);
+                return;
+            }
+
             _runningTime = 0f;
             _spawnTimer = 0f;
             _activeEventCount = 0;
@@ -40,12 +46,24 @@ namespace SM
 
         public void StopScheduler()
         {
+            if (EventManager.Instance != null && !EventManager.Instance.IsRuntimeAuthority)
+            {
+                Debug.LogWarning("PHS_EVENT_SCHEDULER_STOP_REJECTED reason=not_authority", this);
+                return;
+            }
+
             _isRunning = false;
         }
 
         // 스테이지 종료 시 GameManager가 호출할 것 (스케줄러 정지, 진행 중이던 모든 사고 강제 종료)
         public void ForceClearAll()
         {
+            if (EventManager.Instance != null && !EventManager.Instance.IsRuntimeAuthority)
+            {
+                Debug.LogWarning("PHS_EVENT_SCHEDULER_CLEAR_REJECTED reason=not_authority", this);
+                return;
+            }
+
             _isRunning = false;
             StopAllCoroutines();
             _activeEventCount = 0;
@@ -58,6 +76,11 @@ namespace SM
 
         private void Update()
         {
+            if (EventManager.Instance != null && !EventManager.Instance.IsRuntimeAuthority)
+            {
+                return;
+            }
+
             if (!_isRunning) return;
 
             _runningTime += Time.deltaTime;
@@ -103,6 +126,12 @@ namespace SM
 
         public void TrySpawnEvent(EventId eventId)
         {
+            if (EventManager.Instance != null && !EventManager.Instance.IsRuntimeAuthority)
+            {
+                Debug.LogWarning($"PHS_EVENT_SCHEDULER_SPAWN_REJECTED reason=not_authority event={eventId}", this);
+                return;
+            }
+
             if (EventManager.Instance.IsActive(eventId) || _waitQueue.Contains(eventId))
             {
                 Debug.Log($"<color=lime>[EventScheduler]</color> {eventId}는 이미 진행 중이거나 대기 중, 요청 무시.");
@@ -121,6 +150,12 @@ namespace SM
 
         private void SpawnEvent(EventId eventId)
         {
+            if (EventManager.Instance == null || RoomRegistry.Instance == null)
+            {
+                Debug.LogError($"<color=lime>[EventScheduler]</color> EventManager 또는 RoomRegistry가 없습니다.", this);
+                return;
+            }
+
             var room = RoomRegistry.Instance.GetRandomRoom();
 
             if (room == null)
@@ -129,15 +164,21 @@ namespace SM
                 return;
             }
 
-            EventManager.Instance.SpawnEvent(eventId, room, HandleEventFinished);
+            // 즉시 종료 콜백도 0 아래로 내려가지 않도록 spawn 전에 슬롯을 예약한다.
             _activeEventCount++;
+            if (!EventManager.Instance.SpawnEvent(eventId, room, HandleEventFinished))
+            {
+                _activeEventCount = Mathf.Max(0, _activeEventCount - 1);
+                Debug.LogWarning($"<color=lime>[EventScheduler]</color> {eventId} 생성 실패.", this);
+                return;
+            }
 
             Debug.Log($"<color=lime>[EventScheduler]</color> {eventId} 발생!");
         }
 
         private void HandleEventFinished(EventBase evt, bool success)
         {
-            _activeEventCount--;
+            _activeEventCount = Mathf.Max(0, _activeEventCount - 1);
             StartCoroutine(SpawnWaitingEvent());
         }
 

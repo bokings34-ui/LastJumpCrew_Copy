@@ -9,8 +9,20 @@ namespace LastJumpCrew.ParkHanSol.Interaction
         [SerializeField] private string destinationSceneName;
         [SerializeField] private ShopSceneTransitionMode shopTransitionMode;
         [SerializeField] private string interactionPrompt = "Travel To Exterior Shop";
+        [SerializeField, Min(0.1f)] private float serverInteractionDistance = 4f;
 
         public string InteractionPrompt => interactionPrompt;
+
+        public bool MatchesServerRequest(
+            Transform playerTransform,
+            string requestedSceneName,
+            ShopSceneTransitionMode requestedTransitionMode)
+        {
+            return playerTransform != null
+                && destinationSceneName == requestedSceneName
+                && shopTransitionMode == requestedTransitionMode
+                && Vector3.Distance(playerTransform.position, transform.position) <= serverInteractionDistance;
+        }
 
         public bool CanInteract(IItemHolder itemHolder)
         {

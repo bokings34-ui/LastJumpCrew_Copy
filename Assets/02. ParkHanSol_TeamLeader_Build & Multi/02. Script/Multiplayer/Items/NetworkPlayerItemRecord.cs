@@ -60,6 +60,32 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
             ReportHeldItemServerRpc(new FixedString64Bytes(itemId));
         }
 
+        public bool TryConsumeHeldItemServer(string expectedItemId, uint expectedRevision)
+        {
+            if (!IsSpawned || !IsServer)
+            {
+                Debug.LogError($"PHS_ITEM_RECORD_CONSUME_FAILED reason=server_required player={name}", this);
+                return false;
+            }
+
+            if (string.IsNullOrWhiteSpace(expectedItemId) ||
+                heldItemId.Value.ToString() != expectedItemId ||
+                revision.Value != expectedRevision)
+            {
+                Debug.LogWarning(
+                    $"PHS_ITEM_RECORD_CONSUME_FAILED reason=record_mismatch player={name} expectedItem={expectedItemId} actualItem={heldItemId.Value} expectedRevision={expectedRevision} actualRevision={revision.Value}",
+                    this);
+                return false;
+            }
+
+            heldItemId.Value = default;
+            revision.Value++;
+            Debug.Log(
+                $"PHS_ITEM_RECORD_CONSUMED player={name} owner={OwnerClientId} item={expectedItemId} revision={revision.Value}",
+                this);
+            return true;
+        }
+
         [ServerRpc]
         private void ReportHeldItemServerRpc(
             FixedString64Bytes itemId,

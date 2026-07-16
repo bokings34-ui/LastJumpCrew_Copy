@@ -38,7 +38,7 @@
 
 ## 🎮 ParkHanSol 무중력 테스트 조작법
 
-대상 씬: `Assets/02. ParkHanSol_TeamLeader_Build & Multi/01. Scene/ParkHanSol_GravitySpaceTestScene.unity`
+대상 씬: `Assets/02. ParkHanSol_TeamLeader_Build & Multi/01. Scene/0715/ParkHanSol_GravitySpaceTestScene_0715.unity`
 
 | 키 | 동작 |
 | --- | --- |
@@ -54,3 +54,35 @@
 - 중력 상태에서도 추진제는 자동 회복합니다.
 - `Stamina Text`에서 `추진제 현재/최대` 잔량을 확인합니다.
 - `PHS_DebrisSellStation`에 데브리 태그 아이템을 넣으면 아이템 가치가 파티 보유 금액에 더해지고 데브리는 제거됩니다.
+
+---
+
+## 🧭 ParkHanSol 0715 통합 작업 인수인계 — 2026-07-16
+
+- 작업 브랜치: `agent/phs-debris-respawn-service-0715`
+- Pull Request: [#40](https://github.com/hyunje0609-sudo/LastJumpCrew/pull/40)
+- 기준 Unity: `6000.5.2f1`
+- 최종 확인 씬: `Assets/02. ParkHanSol_TeamLeader_Build & Multi/01. Scene/0715/PHS_ExteriorShopScene.unity`
+
+### 이번 최신화 내용
+
+- `PHS_DebrisCollectionPortal_0715`의 상호작용 수신 영역을 루트로 정리하고 `F` 입력 시 `PHS_DebrisCollectionScene`으로 직접 이동하도록 연결했습니다.
+- 워프 충전 완료 후 콘솔이 활성화되도록 상태 연결을 수정하고, 미니게임 단말은 상시 활성화가 아니라 대응 사건이 진행 중일 때만 활성화되도록 변경했습니다.
+- `EventScheduler` 서버 자동 시작과 사건 목록을 연결해 Fire, EnemySpawn, OxygenLeak, MeteorAttack, EmpAttack, EnemyScout가 실제로 발생할 수 있게 했습니다.
+- 이벤트 알람은 워프 게이지 아래에 배치하고 `화재`, `산소 누출`처럼 사건명만 한 줄로 표시합니다.
+- `Tab` 함선 지도는 실제 Room 배치인 `중앙 복도 ← Room A/B/C 세로 구조`로 정리했으며 사고 발생 방에 빨간 마커를 표시합니다.
+- 데브리 판매소 중복 ScenePlaced NetworkObject 문제를 제거하고 Host 기준 포탈 이동과 사건 발생을 재검증했습니다.
+
+### 검증 결과
+
+- Unity 컴파일 Error 0.
+- `PHS_0715_VALIDATE_OK errors=0 scenes=5 prefabs=7`.
+- Host에서 `Fire` 사건 생성 후 알람 `화재`와 `Room B` 사고 마커 표시 확인.
+- Host에서 데브리 포탈을 통해 `PHS_DebrisCollectionScene` 진입 확인.
+- 최종 상태: EditMode, 씬 Dirty 없음.
+
+### 다음 확인자 체크
+
+- 실제 Host+Client 2인 화면에서 알람과 지도 마커가 양쪽에 동일하게 보이는지 수동 확인합니다.
+- Relay/Lobby 실제 서비스 접속은 Unity Services 프로젝트 연결 상태와 분리해서 확인합니다.
+- MCP 로컬 설치물과 `ProjectSettings/Packages/com.unity.probuilder/Settings.json`은 커밋 범위에서 제외합니다.

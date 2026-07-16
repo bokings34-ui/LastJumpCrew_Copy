@@ -1,5 +1,6 @@
 ﻿using LastJumpCrew.Common;
 using SM;
+using LastJumpCrew.ParkHanSol.Multiplayer.Events;
 using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
@@ -25,12 +26,59 @@ public class MiniGameManager : MonoBehaviour
     private Coroutine slideCoroutine = null;
 
     // 석민 추가 (미니게임과 이벤트 1:1 연결 매핑)
-    private readonly Dictionary<MiniGameType, string> _gameToEventMap = new()
+    private readonly Dictionary<MiniGameType, EventId> _gameToEventMap = new()
     {
-        { MiniGameType.Cannon, "MeteorAttack" },
-        { MiniGameType.WireFix, "EmpAttack" },
-        { MiniGameType.PowerSync, "EnemyScout" }
+        { MiniGameType.Cannon, EventId.MeteorAttack },
+        { MiniGameType.WireFix, EventId.EmpAttack },
+        { MiniGameType.PowerSync, EventId.EnemyScout }
     };
+
+    private sealed class NetworkEventMiniGameTarget : IMiniGameTarget
+    {
+        private readonly NetworkEventCoordinator coordinator;
+        private readonly EventId eventId;
+        private readonly IMiniGameTarget terminalTarget;
+
+        public NetworkEventMiniGameTarget(
+            NetworkEventCoordinator coordinator,
+            EventId eventId,
+            IMiniGameTarget terminalTarget)
+        {
+            this.coordinator = coordinator;
+            this.eventId = eventId;
+            this.terminalTarget = terminalTarget;
+        }
+
+        public string MiniGameTargetId => $"NetworkEvent:{eventId}";
+
+        public void OnMiniGameSucceeded()
+        {
+            SubmitResult(true);
+        }
+
+        public void OnMiniGameFailed()
+        {
+            SubmitResult(false);
+        }
+
+        private void SubmitResult(bool succeeded)
+        {
+            if (!coordinator.RequestMiniGameResult(eventId, succeeded))
+            {
+                Debug.LogWarning(
+                    $"[MiniGameManager] 서버가 {eventId} 미니게임 결과를 받지 못했습니다.");
+            }
+
+            if (succeeded)
+            {
+                terminalTarget?.OnMiniGameSucceeded();
+            }
+            else
+            {
+                terminalTarget?.OnMiniGameFailed();
+            }
+        }
+    }
 
     private sealed class CompositeMiniGameTarget : IMiniGameTarget
     {
@@ -60,8 +108,22 @@ public class MiniGameManager : MonoBehaviour
 
     private void Awake()
     {
-        if (Instance == null) Instance = this;
-        else Destroy(gameObject);
+        if (Instance == null)
+        {
+            Instance = this;
+        }
+        else if (Instance != this)
+        {
+            Destroy(gameObject);
+            return;
+        }
+
+        if (canvasRoot == null)
+        {
+            Debug.LogError("[MiniGameManager] canvasRoot가 연결되지 않았습니다.", this);
+            enabled = false;
+            return;
+        }
 
         canvasRoot.SetActive(false);
         if (flashScreen != null) flashScreen.gameObject.SetActive(false);
@@ -82,19 +144,83 @@ public class MiniGameManager : MonoBehaviour
     }
 
     // 💡 큐브 단말기(MiniGameTerminal)에서 쏘아 올려줄 핵심 오픈 함수!
+    public bool IsMiniGameAvailable(MiniGameType type)
+    {
+        if (!_gameToEventMap.TryGetValue(type, out var eventId))
+        {
+            return true;
+        }
+
+        var networkManager = Unity.Netcode.NetworkManager.Singleton;
+        if (networkManager != null && networkManager.IsListening)
+        {
+            var coordinator = NetworkEventCoordinator.Instance;
+            return coordinator != null
+                && coordinator.IsSpawned
+                && coordinator.IsEventActive(eventId);
+        }
+
+        var eventManager = EventManager.Instance;
+        return eventManager != null
+            && eventManager.GetMiniGameTarget(eventId.ToString()) != null;
+    }
+
+    public bool IsEventDrivenMiniGame(MiniGameType type)
+    {
+        return _gameToEventMap.ContainsKey(type);
+    }
+
     public void OpenMiniGame(MiniGameType type, IMiniGameTarget target)
     {
+        TryOpenMiniGame(type, target);
+    }
+
+    public bool TryOpenMiniGame(MiniGameType type, IMiniGameTarget target)
+    {
+        if (canvasRoot == null || miniGames == null)
+        {
+            Debug.LogError("[MiniGameManager] UI 또는 miniGames 설정이 없습니다.", this);
+            return false;
+        }
+
+        if (!IsMiniGameAvailable(type))
+        {
+            Debug.LogWarning($"[MiniGameManager] {type} 미니게임 활성 조건이 충족되지 않았습니다.", this);
+            return false;
+        }
+
+        MiniGameBase selectedGame = null;
+        foreach (var miniGame in miniGames)
+        {
+            if (miniGame != null && miniGame.gameType == type)
+            {
+                selectedGame = miniGame;
+                break;
+            }
+        }
+
+        if (selectedGame == null)
+        {
+            Debug.LogError($"[MiniGameManager] {type} 미니게임이 등록되지 않았습니다.", this);
+            return false;
+        }
+
         IMiniGameTarget resolvedTarget = ResolveTarget(type, target);
         if (resolvedTarget == null)
         {
             Debug.LogError($"[MiniGameManager] {type} 미니게임 결과를 받을 대상이 없습니다.", this);
-            return;
+            return false;
         }
 
         canvasRoot.SetActive(true);
 
         foreach (var mg in miniGames)
         {
+            if (mg == null)
+            {
+                continue;
+            }
+
             if (mg.gameType == type)
             {
                 mg.gameObject.SetActive(true);
@@ -110,23 +236,31 @@ public class MiniGameManager : MonoBehaviour
                 mg.gameObject.SetActive(false); // 선택되지 않은 다른 미니게임은 확실히 꺼둠
             }
         }
+
+        return true;
     }
 
     private IMiniGameTarget ResolveTarget(MiniGameType type, IMiniGameTarget terminalTarget)
     {
-        if (!_gameToEventMap.TryGetValue(type, out string eventTargetId))
+        if (!_gameToEventMap.TryGetValue(type, out var eventId))
         {
             return terminalTarget;
         }
 
+        var coordinator = NetworkEventCoordinator.Instance;
+        if (coordinator != null && coordinator.IsEventActive(eventId))
+        {
+            return new NetworkEventMiniGameTarget(coordinator, eventId, terminalTarget);
+        }
+
         EventManager eventManager = EventManager.Instance;
         IMiniGameTarget eventTarget = eventManager != null
-            ? eventManager.GetMiniGameTarget(eventTargetId)
+            ? eventManager.GetMiniGameTarget(eventId.ToString())
             : null;
 
         if (eventTarget == null)
         {
-            return terminalTarget;
+            return null;
         }
 
         if (terminalTarget == null || ReferenceEquals(eventTarget, terminalTarget))
