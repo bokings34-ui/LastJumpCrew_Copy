@@ -1,5 +1,6 @@
 using System.Collections;
 using LastJumpCrew.ParkHanSol.Multiplayer.Maps;
+using TMPro;
 using UnityEngine;
 
 namespace LastJumpCrew.ParkHanSol.Multiplayer
@@ -15,6 +16,8 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
         [Header("Presentation")]
         [SerializeField] private CanvasGroup transitionCanvasGroup;
         [SerializeField] private GameObject warpVisualRoot;
+        [SerializeField] private GameObject warpStatusCardRoot;
+        [SerializeField] private TMP_Text warpStatusText;
         [SerializeField, Min(0.05f)] private float fadeSeconds = 0.35f;
 
         [Header("Environment")]
@@ -91,6 +94,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
             transitionCanvasGroup.blocksRaycasts = true;
             transitionCanvasGroup.interactable = false;
             warpVisualRoot.SetActive(true);
+            ShowWarpStatusCard("WARP IN PROGRESS");
             ApplySkybox(warpSkybox);
             transitionRoutine = StartCoroutine(FadeCanvas(transitionCanvasGroup.alpha, 1f));
         }
@@ -108,6 +112,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
             transitionCanvasGroup.blocksRaycasts = true;
             transitionCanvasGroup.interactable = false;
             warpVisualRoot.SetActive(true);
+            ShowWarpStatusCard("ARRIVING");
             ApplySkybox(arrivalSkybox);
             transitionRoutine = StartCoroutine(PlayArrival());
         }
@@ -144,6 +149,12 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
 
         private void HandlePhaseChanged(NetworkRunPhase previousPhase, NetworkRunPhase currentPhase)
         {
+            if (currentPhase == NetworkRunPhase.WarpSafe)
+            {
+                EnterWarpMaintenance();
+                return;
+            }
+
             if (currentPhase == NetworkRunPhase.Warping)
             {
                 EnterWarp();
@@ -153,7 +164,10 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
             if (currentPhase == NetworkRunPhase.WarpArrival)
             {
                 ExitWarp();
+                return;
             }
+
+            ApplyIdleState();
         }
 
         private void TryBindCoordinator()
@@ -165,6 +179,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
 
             if (runFlowCoordinator == null)
             {
+                ApplyIdleState();
                 if (!bindErrorLogged && Time.unscaledTime - bindStartedAtTime >= 5f)
                 {
                     bindErrorLogged = true;
@@ -181,9 +196,17 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
             {
                 EnterWarp();
             }
+            else if (runFlowCoordinator.Phase == NetworkRunPhase.WarpSafe)
+            {
+                EnterWarpMaintenance();
+            }
             else if (runFlowCoordinator.Phase == NetworkRunPhase.WarpArrival)
             {
                 ExitWarp();
+            }
+            else
+            {
+                ApplyIdleState();
             }
         }
 
@@ -200,6 +223,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
         {
             yield return FadeCanvas(transitionCanvasGroup.alpha, 0f);
             warpVisualRoot.SetActive(false);
+            HideWarpStatusCard();
             transitionCanvasGroup.blocksRaycasts = false;
             SetPlayerInputBlocked(false);
             transitionRoutine = null;
@@ -224,10 +248,12 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
 
         private void ApplyIdleState()
         {
+            StopTransitionRoutine();
             transitionCanvasGroup.alpha = 0f;
             transitionCanvasGroup.blocksRaycasts = false;
             transitionCanvasGroup.interactable = false;
             warpVisualRoot.SetActive(false);
+            HideWarpStatusCard();
             ApplySkybox(normalSkybox);
             SetPlayerInputBlocked(false);
         }
@@ -257,6 +283,29 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
             transitionRoutine = null;
         }
 
+        private void EnterWarpMaintenance()
+        {
+            StopTransitionRoutine();
+            transitionCanvasGroup.alpha = 1f;
+            transitionCanvasGroup.blocksRaycasts = false;
+            transitionCanvasGroup.interactable = false;
+            warpVisualRoot.SetActive(false);
+            ShowWarpStatusCard("WARP MAINTENANCE\nSELECT NEXT DESTINATION");
+            ApplySkybox(warpSkybox);
+            SetPlayerInputBlocked(false);
+        }
+
+        private void ShowWarpStatusCard(string message)
+        {
+            warpStatusText.text = message;
+            warpStatusCardRoot.SetActive(true);
+        }
+
+        private void HideWarpStatusCard()
+        {
+            warpStatusCardRoot.SetActive(false);
+        }
+
         private bool RequireSetup(string operation)
         {
             if (setupValid)
@@ -273,6 +322,8 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
             var valid = true;
             valid &= RequireReference(transitionCanvasGroup, nameof(transitionCanvasGroup));
             valid &= RequireReference(warpVisualRoot, nameof(warpVisualRoot));
+            valid &= RequireReference(warpStatusCardRoot, nameof(warpStatusCardRoot));
+            valid &= RequireReference(warpStatusText, nameof(warpStatusText));
             valid &= RequireReference(normalSkybox, nameof(normalSkybox));
             valid &= RequireReference(warpSkybox, nameof(warpSkybox));
             valid &= RequireReference(arrivalSkybox, nameof(arrivalSkybox));

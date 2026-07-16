@@ -24,6 +24,12 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Maps
         int Difficulty { get; }
         float StageTimeLimitSeconds { get; }
         int ClearRewardCredits { get; }
+        bool IsWarpMaintenance { get; }
+        bool IsShopPortalProfile { get; }
+        bool AdvancesStageTime { get; }
+        bool AllowsEventGeneration { get; }
+        bool AllowsDebrisGeneration { get; }
+        bool AllowsShopPortal { get; }
         PHSMapSceneMode SceneMode { get; }
         string SceneName { get; }
         GameObject EnvironmentRootPrefab { get; }

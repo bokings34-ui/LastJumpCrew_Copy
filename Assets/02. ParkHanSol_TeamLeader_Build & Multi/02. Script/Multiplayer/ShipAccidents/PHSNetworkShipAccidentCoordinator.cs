@@ -34,6 +34,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.ShipAccidents
         private int maximumActiveAccidents;
         private float moduleDamageMultiplier = 1f;
         private float shipDamageMultiplier = 1f;
+        private bool maintenancePaused;
         private double nextSpawnTime;
         private uint nextInstanceId;
         private bool setupValid;
@@ -130,6 +131,11 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.ShipAccidents
         private void Update()
         {
             if (!IsSpawned || !IsServer || !setupValid)
+            {
+                return;
+            }
+
+            if (maintenancePaused)
             {
                 return;
             }
@@ -233,6 +239,19 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.ShipAccidents
 
             isRunning = false;
             nextSpawnTime = 0d;
+            reason = null;
+            return true;
+        }
+
+        public bool TrySetMaintenancePausedServer(bool paused, out string reason)
+        {
+            if (!CanExecuteServerCommand(out reason))
+            {
+                return false;
+            }
+
+            maintenancePaused = paused;
+            Debug.Log($"PHS_SHIP_ACCIDENT_MAINTENANCE_PAUSED paused={paused}", this);
             reason = null;
             return true;
         }

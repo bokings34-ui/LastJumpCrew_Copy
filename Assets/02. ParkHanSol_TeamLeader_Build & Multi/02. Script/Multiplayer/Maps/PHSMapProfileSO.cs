@@ -24,6 +24,14 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Maps
         [SerializeField, Min(1f)] private float stageTimeLimitSeconds = 180f;
         [SerializeField, Min(0)] private int clearRewardCredits;
 
+        [Header("Runtime Rules")]
+        [SerializeField] private bool isWarpMaintenance;
+        [SerializeField] private bool isShopPortalProfile;
+        [SerializeField] private bool advancesStageTime = true;
+        [SerializeField] private bool allowsEventGeneration = true;
+        [SerializeField] private bool allowsDebrisGeneration = true;
+        [SerializeField] private bool allowsShopPortal;
+
         [Header("Map Loading")]
         [Tooltip("Shared: 공용 맵 씬에 Environment Prefab을 교체합니다. Separate: Scene Name의 전용 우주 맵 씬을 로드합니다.")]
         [SerializeField] private PHSMapSceneMode sceneMode = PHSMapSceneMode.SharedSceneEnvironment;
@@ -65,6 +73,12 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Maps
         public int Difficulty => difficulty;
         public float StageTimeLimitSeconds => stageTimeLimitSeconds;
         public int ClearRewardCredits => clearRewardCredits;
+        public bool IsWarpMaintenance => isWarpMaintenance;
+        public bool IsShopPortalProfile => isShopPortalProfile;
+        public bool AdvancesStageTime => advancesStageTime;
+        public bool AllowsEventGeneration => allowsEventGeneration;
+        public bool AllowsDebrisGeneration => allowsDebrisGeneration;
+        public bool AllowsShopPortal => allowsShopPortal;
         public PHSMapSceneMode SceneMode => sceneMode;
         public string SceneName => sceneName;
         public GameObject EnvironmentRootPrefab => environmentRootPrefab;
@@ -124,6 +138,21 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Maps
                 return false;
             }
 
+            if (isWarpMaintenance
+                && (selectable || advancesStageTime || allowsEventGeneration || allowsDebrisGeneration))
+            {
+                reason = "warp_maintenance_rules_invalid";
+                return false;
+            }
+
+            if (isShopPortalProfile
+                && (selectable || advancesStageTime || allowsEventGeneration
+                    || allowsDebrisGeneration || !allowsShopPortal))
+            {
+                reason = "shop_portal_profile_rules_invalid";
+                return false;
+            }
+
             if (!System.Enum.IsDefined(typeof(PHSMapSceneMode), sceneMode))
             {
                 reason = $"scene_mode_invalid:value={(int)sceneMode}";
@@ -167,14 +196,14 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Maps
                 return false;
             }
 
-            if (externalThreatWeights == null || externalThreatWeights.Count == 0)
+            if (allowsEventGeneration && (externalThreatWeights == null || externalThreatWeights.Count == 0))
             {
                 reason = "external_threat_weights_missing";
                 return false;
             }
 
             var eventIds = new HashSet<EventId>();
-            for (var index = 0; index < externalThreatWeights.Count; index++)
+            for (var index = 0; index < (externalThreatWeights?.Count ?? 0); index++)
             {
                 var entry = externalThreatWeights[index];
                 if (entry == null)
@@ -221,14 +250,14 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Maps
                 return false;
             }
 
-            if (internalAccidentWeights == null || internalAccidentWeights.Count == 0)
+            if (allowsEventGeneration && (internalAccidentWeights == null || internalAccidentWeights.Count == 0))
             {
                 reason = "internal_accident_weights_missing";
                 return false;
             }
 
             var accidentIds = new HashSet<PHSShipAccidentId>();
-            for (var index = 0; index < internalAccidentWeights.Count; index++)
+            for (var index = 0; index < (internalAccidentWeights?.Count ?? 0); index++)
             {
                 var entry = internalAccidentWeights[index];
                 if (entry == null)

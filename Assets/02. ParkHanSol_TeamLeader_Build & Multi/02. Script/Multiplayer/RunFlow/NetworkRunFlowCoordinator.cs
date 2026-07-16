@@ -82,7 +82,6 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
         private float scheduledWarpReviveTime = -1f;
         private int pendingNextMapId;
         private bool departingWarpSafeZone;
-        private bool debugAutoAdvanceWarp;
 
         public static NetworkRunFlowCoordinator Instance { get; private set; }
 
@@ -169,10 +168,9 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
 
             chargeElapsed = warpChargeSeconds;
             synchronizedWarpCharge.Value = 1f;
-            debugAutoAdvanceWarp = true;
             SetPhase(NetworkRunPhase.WarpReady);
             reason = string.Empty;
-            Debug.Log("PHS_RUN_FLOW_DEBUG_CHARGE_COMPLETED input=Digit1 autoAdvance=true", this);
+            Debug.Log("PHS_RUN_FLOW_DEBUG_CHARGE_COMPLETED input=Digit1 warp_ready_only=true", this);
             return true;
         }
 
@@ -243,8 +241,6 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
 
             TickScheduledWarpRevives();
             RefreshSafePlayerCount();
-            TickDebugAutoAdvanceWarp();
-
             if (synchronizedPhase.Value == NetworkRunPhase.Warping)
             {
                 TickScheduledWarpExecution();
@@ -495,7 +491,6 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
                     break;
                 case GamePhase.Shop:
                     SetPhase(NetworkRunPhase.Shop);
-                    RequestSceneLoad(shopSceneName);
                     break;
                 case GamePhase.GameClear:
                     TickFinalShop();
@@ -567,56 +562,6 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
                 : NetworkRunPhase.Charging);
         }
 
-        private void TickDebugAutoAdvanceWarp()
-        {
-            if (!debugAutoAdvanceWarp)
-            {
-                return;
-            }
-
-            if (synchronizedPhase.Value == NetworkRunPhase.WarpReady)
-            {
-                if (!TryActivateWarp(NetworkManager.ServerClientId, out var reason))
-                {
-                    debugAutoAdvanceWarp = false;
-                    Debug.LogWarning($"PHS_RUN_FLOW_DEBUG_WARP_FAILED step=enter_safe reason={reason}", this);
-                }
-
-                return;
-            }
-
-            if (synchronizedPhase.Value != NetworkRunPhase.WarpSafe)
-            {
-                return;
-            }
-
-            if (SelectedNextMapId <= 0)
-            {
-                string selectionReason = null;
-                if (!TryResolveNextDebugMap(out var nextMapId)
-                    || !TrySelectNextZone(nextMapId, out selectionReason))
-                {
-                    debugAutoAdvanceWarp = false;
-                    Debug.LogWarning(
-                        $"PHS_RUN_FLOW_DEBUG_WARP_FAILED step=select_next reason={selectionReason ?? "map_unavailable"}",
-                        this);
-                    return;
-                }
-            }
-
-            if (!TryActivateWarp(NetworkManager.ServerClientId, out var departureReason))
-            {
-                debugAutoAdvanceWarp = false;
-                Debug.LogWarning(
-                    $"PHS_RUN_FLOW_DEBUG_WARP_FAILED step=depart_safe reason={departureReason}",
-                    this);
-                return;
-            }
-
-            debugAutoAdvanceWarp = false;
-            Debug.Log($"PHS_RUN_FLOW_DEBUG_WARP_STARTED nextMap={SelectedNextMapId}", this);
-        }
-
         private bool TryResolveNextDebugMap(out int mapId)
         {
             mapId = 0;
@@ -653,9 +598,6 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
         {
             if (!departingWarpSafeZone)
             {
-                safePlayerIds.Clear();
-                debrisPlayerIds.Clear();
-                RefreshSafePlayerCount();
                 SetPhase(NetworkRunPhase.WarpSafe);
                 gameCommands.SetStageTimerPaused(true);
                 NetworkEventCoordinator.Instance?.TryStopSchedulerServer();
@@ -682,7 +624,6 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
                     break;
                 case GamePhase.Shop:
                     SetPhase(NetworkRunPhase.Shop);
-                    RequestSceneLoad(shopSceneName);
                     break;
                 case GamePhase.GameClear:
                     SetPhase(NetworkRunPhase.FinalShop);
@@ -930,7 +871,6 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
 
             synchronizedFinalShopPending.Value = true;
             SetPhase(NetworkRunPhase.FinalShop);
-            RequestSceneLoad(shopSceneName);
         }
 
         private void HandleGameStateChanged()
@@ -981,44 +921,6 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
             }
 
             Debug.Log($"PHS_RUN_FLOW_SCENE_LOAD scene={sceneName}");
-        }
-
-        private bool TryMovePlayersToWarpSafeZone(out string reason)
-        {
-            var safeZone = NetworkWarpSafeZone.Instance;
-            if (safeZone == null)
-            {
-                reason = "safe_zone_missing";
-                return false;
-            }
-
-            var slot = 0;
-            foreach (var pair in NetworkManager.ConnectedClients)
-            {
-                var player = pair.Value.PlayerObject != null
-                    ? pair.Value.PlayerObject.GetComponent<NetworkPlayerController>()
-                    : null;
-                if (player == null)
-                {
-                    reason = $"player_controller_missing:{pair.Key}";
-                    return false;
-                }
-
-                if (!safeZone.TryGetArrivalPose(slot, out var position, out var rotation)
-                    || !player.TryTeleportForWarp(position, rotation))
-                {
-                    reason = $"safe_zone_teleport_failed:{pair.Key}";
-                    return false;
-                }
-
-                safePlayerIds.Add(pair.Key);
-                slot++;
-            }
-
-            debrisPlayerIds.Clear();
-            RefreshSafePlayerCount();
-            reason = null;
-            return true;
         }
 
         private void RequestMapRefresh()

@@ -134,6 +134,7 @@ namespace LastJumpCrew.ParkHanSol.Interaction
             }
 
             currentItemObject.OnPickedUp(this);
+            StopHeldDebrisMotion();
             ReportHeldItemRecord();
             RefreshHeldItemHud();
 
@@ -194,6 +195,7 @@ namespace LastJumpCrew.ParkHanSol.Interaction
                 GetHeldItemScaleMultiplier());
 
             currentItemObject.OnPickedUp(this);
+            StopHeldDebrisMotion();
             ReportHeldItemRecord();
             RefreshHeldItemHud();
             Debug.Log($"PHS_DEBRIS_HELD player={name} debris={debrisItem.name} mass={debrisItem.Mass:F2} value={debrisItem.Value}");
@@ -376,6 +378,18 @@ namespace LastJumpCrew.ParkHanSol.Interaction
                 heldDebrisTriggerStates[index] = heldDebrisColliders[index].isTrigger;
                 heldDebrisColliders[index].isTrigger = true;
             }
+        }
+
+        private void StopHeldDebrisMotion()
+        {
+            if (heldDebris == null || !heldDebris.TryGetComponent<Rigidbody>(out var rigidbody))
+            {
+                return;
+            }
+
+            rigidbody.linearVelocity = Vector3.zero;
+            rigidbody.angularVelocity = Vector3.zero;
+            rigidbody.Sleep();
         }
 
         private void RestoreHeldDebrisColliders()
@@ -583,28 +597,23 @@ namespace LastJumpCrew.ParkHanSol.Interaction
             out GameObject thrownItemInstance)
         {
             thrownItemInstance = null;
-            if (heldItemInstance == null || currentItemObject == null)
+            if (heldDebris == null || currentItemObject == null)
             {
                 Debug.LogError($"PHS_DEBRIS_THROW_FAILED reason=held_state_invalid player={name}");
                 return false;
             }
 
-            var thrownBody = heldItemInstance.GetComponent<Rigidbody>();
-            var thrownNetworkObject = heldItemInstance.GetComponent<NetworkObject>();
-            if (thrownBody == null || (networkSessionActive && thrownNetworkObject == null))
-            {
-                Debug.LogError($"PHS_DEBRIS_THROW_FAILED reason=required_component_missing player={name}");
-                return false;
-            }
+            var debrisObject = heldDebris.gameObject;
+            var thrownNetworkObject = heldDebris.GetComponent<NetworkObject>();
 
             var debrisName = heldDebris.name;
-            thrownItemInstance = heldItemInstance;
+            thrownItemInstance = debrisObject;
             thrownItemInstance.transform.SetParent(null, true);
             thrownItemInstance.transform.SetPositionAndRotation(spawnPosition, spawnRotation);
             thrownItemInstance.transform.localScale = heldDebrisWorldScale;
             RestoreHeldDebrisColliders();
             currentItemObject.OnDropped(spawnPosition);
-            if (networkSessionActive && !thrownNetworkObject.IsSpawned)
+            if (networkSessionActive && thrownNetworkObject != null && !thrownNetworkObject.IsSpawned)
             {
                 thrownNetworkObject.Spawn();
             }

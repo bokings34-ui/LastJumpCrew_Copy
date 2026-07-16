@@ -33,7 +33,7 @@ namespace LastJumpCrew.ParkHanSol.Interaction
 
         private void OnTriggerEnter(Collider other)
         {
-            if (!TryGetDebrisItem(other, out var debrisItem))
+            if (!TryResolveDebrisForSale(other, out var debrisItem))
             {
                 return;
             }
@@ -54,7 +54,7 @@ namespace LastJumpCrew.ParkHanSol.Interaction
                 return;
             }
 
-            if (TryGetDebrisItem(other, out var debrisItem))
+            if (TryResolveDebrisForSale(other, out var debrisItem))
             {
                 TryRequestNetworkSale(debrisItem);
             }
@@ -133,9 +133,18 @@ namespace LastJumpCrew.ParkHanSol.Interaction
             var itemHolder = debrisItem.GetComponentInParent<TempPlayerItemHolder>();
             var playerNetworkObject = itemHolder == null ? null : itemHolder.GetComponent<NetworkObject>();
             var itemData = itemObject == null ? null : itemObject.ItemPrefabData;
-            if (itemObject == null || !itemObject.IsHeld || itemHolder == null ||
-                playerNetworkObject == null || !playerNetworkObject.IsOwner || itemData == null ||
-                string.IsNullOrWhiteSpace(itemData.ItemId))
+            if (itemObject == null || itemData == null || string.IsNullOrWhiteSpace(itemData.ItemId))
+            {
+                return;
+            }
+
+            if (!itemObject.IsHeld)
+            {
+                TryCompleteWorldDebrisSale(debrisItem, itemData);
+                return;
+            }
+
+            if (itemHolder == null || playerNetworkObject == null || !playerNetworkObject.IsOwner)
             {
                 return;
             }
@@ -143,6 +152,30 @@ namespace LastJumpCrew.ParkHanSol.Interaction
             networkSalePending = true;
             nextNetworkSaleTime = Time.unscaledTime + retrySeconds;
             RequestSaleServerRpc(new FixedString64Bytes(itemData.ItemId));
+        }
+
+        private void TryCompleteWorldDebrisSale(DebrisItem debrisItem, UtilityItemPrefabData itemData)
+        {
+            if (!IsServer || debrisItem == null || itemData == null || !ValidateSetup() || !shopWallet.IsReady)
+            {
+                return;
+            }
+
+            var saleKey = $"world:{debrisItem.GetEntityId()}";
+            if (!completedNetworkSales.Add(saleKey))
+            {
+                return;
+            }
+
+            if (!shopWallet.TryAddCredits(itemData.Price))
+            {
+                completedNetworkSales.Remove(saleKey);
+                Debug.LogError($"PHS_DEBRIS_SELL_FAILED reason=wallet_rejected zone={name} debris={debrisItem.name} value={itemData.Price}");
+                return;
+            }
+
+            Debug.Log($"PHS_DEBRIS_SOLD zone={name} debris={debrisItem.name} value={itemData.Price} method=thrown");
+            Destroy(debrisItem.gameObject);
         }
 
         [ServerRpc(RequireOwnership = false)]
@@ -319,6 +352,18 @@ namespace LastJumpCrew.ParkHanSol.Interaction
             }
 
             return ValidateSetup();
+        }
+
+        private bool TryResolveDebrisForSale(Collider other, out DebrisItem debrisItem)
+        {
+            if (TryGetDebrisItem(other, out debrisItem))
+            {
+                return true;
+            }
+
+            var holder = other == null ? null : other.GetComponentInParent<TempPlayerItemHolder>();
+            debrisItem = holder == null ? null : holder.HeldDebris;
+            return debrisItem != null && debrisItem.CompareTag(debrisTag) && ValidateSetup();
         }
 
         private bool TryConsumeHeldDebris(DebrisItem debrisItem, out bool isHeldDebris)

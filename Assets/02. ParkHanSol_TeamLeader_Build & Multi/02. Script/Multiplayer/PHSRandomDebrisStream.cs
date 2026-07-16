@@ -20,6 +20,12 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
         private readonly System.Collections.Generic.List<Transform> activeDebris = new();
         private int targetDebrisCount;
 
+        public void SetSimulationEnabled(bool simulationEnabled)
+        {
+            enabled = simulationEnabled;
+            Debug.Log($"PHS_DEBRIS_STREAM_STATE stream={name} enabled={simulationEnabled}", this);
+        }
+
         private void Awake()
         {
             if (debrisRoots == null || debrisRoots.Length == 0)

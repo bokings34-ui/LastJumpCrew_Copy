@@ -11,10 +11,15 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Maps
     {
         [Header("Inspector References")]
         [SerializeField] private PHSMapCatalogSO mapCatalog;
+        [SerializeField] private PHSMapProfileSO warpMaintenanceProfile;
+        [SerializeField] private PHSMapProfileSO shopPortalProfile;
         [SerializeField] private Transform environmentRoot;
         [SerializeField] private WarpTransitionPresenter warpTransitionPresenter;
         [SerializeField] private PHSNetworkEventScheduler externalThreatScheduler;
         [SerializeField] private PHSNetworkShipAccidentCoordinator internalAccidentCoordinator;
+        [SerializeField] private PHSRandomDebrisStream debrisStream;
+        [SerializeField] private GameObject shopPortalRoot;
+        [SerializeField] private bool keepShopPortalAlwaysActive = true;
 
         [Header("Runtime Binding")]
         [SerializeField, Min(0.1f)] private float bindTimeoutSeconds = 5f;
@@ -27,12 +32,18 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Maps
         private bool initialApplyPending;
 
         public PHSMapProfileSO CurrentProfile { get; private set; }
+        public bool KeepShopPortalAlwaysActive => keepShopPortalAlwaysActive;
 
         public event Action<PHSMapProfileSO> CurrentProfileChanged;
 
         private void Awake()
         {
             setupValid = ValidateSetup();
+            if (shopPortalRoot != null)
+            {
+                shopPortalRoot.SetActive(keepShopPortalAlwaysActive);
+            }
+
             enabled = setupValid;
         }
 
@@ -120,6 +131,33 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Maps
 
         private void HandlePhaseChanged(NetworkRunPhase previousPhase, NetworkRunPhase currentPhase)
         {
+            if (currentPhase == NetworkRunPhase.WarpSafe)
+            {
+                if (!TryApplyProfile(warpMaintenanceProfile))
+                {
+                    Debug.LogError("PHS_MAP_MAINTENANCE_APPLY_FAILED", this);
+                }
+
+                return;
+            }
+
+            if (currentPhase == NetworkRunPhase.Shop || currentPhase == NetworkRunPhase.FinalShop)
+            {
+                if (!TryApplyProfile(shopPortalProfile))
+                {
+                    Debug.LogError("PHS_MAP_SHOP_PORTAL_APPLY_FAILED", this);
+                }
+
+                return;
+            }
+
+            if (currentPhase == NetworkRunPhase.WarpReady
+                && CurrentProfile != null
+                && CurrentProfile.IsWarpMaintenance)
+            {
+                TryApplyMap(runFlowCoordinator.ActiveMapId);
+            }
+
             if (!IsServer())
             {
                 return;
@@ -146,12 +184,19 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Maps
 
             if (currentPhase == NetworkRunPhase.Charging && CurrentProfile != null)
             {
-                if (!externalThreatScheduler.TryStartServer(out var externalStartReason))
+                if (!internalAccidentCoordinator.TrySetMaintenancePausedServer(false, out var maintenanceReason))
+                {
+                    Debug.LogError($"PHS_MAP_MAINTENANCE_RESUME_FAILED reason={maintenanceReason}", this);
+                }
+
+                if (CurrentProfile.AllowsEventGeneration
+                    && !externalThreatScheduler.TryStartServer(out var externalStartReason))
                 {
                     Debug.LogError($"PHS_MAP_EXTERNAL_THREAT_START_FAILED reason={externalStartReason} mapId={CurrentProfile.MapId}", this);
                 }
 
-                if (!internalAccidentCoordinator.TryStartServer(out var internalStartReason))
+                if (CurrentProfile.AllowsEventGeneration
+                    && !internalAccidentCoordinator.TryStartServer(out var internalStartReason))
                 {
                     Debug.LogError($"PHS_MAP_INTERNAL_ACCIDENT_START_FAILED reason={internalStartReason} mapId={CurrentProfile.MapId}", this);
                 }
@@ -166,6 +211,18 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Maps
                 return false;
             }
 
+            return TryApplyProfile(profile);
+        }
+
+        private bool TryApplyProfile(PHSMapProfileSO profile)
+        {
+            if (profile == null)
+            {
+                Debug.LogError("PHS_MAP_RUNTIME_APPLY_FAILED reason=profile_missing", this);
+                return false;
+            }
+
+            var mapId = profile.MapId;
             if (!profile.TryValidate(out var validationReason))
             {
                 Debug.LogError(
@@ -209,6 +266,17 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Maps
                 return false;
             }
 
+            debrisStream.SetSimulationEnabled(profile.AllowsDebrisGeneration);
+            if (IsServer()
+                && !internalAccidentCoordinator.TrySetMaintenancePausedServer(
+                    profile.IsWarpMaintenance || profile.IsShopPortalProfile,
+                    out var maintenanceReason))
+            {
+                Debug.LogError($"PHS_MAP_MAINTENANCE_STATE_FAILED reason={maintenanceReason} mapId={mapId}", this);
+                return false;
+            }
+
+            shopPortalRoot.SetActive(keepShopPortalAlwaysActive || profile.AllowsShopPortal);
             CurrentProfile = profile;
             CurrentProfileChanged?.Invoke(profile);
             Debug.Log($"PHS_MAP_RUNTIME_APPLIED mapId={mapId} name={profile.DisplayName}", this);
@@ -245,6 +313,12 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Maps
 
         private bool TryApplyEnvironment(PHSMapProfileSO profile, out string reason)
         {
+            if (profile.IsWarpMaintenance || profile.IsShopPortalProfile)
+            {
+                reason = null;
+                return true;
+            }
+
             if (environmentInstance != null)
             {
                 Destroy(environmentInstance);
@@ -281,6 +355,12 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Maps
             {
                 reason = $"internal_accident_scheduler_stop_failed:{internalStopReason}";
                 return false;
+            }
+
+            if (!profile.AllowsEventGeneration)
+            {
+                reason = null;
+                return true;
             }
 
             var externalWeights = profile.ExternalThreatWeights;
@@ -336,6 +416,24 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Maps
                 return false;
             }
 
+            if (warpMaintenanceProfile == null || !warpMaintenanceProfile.IsWarpMaintenance)
+            {
+                Debug.LogError("PHS_MAP_RUNTIME_SETUP_FAILED reason=warp_maintenance_profile_missing", this);
+                return false;
+            }
+
+            if (shopPortalProfile == null || !shopPortalProfile.IsShopPortalProfile)
+            {
+                Debug.LogError("PHS_MAP_RUNTIME_SETUP_FAILED reason=shop_portal_profile_missing", this);
+                return false;
+            }
+
+            if (shopPortalRoot == null)
+            {
+                Debug.LogError("PHS_MAP_RUNTIME_SETUP_FAILED reason=shop_portal_root_missing", this);
+                return false;
+            }
+
             if (!mapCatalog.TryValidate(out var catalogReason))
             {
                 Debug.LogError($"PHS_MAP_RUNTIME_SETUP_FAILED reason=catalog_invalid detail={catalogReason}", this);
@@ -363,6 +461,12 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Maps
             if (internalAccidentCoordinator == null)
             {
                 Debug.LogError("PHS_MAP_RUNTIME_SETUP_FAILED reason=internal_accident_coordinator_missing", this);
+                return false;
+            }
+
+            if (debrisStream == null)
+            {
+                Debug.LogError("PHS_MAP_RUNTIME_SETUP_FAILED reason=debris_stream_missing", this);
                 return false;
             }
 

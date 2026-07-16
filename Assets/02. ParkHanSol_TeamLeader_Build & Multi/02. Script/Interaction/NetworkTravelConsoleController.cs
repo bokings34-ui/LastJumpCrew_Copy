@@ -1,7 +1,6 @@
 using System.Collections.Generic;
 using LastJumpCrew.ParkHanSol.Multiplayer;
 using LastJumpCrew.ParkHanSol.Multiplayer.Maps;
-using LastJumpCrew.ParkHanSol.Shop;
 using TMPro;
 using Unity.Netcode;
 using UnityEngine;
@@ -34,6 +33,7 @@ namespace LastJumpCrew.ParkHanSol.Interaction
 
         [Header("Map Options")]
         [SerializeField] private PHSMapCatalogSO mapCatalog;
+        [SerializeField] private PHSMapRuntimeContext mapRuntimeContext;
 
         [Header("World Screens")]
         [SerializeField] private TMP_Text debrisScreenText;
@@ -118,6 +118,7 @@ namespace LastJumpCrew.ParkHanSol.Interaction
         private void Awake()
         {
             setupValid = debrisScreenText != null
+                && mapRuntimeContext != null
                 && shopScreenText != null
                 && actionScreenText != null
                 && readyStatusLight != null
@@ -297,13 +298,6 @@ namespace LastJumpCrew.ParkHanSol.Interaction
                 return true;
             }
 
-            if ((runFlow.Phase == NetworkRunPhase.Shop || runFlow.Phase == NetworkRunPhase.FinalShop)
-                && side == TravelConsoleSide.Left)
-            {
-                destination = TravelConsoleDestination.Shop;
-                return true;
-            }
-
             return false;
         }
 
@@ -324,11 +318,6 @@ namespace LastJumpCrew.ParkHanSol.Interaction
             if (runFlow.Phase == NetworkRunPhase.Charging)
             {
                 return SelectedDestination == TravelConsoleDestination.DebrisCollection;
-            }
-
-            if (runFlow.Phase == NetworkRunPhase.Shop || runFlow.Phase == NetworkRunPhase.FinalShop)
-            {
-                return SelectedDestination == TravelConsoleDestination.Shop;
             }
 
             return false;
@@ -391,21 +380,6 @@ namespace LastJumpCrew.ParkHanSol.Interaction
                 return;
             }
 
-            if ((runFlow.Phase == NetworkRunPhase.Shop || runFlow.Phase == NetworkRunPhase.FinalShop)
-                && SelectedDestination == TravelConsoleDestination.Shop)
-            {
-                var adapter = FindAnyObjectByType<ShopRunFlowAdapter>(FindObjectsInactive.Include);
-                var shopReason = "shop_adapter_missing";
-                if (adapter == null || !adapter.CanEnterShop(out shopReason))
-                {
-                    Debug.LogWarning($"PHS_TRAVEL_EXECUTE_FAILED reason={shopReason}", this);
-                    return;
-                }
-
-                LoadNetworkScene(shopSceneName);
-                return;
-            }
-
             Debug.LogWarning($"PHS_TRAVEL_EXECUTE_FAILED reason=phase_or_destination_invalid phase={runFlow.Phase} destination={SelectedDestination}", this);
         }
 
@@ -448,13 +422,20 @@ namespace LastJumpCrew.ParkHanSol.Interaction
         private void HandleServerPhaseChanged(NetworkRunPhase phase)
         {
             lastServerPhase = phase;
-            synchronizedDestination.Value = TravelConsoleDestination.None;
-            if (phase == NetworkRunPhase.WarpSafe)
+            if (phase == NetworkRunPhase.Shop || phase == NetworkRunPhase.FinalShop)
             {
+                synchronizedDestination.Value = TravelConsoleDestination.None;
+                synchronizedLeftMapId.Value = 0;
+                synchronizedRightMapId.Value = 0;
+            }
+            else if (phase == NetworkRunPhase.WarpSafe)
+            {
+                synchronizedDestination.Value = TravelConsoleDestination.None;
                 RollMapChoices();
             }
             else
             {
+                synchronizedDestination.Value = TravelConsoleDestination.None;
                 synchronizedLeftMapId.Value = 0;
                 synchronizedRightMapId.Value = 0;
             }
@@ -518,6 +499,15 @@ namespace LastJumpCrew.ParkHanSol.Interaction
                 && rightProfile.Selectable;
         }
 
+        private bool IsShopPortalAvailable(NetworkRunFlowCoordinator runFlow)
+        {
+            return runFlow != null
+                && (runFlow.Phase == NetworkRunPhase.Shop || runFlow.Phase == NetworkRunPhase.FinalShop)
+                && mapRuntimeContext != null
+                && mapRuntimeContext.CurrentProfile != null
+                && mapRuntimeContext.CurrentProfile.AllowsShopPortal;
+        }
+
         private bool TryGetSelectedMapProfile(out PHSMapProfileSO mapProfile)
         {
             mapProfile = null;
@@ -544,9 +534,7 @@ namespace LastJumpCrew.ParkHanSol.Interaction
             }
 
             var runFlow = NetworkRunFlowCoordinator.Instance;
-            var shopAvailable = runFlow != null
-                && (runFlow.Phase == NetworkRunPhase.Shop
-                    || runFlow.Phase == NetworkRunPhase.FinalShop);
+            var shopAvailable = IsShopPortalAvailable(runFlow);
             var mapChoicesReady = runFlow != null
                 && runFlow.Phase == NetworkRunPhase.WarpSafe
                 && AreMapChoicesReady();

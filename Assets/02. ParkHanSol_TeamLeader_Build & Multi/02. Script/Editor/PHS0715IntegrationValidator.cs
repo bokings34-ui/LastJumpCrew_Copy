@@ -156,6 +156,7 @@ namespace LastJumpCrew.ParkHanSol.Editor
                 var serializedConsole = new SerializedObject(console);
                 mapCatalog = serializedConsole.FindProperty("mapCatalog")?.objectReferenceValue as PHSMapCatalogSO;
                 ValidateMapCatalog("map_travel_console", mapCatalog, 2, errors);
+                RequireObject(serializedConsole, "mapRuntimeContext", "map_travel_console_runtime_context_missing", errors);
                 RequireObject(serializedConsole, "debrisScreenText", "map_debris_screen_missing", errors);
                 RequireObject(serializedConsole, "shopScreenText", "map_shop_screen_missing", errors);
                 RequireObject(serializedConsole, "actionScreenText", "map_action_screen_missing", errors);
@@ -168,6 +169,8 @@ namespace LastJumpCrew.ParkHanSol.Editor
                 var serializedWarpPresenter = new SerializedObject(warpPresenter);
                 RequireObject(serializedWarpPresenter, "transitionCanvasGroup", "map_warp_canvas_missing", errors);
                 RequireObject(serializedWarpPresenter, "warpVisualRoot", "map_warp_visual_missing", errors);
+                RequireObject(serializedWarpPresenter, "warpStatusCardRoot", "map_warp_status_card_missing", errors);
+                RequireObject(serializedWarpPresenter, "warpStatusText", "map_warp_status_text_missing", errors);
                 RequireObject(serializedWarpPresenter, "normalSkybox", "map_warp_normal_skybox_missing", errors);
                 RequireObject(serializedWarpPresenter, "warpSkybox", "map_warp_skybox_missing", errors);
                 RequireObject(serializedWarpPresenter, "arrivalSkybox", "map_warp_arrival_skybox_missing", errors);
@@ -712,6 +715,10 @@ namespace LastJumpCrew.ParkHanSol.Editor
             RequireObject(serializedRuntime, "mapCatalog", "map_runtime_catalog_missing", errors);
             RequireObject(serializedRuntime, "environmentRoot", "map_runtime_environment_root_missing", errors);
             RequireObject(serializedRuntime, "warpTransitionPresenter", "map_runtime_warp_presenter_missing", errors);
+            RequireObject(serializedRuntime, "warpMaintenanceProfile", "map_runtime_warp_maintenance_profile_missing", errors);
+            RequireObject(serializedRuntime, "shopPortalProfile", "map_runtime_shop_portal_profile_missing", errors);
+            RequireObject(serializedRuntime, "shopPortalRoot", "map_runtime_shop_portal_root_missing", errors);
+            RequireObject(serializedRuntime, "debrisStream", "map_runtime_debris_stream_missing", errors);
             RequireObject(serializedRuntime, "externalThreatScheduler", "map_runtime_external_scheduler_missing", errors);
             RequireObject(serializedRuntime, "internalAccidentCoordinator", "map_runtime_internal_accident_missing", errors);
             Require(
@@ -1299,6 +1306,12 @@ namespace LastJumpCrew.ParkHanSol.Editor
                 Require(
                     serializedBinder.FindProperty("eventHudViewSource")?.objectReferenceValue == eventHudView,
                     $"{label}_event_hud_binder_view_mismatch",
+                    errors);
+                Require(
+                    Mathf.Approximately(
+                        serializedBinder.FindProperty("currentMapMessageSeconds")?.floatValue ?? 0f,
+                        3f),
+                    $"{label}_current_map_message_duration_invalid",
                     errors);
             }
 

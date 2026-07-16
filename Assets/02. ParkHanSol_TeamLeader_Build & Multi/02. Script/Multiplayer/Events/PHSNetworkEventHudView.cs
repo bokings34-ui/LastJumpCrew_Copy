@@ -92,6 +92,8 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Events
         private bool isConfigured;
         private string externalAlertText = string.Empty;
         private string internalAccidentAlertText = string.Empty;
+        private string currentMapText = string.Empty;
+        private float currentMapVisibleUntil;
 
         public bool IsConfigured
         {
@@ -106,6 +108,35 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Events
         {
             EnsureSetupValidated();
             HideOffline();
+        }
+
+        private void Update()
+        {
+            if (!string.IsNullOrWhiteSpace(currentMapText)
+                && Time.unscaledTime >= currentMapVisibleUntil)
+            {
+                ClearCurrentMap();
+            }
+        }
+
+        public void ShowCurrentMap(string displayName, float visibleSeconds)
+        {
+            if (!IsConfigured || string.IsNullOrWhiteSpace(displayName))
+            {
+                ClearCurrentMap();
+                return;
+            }
+
+            currentMapText = $"<color=#58E6FF>현재 구역 · {displayName.Trim()}</color>";
+            currentMapVisibleUntil = Time.unscaledTime + Mathf.Max(0.1f, visibleSeconds);
+            RefreshAlertText();
+        }
+
+        public void ClearCurrentMap()
+        {
+            currentMapText = string.Empty;
+            currentMapVisibleUntil = 0f;
+            RefreshAlertText();
         }
 
         public void Apply(PHSNetworkEventHudViewModel viewModel)
@@ -216,6 +247,11 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Events
                 : string.IsNullOrWhiteSpace(internalAccidentAlertText)
                     ? externalAlertText
                     : $"{externalAlertText}\n{internalAccidentAlertText}";
+            text = string.IsNullOrWhiteSpace(currentMapText)
+                ? text
+                : string.IsNullOrWhiteSpace(text)
+                    ? currentMapText
+                    : $"{currentMapText}\n{text}";
             eventAlertRoot.SetActive(!string.IsNullOrWhiteSpace(text));
             eventAlertText.text = text;
         }
