@@ -82,6 +82,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
         private float scheduledWarpReviveTime = -1f;
         private int pendingNextMapId;
         private bool departingWarpSafeZone;
+        private bool debugAutoAdvanceWarp;
 
         public static NetworkRunFlowCoordinator Instance { get; private set; }
 
@@ -168,9 +169,10 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
 
             chargeElapsed = warpChargeSeconds;
             synchronizedWarpCharge.Value = 1f;
+            debugAutoAdvanceWarp = true;
             SetPhase(NetworkRunPhase.WarpReady);
             reason = string.Empty;
-            Debug.Log("PHS_RUN_FLOW_DEBUG_CHARGE_COMPLETED input=Digit1", this);
+            Debug.Log("PHS_RUN_FLOW_DEBUG_CHARGE_COMPLETED input=Digit1 autoAdvance=true", this);
             return true;
         }
 
@@ -241,6 +243,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
 
             TickScheduledWarpRevives();
             RefreshSafePlayerCount();
+            TickDebugAutoAdvanceWarp();
 
             if (synchronizedPhase.Value == NetworkRunPhase.Warping)
             {
@@ -562,6 +565,88 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
             SetPhase(chargeElapsed >= warpChargeSeconds
                 ? NetworkRunPhase.WarpReady
                 : NetworkRunPhase.Charging);
+        }
+
+        private void TickDebugAutoAdvanceWarp()
+        {
+            if (!debugAutoAdvanceWarp)
+            {
+                return;
+            }
+
+            if (synchronizedPhase.Value == NetworkRunPhase.WarpReady)
+            {
+                if (!TryActivateWarp(NetworkManager.ServerClientId, out var reason))
+                {
+                    debugAutoAdvanceWarp = false;
+                    Debug.LogWarning($"PHS_RUN_FLOW_DEBUG_WARP_FAILED step=enter_safe reason={reason}", this);
+                }
+
+                return;
+            }
+
+            if (synchronizedPhase.Value != NetworkRunPhase.WarpSafe)
+            {
+                return;
+            }
+
+            if (SelectedNextMapId <= 0)
+            {
+                string selectionReason = null;
+                if (!TryResolveNextDebugMap(out var nextMapId)
+                    || !TrySelectNextZone(nextMapId, out selectionReason))
+                {
+                    debugAutoAdvanceWarp = false;
+                    Debug.LogWarning(
+                        $"PHS_RUN_FLOW_DEBUG_WARP_FAILED step=select_next reason={selectionReason ?? "map_unavailable"}",
+                        this);
+                    return;
+                }
+            }
+
+            if (!TryActivateWarp(NetworkManager.ServerClientId, out var departureReason))
+            {
+                debugAutoAdvanceWarp = false;
+                Debug.LogWarning(
+                    $"PHS_RUN_FLOW_DEBUG_WARP_FAILED step=depart_safe reason={departureReason}",
+                    this);
+                return;
+            }
+
+            debugAutoAdvanceWarp = false;
+            Debug.Log($"PHS_RUN_FLOW_DEBUG_WARP_STARTED nextMap={SelectedNextMapId}", this);
+        }
+
+        private bool TryResolveNextDebugMap(out int mapId)
+        {
+            mapId = 0;
+            if (mapCatalog == null || mapCatalog.Profiles == null)
+            {
+                return false;
+            }
+
+            var firstSelectableMapId = 0;
+            var nextHigherMapId = int.MaxValue;
+            foreach (var profile in mapCatalog.Profiles)
+            {
+                if (profile == null || !profile.Selectable || profile.MapId == ActiveMapId)
+                {
+                    continue;
+                }
+
+                if (firstSelectableMapId == 0 || profile.MapId < firstSelectableMapId)
+                {
+                    firstSelectableMapId = profile.MapId;
+                }
+
+                if (profile.MapId > ActiveMapId && profile.MapId < nextHigherMapId)
+                {
+                    nextHigherMapId = profile.MapId;
+                }
+            }
+
+            mapId = nextHigherMapId != int.MaxValue ? nextHigherMapId : firstSelectableMapId;
+            return mapId > 0;
         }
 
         private void ExecuteReadyWarp()

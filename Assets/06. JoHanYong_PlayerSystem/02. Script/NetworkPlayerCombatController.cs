@@ -98,6 +98,10 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
         private float extinguisherEffectKeepAliceTime = 0.2f;
         private float extinguisherEffectStopTime;
 
+        [Header("Local Use Feedback")]
+        [SerializeField] private ParticleSystem wrenchUseEffect;
+        [SerializeField] private ParticleSystem batteryUseEffect;
+
         private float nextGeneralThrowTime;
 
 
@@ -213,6 +217,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
         {
             if (!IsSpawned)
             {
+                PlayOneShotEffect(wrenchUseEffect);
                 PerformWrenchAttack();
                 return;
             }
@@ -220,6 +225,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
             {
                 return;
             }
+            PlayOneShotEffect(wrenchUseEffect);
             RequestWrenchAttackServerRpc();
         }
         [ServerRpc]
@@ -314,6 +320,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
             }
             if (!IsSpawned)
             {
+                PlayOneShotEffect(batteryUseEffect);
                 PerformBatteryThrow(batteryThrowOrigin.position, batteryThrowOrigin.forward);
                 return;
             }
@@ -331,6 +338,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
                 return;
             }
             nextBatteryThrowTime = Time.time + batteryThrowCooldown;
+            PlayOneShotEffect(batteryUseEffect);
 
             var direction = batteryThrowOrigin.forward.normalized; //플레이어가 바라보는 방향
 
@@ -684,6 +692,12 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
 
                     particle.Stop(true, ParticleSystemStopBehavior.StopEmittingAndClear);
 
+                    var particleRenderer = particle.GetComponent<ParticleSystemRenderer>();
+                    if (particleRenderer != null)
+                    {
+                        particleRenderer.enabled = true;
+                    }
+
                     particle.Play(true);
                 }
             }
@@ -707,6 +721,23 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
             Debug.Log($"PHS_EXTINGUISHER_EFFECT_STARTED " + $"player={name} " + $"particles={extinguisherSprayPartucles.Length}");
 
             extinguisherEffectStopTime = Time.time + extinguisherEffectKeepAliceTime;
+        }
+
+        private static void PlayOneShotEffect(ParticleSystem effect)
+        {
+            if (effect == null)
+            {
+                return;
+            }
+
+            var effectRenderer = effect.GetComponent<ParticleSystemRenderer>();
+            if (effectRenderer != null)
+            {
+                effectRenderer.enabled = true;
+            }
+
+            effect.Stop(true, ParticleSystemStopBehavior.StopEmittingAndClear);
+            effect.Play(true);
         }
 
 

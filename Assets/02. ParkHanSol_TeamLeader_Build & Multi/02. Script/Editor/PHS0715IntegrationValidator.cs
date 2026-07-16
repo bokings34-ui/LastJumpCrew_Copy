@@ -207,6 +207,25 @@ namespace LastJumpCrew.ParkHanSol.Editor
             FindOne<WarpChargeDebugInput>("map_warp_charge_debug_input", errors);
             ValidateSceneSellZones("map", errors);
 
+            var debrisGravityArea = UnityEngine.Object.FindObjectsByType<NetworkPlayerGravityArea>(
+                    FindObjectsInactive.Include,
+                    FindObjectsSortMode.None)
+                .FirstOrDefault(area => area.name == "PHS_ServiceGravityArea");
+            Require(debrisGravityArea != null, "map_debris_gravity_area_missing", errors);
+            if (debrisGravityArea != null)
+            {
+                var serializedGravityArea = new SerializedObject(debrisGravityArea);
+                Require(
+                    serializedGravityArea.FindProperty("gravityMode")?.enumValueIndex
+                        == (int)NetworkPlayerGravityMode.Spacewalk,
+                    "map_debris_gravity_mode_invalid",
+                    errors);
+                Require(
+                    serializedGravityArea.FindProperty("priority")?.intValue >= 1000,
+                    "map_debris_gravity_priority_invalid",
+                    errors);
+            }
+
             var enemyDeviceTargets = UnityEngine.Object.FindObjectsByType<EnemyDeviceTarget>(
                 FindObjectsInactive.Include,
                 FindObjectsSortMode.None);
@@ -812,6 +831,19 @@ namespace LastJumpCrew.ParkHanSol.Editor
                 prefab.GetComponent<PlayerEnemyTargetRegistration>() != null,
                 "player_enemy_target_registration_missing",
                 errors);
+            var combatController = prefab.GetComponent<NetworkPlayerCombatController>();
+            Require(combatController != null, "player_combat_controller_missing", errors);
+            if (combatController != null)
+            {
+                var serializedCombat = new SerializedObject(combatController);
+                RequireObject(serializedCombat, "wrenchUseEffect", "player_wrench_feedback_missing", errors);
+                RequireObject(serializedCombat, "batteryUseEffect", "player_battery_feedback_missing", errors);
+                RequireObject(
+                    serializedCombat,
+                    "extinguisherSprayEffectRoot",
+                    "player_extinguisher_feedback_missing",
+                    errors);
+            }
             Require(prefab.GetComponent<NetworkPlayerItemRecord>() != null, "player_item_record_missing", errors);
             Require(prefab.GetComponent<TempPlayerItemHolder>() != null, "player_item_holder_missing", errors);
             Require(
@@ -843,6 +875,49 @@ namespace LastJumpCrew.ParkHanSol.Editor
                     "player_automatic_shop_load_disabled",
                     errors);
             }
+
+            ValidateCombatItemRoute(
+                "Assets/02. ParkHanSol_TeamLeader_Build & Multi/04. Data/UtilityItems/ParkHanSol_WrenchItemPrefabData.asset",
+                "Assets/06. JoHanYong_PlayerSystem/03. Prefab/ParkHanSol_Wrench 2.prefab",
+                "Assets/06. JoHanYong_PlayerSystem/03. Prefab/ParkHanSol_Wrench 1.prefab",
+                "wrench",
+                errors);
+            ValidateCombatItemRoute(
+                "Assets/02. ParkHanSol_TeamLeader_Build & Multi/04. Data/UtilityItems/ParkHanSol_FireExtinguisherItemPrefabData.asset",
+                "Assets/06. JoHanYong_PlayerSystem/03. Prefab/ParkHanSol_FireExtinguisher 2.prefab",
+                "Assets/06. JoHanYong_PlayerSystem/03. Prefab/ParkHanSol_FireExtinguisher 1.prefab",
+                "fire_extinguisher",
+                errors);
+            ValidateCombatItemRoute(
+                "Assets/02. ParkHanSol_TeamLeader_Build & Multi/04. Data/UtilityItems/ParkHanSol_BatteryItemPrefabData.asset",
+                "Assets/06. JoHanYong_PlayerSystem/03. Prefab/ParkHanSol_FuturisticBatteryPack 2.prefab",
+                "Assets/06. JoHanYong_PlayerSystem/03. Prefab/ParkHanSol_FuturisticBatteryPack 1.prefab",
+                "battery",
+                errors);
+        }
+
+        private static void ValidateCombatItemRoute(
+            string itemDataPath,
+            string expectedHeldPath,
+            string expectedDroppedPath,
+            string label,
+            ICollection<string> errors)
+        {
+            var itemData = AssetDatabase.LoadAssetAtPath<UtilityItemPrefabData>(itemDataPath);
+            Require(itemData != null, $"{label}_item_data_missing", errors);
+            if (itemData == null)
+            {
+                return;
+            }
+
+            Require(
+                AssetDatabase.GetAssetPath(itemData.HeldPrefab) == expectedHeldPath,
+                $"{label}_held_prefab_invalid",
+                errors);
+            Require(
+                AssetDatabase.GetAssetPath(itemData.DroppedPrefab) == expectedDroppedPath,
+                $"{label}_dropped_prefab_invalid",
+                errors);
         }
 
         private static void ValidateShipRuntimePrefab(ICollection<string> errors)
