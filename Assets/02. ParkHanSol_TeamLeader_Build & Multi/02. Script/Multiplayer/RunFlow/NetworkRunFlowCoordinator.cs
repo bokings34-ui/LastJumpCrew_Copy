@@ -1,6 +1,8 @@
 using System;
 using System.Collections.Generic;
 using LastJumpCrew.ParkHanSol.Multiplayer.Maps;
+using LastJumpCrew.ParkHanSol.Multiplayer.Events;
+using LastJumpCrew.ParkHanSol.Multiplayer.ShipAccidents;
 using LastJumpCrew.SeoBoGyeong;
 using Unity.Netcode;
 using UnityEngine;
@@ -84,6 +86,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
 
         public NetworkRunPhase Phase => synchronizedPhase.Value;
         public float WarpChargeNormalized => synchronizedWarpCharge.Value;
+        public float WarpChargeSpeedMultiplier => CalculateWarpChargeSpeedMultiplier();
         public int ClearedZoneCount => synchronizedClearedZones.Value;
         public int CompletedShopCycleCount => synchronizedShopCycles.Value;
         public int SelectedNextMapId => synchronizedSelectedNextMapId.Value;
@@ -459,7 +462,8 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
 
         private void TickWarpCharge(float deltaTime)
         {
-            chargeElapsed = Mathf.Min(warpChargeSeconds, chargeElapsed + deltaTime);
+            var chargeMultiplier = CalculateWarpChargeSpeedMultiplier();
+            chargeElapsed = Mathf.Min(warpChargeSeconds, chargeElapsed + deltaTime * chargeMultiplier);
             synchronizedWarpCharge.Value = Mathf.Clamp01(chargeElapsed / warpChargeSeconds);
             SetPhase(chargeElapsed >= warpChargeSeconds
                 ? NetworkRunPhase.WarpReady
@@ -503,6 +507,56 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
             }
 
             Debug.Log($"PHS_RUN_FLOW_WARP_COMPLETED cleared={gameState.ClearedZoneCount} phase={gameState.Phase}");
+        }
+
+        private float CalculateWarpChargeSpeedMultiplier()
+        {
+            if (!mapCatalog.TryResolve(ActiveMapId, out var profile))
+            {
+                return 1f;
+            }
+
+            var multiplier = 1f;
+            var eventCoordinator = NetworkEventCoordinator.Instance;
+            if (eventCoordinator != null)
+            {
+                for (var snapshotIndex = 0; snapshotIndex < eventCoordinator.SnapshotCount; snapshotIndex++)
+                {
+                    var snapshot = eventCoordinator.GetLifecycleSnapshotAt(snapshotIndex);
+                    if (snapshot.State != SM.EventState.InProgress)
+                    {
+                        continue;
+                    }
+
+                    foreach (var entry in profile.ExternalThreatWeights)
+                    {
+                        if (entry.EventId == snapshot.EventId)
+                        {
+                            multiplier *= entry.WarpChargeMultiplier;
+                            break;
+                        }
+                    }
+                }
+            }
+
+            var accidentCoordinator = PHSNetworkShipAccidentCoordinator.Instance;
+            if (accidentCoordinator != null)
+            {
+                for (var snapshotIndex = 0; snapshotIndex < accidentCoordinator.ActiveAccidentCount; snapshotIndex++)
+                {
+                    var snapshot = accidentCoordinator.GetActiveAccidentAt(snapshotIndex);
+                    foreach (var entry in profile.InternalAccidentWeights)
+                    {
+                        if (entry.Definition.Id == snapshot.AccidentId)
+                        {
+                            multiplier *= entry.WarpChargeMultiplier;
+                            break;
+                        }
+                    }
+                }
+            }
+
+            return Mathf.Clamp01(multiplier);
         }
 
         private void TickScheduledWarpExecution()

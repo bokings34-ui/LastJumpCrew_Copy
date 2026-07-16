@@ -41,6 +41,23 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.ShipAccidents
         private bool isRunning;
 
         public int ActiveAccidentCount => activeAccidents.Count;
+        public static PHSNetworkShipAccidentCoordinator Instance { get; private set; }
+
+        [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
+        private static void ResetStatics()
+        {
+            Instance = null;
+        }
+
+        public NetworkShipAccidentSnapshot GetActiveAccidentAt(int index)
+        {
+            if (index < 0 || index >= activeAccidents.Count)
+            {
+                throw new ArgumentOutOfRangeException(nameof(index));
+            }
+
+            return activeAccidents[index];
+        }
 
         private void Awake()
         {
@@ -51,8 +68,6 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.ShipAccidents
         public override void OnNetworkSpawn()
         {
             base.OnNetworkSpawn();
-            activeAccidents.OnListChanged += HandleAccidentListChanged;
-            RefreshPresentations();
 
             if (OwnerClientId != NetworkManager.ServerClientId)
             {
@@ -60,7 +75,19 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.ShipAccidents
                     $"PHS_SHIP_ACCIDENT_SETUP_FAILED reason=server_owned_object_required owner={OwnerClientId}",
                     this);
                 enabled = false;
+                return;
             }
+
+            if (Instance != null && Instance != this)
+            {
+                Debug.LogError($"PHS_SHIP_ACCIDENT_SETUP_FAILED reason=duplicate_coordinator current={name} existing={Instance.name}", this);
+                enabled = false;
+                return;
+            }
+
+            Instance = this;
+            activeAccidents.OnListChanged += HandleAccidentListChanged;
+            RefreshPresentations();
         }
 
         public override void OnNetworkDespawn()
@@ -75,6 +102,11 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.ShipAccidents
                 {
                     anchor.ClearSnapshot();
                 }
+            }
+
+            if (Instance == this)
+            {
+                Instance = null;
             }
 
             base.OnNetworkDespawn();

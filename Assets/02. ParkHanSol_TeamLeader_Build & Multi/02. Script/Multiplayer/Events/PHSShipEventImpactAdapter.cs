@@ -11,7 +11,9 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Events
         [SerializeField] private NetworkShipSystemsState shipSystemsState;
 
         [Header("Terminal Failure Impact")]
+        [SerializeField, Min(1)] private int empAttackHullDamage = 10;
         [SerializeField, Min(1)] private int meteorAttackHullDamage = 10;
+        [SerializeField, Min(1)] private int enemyScoutHullDamage = 10;
         [SerializeField, Min(1)] private int enemyScoutEngineDamage = 10;
         [SerializeField] private bool enemyScoutCausesEngineFault = true;
 
@@ -98,6 +100,14 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Events
             switch (eventId)
             {
                 case EventId.EmpAttack:
+                    if (!shipSystemsState.TryApplyShipDamage(
+                            empAttackHullDamage,
+                            "terminal_emp_attack_failed",
+                            out reason))
+                    {
+                        return false;
+                    }
+
                     return shipSystemsState.TryPowerOff(out reason);
                 case EventId.MeteorAttack:
                     return shipSystemsState.TryApplyShipDamage(
@@ -105,6 +115,14 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Events
                         "terminal_meteor_attack_failed",
                         out reason);
                 case EventId.EnemyScout:
+                    if (!shipSystemsState.TryApplyShipDamage(
+                            enemyScoutHullDamage,
+                            "terminal_enemy_scout_failed",
+                            out reason))
+                    {
+                        return false;
+                    }
+
                     return shipSystemsState.TryApplyModuleDamage(
                         NetworkShipModuleId.Engine,
                         enemyScoutEngineDamage,

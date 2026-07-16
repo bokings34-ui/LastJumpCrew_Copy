@@ -19,7 +19,7 @@ namespace LastJumpCrew.SeoBoGyeong
     {
         public const int SHOP_INTERVAL = 3;         // 3구역 클리어마다 상점
         public const int TOTAL_ZONES = 9;           // 9구역 클리어 시 게임 클리어
-        public const float STAGE_TIME_LIMIT = 180f; // 스테이지 제한시간(고정, 초)
+        public const float STAGE_TIME_LIMIT = 300f; // 스테이지 제한시간(고정, 초)
 
         // [SYNC] 아래 필드들은 나중 NGO 연결 시 서버 권위 동기화 대상
         public GamePhase Phase;

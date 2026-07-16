@@ -8,9 +8,11 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.ShipAccidents
     {
         [SerializeField] private PHSShipAccidentDefinitionSO definition;
         [SerializeField, Min(0.01f)] private float weight = 1f;
+        [SerializeField, Range(0f, 1f)] private float warpChargeMultiplier = 0.8f;
 
         public PHSShipAccidentDefinitionSO Definition => definition;
         public float Weight => weight;
+        public float WarpChargeMultiplier => warpChargeMultiplier;
 
         public bool TryValidate(out string reason)
         {
@@ -29,6 +31,14 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.ShipAccidents
             if (weight <= 0f || float.IsNaN(weight) || float.IsInfinity(weight))
             {
                 reason = $"weight_invalid:value={weight}";
+                return false;
+            }
+
+            if (warpChargeMultiplier < 0f || warpChargeMultiplier > 1f
+                || float.IsNaN(warpChargeMultiplier)
+                || float.IsInfinity(warpChargeMultiplier))
+            {
+                reason = $"warp_charge_multiplier_invalid:value={warpChargeMultiplier}";
                 return false;
             }
 

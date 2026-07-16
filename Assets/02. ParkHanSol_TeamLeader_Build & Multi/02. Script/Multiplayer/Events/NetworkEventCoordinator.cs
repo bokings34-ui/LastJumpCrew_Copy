@@ -64,6 +64,16 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Events
         public int SnapshotCount => lifecycleSnapshots.Count;
         public int EffectSnapshotCount => effectSnapshots.Count;
 
+        public NetworkEventLifecycleSnapshot GetLifecycleSnapshotAt(int index)
+        {
+            if (index < 0 || index >= lifecycleSnapshots.Count)
+            {
+                throw new ArgumentOutOfRangeException(nameof(index));
+            }
+
+            return lifecycleSnapshots[index];
+        }
+
         public event Action LifecycleSnapshotsChanged;
         public event Action EffectSnapshotsChanged;
 

@@ -9,9 +9,11 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Maps
     {
         [SerializeField] private EventId eventId = EventId.Fire;
         [SerializeField, Min(1)] private int weight = 1;
+        [SerializeField, Range(0f, 1f)] private float warpChargeMultiplier = 0.75f;
 
         public EventId EventId => eventId;
         public int Weight => weight;
+        public float WarpChargeMultiplier => warpChargeMultiplier;
 
         public bool TryValidate(out string reason)
         {
@@ -24,6 +26,14 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Maps
             if (weight <= 0)
             {
                 reason = $"event_weight_not_positive:event={eventId}:weight={weight}";
+                return false;
+            }
+
+            if (warpChargeMultiplier < 0f || warpChargeMultiplier > 1f
+                || float.IsNaN(warpChargeMultiplier)
+                || float.IsInfinity(warpChargeMultiplier))
+            {
+                reason = $"warp_charge_multiplier_invalid:event={eventId}:value={warpChargeMultiplier}";
                 return false;
             }
 

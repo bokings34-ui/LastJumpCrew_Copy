@@ -1,4 +1,5 @@
 using UnityEngine;
+using LastJumpCrew.ParkHanSol.Multiplayer;
 
 namespace LastJumpCrew.SeoBoGyeong
 {
@@ -60,6 +61,16 @@ namespace LastJumpCrew.SeoBoGyeong
 
             if (justExpired)
             {
+                var shipSystems = NetworkShipSystemsState.Instance;
+                var damageReason = "ship_systems_missing";
+                if (shipSystems != null
+                    && shipSystems.TryApplyShipDamage(999, "stage_timeout", out damageReason))
+                {
+                    Debug.Log("PHS_STAGE_TIMEOUT_SHIP_DAMAGE_APPLIED amount=999");
+                    return true;
+                }
+
+                Debug.LogError($"PHS_STAGE_TIMEOUT_SHIP_DAMAGE_FAILED reason={damageReason}");
                 GameOver(GameOverReason.TimeOver);
                 deathGate.ExecuteConfirmedDeath();
             }
