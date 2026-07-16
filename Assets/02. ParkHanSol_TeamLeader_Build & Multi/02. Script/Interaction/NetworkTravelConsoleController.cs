@@ -81,7 +81,7 @@ namespace LastJumpCrew.ParkHanSol.Interaction
             leftZoneId = 0;
             rightZoneId = 0;
             var runFlow = NetworkRunFlowCoordinator.Instance;
-            if (runFlow == null || runFlow.Phase != NetworkRunPhase.WarpReady || !AreMapChoicesReady())
+            if (runFlow == null || runFlow.Phase != NetworkRunPhase.WarpSafe || !AreMapChoicesReady())
             {
                 return false;
             }
@@ -102,9 +102,16 @@ namespace LastJumpCrew.ParkHanSol.Interaction
             get
             {
                 var runFlow = NetworkRunFlowCoordinator.Instance;
-                return runFlow != null && runFlow.Phase == NetworkRunPhase.WarpReady
-                    ? "워프 실행"
-                    : "선택 목적지로 이동";
+                if (runFlow == null)
+                {
+                    return "이동 시스템 오프라인";
+                }
+
+                return runFlow.Phase == NetworkRunPhase.WarpReady
+                    ? "안전 구역 진입"
+                    : runFlow.Phase == NetworkRunPhase.WarpSafe
+                        ? "플레이 공간 워프"
+                        : "선택 목적지로 이동";
             }
         }
 
@@ -282,7 +289,7 @@ namespace LastJumpCrew.ParkHanSol.Interaction
                 return true;
             }
 
-            if (runFlow.Phase == NetworkRunPhase.WarpReady && AreMapChoicesReady())
+            if (runFlow.Phase == NetworkRunPhase.WarpSafe && AreMapChoicesReady())
             {
                 destination = side == TravelConsoleSide.Left
                     ? TravelConsoleDestination.LeftMap
@@ -304,10 +311,14 @@ namespace LastJumpCrew.ParkHanSol.Interaction
         {
             if (runFlow.Phase == NetworkRunPhase.WarpReady)
             {
+                return true;
+            }
+
+            if (runFlow.Phase == NetworkRunPhase.WarpSafe)
+            {
                 return (SelectedDestination == TravelConsoleDestination.LeftMap
                         || SelectedDestination == TravelConsoleDestination.RightMap)
-                    && TryGetSelectedMapProfile(out _)
-                    && runFlow.IsWarpSafetySatisfied;
+                    && TryGetSelectedMapProfile(out _);
             }
 
             if (runFlow.Phase == NetworkRunPhase.Charging)
@@ -344,6 +355,15 @@ namespace LastJumpCrew.ParkHanSol.Interaction
             }
 
             if (runFlow.Phase == NetworkRunPhase.WarpReady)
+            {
+                if (!runFlow.TryActivateWarp(clientId, out var warpSafeReason))
+                {
+                    Debug.LogWarning($"PHS_TRAVEL_EXECUTE_FAILED reason={warpSafeReason}", this);
+                }
+                return;
+            }
+
+            if (runFlow.Phase == NetworkRunPhase.WarpSafe)
             {
                 if (!TryGetSelectedMapProfile(out var mapProfile))
                 {
@@ -429,7 +449,7 @@ namespace LastJumpCrew.ParkHanSol.Interaction
         {
             lastServerPhase = phase;
             synchronizedDestination.Value = TravelConsoleDestination.None;
-            if (phase == NetworkRunPhase.WarpReady)
+            if (phase == NetworkRunPhase.WarpSafe)
             {
                 RollMapChoices();
             }
@@ -528,11 +548,12 @@ namespace LastJumpCrew.ParkHanSol.Interaction
                 && (runFlow.Phase == NetworkRunPhase.Shop
                     || runFlow.Phase == NetworkRunPhase.FinalShop);
             var mapChoicesReady = runFlow != null
-                && runFlow.Phase == NetworkRunPhase.WarpReady
+                && runFlow.Phase == NetworkRunPhase.WarpSafe
                 && AreMapChoicesReady();
 
             SetObjectsActive(debrisChoiceObjects, !shopAvailable);
-            readyStatusLight.enabled = mapChoicesReady || shopAvailable;
+            readyStatusLight.enabled = runFlow != null
+                && (runFlow.Phase == NetworkRunPhase.WarpReady || mapChoicesReady || shopAvailable);
 
             if (shopAvailable)
             {
@@ -573,16 +594,17 @@ namespace LastJumpCrew.ParkHanSol.Interaction
             {
                 actionScreenText.text = "이동 시스템\n오프라인";
             }
+            else if (runFlow.Phase == NetworkRunPhase.WarpReady)
+            {
+                actionScreenText.text = "안전 구역으로\n워프 실행";
+            }
             else if (canExecute)
             {
                 actionScreenText.text = $"{GetDestinationLabel()}\n실행 버튼 입력";
             }
             else if (mapChoicesReady)
             {
-                actionScreenText.text = runFlow.RequiresAllConnectedAlivePlayersSafe &&
-                    !runFlow.IsWarpSafetySatisfied
-                        ? $"안전 구역 집결\n{runFlow.SafePlayerCount}/{runFlow.RequiredSafePlayerCount}"
-                        : "왼쪽/오른쪽\n맵 선택";
+                actionScreenText.text = "왼쪽/오른쪽\n맵 선택";
             }
             else if (shopAvailable)
             {

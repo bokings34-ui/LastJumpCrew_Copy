@@ -11,7 +11,8 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
         Shop,
         FinalShop,
         Clear,
-        GameOver
+        GameOver,
+        WarpSafe
     }
 
     public interface IRunFlowStatus

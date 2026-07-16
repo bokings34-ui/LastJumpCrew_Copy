@@ -350,6 +350,18 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
             RequestWarpActivationServerRpc();
         }
 
+        public bool TryTeleportForWarp(Vector3 targetPosition, Quaternion targetRotation)
+        {
+            if (!IsSpawned || !IsServer)
+            {
+                Debug.LogError($"PHS_WARP_TELEPORT_FAILED reason=server_required player={name}", this);
+                return false;
+            }
+
+            TeleportTo(targetPosition, targetRotation);
+            return true;
+        }
+
         [ServerRpc]
         private void RequestWarpActivationServerRpc(ServerRpcParams rpcParams = default)
         {
@@ -1054,7 +1066,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
                 characterController.enabled = wasEnabled;
             }
 
-            Debug.Log($"PHS_TEST_TELEPORT_OK player={name} pos={targetPosition}");
+            Debug.Log($"PHS_PLAYER_TELEPORT_OK player={name} pos={targetPosition}");
         }
 
         private void ApplyLocalLook(Vector2 look)

@@ -81,6 +81,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
         private float scheduledWarpArrivalEndTime = -1f;
         private float scheduledWarpReviveTime = -1f;
         private int pendingNextMapId;
+        private bool departingWarpSafeZone;
 
         public static NetworkRunFlowCoordinator Instance { get; private set; }
 
@@ -224,6 +225,24 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
                 return false;
             }
 
+            if (synchronizedPhase.Value == NetworkRunPhase.WarpSafe)
+            {
+                if (SelectedNextMapId <= 0)
+                {
+                    reason = "next_map_not_selected";
+                    return false;
+                }
+
+                departingWarpSafeZone = true;
+                scheduledWarpExecutionTime = Time.time + warpTransitionSeconds;
+                SetPhase(NetworkRunPhase.Warping);
+                Debug.Log(
+                    $"PHS_RUN_FLOW_WARP_SAFE_DEPARTURE_STARTED clientId={activatorClientId} duration={warpTransitionSeconds:0.##}",
+                    this);
+                reason = null;
+                return true;
+            }
+
             if (gameState == null || gameCommands == null || gameState.Phase != GamePhase.Play)
             {
                 reason = "play_phase_required";
@@ -237,13 +256,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
                 return false;
             }
 
-            if (requireAllConnectedAlivePlayersSafe &&
-                !AreAllConnectedAlivePlayersSafe(out var safePlayers, out var requiredPlayers))
-            {
-                reason = $"players_not_safe:{safePlayers}/{requiredPlayers}";
-                return false;
-            }
-
+            departingWarpSafeZone = false;
             scheduledWarpExecutionTime = Time.time + warpTransitionSeconds;
             SetPhase(NetworkRunPhase.Warping);
             Debug.Log(
@@ -261,9 +274,9 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
                 return false;
             }
 
-            if (synchronizedPhase.Value != NetworkRunPhase.WarpReady)
+            if (synchronizedPhase.Value != NetworkRunPhase.WarpSafe)
             {
-                reason = "warp_ready_required";
+                reason = "warp_safe_required";
                 return false;
             }
 
@@ -472,6 +485,21 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
 
         private void ExecuteReadyWarp()
         {
+            if (!departingWarpSafeZone)
+            {
+                if (!TryMovePlayersToWarpSafeZone(out var safeZoneReason))
+                {
+                    SetPhase(NetworkRunPhase.WarpReady);
+                    Debug.LogError($"PHS_RUN_FLOW_WARP_SAFE_ENTRY_FAILED reason={safeZoneReason}", this);
+                    return;
+                }
+
+                SetPhase(NetworkRunPhase.WarpSafe);
+                Debug.Log("PHS_RUN_FLOW_WARP_SAFE_ENTERED", this);
+                return;
+            }
+
+            departingWarpSafeZone = false;
             KillPlayersLeftInDebrisZone();
             gameCommands.RequestJump();
             scheduledWarpReviveTime = Time.time + 0.5f;
@@ -778,6 +806,44 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
             }
 
             Debug.Log($"PHS_RUN_FLOW_SCENE_LOAD scene={sceneName}");
+        }
+
+        private bool TryMovePlayersToWarpSafeZone(out string reason)
+        {
+            var safeZone = NetworkWarpSafeZone.Instance;
+            if (safeZone == null)
+            {
+                reason = "safe_zone_missing";
+                return false;
+            }
+
+            var slot = 0;
+            foreach (var pair in NetworkManager.ConnectedClients)
+            {
+                var player = pair.Value.PlayerObject != null
+                    ? pair.Value.PlayerObject.GetComponent<NetworkPlayerController>()
+                    : null;
+                if (player == null)
+                {
+                    reason = $"player_controller_missing:{pair.Key}";
+                    return false;
+                }
+
+                if (!safeZone.TryGetArrivalPose(slot, out var position, out var rotation)
+                    || !player.TryTeleportForWarp(position, rotation))
+                {
+                    reason = $"safe_zone_teleport_failed:{pair.Key}";
+                    return false;
+                }
+
+                slot++;
+            }
+
+            safePlayerIds.Clear();
+            debrisPlayerIds.Clear();
+            RefreshSafePlayerCount();
+            reason = null;
+            return true;
         }
 
         private void RequestMapRefresh()
