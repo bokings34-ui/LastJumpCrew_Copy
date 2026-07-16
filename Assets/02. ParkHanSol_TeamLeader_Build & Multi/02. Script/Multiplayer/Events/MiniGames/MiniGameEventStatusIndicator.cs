@@ -71,6 +71,9 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Events.MiniGames
                 propertyBlock ??= new MaterialPropertyBlock();
                 emissiveRenderer.GetPropertyBlock(propertyBlock, materialIndex);
                 propertyBlock.SetColor(
+                    BaseColorId,
+                    visible ? color : Color.black);
+                propertyBlock.SetColor(
                     EmissionColorId,
                     visible ? color * emissionIntensity : Color.black);
                 emissiveRenderer.SetPropertyBlock(propertyBlock, materialIndex);
@@ -78,6 +81,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Events.MiniGames
         }
 
         private static readonly int EmissionColorId = Shader.PropertyToID("_EmissionColor");
+        private static readonly int BaseColorId = Shader.PropertyToID("_BaseColor");
 
         [Header("Terminal")]
         [SerializeField] private MonoBehaviour terminalSource;
