@@ -6,6 +6,8 @@ using LastJumpCrew.ParkHanSol.Items;
 using LastJumpCrew.ParkHanSol.Multiplayer;
 using LastJumpCrew.ParkHanSol.Multiplayer.Events;
 using LastJumpCrew.ParkHanSol.Multiplayer.Events.MiniGames;
+using LastJumpCrew.ParkHanSol.Multiplayer.Maps;
+using LastJumpCrew.ParkHanSol.Multiplayer.ShipAccidents;
 using LastJumpCrew.ParkHanSol.Multiplayer.Validation;
 using LastJumpCrew.ParkHanSol.Shop;
 using SM;
@@ -36,6 +38,8 @@ namespace LastJumpCrew.ParkHanSol.Editor
             "Assets/02. ParkHanSol_TeamLeader_Build & Multi/03. Prefab/UI/ParkHanSol_PlayHudUI.prefab";
         private const string PlayerPrefabPath =
             "Assets/02. ParkHanSol_TeamLeader_Build & Multi/03. Prefab/PlayerPrefab/PHS_CuteWhiteGhost_Player.prefab";
+        private const string ShipRuntimePrefabPath =
+            "Assets/01. MainGame/02. Final_Prefab/PHS_ShipRuntime.prefab";
         private const string EventPresentationPrefabFolder =
             "Assets/02. ParkHanSol_TeamLeader_Build & Multi/03. Prefab/Props/Prefabs/EventPresentation";
 
@@ -84,6 +88,7 @@ namespace LastJumpCrew.ParkHanSol.Editor
                 ValidateSellStationPrefab(errors);
                 ValidatePlayHudPrefab(errors);
                 ValidatePlayerPrefab(errors);
+                ValidateShipRuntimePrefab(errors);
                 ValidateEventPresentationPrefabs(errors);
             }
             finally
@@ -101,7 +106,7 @@ namespace LastJumpCrew.ParkHanSol.Editor
                 throw new InvalidOperationException(message);
             }
 
-            const string success = "PHS_0715_VALIDATE_OK errors=0 scenes=5 prefabs=7";
+            const string success = "PHS_0715_VALIDATE_OK errors=0 scenes=5 prefabs=8";
             Debug.Log(success);
             return success;
         }
@@ -140,16 +145,18 @@ namespace LastJumpCrew.ParkHanSol.Editor
             OpenAndValidateScene(MapScenePath, errors);
             ValidateGameplayContext("map", errors);
 
+            PHSMapCatalogSO mapCatalog = null;
             var console = FindOne<NetworkTravelConsoleController>("map_travel_console", errors);
             if (console != null)
             {
                 Require(console.enabled, "map_travel_console_disabled", errors);
                 Require(console.GetComponent<NetworkObject>() != null, "map_travel_console_network_object_missing", errors);
                 var serializedConsole = new SerializedObject(console);
+                mapCatalog = serializedConsole.FindProperty("mapCatalog")?.objectReferenceValue as PHSMapCatalogSO;
+                ValidateMapCatalog("map_travel_console", mapCatalog, 2, errors);
                 RequireObject(serializedConsole, "debrisScreenText", "map_debris_screen_missing", errors);
                 RequireObject(serializedConsole, "shopScreenText", "map_shop_screen_missing", errors);
                 RequireObject(serializedConsole, "actionScreenText", "map_action_screen_missing", errors);
-                RequireArray(serializedConsole, "temporaryMapOptions", 2, "map_options_insufficient", errors);
                 RequireArray(serializedConsole, "debrisChoiceObjects", 1, "map_debris_choice_objects_missing", errors);
             }
 
@@ -193,8 +200,9 @@ namespace LastJumpCrew.ParkHanSol.Editor
                 "map_debris_portal_connection_missing",
                 errors);
 
-            var safeZone = FindOne<NetworkWarpSafeZone>("map_warp_safe_zone", errors);
-            if (safeZone != null)
+            foreach (var safeZone in UnityEngine.Object.FindObjectsByType<NetworkWarpSafeZone>(
+                         FindObjectsInactive.Include,
+                         FindObjectsSortMode.None))
             {
                 var safeTrigger = safeZone.GetComponent<BoxCollider>();
                 Require(safeTrigger != null && safeTrigger.isTrigger, "map_warp_safe_trigger_invalid", errors);
@@ -224,15 +232,7 @@ namespace LastJumpCrew.ParkHanSol.Editor
             if (eventScheduler != null)
             {
                 var serializedScheduler = new SerializedObject(eventScheduler);
-                var eventPool = serializedScheduler.FindProperty("eventPool");
-                var configuredEvents = new HashSet<int>();
-                if (eventPool != null && eventPool.isArray)
-                {
-                    for (var index = 0; index < eventPool.arraySize; index++)
-                    {
-                        configuredEvents.Add(eventPool.GetArrayElementAtIndex(index).intValue);
-                    }
-                }
+                var configuredEvents = CollectWeightedSchedulerEvents(serializedScheduler);
 
                 foreach (var requiredEvent in new[]
                          {
@@ -245,7 +245,7 @@ namespace LastJumpCrew.ParkHanSol.Editor
                          })
                 {
                     Require(
-                        configuredEvents.Contains((int)requiredEvent),
+                        configuredEvents.Contains(requiredEvent),
                         $"map_event_scheduler_pool_missing event={requiredEvent}",
                         errors);
                 }
@@ -261,8 +261,8 @@ namespace LastJumpCrew.ParkHanSol.Editor
                     errors);
                 var serializedCoordinator = new SerializedObject(eventCoordinator);
                 Require(
-                    serializedCoordinator.FindProperty("startSchedulerOnServerSpawn")?.boolValue == true,
-                    "map_event_scheduler_auto_start_disabled",
+                    serializedCoordinator.FindProperty("startSchedulerOnServerSpawn")?.boolValue == false,
+                    "map_event_scheduler_auto_start_must_be_disabled",
                     errors);
                 RequireObject(
                     serializedCoordinator,
@@ -310,6 +310,9 @@ namespace LastJumpCrew.ParkHanSol.Editor
                     errors);
             }
 
+            ValidateMapRuntimeContext(mapCatalog, eventScheduler, eventCoordinator, errors);
+            ValidateShipAccidentRuntime(mapCatalog, errors);
+
             var effectMirrorPresenter = FindOne<NetworkEventEffectMirrorPresenter>(
                 "map_event_effect_mirror_presenter",
                 errors);
@@ -326,10 +329,6 @@ namespace LastJumpCrew.ParkHanSol.Editor
             Require(
                 FindAllMonoBehaviours().Count(component => component is IRoom) >= 4,
                 "map_rooms_insufficient expected=4",
-                errors);
-            Require(
-                FindAllMonoBehaviours().Count(component => component is ShipAccidentEventTerminal) >= 3,
-                "map_event_terminals_insufficient expected=3",
                 errors);
 
             ValidateEventHudWiring(
@@ -381,6 +380,168 @@ namespace LastJumpCrew.ParkHanSol.Editor
                 "shop",
                 FindOne<PartyCreditsHudBinder>("shop_party_credits_hud_binder", errors),
                 errors);
+        }
+
+        private static void ValidateMapCatalog(
+            string label,
+            PHSMapCatalogSO mapCatalog,
+            int minimumSelectableProfiles,
+            ICollection<string> errors)
+        {
+            Require(mapCatalog != null, $"{label}_map_catalog_missing", errors);
+            if (mapCatalog == null)
+            {
+                return;
+            }
+
+            Require(
+                mapCatalog.TryValidate(out var reason),
+                $"{label}_map_catalog_invalid detail={reason}",
+                errors);
+            Require(
+                mapCatalog.Profiles.Count >= minimumSelectableProfiles,
+                $"{label}_map_catalog_profiles_insufficient actual={mapCatalog.Profiles.Count}",
+                errors);
+            Require(
+                mapCatalog.Profiles.Count(profile => profile != null && profile.Selectable)
+                >= minimumSelectableProfiles,
+                $"{label}_map_catalog_selectable_profiles_insufficient",
+                errors);
+        }
+
+        private static HashSet<EventId> CollectWeightedSchedulerEvents(SerializedObject serializedScheduler)
+        {
+            var configuredEvents = new HashSet<EventId>();
+            var weightedEvents = serializedScheduler.FindProperty("weightedEvents");
+            if (weightedEvents == null || !weightedEvents.isArray)
+            {
+                return configuredEvents;
+            }
+
+            for (var index = 0; index < weightedEvents.arraySize; index++)
+            {
+                var entry = weightedEvents.GetArrayElementAtIndex(index);
+                var eventId = entry.FindPropertyRelative("eventId");
+                if (eventId == null)
+                {
+                    continue;
+                }
+
+                if (eventId.propertyType == SerializedPropertyType.Enum
+                    && eventId.enumValueIndex >= 0
+                    && eventId.enumValueIndex < eventId.enumNames.Length
+                    && Enum.TryParse<EventId>(eventId.enumNames[eventId.enumValueIndex], out var parsedEventId))
+                {
+                    configuredEvents.Add(parsedEventId);
+                    continue;
+                }
+
+                configuredEvents.Add((EventId)eventId.intValue);
+            }
+
+            return configuredEvents;
+        }
+
+        private static void ValidateMapRuntimeContext(
+            PHSMapCatalogSO mapCatalog,
+            PHSNetworkEventScheduler eventScheduler,
+            NetworkEventCoordinator eventCoordinator,
+            ICollection<string> errors)
+        {
+            var mapRuntime = FindOne<PHSMapRuntimeContext>("map_runtime_context", errors);
+            if (mapRuntime == null)
+            {
+                return;
+            }
+
+            var serializedRuntime = new SerializedObject(mapRuntime);
+            RequireObject(serializedRuntime, "mapCatalog", "map_runtime_catalog_missing", errors);
+            RequireObject(serializedRuntime, "environmentRoot", "map_runtime_environment_root_missing", errors);
+            RequireObject(serializedRuntime, "warpTransitionPresenter", "map_runtime_warp_presenter_missing", errors);
+            RequireObject(serializedRuntime, "externalThreatScheduler", "map_runtime_external_scheduler_missing", errors);
+            RequireObject(serializedRuntime, "internalAccidentCoordinator", "map_runtime_internal_accident_missing", errors);
+            Require(
+                mapCatalog == null
+                || serializedRuntime.FindProperty("mapCatalog")?.objectReferenceValue == mapCatalog,
+                "map_runtime_catalog_mismatch",
+                errors);
+            Require(
+                eventScheduler == null
+                || serializedRuntime.FindProperty("externalThreatScheduler")?.objectReferenceValue == eventScheduler,
+                "map_runtime_external_scheduler_mismatch",
+                errors);
+            Require(
+                eventCoordinator == null
+                || serializedRuntime.FindProperty("externalThreatScheduler")?.objectReferenceValue ==
+                eventCoordinator.GetComponent<PHSNetworkEventScheduler>(),
+                "map_runtime_event_coordinator_scheduler_mismatch",
+                errors);
+        }
+
+        private static void ValidateShipAccidentRuntime(
+            PHSMapCatalogSO mapCatalog,
+            ICollection<string> errors)
+        {
+            var coordinator = FindOne<PHSNetworkShipAccidentCoordinator>("map_ship_accident_coordinator", errors);
+            var anchors = UnityEngine.Object.FindObjectsByType<PHSShipAccidentAnchor>(
+                FindObjectsInactive.Include,
+                FindObjectsSortMode.None);
+            Require(anchors.Length >= 5, $"map_ship_accident_anchors_insufficient actual={anchors.Length}", errors);
+
+            if (coordinator != null)
+            {
+                Require(
+                    coordinator.GetComponent<NetworkObject>() != null,
+                    "map_ship_accident_network_object_missing",
+                    errors);
+                var serializedCoordinator = new SerializedObject(coordinator);
+                var catalog = serializedCoordinator.FindProperty("accidentCatalog")?.objectReferenceValue
+                    as PHSShipAccidentCatalogSO;
+                Require(catalog != null, "map_ship_accident_catalog_missing", errors);
+                if (catalog != null)
+                {
+                    Require(
+                        catalog.TryValidate(out var catalogReason),
+                        $"map_ship_accident_catalog_invalid detail={catalogReason}",
+                        errors);
+                }
+
+                RequireObject(serializedCoordinator, "shipSystemsState", "map_ship_accident_ship_state_missing", errors);
+                RequireArray(serializedCoordinator, "anchors", 5, "map_ship_accident_registered_anchors_insufficient", errors);
+            }
+
+            Require(
+                anchors.Any(anchor => anchor != null
+                    && anchor.AnchorId == "gravity_generator"
+                    && anchor.ModuleId == NetworkShipModuleId.Gravity),
+                "map_gravity_generator_anchor_missing",
+                errors);
+
+            if (mapCatalog == null)
+            {
+                return;
+            }
+
+            foreach (var profile in mapCatalog.Profiles)
+            {
+                if (profile == null)
+                {
+                    continue;
+                }
+
+                foreach (var entry in profile.InternalAccidentWeights)
+                {
+                    if (entry?.Definition == null)
+                    {
+                        continue;
+                    }
+
+                    Require(
+                        anchors.Any(anchor => anchor != null && anchor.Supports(entry.Definition)),
+                        $"map_ship_accident_anchor_missing map={profile.MapId} accident={entry.Definition.Id}",
+                        errors);
+                }
+            }
         }
 
         private static void ValidateDebrisScene(ICollection<string> errors)
@@ -470,7 +631,6 @@ namespace LastJumpCrew.ParkHanSol.Editor
             Require(prefab.GetComponent<NetworkPlayerController>() != null, "player_controller_missing", errors);
             Require(prefab.GetComponent<NetworkPlayerLifeState>() != null, "player_life_state_missing", errors);
             Require(prefab.GetComponent<NetworkPlayerItemRecord>() != null, "player_item_record_missing", errors);
-            Require(prefab.GetComponent<NetworkShipSystemsState>() != null, "player_ship_systems_state_missing", errors);
             Require(prefab.GetComponent<TempPlayerItemHolder>() != null, "player_item_holder_missing", errors);
             Require(
                 prefab.GetComponents<P0RuntimeValidationDriver>().Length == 1,
@@ -496,6 +656,53 @@ namespace LastJumpCrew.ParkHanSol.Editor
                     serializedCoordinator.FindProperty("requireAllConnectedAlivePlayersSafe")?.boolValue == true,
                     "player_safe_gate_disabled",
                     errors);
+            }
+        }
+
+        private static void ValidateShipRuntimePrefab(ICollection<string> errors)
+        {
+            var prefab = PrefabUtility.LoadPrefabContents(ShipRuntimePrefabPath);
+            if (prefab == null)
+            {
+                errors.Add($"ship_runtime_prefab_missing path={ShipRuntimePrefabPath}");
+                return;
+            }
+
+            try
+            {
+                Require(prefab.GetComponent<NetworkObject>() != null, "ship_runtime_network_object_missing", errors);
+                Require(prefab.GetComponent<NetworkShipSystemsState>() != null, "ship_runtime_state_missing", errors);
+                var coordinator = prefab.GetComponent<PHSNetworkShipAccidentCoordinator>();
+                Require(coordinator != null, "ship_runtime_accident_coordinator_missing", errors);
+                if (coordinator != null)
+                {
+                    var serializedCoordinator = new SerializedObject(coordinator);
+                    RequireObject(
+                        serializedCoordinator,
+                        "accidentCatalog",
+                        "ship_runtime_accident_catalog_missing",
+                        errors);
+                    RequireObject(
+                        serializedCoordinator,
+                        "shipSystemsState",
+                        "ship_runtime_accident_state_missing",
+                        errors);
+                    RequireArray(
+                        serializedCoordinator,
+                        "anchors",
+                        5,
+                        "ship_runtime_accident_anchors_insufficient",
+                        errors);
+                }
+
+                Require(
+                    prefab.GetComponentsInChildren<PHSShipAccidentAnchor>(true).Length >= 5,
+                    "ship_runtime_accident_anchor_children_insufficient",
+                    errors);
+            }
+            finally
+            {
+                PrefabUtility.UnloadPrefabContents(prefab);
             }
         }
 
@@ -629,27 +836,15 @@ namespace LastJumpCrew.ParkHanSol.Editor
             var gravityController = FindOne<ShipGravityZoneController>(
                 "map_ship_gravity_controller",
                 errors);
-            var gravityGenerator = FindOne<GravityGeneratorInteractable>(
-                "map_gravity_generator",
+            Require(
+                UnityEngine.Object.FindObjectsByType<PHSShipAccidentAnchor>(
+                    FindObjectsInactive.Include,
+                    FindObjectsSortMode.None).Any(anchor =>
+                    anchor != null
+                    && anchor.AnchorId == "gravity_generator"
+                    && anchor.ModuleId == NetworkShipModuleId.Gravity),
+                "map_gravity_generator_anchor_missing",
                 errors);
-            if (gravityGenerator != null)
-            {
-                Require(
-                    gravityGenerator.GetComponent<NetworkObject>() != null,
-                    "map_gravity_generator_network_object_missing",
-                    errors);
-                var serializedGenerator = new SerializedObject(gravityGenerator);
-                RequireObject(
-                    serializedGenerator,
-                    "gravityController",
-                    "map_gravity_generator_controller_missing",
-                    errors);
-                Require(
-                    serializedGenerator.FindProperty("gravityController")?.objectReferenceValue ==
-                    gravityController,
-                    "map_gravity_generator_controller_mismatch",
-                    errors);
-            }
 
             if (gravityController != null)
             {
