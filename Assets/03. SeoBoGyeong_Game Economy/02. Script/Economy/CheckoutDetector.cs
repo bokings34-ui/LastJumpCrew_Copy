@@ -3,6 +3,9 @@ using System;
 using System.Collections.Generic;
 using TMPro;
 using UnityEngine;
+using LastJumpCrew.ParkHanSol.Items;
+using LastJumpCrew.SeoBoGyeong.item;
+using LastJumpCrew.Common;
 namespace LastJumpCrew.SeoBoGyeong.Economy
 {
     public enum TradeType
@@ -16,13 +19,15 @@ namespace LastJumpCrew.SeoBoGyeong.Economy
     public class CheckoutDetector : MonoBehaviour
     {
         public readonly List<ShopItemTag> basket = new();
+        private HashSet<ShopItemTag> shopItems = new();
 
         [SerializeField] private TradeType _type;
         [SerializeField] private TMP_Text textUI;
+        [SerializeField] private UtilityConnect utilityConnect;   // 프리팹->int 경제 브릿지
 
         private int _totalPrice =0;
         private DataManager _data;
-        private string prefix = "Total : $ ";
+        private string prefix = "Total : $";
         private void Awake()
         {
             if(GameCore.Instance != null) _data = GameCore.Instance.Data;
@@ -36,26 +41,69 @@ namespace LastJumpCrew.SeoBoGyeong.Economy
                 Debug.Log("[TradeStation] TradeType 미등록");
                 return;
             }
-            else if (_type == TradeType.Sell)
-            {
-                // 계산 구역 인식: ShopItemTag 가 붙은 진열품만 장바구니에 담는다
-                var tag = other.GetComponentInParent<ShopItemTag>();
-                if (tag == null || basket.Contains(tag)) return;
-                Debug.Log($"[TradeStation] 아이템 {tag.gameObject}");
-                basket.Add(tag);
-                ChaingePrice(tag);
-            }
-            
+
+            // Buy 진열품을 인식해 장바구니에 담는다.
+            // ShopItemTag 가 없으면 프리팹(UtilityItemObject)을 int 경제로 브릿지해 태그를 부착한다.
+            ShopItemTag tag = ResolveTag(other);
+            if (tag == null || shopItems.Contains(tag)) return;
+            if (other.GetComponent<IItemHolder>().CurrentItem != null) return;
+
+            Debug.Log($"[TradeStation] 아이템 {tag.gameObject}");
+            shopItems.Add(tag);
+            ChaingePrice(tag);
         }
+        private void OnTriggerStay(Collider other)
+        {
+            if (_type == TradeType.None)
+            {
+                Debug.Log("[TradeStation] TradeType 미등록");
+                return;
+            }
+            ShopItemTag tag = ResolveTag(other);
+            if (tag == null || basket.Contains(tag)) return;
+            if (other.GetComponent<IItemHolder>().CurrentItem != null) return;
+
+            Debug.Log($"[TradeStation] 아이템 {tag.gameObject}");
+            basket.Add(tag);
+            ChaingePrice(tag);
+        }
+        
 
         private void OnTriggerExit(Collider other)
         {
-            var tag = other.GetComponentInParent<ShopItemTag>();
+            ShopItemTag tag = ResolveTag(other);
             if (tag == null) return;
+            if (other.GetComponent<IItemHolder>().CurrentItem != null) return;
 
             basket.Remove(tag);
-            ChaingePrice(tag,false);
+            ChaingePrice(tag, false);
         }
+
+        // 진열품에서 ShopItemTag 를 얻는다. 없으면 UtilityItemObject(string ItemId)를
+        // UtilityConnect 로 UtilityItemData(int)에 매핑한 뒤 ShopItemTag 를 부착한다.
+        private ShopItemTag ResolveTag(Collider other)
+        {
+            ShopItemTag tag = other.GetComponentInParent<ShopItemTag>();
+            if (tag != null) return tag;
+
+            UtilityItemObject obj = other.GetComponentInParent<UtilityItemObject>();
+            if (obj == null) return null;
+
+            if (utilityConnect == null)
+            {
+                Debug.LogError("[TradeStation] UtilityConnect 미연결 - 프리팹 인식 불가");
+                return null;
+            }
+
+            if (!utilityConnect.TryGetData(obj.ItemId, out UtilityItemData data)) return null;
+
+            tag = obj.gameObject.AddComponent<ShopItemTag>();
+            tag.Init(data.Id);
+            return tag;
+        }
+
+
+        
 
         public bool CheckBasket()
         {
@@ -72,15 +120,17 @@ namespace LastJumpCrew.SeoBoGyeong.Economy
             return basket.ToArray();
         }
 
-        public void RefreshTotalPrice()
+        public void RefreshTotalPrice(int totalprice = 0)
         {
-            int price = 0;
+            if (basket.Count <= 0) return;
+            totalprice = 0;
+
             foreach (var item in basket)
             {
                 ItemData items =  _data.Items.Get(item.ItemId);
-               price += items.Price;
+                totalprice += items.Price;
             }
-            _totalPrice = price;
+            _totalPrice = totalprice;
             textUI.text = prefix + _totalPrice.ToString();
         }
 
