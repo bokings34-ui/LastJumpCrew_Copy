@@ -39,7 +39,6 @@ namespace LastJumpCrew.SeoBoGyeong.Economy
         private int _totalPrice = 0;
         private string prefix = "Total : $";
 
-        private IGameStateProvider state;
         private IAuthority _authority;                              // 서버 권위 게이트(로컬=항상 true)
         private BoxCollider _box;                                   // 스캔 영역 소스(같은 오브젝트 트리거)
         private readonly Collider[] _scanBuffer = new Collider[64]; // NonAlloc 버퍼(GC 0). 상한 64.
@@ -55,8 +54,6 @@ namespace LastJumpCrew.SeoBoGyeong.Economy
             // 규율: Services resolve 는 시작 시 1회 캐싱(매 프레임 조회 금지).
             if (GameCore.Instance != null)
                 _authority = GameCore.Instance.Services.Get<IAuthority>();
-            state = GameCore.Instance.State;
-            state.PurchaseResolved += OnRefresh;
         }
 
 
@@ -158,13 +155,6 @@ namespace LastJumpCrew.SeoBoGyeong.Economy
         public bool CheckBasket() => basket.Count > 0;
 
         public ShopItemTag[] GetBasket() => basket.ToArray();
-        private void OnRefresh(List<int> list, bool arg2)
-        {
-            shopItems.Clear();
-            basket.Clear();
-            UpdateTotal();
-        }
-
         // 바구니 합계를 다시 계산해 UI 갱신(비었으면 $0 로 표기).
         public void UpdateTotal()
         {
