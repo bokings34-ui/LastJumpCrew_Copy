@@ -36,11 +36,27 @@ namespace LastJumpCrew.ParkHanSol.Interaction
         // 현재 바라보는 일반 상호작용 대상의 외곽선 glow다.
         private InteractableFocusGlow focusedGlow;
 
+        [Header("Drop And Throw Input")]
+        [SerializeField, Min(0.1f)]
+        private float throwHoldThreshold = 0.4f; //해당 시간보다 짧게 누르면 일반 내려놓기/ 그 이상은 투척
+        private float rightButtonPressedTime; //우클릭 누르기 시작한 시간
+        private bool isHoldingRightButton; //우클릭 누르고 있는 기록
+        [SerializeField]
+        private NetworkPlayerCombatController combatController; //길게 누른 우클릭 투척 시 서버 요청하기 위한 컨트롤러
+
+
+        
+
         private void Awake()
         {
             itemHolder = GetComponent<IItemHolder>();
             commonItemHolder = GetComponent<CommonInteraction.IItemHolder>();
             networkObject = GetComponent<NetworkObject>();
+
+            if(combatController == null)
+            {
+                combatController = GetComponent<NetworkPlayerCombatController>();
+            }
         }
 
         private void Update()
@@ -68,10 +84,7 @@ namespace LastJumpCrew.ParkHanSol.Interaction
 
             ProcessHeldItemUseInput(); //좌클릭 입력을 현재 손 아이템의 사용방식의 맞게 처리하기
 
-            if (Mouse.current.rightButton.wasPressedThisFrame)
-            {
-                PlaceHeldItem();
-            }
+            ProcessDropOrThrowInput(); //우클릭 입력 우클릭 누른 시간의 따른 내려놓기 or 투척 처리
         }
 
         private void OnDisable()
@@ -381,7 +394,54 @@ namespace LastJumpCrew.ParkHanSol.Interaction
         {
             playHudPresenter?.SetInteractionPrompt(string.Empty, string.Empty);
         }
-        
+        private void ProcessDropOrThrowInput()
+        {
+            if (Mouse.current == null)
+            {
+                return;
+            }
+            if (Mouse.current.rightButton.wasPressedThisFrame) //우클릭 누른 시각만 기록
+            {
+                rightButtonPressedTime = Time.time;
+                isHoldingRightButton = true;
 
+                return;
+            }
+
+            if (!Mouse.current.rightButton.wasReleasedThisFrame) //떼지 않으면 결과를 결정하지 않음
+            {
+                return;
+            }
+            if (!isHoldingRightButton) //누른 기록이 없으면 무시
+            {
+                return;
+            }
+            isHoldingRightButton = false;
+
+            var heldDuration = Time.time - rightButtonPressedTime;
+
+            if (heldDuration < throwHoldThreshold)
+            {
+                if (commonItemHolder == null)
+                {
+                    Debug.LogWarning($"PHS_ITEM_PLACE_FAILED " + $"reason=item_holder_missing " + $"player={name}");
+
+                    return;
+                }
+                PlaceHeldItem();
+
+                Debug.Log($"PHS_ITEM_SHORT_DROP " + $"player={name} " + $"duration={heldDuration:F2}");
+                return;
+
+
+            }
+            if (combatController == null) //최소 시간 이상으로 누르면 투척을 요청
+            {
+                Debug.LogError($"PHS_ITEM_THROW_FAILED " + $"reason=combat_controller_missing " + $"player={name}");
+                return;
+            }
+            combatController.RequestThrowHeldItem(heldDuration);
+            Debug.Log($"PHS_ITEM_LONG_THROW_REQUESTED " + $"player={name} " + $"duration={heldDuration:F2}");
+        }
     }
 }

@@ -190,12 +190,8 @@ namespace LastJumpCrew.ParkHanSol.Interaction
                 return false;
             }
 
-            heldItemInstance.SetActive(false);
-            Destroy(heldItemInstance);
-            heldItemInstance = null;
-            currentItemObject = null;
-            currentItemPrefabData = null;
-            RefreshHeldItemHud();
+            
+            ClearHeldItemState();
 
             Debug.Log($"PHS_TEMP_ITEM_CONSUMED player={name} item={itemId}");
             return true;
@@ -237,23 +233,28 @@ namespace LastJumpCrew.ParkHanSol.Interaction
                 Debug.Log($"PHS_TEMP_ITEM_PLACED player={name} item={currentItemPrefabData.ItemId}");
             }
 
+            ClearHeldItemState();
+        }
+        private void ClearHeldItemState()
+        {
+            //현재 손의 있는 HeldPrefab을 제거
             if (heldItemInstance != null)
             {
+                heldItemInstance.SetActive(false);
                 Destroy(heldItemInstance);
             }
-
             heldItemInstance = null;
             currentItemObject = null;
             currentItemPrefabData = null;
+
             RefreshHeldItemHud();
         }
-
         private void RefreshHeldItemHud()
         {
             // HUD 참조가 빠진 경우 자동 생성하지 않고 로그로 Inspector 연결 문제를 드러낸다.
             if (playHudPresenter == null)
             {
-                Debug.LogError($"PHS_TEMP_ITEM_UI_FAILED reason=playHudPresenter_missing player={name}");
+                Debug.LogWarning($"PHS_TEMP_ITEM_UI_SKIPPED " + $"reason=playHudPresenter_missing " + $"player={name}");
                 return;
             }
 
@@ -312,5 +313,87 @@ namespace LastJumpCrew.ParkHanSol.Interaction
         {
             return ShouldUseFirstPersonHoldPoint() ? firstPersonHeldItemScale : worldHeldItemScale;
         }
+        public bool IsHoldingItem(string itemId)
+        {
+            if (string.IsNullOrWhiteSpace(itemId))
+            {
+                return false;   
+            }
+            if (currentItemPrefabData == null)
+            {
+                return false;
+            }
+            return currentItemPrefabData.ItemId == itemId; //들고 있는 아이템과 요구 아이템 Id 같은지 확인
+        }
+        public bool TryCreateThrownItem(Vector3 spawnPosition, Quaternion spawnRotation, out GameObject thrownItemInstance)
+        {
+            thrownItemInstance = null;
+
+            if (currentItemPrefabData == null)
+            {
+                Debug.LogWarning($"PHS_TEMP_ITEM_THROW_FAILED" + $"reason=held_item_missing " + $"player={name}"); 
+                return false;   
+
+            }
+            if (!currentItemPrefabData.HasDroppedPrefab)
+            {
+                Debug.LogError($"PHS_TEMP_ITEM_THROW_FAILED " + $"reason=dropped_prefab_missing " + $"player={name} " + $"item={currentItemPrefabData.ItemId}");
+
+                return false;
+            }
+            var thrownItemId = currentItemPrefabData.ItemId;
+
+            thrownItemInstance = Instantiate(currentItemPrefabData.DroppedPrefab, spawnPosition, spawnRotation);
+
+            if(thrownItemInstance == null)
+            {
+                Debug.LogError($"PHS_TEMP_ITEM_THROW_FAILED " + $"reason=instantiate_failed " + $"player={name} " + $"item={thrownItemId}");
+                return false;
+            }
+            var thrownItemObject = thrownItemInstance.GetComponent<UtilityItemObject>();
+
+            if(thrownItemObject == null)
+            {
+                Debug.LogError($"PHS_TEMP_ITEM_THROW_FAILED " + $"reason=utility_item_object_missing " + $"item={thrownItemId}");
+
+                Destroy(thrownItemInstance );
+                thrownItemInstance = null;
+
+                return false;
+            }
+            thrownItemObject.OnDropped(spawnPosition); //생성된 아이템을 월드에 떨어진 상태로 전환
+
+            var thrownNetworkObject = thrownItemInstance.GetComponent<NetworkObject>();
+            if (NetworkManager.Singleton != null && NetworkManager.Singleton.IsListening)
+            {
+                if (!NetworkManager.Singleton.IsServer) //네트워크 Spawn은 서버에서만 가능
+                {
+                    Debug.LogError($"PHS_TEMP_ITEM_THROW_FAILED " + $"reason=server_required " + $"player={name} " + $"item={thrownItemId}");
+
+                    Destroy(thrownItemInstance);
+                    thrownItemInstance = null;
+
+                    return false;
+                }
+                if(thrownNetworkObject == null)//멀티에서 DroppedPrefab 생성에는 NetworkObject 필요
+                {
+                    Debug.LogError("PHS_TEMP_ITEM_THROW_FAILED " + $"reason=network_object_missing " + $"item={thrownItemId}");
+                    Destroy(thrownItemInstance);
+                    thrownItemInstance = null;
+
+                    return false;
+                }
+                if (!thrownNetworkObject.IsSpawned)
+                {
+                    thrownNetworkObject.Spawn();
+                }
+            }
+            ClearHeldItemState();
+
+            Debug.Log($"PHS_TEMP_ITEM_THROW_CREATED " + $"player={name} " + $"item={thrownItemId} " + $"position={spawnPosition}");
+
+            return true;
+        }
+       
     }
 }

@@ -962,13 +962,5 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
                 targetRenderer.enabled = isVisible;
             }
         }
-        public void ApplyExternalVelocity(Vector3 velocity)
-        {
-            if (IsSpawned && !IsServer) //서버에서 호출 되었을 때만 넉백 속도 추가 
-            {
-                return;
-            }
-            externalVelocity += velocity;
-        }
     }
 }

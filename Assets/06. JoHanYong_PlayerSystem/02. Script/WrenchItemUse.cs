@@ -24,6 +24,7 @@ namespace LastJumpCrew.ParkHanSol.Item
         }
         public void Use(IItemHolder holder, IInteractable target)
         {
+            Debug.Log("·»Ä¡ °ø°Ý!");
             if (holder is not Component holderComponent)
             {
                 Debug.LogWarning($"PHS_WRENCH_USE_FAILED" + $"reason=holder_component_missing");
