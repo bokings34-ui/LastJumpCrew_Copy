@@ -6,8 +6,15 @@ using UnityEngine.AI;
 
 namespace SM
 {
-    public class OxygenLeakEffectInstance : MonoBehaviour, IInteractable, IRequireHeldItem
+    public class OxygenLeakEffectInstance :
+        MonoBehaviour,
+        IInteractable,
+        IRequireHeldItem,
+        IUtilityAttackTarget
     {
+        private const string WrenchItemId = "wrench";
+        private const float RepairAmountPerHit = 1f;
+
         [Header("벽 무시 레이어 설정")]
         [SerializeField] private LayerMask _wallLayerMask;
 
@@ -156,7 +163,7 @@ namespace SM
 
         // ___________ IRequireHeldItem ___________
 
-        public string RequiredItemId { get { return ItemType.Wrench.ToString(); } }
+        public string RequiredItemId { get { return WrenchItemId; } }
 
         public bool IsRequirementMet(IItemHolder itemHolder)
         {
@@ -177,6 +184,17 @@ namespace SM
         }
 
         // __________ 플레이어가 수리할 때 호출하는 함수 ____________
+        public bool TryResolveUtilityAttack(in UtilityAttackHit hit)
+        {
+            if (IsSealed || hit.ItemId != RequiredItemId)
+            {
+                return false;
+            }
+
+            ApplyRepair(RepairAmountPerHit);
+            return true;
+        }
+
         public void ApplyRepair(float amount)
         {
             if (IsSealed) return;

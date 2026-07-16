@@ -6,8 +6,15 @@ using LastJumpCrew.Common;
 namespace SM
 {
     [RequireComponent(typeof(Collider))]
-    public class FireEffectInstance : MonoBehaviour, IInteractable, IRequireHeldItem
+    public class FireEffectInstance :
+        MonoBehaviour,
+        IInteractable,
+        IRequireHeldItem,
+        IUtilityAttackTarget
     {
+        private const string FireExtinguisherItemId = "fire_extinguisher";
+        private const float RepairAmountPerHit = 1f;
+
         [Header("데미지 틱 설정")]
         [SerializeField] private float tickInterval = 1f;
 
@@ -72,7 +79,7 @@ namespace SM
 
         // __________ IRequireHeldItem ______________
 
-        public string RequiredItemId { get { return ItemType.FireExtinguisher.ToString(); } }
+        public string RequiredItemId { get { return FireExtinguisherItemId; } }
 
         public bool IsRequirementMet(IItemHolder itemHolder)
         {
@@ -93,6 +100,17 @@ namespace SM
         }
 
         // ___________ 플레이어가 수리할 때 호출하는 함수 ____________
+        public bool TryResolveUtilityAttack(in UtilityAttackHit hit)
+        {
+            if (IsRepaired || hit.ItemId != RequiredItemId)
+            {
+                return false;
+            }
+
+            ApplyRepair(RepairAmountPerHit);
+            return true;
+        }
+
         public void ApplyRepair(float amount)
         {
             if (IsRepaired) return;

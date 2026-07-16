@@ -488,5 +488,136 @@ namespace LastJumpCrew.ParkHanSol.Interaction
         {
             return ShouldUseFirstPersonHoldPoint() ? firstPersonHeldItemScale : worldHeldItemScale;
         }
+
+        public bool IsHoldingItem(string itemId)
+        {
+            return !string.IsNullOrWhiteSpace(itemId)
+                && currentItemPrefabData != null
+                && currentItemPrefabData.ItemId == itemId;
+        }
+
+        public bool TryCreateThrownItem(
+            Vector3 spawnPosition,
+            Quaternion spawnRotation,
+            out GameObject thrownItemInstance)
+        {
+            thrownItemInstance = null;
+            if (currentItemPrefabData == null)
+            {
+                Debug.LogWarning($"PHS_TEMP_ITEM_THROW_FAILED reason=held_item_missing player={name}");
+                return false;
+            }
+
+            var networkManager = NetworkManager.Singleton;
+            var networkSessionActive = networkManager != null && networkManager.IsListening;
+            if (networkSessionActive && !networkManager.IsServer)
+            {
+                Debug.LogError($"PHS_TEMP_ITEM_THROW_FAILED reason=server_required player={name}");
+                return false;
+            }
+
+            if (heldDebris != null)
+            {
+                return TryReleaseHeldDebrisForThrow(
+                    spawnPosition,
+                    spawnRotation,
+                    networkSessionActive,
+                    out thrownItemInstance);
+            }
+
+            if (!currentItemPrefabData.HasDroppedPrefab)
+            {
+                Debug.LogError(
+                    $"PHS_TEMP_ITEM_THROW_FAILED reason=dropped_prefab_missing player={name} item={currentItemPrefabData.ItemId}");
+                return false;
+            }
+
+            var thrownItemId = currentItemPrefabData.ItemId;
+            thrownItemInstance = Instantiate(currentItemPrefabData.DroppedPrefab, spawnPosition, spawnRotation);
+            if (thrownItemInstance == null)
+            {
+                Debug.LogError(
+                    $"PHS_TEMP_ITEM_THROW_FAILED reason=instantiate_failed player={name} item={thrownItemId}");
+                return false;
+            }
+
+            var thrownItemObject = thrownItemInstance.GetComponent<UtilityItemObject>();
+            var thrownBody = thrownItemInstance.GetComponent<Rigidbody>();
+            var thrownNetworkObject = thrownItemInstance.GetComponent<NetworkObject>();
+            if (thrownItemObject == null || thrownBody == null || (networkSessionActive && thrownNetworkObject == null))
+            {
+                Debug.LogError(
+                    $"PHS_TEMP_ITEM_THROW_FAILED reason=required_component_missing player={name} item={thrownItemId}");
+                Destroy(thrownItemInstance);
+                thrownItemInstance = null;
+                return false;
+            }
+
+            thrownItemObject.OnDropped(spawnPosition);
+            if (networkSessionActive && !thrownNetworkObject.IsSpawned)
+            {
+                thrownNetworkObject.Spawn();
+            }
+
+            if (heldItemInstance != null)
+            {
+                heldItemInstance.SetActive(false);
+                Destroy(heldItemInstance);
+            }
+
+            heldItemInstance = null;
+            currentItemObject = null;
+            currentItemPrefabData = null;
+            ClearHeldDebrisState();
+            ReportHeldItemRecord();
+            RefreshHeldItemHud();
+
+            Debug.Log($"PHS_TEMP_ITEM_THROW_CREATED player={name} item={thrownItemId} position={spawnPosition}");
+            return true;
+        }
+
+        private bool TryReleaseHeldDebrisForThrow(
+            Vector3 spawnPosition,
+            Quaternion spawnRotation,
+            bool networkSessionActive,
+            out GameObject thrownItemInstance)
+        {
+            thrownItemInstance = null;
+            if (heldItemInstance == null || currentItemObject == null)
+            {
+                Debug.LogError($"PHS_DEBRIS_THROW_FAILED reason=held_state_invalid player={name}");
+                return false;
+            }
+
+            var thrownBody = heldItemInstance.GetComponent<Rigidbody>();
+            var thrownNetworkObject = heldItemInstance.GetComponent<NetworkObject>();
+            if (thrownBody == null || (networkSessionActive && thrownNetworkObject == null))
+            {
+                Debug.LogError($"PHS_DEBRIS_THROW_FAILED reason=required_component_missing player={name}");
+                return false;
+            }
+
+            var debrisName = heldDebris.name;
+            thrownItemInstance = heldItemInstance;
+            thrownItemInstance.transform.SetParent(null, true);
+            thrownItemInstance.transform.SetPositionAndRotation(spawnPosition, spawnRotation);
+            thrownItemInstance.transform.localScale = heldDebrisWorldScale;
+            RestoreHeldDebrisColliders();
+            currentItemObject.OnDropped(spawnPosition);
+            if (networkSessionActive && !thrownNetworkObject.IsSpawned)
+            {
+                thrownNetworkObject.Spawn();
+            }
+
+            heldItemInstance = null;
+            currentItemObject = null;
+            currentItemPrefabData = null;
+            ClearHeldDebrisState();
+            ReportHeldItemRecord();
+            RefreshHeldItemHud();
+
+            Debug.Log($"PHS_DEBRIS_THROW_RELEASED player={name} debris={debrisName} position={spawnPosition}");
+            return true;
+        }
     }
 }
