@@ -103,6 +103,21 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
         public event Action<int, int> ActiveMapChanged;
         public event Action<int> ActiveMapCommitted;
 
+        public bool TryConfigureRuntimeValidationTimings(float chargeSeconds)
+        {
+            if (!Debug.isDebugBuild || !IsSpawned || !IsServer || chargeSeconds <= 0f)
+            {
+                return false;
+            }
+
+            warpChargeSeconds = Mathf.Max(1f, chargeSeconds);
+            chargeElapsed = 0f;
+            synchronizedWarpCharge.Value = 0f;
+            SetPhase(NetworkRunPhase.Charging);
+            Debug.Log($"PHS_RUN_FLOW_VALIDATION_TIMING charge={warpChargeSeconds:0.##}", this);
+            return true;
+        }
+
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
         private static void ResetStatics()
         {
@@ -793,10 +808,13 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
             }
 
             synchronizedClearedZones.Value = gameState.ClearedZoneCount;
-            synchronizedShopCycles.Value = Mathf.Clamp(
-                gameState.ClearedZoneCount / GameLoopState.SHOP_INTERVAL,
-                0,
-                3);
+            var completedShopCycles = gameState.ClearedZoneCount / GameLoopState.SHOP_INTERVAL;
+            if (finalShopCompleted && gameState.Phase == GamePhase.GameClear)
+            {
+                completedShopCycles++;
+            }
+
+            synchronizedShopCycles.Value = Mathf.Clamp(completedShopCycles, 0, 3);
         }
 
         private void RequestSceneLoad(string sceneName)

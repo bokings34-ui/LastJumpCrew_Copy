@@ -10,6 +10,7 @@ namespace SM
         MonoBehaviour,
         IInteractable,
         IRequireHeldItem,
+        IEventRepairableEffect,
         IUtilityAttackTarget
     {
         private const string FireExtinguisherItemId = "fire_extinguisher";
@@ -22,8 +23,14 @@ namespace SM
         private float _maxRepairProgress;
         private float _repairProgress;
         private float _timer;
+        private IEventRepairRuntimeBridge _repairRuntimeBridge;
 
         public bool IsRepaired { get; private set; }
+        public ulong EventInstanceId { get; private set; }
+        public uint EffectInstanceId { get; private set; }
+        public EventEffectKind EffectKind => EventEffectKind.Fire;
+        public Vector3 RepairPosition => transform.position;
+        public bool IsRepairComplete => IsRepaired;
         public event Action<FireEffectInstance> OnRemove;
 
         private readonly HashSet<IDamageable> _targetsInRange = new HashSet<IDamageable>();
@@ -40,8 +47,46 @@ namespace SM
 
         public void Deactivate()
         {
+            UnbindRepairTarget();
             _targetsInRange.Clear();
             gameObject.SetActive(false);
+        }
+
+        public bool BindRepairTarget(
+            ulong eventInstanceId,
+            uint effectInstanceId,
+            IEventRepairRuntimeBridge repairRuntimeBridge)
+        {
+            UnbindRepairTarget();
+            if (eventInstanceId == 0UL || effectInstanceId == 0U || repairRuntimeBridge == null)
+            {
+                return false;
+            }
+
+            EventInstanceId = eventInstanceId;
+            EffectInstanceId = effectInstanceId;
+            _repairRuntimeBridge = repairRuntimeBridge;
+            if (_repairRuntimeBridge.RegisterRepairTarget(this))
+            {
+                return true;
+            }
+
+            EventInstanceId = 0UL;
+            EffectInstanceId = 0U;
+            _repairRuntimeBridge = null;
+            return false;
+        }
+
+        public void UnbindRepairTarget()
+        {
+            if (_repairRuntimeBridge != null && EventInstanceId != 0UL && EffectInstanceId != 0U)
+            {
+                _repairRuntimeBridge.UnregisterRepairTarget(EventInstanceId, EffectInstanceId);
+            }
+
+            EventInstanceId = 0UL;
+            EffectInstanceId = 0U;
+            _repairRuntimeBridge = null;
         }
 
         private void Update()
@@ -122,6 +167,17 @@ namespace SM
                 IsRepaired = true;
                 OnRemove?.Invoke(this);
             }
+        }
+
+        public bool TryApplyRepairStep(float amount)
+        {
+            if (IsRepaired || amount <= 0f)
+            {
+                return false;
+            }
+
+            ApplyRepair(amount);
+            return true;
         }
     }
 }

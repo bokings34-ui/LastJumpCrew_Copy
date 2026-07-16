@@ -6,7 +6,9 @@ using System.Reflection;
 using LastJumpCrew.ParkHanSol.Interaction;
 using LastJumpCrew.ParkHanSol.Items;
 using LastJumpCrew.ParkHanSol.Multiplayer.Events;
+using LastJumpCrew.ParkHanSol.Multiplayer.Events.MiniGames;
 using LastJumpCrew.ParkHanSol.Shop;
+using LastJumpCrew.SeoBoGyeong;
 using SM;
 using Unity.Netcode;
 using UnityEngine;
@@ -285,7 +287,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Validation
             var earlySelectionAccepted = earlyCoordinator.TrySelectNextZone(1, out var earlySelectionReason);
             if (earlyConsole.CanSelectSide(TravelConsoleSide.Left) || earlyMapChoicesReady ||
                 earlySelectionAccepted ||
-                earlySelectionReason != "warp_ready_required")
+                earlySelectionReason != "warp_safe_required")
             {
                 Fail($"early_map_selection_not_blocked reason={earlySelectionReason ?? "none"}");
                 yield break;
@@ -302,6 +304,13 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Validation
 
             yield return RunDebrisRoundTrip();
             if (scenarioFinished) yield break;
+
+            if (NetworkRunFlowCoordinator.Instance == null
+                || !NetworkRunFlowCoordinator.Instance.TryConfigureRuntimeValidationTimings(12f))
+            {
+                Fail("runtime_validation_timing_setup_failed");
+                yield break;
+            }
 
             yield return WaitFor(
                 () => NetworkRunFlowCoordinator.Instance != null &&
@@ -321,34 +330,45 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Validation
                 "warp_ready_not_reached");
             if (scenarioFinished) yield break;
 
+            var warpReadyCoordinator = NetworkRunFlowCoordinator.Instance;
+            if (!warpReadyCoordinator.TryActivateWarp(
+                    NetworkManager.ServerClientId,
+                    out var warpSafeEntryReason))
+            {
+                Fail($"warp_safe_entry_failed reason={warpSafeEntryReason ?? "none"}");
+                yield break;
+            }
+
+            yield return WaitFor(
+                () => warpReadyCoordinator.Phase == NetworkRunPhase.WarpSafe,
+                10f,
+                "warp_safe_not_reached");
+            if (scenarioFinished) yield break;
+
             yield return ProbeMapChoices();
             if (scenarioFinished) yield break;
 
             yield return ProbeFarSelectRejection();
             if (scenarioFinished) yield break;
 
-            if (!TryAcquireMapSceneReferences(out var coordinator, out _, out var safeTrigger))
+            if (!TryAcquireMapSceneReferences(out var coordinator, out _))
             {
                 Fail("post_debris_map_references_missing");
                 yield break;
             }
 
             if (coordinator.TryActivateWarp(NetworkManager.ServerClientId, out var unsafeReason) ||
-                string.IsNullOrWhiteSpace(unsafeReason) ||
-                !unsafeReason.StartsWith("players_not_safe", StringComparison.Ordinal))
+                unsafeReason != "next_map_not_selected")
             {
                 Fail($"unsafe_warp_not_rejected reason={unsafeReason ?? "none"}");
                 yield break;
             }
 
-            MoveConnectedPlayersIntoSafeZone(safeTrigger);
-            yield return WaitFor(
-                () => coordinator.RequiredSafePlayerCount == expectedClientCount &&
-                    coordinator.SafePlayerCount == expectedClientCount &&
-                    coordinator.IsWarpSafetySatisfied,
-                15f,
-                $"safe_gate_not_satisfied safe={coordinator.SafePlayerCount} required={coordinator.RequiredSafePlayerCount}");
-            if (scenarioFinished) yield break;
+            if (coordinator.RequiresAllConnectedAlivePlayersSafe || !coordinator.IsWarpSafetySatisfied)
+            {
+                Fail("phase_based_warp_safety_not_configured");
+                yield break;
+            }
 
             var safePlayerCountBeforeWarp = coordinator.SafePlayerCount;
             var requiredSafePlayerCountBeforeWarp = coordinator.RequiredSafePlayerCount;
@@ -377,22 +397,23 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Validation
 
             for (var expectedClearedZones = 2; expectedClearedZones <= 9; expectedClearedZones++)
             {
-                if (!TryAcquireMapSceneReferences(out coordinator, out _, out safeTrigger))
+                if (!TryAcquireMapSceneReferences(out coordinator, out _))
                 {
                     Fail($"map_cycle_references_missing cycle={expectedClearedZones}");
                     yield break;
                 }
 
-                yield return RunAdditionalWarpCycle(coordinator, safeTrigger, expectedClearedZones);
+                yield return RunAdditionalWarpCycle(coordinator, expectedClearedZones);
                 if (scenarioFinished) yield break;
 
-                if (expectedClearedZones % 3 != 0)
+                var isFinalShop = expectedClearedZones == GameLoopState.TOTAL_ZONES;
+                if (expectedClearedZones % GameLoopState.SHOP_INTERVAL != 0 && !isFinalShop)
                 {
                     continue;
                 }
 
-                var expectedShopCycles = expectedClearedZones / 3;
-                var expectedShopPhase = expectedClearedZones == 9
+                var expectedShopCycles = expectedClearedZones / GameLoopState.SHOP_INTERVAL;
+                var expectedShopPhase = isFinalShop
                     ? NetworkRunPhase.FinalShop
                     : NetworkRunPhase.Shop;
                 yield return WaitFor(
@@ -404,10 +425,19 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Validation
                     $"shop_phase_missing cycle={expectedClearedZones} expectedPhase={expectedShopPhase}");
                 if (scenarioFinished) yield break;
 
-                if (!TryAcquireMapSceneReferences(out coordinator, out var shopConsole, out safeTrigger) ||
-                    !shopConsole.CanSelectSide(TravelConsoleSide.Left) ||
-                    shopConsole.CanSelectSide(TravelConsoleSide.Right) ||
-                    shopConsole.TryGetCurrentMapChoices(out _, out _))
+                yield return WaitFor(
+                    IsShopEntryReady,
+                    30f,
+                    $"shop_entry_not_ready cycle={expectedClearedZones}");
+                if (scenarioFinished) yield break;
+
+                NetworkTravelConsoleController shopConsole = null;
+                var shopAutoLoaded = SceneManager.GetActiveScene().name == ShopSceneName;
+                if (!shopAutoLoaded &&
+                    (!TryAcquireMapSceneReferences(out coordinator, out shopConsole) ||
+                     !shopConsole.CanSelectSide(TravelConsoleSide.Left) ||
+                     shopConsole.CanSelectSide(TravelConsoleSide.Right) ||
+                     shopConsole.TryGetCurrentMapChoices(out _, out _)))
                 {
                     Fail($"shop_choice_invalid cycle={expectedClearedZones}");
                     yield break;
@@ -415,7 +445,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Validation
 
                 Debug.Log(
                     $"PHS_P0_SHOP_PHASE_OK zones={expectedClearedZones} cycles={expectedShopCycles} " +
-                    $"phase={expectedShopPhase}",
+                    $"phase={expectedShopPhase} autoLoaded={shopAutoLoaded}",
                     this);
 
                 yield return RunShopRoundTrip(
@@ -423,10 +453,10 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Validation
                     expectedClearedZones,
                     expectedShopCycles,
                     expectedShopPhase,
-                    validatePurchaseAtomicity: expectedClearedZones == 3);
+                    validatePurchaseAtomicity: expectedClearedZones == GameLoopState.SHOP_INTERVAL);
                 if (scenarioFinished) yield break;
 
-                if (!TryAcquireMapSceneReferences(out coordinator, out _, out safeTrigger))
+                if (!TryAcquireMapSceneReferences(out coordinator, out _))
                 {
                     Fail($"map_return_references_missing cycle={expectedClearedZones}");
                     yield break;
@@ -512,11 +542,12 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Validation
 
             foreach (var validationCase in validationCases)
             {
-                var terminal = FindObjectsByType<MiniGameTerminal>(
+                var terminal = FindObjectsByType<PHSFinalMiniGameTerminal>(
                         FindObjectsInactive.Exclude,
                         FindObjectsSortMode.None)
                     .FirstOrDefault(candidate =>
-                        candidate != null && candidate.miniGameType == validationCase.MiniGameType);
+                        candidate != null &&
+                        candidate.ConfiguredMiniGameType == validationCase.MiniGameType);
                 if (terminal == null)
                 {
                     Fail($"p1_minigame_terminal_missing type={validationCase.MiniGameType}");
@@ -552,7 +583,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Validation
             NetworkEventCoordinator eventCoordinator,
             EventManager eventManager,
             NetworkObject hostPlayer,
-            MiniGameTerminal terminal,
+            PHSFinalMiniGameTerminal terminal,
             ExternalMiniGameValidationCase validationCase,
             bool succeeded)
         {
@@ -611,6 +642,10 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Validation
                 $"outcome={outcomeLabel}");
             if (scenarioFinished) yield break;
 
+            SetPlayerPosition(hostPlayer, terminal.transform.position);
+            terminalDistance = Vector3.Distance(
+                hostPlayer.transform.position,
+                terminal.transform.position);
             if (!eventCoordinator.RequestMiniGameResult(validationCase.ExternalEventId, succeeded))
             {
                 Fail(
@@ -625,10 +660,14 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Validation
                 () => eventCoordinator.TryGetSnapshot(externalInstanceId, out var snapshot)
                     && snapshot.State == expectedTerminalState
                     && (!succeeded
-                        ? TryFindActiveEventSnapshot(
-                            eventCoordinator,
-                            validationCase.ChainedFailureEventId,
-                            out _)
+                        ? validationCase.ChainedFailureEventId == EventId.PowerOff
+                            ? NetworkShipSystemsState.Instance != null
+                                && !NetworkShipSystemsState.Instance.IsPowerEnabled
+                                && !NetworkShipSystemsState.Instance.IsGravityEnabled
+                            : TryFindActiveEventSnapshot(
+                                eventCoordinator,
+                                validationCase.ChainedFailureEventId,
+                                out _)
                         : !eventCoordinator.IsEventActive(validationCase.ChainedFailureEventId)),
                 5f,
                 $"p1_minigame_terminal_state_missing event={validationCase.ExternalEventId} " +
@@ -653,6 +692,37 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Validation
                 Debug.Log(
                     $"PHS_P1_MINIGAME_OUTCOME_OK type={validationCase.MiniGameType} " +
                     $"event={validationCase.ExternalEventId} outcome=success distance={terminalDistance:F3} " +
+                    $"peers={eventTerminalReports.Count} uiInteraction=false",
+                    this);
+                yield break;
+            }
+
+            if (validationCase.ChainedFailureEventId == EventId.PowerOff)
+            {
+                var shipState = NetworkShipSystemsState.Instance;
+                if (shipState == null || shipState.IsPowerEnabled || shipState.IsGravityEnabled)
+                {
+                    Fail("p1_minigame_power_off_not_applied");
+                    yield break;
+                }
+
+                string restoreReason = null;
+                if (!shipState.TryRestorePowerWithBattery(out restoreReason))
+                {
+                    Fail($"p1_minigame_power_cleanup_failed reason={restoreReason ?? "unknown"}");
+                    yield break;
+                }
+
+                yield return WaitFor(
+                    () => shipState.IsPowerEnabled && shipState.IsGravityEnabled,
+                    5f,
+                    "p1_minigame_power_cleanup_not_applied");
+                if (scenarioFinished) yield break;
+
+                Debug.Log(
+                    $"PHS_P1_MINIGAME_OUTCOME_OK type={validationCase.MiniGameType} " +
+                    $"event={validationCase.ExternalEventId} outcome=failure " +
+                    $"chained={validationCase.ChainedFailureEventId} distance={terminalDistance:F3} " +
                     $"peers={eventTerminalReports.Count} uiInteraction=false",
                     this);
                 yield break;
@@ -762,10 +832,11 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Validation
             var eventCoordinator = FindAnyObjectByType<NetworkEventCoordinator>(FindObjectsInactive.Include);
             var eventManager = EventManager.Peek();
             var shipState = NetworkShipSystemsState.Instance;
-            var miniGameTerminal = FindObjectsByType<MiniGameTerminal>(
+            var miniGameTerminal = FindObjectsByType<PHSFinalMiniGameTerminal>(
                     FindObjectsInactive.Exclude,
                     FindObjectsSortMode.None)
-                .FirstOrDefault(terminal => terminal != null && terminal.miniGameType == MiniGameType.WireFix);
+                .FirstOrDefault(terminal =>
+                    terminal != null && terminal.ConfiguredMiniGameType == MiniGameType.WireFix);
             var batterySocket = FindObjectsByType<BatteryInsertPowerStationSocket>(
                     FindObjectsInactive.Exclude,
                     FindObjectsSortMode.None)
@@ -821,8 +892,8 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Validation
             }
 
             yield return WaitFor(
-                () => eventCoordinator.IsEventActive(EventId.PowerOff)
-                    && eventManager.IsActive(EventId.PowerOff)
+                () => !eventCoordinator.IsEventActive(EventId.EmpAttack)
+                    && !eventManager.IsActive(EventId.EmpAttack)
                     && !shipState.IsPowerEnabled
                     && !shipState.IsGravityEnabled
                     && !shipState.IsBatteryInstalled,
@@ -1221,7 +1292,11 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Validation
             NetworkEventCoordinator coordinator,
             EventManager manager)
         {
-            var terminal = FindAnyObjectByType<ShipAccidentEventTerminal>(FindObjectsInactive.Include);
+            var terminal = FindObjectsByType<PHSFinalMiniGameTerminal>(
+                    FindObjectsInactive.Exclude,
+                    FindObjectsSortMode.None)
+                .FirstOrDefault(candidate =>
+                    candidate != null && candidate.ConfiguredEventId == EventId.MeteorAttack);
             var remoteClientId = NetworkManager.ConnectedClientsIds.FirstOrDefault(
                 clientId => clientId != NetworkManager.ServerClientId);
             if (terminal == null || remoteClientId == NetworkManager.ServerClientId ||
@@ -1231,6 +1306,19 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Validation
                 Fail("far_event_terminal_probe_setup_missing");
                 yield break;
             }
+
+            if (!coordinator.TrySpawnEventServer(EventId.MeteorAttack, out _))
+            {
+                Fail("far_event_terminal_event_spawn_failed");
+                yield break;
+            }
+
+            yield return WaitFor(
+                () => coordinator.IsEventActive(EventId.MeteorAttack)
+                    && manager.IsActive(EventId.MeteorAttack),
+                5f,
+                "far_event_terminal_event_not_active");
+            if (scenarioFinished) yield break;
 
             var playerObject = remoteClient.PlayerObject;
             var originalPosition = playerObject.transform.position;
@@ -1258,12 +1346,20 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Validation
             yield return new WaitForSecondsRealtime(1f);
             SetPlayerPosition(playerObject, originalPosition, originalRotation);
 
-            if (!farEventTerminalRequestIssued || coordinator.IsEventActive(EventId.Fire) ||
-                manager.IsActive(EventId.Fire))
+            if (!farEventTerminalRequestIssued
+                || !coordinator.IsEventActive(EventId.MeteorAttack)
+                || !manager.IsActive(EventId.MeteorAttack))
             {
                 Fail(
                     $"far_event_terminal_not_rejected issued={farEventTerminalRequestIssued} " +
-                    $"snapshotActive={coordinator.IsEventActive(EventId.Fire)} localActive={manager.IsActive(EventId.Fire)}");
+                    $"snapshotActive={coordinator.IsEventActive(EventId.MeteorAttack)} " +
+                    $"localActive={manager.IsActive(EventId.MeteorAttack)}");
+                yield break;
+            }
+
+            if (!coordinator.TryTerminateAllServer())
+            {
+                Fail("far_event_terminal_cleanup_rejected");
                 yield break;
             }
 
@@ -1292,21 +1388,30 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Validation
                 yield break;
             }
 
-            SetPlayerPosition(playerObject, console.transform.position);
-            yield return null;
-            console.RequestSelectSide(holder, TravelConsoleSide.Left);
-            if (console.SelectedDestination != TravelConsoleDestination.Shop || !console.CanExecute(holder))
+            if (SceneManager.GetActiveScene().name != ShopSceneName)
             {
-                Fail($"shop_destination_not_selected destination={console.SelectedDestination}");
-                yield break;
-            }
+                if (console == null)
+                {
+                    Fail("shop_entry_console_missing");
+                    yield break;
+                }
 
-            console.Execute(holder);
-            yield return WaitFor(
-                () => SceneManager.GetActiveScene().name == ShopSceneName,
-                30f,
-                "shop_scene_not_loaded");
-            if (scenarioFinished) yield break;
+                SetPlayerPosition(playerObject, console.transform.position);
+                yield return null;
+                console.RequestSelectSide(holder, TravelConsoleSide.Left);
+                if (console.SelectedDestination != TravelConsoleDestination.Shop || !console.CanExecute(holder))
+                {
+                    Fail($"shop_destination_not_selected destination={console.SelectedDestination}");
+                    yield break;
+                }
+
+                console.Execute(holder);
+                yield return WaitFor(
+                    () => SceneManager.GetActiveScene().name == ShopSceneName,
+                    30f,
+                    "shop_scene_not_loaded");
+                if (scenarioFinished) yield break;
+            }
 
             yield return ProbeScenes(ShopSceneName);
             if (scenarioFinished) yield break;
@@ -1445,7 +1550,8 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Validation
             yield return WaitFor(
                 () => NetworkRunFlowCoordinator.Instance != null &&
                     NetworkRunFlowCoordinator.Instance.ClearedZoneCount == expectedClearedZones &&
-                    NetworkRunFlowCoordinator.Instance.CompletedShopCycleCount == expectedShopCycles &&
+                    NetworkRunFlowCoordinator.Instance.CompletedShopCycleCount ==
+                        (expectedShopPhase == NetworkRunPhase.FinalShop ? 3 : expectedShopCycles) &&
                     (expectedShopPhase == NetworkRunPhase.FinalShop
                         ? NetworkRunFlowCoordinator.Instance.Phase == NetworkRunPhase.Clear
                         : NetworkRunFlowCoordinator.Instance.Phase is NetworkRunPhase.Rearming or NetworkRunPhase.Charging),
@@ -1558,32 +1664,32 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Validation
 
         private static bool TryAcquireMapSceneReferences(
             out NetworkRunFlowCoordinator coordinator,
-            out NetworkTravelConsoleController console,
-            out BoxCollider safeTrigger)
+            out NetworkTravelConsoleController console)
         {
             coordinator = NetworkRunFlowCoordinator.Instance;
             console = FindAnyObjectByType<NetworkTravelConsoleController>(FindObjectsInactive.Include);
-            var safeZone = FindAnyObjectByType<NetworkWarpSafeZone>(FindObjectsInactive.Include);
-            safeTrigger = safeZone == null ? null : safeZone.GetComponent<BoxCollider>();
             return SceneManager.GetActiveScene().name == MapSceneName &&
                 coordinator != null &&
-                console != null &&
-                safeTrigger != null &&
-                safeTrigger.isTrigger;
+                console != null;
+        }
+
+        private static bool IsShopEntryReady()
+        {
+            if (SceneManager.GetActiveScene().name == ShopSceneName)
+            {
+                return true;
+            }
+
+            return TryAcquireMapSceneReferences(out _, out var console) &&
+                console.CanSelectSide(TravelConsoleSide.Left) &&
+                !console.CanSelectSide(TravelConsoleSide.Right) &&
+                !console.TryGetCurrentMapChoices(out _, out _);
         }
 
         private IEnumerator RunAdditionalWarpCycle(
             NetworkRunFlowCoordinator coordinator,
-            BoxCollider safeTrigger,
             int expectedClearedZones)
         {
-            MoveConnectedPlayersOutsideSafeZone(safeTrigger);
-            yield return WaitFor(
-                () => coordinator.SafePlayerCount == 0,
-                5f,
-                $"safe_zone_exit_not_recorded cycle={expectedClearedZones}");
-            if (scenarioFinished) yield break;
-
             yield return WaitFor(
                 () => coordinator.Phase == NetworkRunPhase.Charging,
                 DefaultStepTimeout,
@@ -1591,7 +1697,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Validation
             if (scenarioFinished) yield break;
 
             if (coordinator.TrySelectNextZone(expectedClearedZones, out var earlyReason) ||
-                earlyReason != "warp_ready_required")
+                earlyReason != "warp_safe_required")
             {
                 Fail($"cycle_early_selection_not_blocked cycle={expectedClearedZones} reason={earlyReason ?? "none"}");
                 yield break;
@@ -1603,25 +1709,31 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Validation
                 $"cycle_warp_ready_not_reached cycle={expectedClearedZones}");
             if (scenarioFinished) yield break;
 
+            if (!coordinator.TryActivateWarp(
+                    NetworkManager.ServerClientId,
+                    out var warpSafeEntryReason))
+            {
+                Fail(
+                    $"cycle_warp_safe_entry_failed cycle={expectedClearedZones} " +
+                    $"reason={warpSafeEntryReason ?? "none"}");
+                yield break;
+            }
+
+            yield return WaitFor(
+                () => coordinator.Phase == NetworkRunPhase.WarpSafe,
+                10f,
+                $"cycle_warp_safe_not_reached cycle={expectedClearedZones}");
+            if (scenarioFinished) yield break;
+
             yield return ProbeMapChoices();
             if (scenarioFinished) yield break;
 
             if (coordinator.TryActivateWarp(NetworkManager.ServerClientId, out var unsafeReason) ||
-                string.IsNullOrWhiteSpace(unsafeReason) ||
-                !unsafeReason.StartsWith("players_not_safe", StringComparison.Ordinal))
+                unsafeReason != "next_map_not_selected")
             {
                 Fail($"cycle_unsafe_warp_not_rejected cycle={expectedClearedZones} reason={unsafeReason ?? "none"}");
                 yield break;
             }
-
-            MoveConnectedPlayersIntoSafeZone(safeTrigger);
-            yield return WaitFor(
-                () => coordinator.RequiredSafePlayerCount == expectedClientCount &&
-                    coordinator.SafePlayerCount == expectedClientCount &&
-                    coordinator.IsWarpSafetySatisfied,
-                15f,
-                $"cycle_safe_gate_not_satisfied cycle={expectedClearedZones}");
-            if (scenarioFinished) yield break;
 
             var choices = mapChoiceReports.Values.First();
             var selectionAccepted = coordinator.TrySelectNextZone(choices.LeftZoneId, out var selectionReason);
@@ -2308,7 +2420,8 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Validation
             if (!IsScenarioEnabled()) return;
 
             var coordinator = FindAnyObjectByType<NetworkEventCoordinator>(FindObjectsInactive.Include);
-            var issued = coordinator != null && coordinator.RequestEventFromTerminal(EventId.Fire);
+            var issued = coordinator != null
+                && coordinator.RequestMiniGameResult(EventId.MeteorAttack, true);
             ReportFarEventTerminalProbeServerRpc(token, issued);
         }
 

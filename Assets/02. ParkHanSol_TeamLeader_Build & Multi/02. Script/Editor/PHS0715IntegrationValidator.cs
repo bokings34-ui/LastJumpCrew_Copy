@@ -10,6 +10,7 @@ using LastJumpCrew.ParkHanSol.Multiplayer.Maps;
 using LastJumpCrew.ParkHanSol.Multiplayer.ShipAccidents;
 using LastJumpCrew.ParkHanSol.Multiplayer.Validation;
 using LastJumpCrew.ParkHanSol.Shop;
+using LastJumpCrew.SeoBoGyeong.Economy;
 using SM;
 using Unity.Netcode;
 using Unity.Netcode.Transports.UTP;
@@ -40,6 +41,10 @@ namespace LastJumpCrew.ParkHanSol.Editor
             "Assets/02. ParkHanSol_TeamLeader_Build & Multi/03. Prefab/PlayerPrefab/PHS_CuteWhiteGhost_Player.prefab";
         private const string ShipRuntimePrefabPath =
             "Assets/01. MainGame/02. Final_Prefab/PHS_ShipRuntime.prefab";
+        private const string TradeStationPrefabPath =
+            "Assets/01. MainGame/02. Final_Prefab/02. Prefab_SeoBoGyeong_Game Economy/TradeStation.prefab";
+        private const string ShopShelfPrefabPath =
+            "Assets/01. MainGame/02. Final_Prefab/02. Prefab_SeoBoGyeong_Game Economy/Shelf_Dummy.prefab";
         private const string EventPresentationPrefabFolder =
             "Assets/02. ParkHanSol_TeamLeader_Build & Multi/03. Prefab/Props/Prefabs/EventPresentation";
 
@@ -83,6 +88,7 @@ namespace LastJumpCrew.ParkHanSol.Editor
                 ValidateLobbyScene(errors);
                 ValidateMapScene(errors);
                 ValidateShopScene(errors);
+                ValidateShopPresentationPrefabs(errors);
                 ValidateDebrisScene(errors);
                 ValidateGravityScene(errors);
                 ValidateSellStationPrefab(errors);
@@ -106,7 +112,7 @@ namespace LastJumpCrew.ParkHanSol.Editor
                 throw new InvalidOperationException(message);
             }
 
-            const string success = "PHS_0715_VALIDATE_OK errors=0 scenes=5 prefabs=8";
+            const string success = "PHS_0715_VALIDATE_OK errors=0 scenes=5 prefabs=10";
             Debug.Log(success);
             return success;
         }
@@ -356,6 +362,10 @@ namespace LastJumpCrew.ParkHanSol.Editor
                 var serializedDisplay = new SerializedObject(displayController);
                 RequireArray(serializedDisplay, "displaySlots", 8, "shop_display_slots_insufficient", errors);
                 Require(
+                    serializedDisplay.FindProperty("displaySlots")?.arraySize == 10,
+                    "shop_display_slots_invalid expected=10",
+                    errors);
+                Require(
                     serializedDisplay.FindProperty("minimumDisplayCount")?.intValue == 8,
                     "shop_minimum_display_count_invalid expected=8",
                     errors);
@@ -374,12 +384,175 @@ namespace LastJumpCrew.ParkHanSol.Editor
                 RequireObject(serializedPurchase, "deliverySource", "shop_delivery_source_missing", errors);
             }
 
+            var checkoutZone = FindOne<ShopCheckoutZone>("shop_trade_station_checkout_zone", errors);
+            if (checkoutZone != null)
+            {
+                var stationRoot = PrefabUtility.GetOutermostPrefabInstanceRoot(checkoutZone.gameObject);
+                Require(
+                    stationRoot != null &&
+                    PrefabUtility.GetPrefabAssetPathOfNearestInstanceRoot(stationRoot) == TradeStationPrefabPath,
+                    "shop_trade_station_prefab_invalid",
+                    errors);
+                var serializedZone = new SerializedObject(checkoutZone);
+                RequireObject(serializedZone, "checkoutTrigger", "shop_trade_station_trigger_missing", errors);
+                RequireObject(serializedZone, "priceText", "shop_trade_station_price_text_missing", errors);
+                RequireObject(serializedZone, "catalog", "shop_trade_station_catalog_missing", errors);
+                RequireObject(
+                    serializedZone,
+                    "purchaseServiceSource",
+                    "shop_trade_station_purchase_service_missing",
+                    errors);
+            }
+
+            var checkoutButton = FindOne<ShopCheckoutButtonInteractable>(
+                "shop_trade_station_button",
+                errors);
+            if (checkoutButton != null)
+            {
+                var serializedButton = new SerializedObject(checkoutButton);
+                RequireObject(serializedButton, "checkoutZone", "shop_trade_station_button_zone_missing", errors);
+                RequireObject(serializedButton, "pressVisual", "shop_trade_station_press_visual_missing", errors);
+            }
+
+            var pressVisual = FindOne<ShopCheckoutButtonPressVisual>(
+                "shop_trade_station_press_visual",
+                errors);
+            if (pressVisual != null)
+            {
+                var serializedVisual = new SerializedObject(pressVisual);
+                var buttonVisual = serializedVisual.FindProperty("buttonVisual")?.objectReferenceValue as Transform;
+                Require(buttonVisual != null, "shop_trade_station_cylinder_missing", errors);
+                Require(
+                    buttonVisual != null && buttonVisual.name == "Cylinder" &&
+                    buttonVisual.parent != null && buttonVisual.parent.name == "Button",
+                    "shop_trade_station_cylinder_hierarchy_invalid",
+                    errors);
+                RequireObject(
+                    serializedVisual,
+                    "buttonRenderer",
+                    "shop_trade_station_cylinder_renderer_missing",
+                    errors);
+            }
+
+            Require(
+                UnityEngine.Object.FindObjectsByType<CheckoutDetector>(
+                    FindObjectsInactive.Include,
+                    FindObjectsSortMode.None).Length == 0,
+                "shop_legacy_checkout_detector_present",
+                errors);
+            Require(
+                UnityEngine.Object.FindObjectsByType<CheckoutButton>(
+                    FindObjectsInactive.Include,
+                    FindObjectsSortMode.None).Length == 0,
+                "shop_legacy_checkout_button_present",
+                errors);
+
+            var shelf = GameObject.Find("Shelf_Dummy");
+            Require(shelf != null, "shop_shelf_dummy_missing", errors);
+            if (shelf != null)
+            {
+                Require(
+                    PrefabUtility.GetPrefabAssetPathOfNearestInstanceRoot(shelf) == ShopShelfPrefabPath,
+                    "shop_shelf_dummy_prefab_invalid",
+                    errors);
+                var shelfSlots = shelf.GetComponentsInChildren<ShopDisplaySlot>(true);
+                Require(shelfSlots.Length == 10, "shop_shelf_slots_invalid expected=10", errors);
+                foreach (var slot in shelfSlots)
+                {
+                    RequireObject(
+                        new SerializedObject(slot),
+                        "itemSpawnPoint",
+                        $"shop_shelf_spawn_point_missing slot={slot.name}",
+                        errors);
+                }
+            }
+
             ValidateShopCatalog(errors);
             ValidateSceneSellZone("shop", errors);
             ValidatePartyCreditsWiring(
                 "shop",
                 FindOne<PartyCreditsHudBinder>("shop_party_credits_hud_binder", errors),
                 errors);
+        }
+
+        private static void ValidateShopPresentationPrefabs(ICollection<string> errors)
+        {
+            ValidateTradeStationPrefab(errors);
+            ValidateShopShelfPrefab(errors);
+        }
+
+        private static void ValidateTradeStationPrefab(ICollection<string> errors)
+        {
+            var prefab = PrefabUtility.LoadPrefabContents(TradeStationPrefabPath);
+            if (prefab == null)
+            {
+                errors.Add($"trade_station_prefab_missing path={TradeStationPrefabPath}");
+                return;
+            }
+
+            try
+            {
+                Require(prefab.name == "TradeStation", "trade_station_root_name_invalid", errors);
+                Require(
+                    prefab.GetComponentsInChildren<CheckoutDetector>(true).Length == 0,
+                    "trade_station_legacy_detector_present",
+                    errors);
+                Require(
+                    prefab.GetComponentsInChildren<CheckoutButton>(true).Length == 0,
+                    "trade_station_legacy_button_present",
+                    errors);
+                Require(
+                    prefab.GetComponentsInChildren<ShopCheckoutZone>(true).Length == 1,
+                    "trade_station_checkout_zone_count_invalid expected=1",
+                    errors);
+                Require(
+                    prefab.GetComponentsInChildren<ShopCheckoutButtonInteractable>(true).Length == 1,
+                    "trade_station_button_count_invalid expected=1",
+                    errors);
+                Require(
+                    prefab.GetComponentsInChildren<ShopCheckoutButtonPressVisual>(true).Length == 1,
+                    "trade_station_press_visual_count_invalid expected=1",
+                    errors);
+                var cylinder = prefab.transform.Find("Button/Cylinder");
+                Require(cylinder != null, "trade_station_button_cylinder_missing", errors);
+                Require(
+                    cylinder != null && cylinder.GetComponent<Renderer>() != null,
+                    "trade_station_button_cylinder_renderer_missing",
+                    errors);
+            }
+            finally
+            {
+                PrefabUtility.UnloadPrefabContents(prefab);
+            }
+        }
+
+        private static void ValidateShopShelfPrefab(ICollection<string> errors)
+        {
+            var prefab = PrefabUtility.LoadPrefabContents(ShopShelfPrefabPath);
+            if (prefab == null)
+            {
+                errors.Add($"shop_shelf_prefab_missing path={ShopShelfPrefabPath}");
+                return;
+            }
+
+            try
+            {
+                Require(prefab.name == "Shelf_Dummy", "shop_shelf_root_name_invalid", errors);
+                var slots = prefab.GetComponentsInChildren<ShopDisplaySlot>(true);
+                Require(slots.Length == 10, "shop_shelf_prefab_slots_invalid expected=10", errors);
+                foreach (var slot in slots)
+                {
+                    RequireObject(
+                        new SerializedObject(slot),
+                        "itemSpawnPoint",
+                        $"shop_shelf_prefab_spawn_point_missing slot={slot.name}",
+                        errors);
+                }
+            }
+            finally
+            {
+                PrefabUtility.UnloadPrefabContents(prefab);
+            }
         }
 
         private static void ValidateMapCatalog(
@@ -653,8 +826,12 @@ namespace LastJumpCrew.ParkHanSol.Editor
             {
                 var serializedCoordinator = new SerializedObject(coordinator);
                 Require(
-                    serializedCoordinator.FindProperty("requireAllConnectedAlivePlayersSafe")?.boolValue == true,
-                    "player_safe_gate_disabled",
+                    serializedCoordinator.FindProperty("requireAllConnectedAlivePlayersSafe")?.boolValue == false,
+                    "player_phase_based_warp_safety_disabled",
+                    errors);
+                Require(
+                    serializedCoordinator.FindProperty("automaticallyLoadShop")?.boolValue == true,
+                    "player_automatic_shop_load_disabled",
                     errors);
             }
         }
