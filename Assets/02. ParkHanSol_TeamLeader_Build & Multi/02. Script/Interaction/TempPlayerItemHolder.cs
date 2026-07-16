@@ -49,6 +49,7 @@ namespace LastJumpCrew.ParkHanSol.Interaction
         private bool[] heldDebrisColliderStates;
         private bool[] heldDebrisTriggerStates;
         private NetworkObject networkObject;
+        private NetworkPlayerItemRecord networkItemRecord;
 
         public UtilityItemPrefabData CurrentItemPrefabData => currentItemPrefabData;
         public DebrisItem HeldDebris => heldDebris;
@@ -61,6 +62,7 @@ namespace LastJumpCrew.ParkHanSol.Interaction
         private void Awake()
         {
             networkObject = GetComponent<NetworkObject>();
+            networkItemRecord = GetComponent<NetworkPlayerItemRecord>();
 
             if (visibleHandHoldPoint != null)
             {
@@ -132,6 +134,7 @@ namespace LastJumpCrew.ParkHanSol.Interaction
             }
 
             currentItemObject.OnPickedUp(this);
+            ReportHeldItemRecord();
             RefreshHeldItemHud();
 
             Debug.Log($"PHS_TEMP_ITEM_HELD player={name} item={itemPrefabData.ItemId}");
@@ -191,6 +194,7 @@ namespace LastJumpCrew.ParkHanSol.Interaction
                 GetHeldItemScaleMultiplier());
 
             currentItemObject.OnPickedUp(this);
+            ReportHeldItemRecord();
             RefreshHeldItemHud();
             Debug.Log($"PHS_DEBRIS_HELD player={name} debris={debrisItem.name} mass={debrisItem.Mass:F2} value={debrisItem.Value}");
             return true;
@@ -274,6 +278,7 @@ namespace LastJumpCrew.ParkHanSol.Interaction
             currentItemObject = null;
             currentItemPrefabData = null;
             ClearHeldDebrisState();
+            ReportHeldItemRecord();
             RefreshHeldItemHud();
 
             Debug.Log($"PHS_TEMP_ITEM_CONSUMED player={name} item={itemId}");
@@ -330,6 +335,7 @@ namespace LastJumpCrew.ParkHanSol.Interaction
             heldItemInstance = null;
             currentItemObject = null;
             currentItemPrefabData = null;
+            ReportHeldItemRecord();
             RefreshHeldItemHud();
         }
 
@@ -354,6 +360,7 @@ namespace LastJumpCrew.ParkHanSol.Interaction
             currentItemObject = null;
             currentItemPrefabData = null;
             ClearHeldDebrisState();
+            ReportHeldItemRecord();
             RefreshHeldItemHud();
             Debug.Log($"PHS_DEBRIS_PLACED player={name} debris={debrisName}");
         }
@@ -416,6 +423,23 @@ namespace LastJumpCrew.ParkHanSol.Interaction
             }
 
             playHudPresenter.SetHeldItem(currentItemPrefabData);
+        }
+
+        private void ReportHeldItemRecord()
+        {
+            if (networkItemRecord == null)
+            {
+                if (networkObject != null && networkObject.IsSpawned)
+                {
+                    Debug.LogError($"PHS_ITEM_RECORD_FAILED reason=record_component_missing player={name}", this);
+                }
+
+                return;
+            }
+
+            networkItemRecord.ReportHeldItem(currentItemPrefabData == null
+                ? string.Empty
+                : currentItemPrefabData.ItemId);
         }
 
         private static Transform FindChildByName(Transform parent, string childName)
