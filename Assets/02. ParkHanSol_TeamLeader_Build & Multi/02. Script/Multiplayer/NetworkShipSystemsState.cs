@@ -462,6 +462,38 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
             return true;
         }
 
+        public bool TryRestoreGravityAfterRepair(out string reason)
+        {
+            if (!RequireServer(out reason))
+            {
+                return false;
+            }
+
+            if (!synchronizedPowerEnabled.Value)
+            {
+                reason = "power_required";
+                return false;
+            }
+
+            if (!CanOperateModule(NetworkShipModuleId.Gravity))
+            {
+                reason = "gravity_module_unavailable";
+                return false;
+            }
+
+            if (synchronizedGravityEnabled.Value)
+            {
+                reason = null;
+                return true;
+            }
+
+            synchronizedGravityEnabled.Value = true;
+            IncrementRevision();
+            reason = null;
+            Debug.Log($"PHS_SHIP_GRAVITY_RESTORED source=repair revision={Revision}", this);
+            return true;
+        }
+
         private void InitializeServerState()
         {
             maximumShipHp = Mathf.Max(1, maximumShipHp);

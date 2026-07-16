@@ -502,14 +502,31 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.ShipAccidents
 
             if (module.CurrentHp >= module.MaximumHp)
             {
+                return TryRestoreGravityIfNeeded(definition, out reason);
+            }
+
+            if (!shipSystemsState.TryRepairModule(
+                definition.TargetModule,
+                definition.ModuleRepairOnResolve,
+                out reason))
+            {
+                return false;
+            }
+
+            return TryRestoreGravityIfNeeded(definition, out reason);
+        }
+
+        private bool TryRestoreGravityIfNeeded(
+            PHSShipAccidentDefinitionSO definition,
+            out string reason)
+        {
+            if (definition.TargetModule != NetworkShipModuleId.Gravity)
+            {
                 reason = null;
                 return true;
             }
 
-            return shipSystemsState.TryRepairModule(
-                definition.TargetModule,
-                definition.ModuleRepairOnResolve,
-                out reason);
+            return shipSystemsState.TryRestoreGravityAfterRepair(out reason);
         }
 
         private bool TrySelectSpawnCandidate(
@@ -643,6 +660,8 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.ShipAccidents
 
         private bool ValidateSetup()
         {
+            RegisterSceneAnchors();
+
             if (accidentCatalog == null)
             {
                 Debug.LogError("PHS_SHIP_ACCIDENT_SETUP_FAILED reason=catalog_missing", this);
@@ -698,6 +717,28 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.ShipAccidents
             }
 
             return true;
+        }
+
+        private void RegisterSceneAnchors()
+        {
+            var sceneAnchors = FindObjectsByType<PHSShipAccidentAnchor>(
+                FindObjectsInactive.Exclude,
+                FindObjectsSortMode.None);
+            if (sceneAnchors.Length == 0)
+            {
+                return;
+            }
+
+            var registered = new List<PHSShipAccidentAnchor>(anchors);
+            foreach (var sceneAnchor in sceneAnchors)
+            {
+                if (sceneAnchor != null && !registered.Contains(sceneAnchor))
+                {
+                    registered.Add(sceneAnchor);
+                }
+            }
+
+            anchors = registered.ToArray();
         }
 
         private bool CanExecuteServerCommand(out string reason)

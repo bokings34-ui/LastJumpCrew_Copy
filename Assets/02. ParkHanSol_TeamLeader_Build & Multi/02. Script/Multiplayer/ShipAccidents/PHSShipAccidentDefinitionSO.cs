@@ -64,12 +64,6 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.ShipAccidents
                 return false;
             }
 
-            if (presentationPrefab == null)
-            {
-                reason = "presentation_prefab_missing";
-                return false;
-            }
-
             if (string.IsNullOrWhiteSpace(requiredItemId))
             {
                 reason = "required_item_id_missing";

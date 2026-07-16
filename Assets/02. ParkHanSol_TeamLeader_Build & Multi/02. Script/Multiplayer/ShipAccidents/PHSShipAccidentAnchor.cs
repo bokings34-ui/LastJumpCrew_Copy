@@ -11,6 +11,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.ShipAccidents
         [SerializeField] private string anchorId;
         [SerializeField] private NetworkShipModuleId moduleId = NetworkShipModuleId.LifeSupport;
         [SerializeField] private PHSShipAccidentId[] supportedAccidents = Array.Empty<PHSShipAccidentId>();
+        [SerializeField] private PHSShipAccidentId sceneAccidentId = PHSShipAccidentId.None;
 
         [Header("Presentation")]
         [SerializeField] private Transform presentationRoot;
@@ -39,6 +40,11 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.ShipAccidents
             if (definition == null || definition.TargetModule != moduleId || supportedAccidents == null)
             {
                 return false;
+            }
+
+            if (sceneAccidentId == definition.Id)
+            {
+                return true;
             }
 
             foreach (var supported in supportedAccidents)
@@ -116,13 +122,21 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.ShipAccidents
                 return false;
             }
 
-            if (supportedAccidents == null || supportedAccidents.Length == 0)
+            if (sceneAccidentId == PHSShipAccidentId.None
+                && (supportedAccidents == null || supportedAccidents.Length == 0))
             {
                 reason = "supported_accidents_missing";
                 return false;
             }
 
             var unique = new System.Collections.Generic.HashSet<PHSShipAccidentId>();
+            if (sceneAccidentId != PHSShipAccidentId.None
+                && !Enum.IsDefined(typeof(PHSShipAccidentId), sceneAccidentId))
+            {
+                reason = $"scene_accident_invalid:{(ushort)sceneAccidentId}";
+                return false;
+            }
+
             foreach (var supported in supportedAccidents)
             {
                 if (supported == PHSShipAccidentId.None
@@ -178,6 +192,11 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.ShipAccidents
             }
 
             DestroyPresentation();
+            if (definition.PresentationPrefab == null)
+            {
+                return;
+            }
+
             presentationInstance = Instantiate(definition.PresentationPrefab, presentationRoot);
             presentationInstance.name = $"PHS_Accident_{currentSnapshot.InstanceId}_{definition.Id}";
         }

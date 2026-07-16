@@ -7,6 +7,8 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.ShipAccidents
         PowerFailure = 2,
         DeviceFailure = 3,
         HullBreach = 4,
-        SteamLeak = 5
+        SteamLeak = 5,
+        OxygenFailure = 6,
+        GravityGeneratorFailure = 7
     }
 }
