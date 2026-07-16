@@ -1,4 +1,4 @@
-using LastJumpCrew.ParkHanSol.Interaction;
+using LastJumpCrew.ParkHanSol.Shop;
 using UnityEngine;
 
 namespace LastJumpCrew.ParkHanSol.Multiplayer
@@ -6,38 +6,32 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
     public sealed class PartyCreditsHudBinder : MonoBehaviour
     {
         [SerializeField] private ParkHanSolPlayHudMockPresenter playHudPresenter;
+        [SerializeField] private MonoBehaviour shopWalletSource;
 
-        private SessionPartyCreditsWallet boundWallet;
+        private IShopWallet boundWallet;
 
         private void OnEnable()
         {
-            BindActiveWallet();
-        }
-
-        private void OnDisable()
-        {
-            UnbindWallet();
-        }
-
-        private void Update()
-        {
-            if (boundWallet != SessionPartyCreditsWallet.Instance)
+            boundWallet = shopWalletSource as IShopWallet;
+            if (boundWallet == null)
             {
-                BindActiveWallet();
+                Debug.LogError($"PHS_PARTY_CREDITS_HUD_BIND_FAILED reason=shop_wallet_missing binder={name}", this);
+                return;
             }
-        }
 
-        private void BindActiveWallet()
-        {
-            UnbindWallet();
-            boundWallet = SessionPartyCreditsWallet.Instance;
-            if (boundWallet == null || playHudPresenter == null)
+            if (playHudPresenter == null)
             {
+                Debug.LogError($"PHS_PARTY_CREDITS_HUD_BIND_FAILED reason=presenter_missing binder={name}", this);
                 return;
             }
 
             boundWallet.CreditsChanged += HandleCreditsChanged;
             HandleCreditsChanged(boundWallet.Credits);
+        }
+
+        private void OnDisable()
+        {
+            UnbindWallet();
         }
 
         private void UnbindWallet()

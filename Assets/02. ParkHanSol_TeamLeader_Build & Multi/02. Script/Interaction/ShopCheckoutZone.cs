@@ -1,5 +1,6 @@
 using System.Collections.Generic;
 using LastJumpCrew.ParkHanSol.Items;
+using LastJumpCrew.ParkHanSol.Shop;
 using TMPro;
 using UnityEngine;
 
@@ -23,13 +24,15 @@ namespace LastJumpCrew.ParkHanSol.Interaction
         [SerializeField] private BoxCollider checkoutTrigger;
         [SerializeField] private TMP_Text priceText;
         [SerializeField] private string pricePrefix = "TOTAL";
-        [SerializeField] private ShopProductData[] products;
-        [SerializeField] private SessionPartyCreditsWallet wallet;
+        [SerializeField] private ShopCatalogSO catalog;
+        [SerializeField] private MonoBehaviour purchaseServiceSource;
         [SerializeField, Min(0.1f)] private float statusDuration = 2f;
 
         private readonly HashSet<UtilityItemObject> checkoutItems = new();
-        private readonly Dictionary<UtilityItemPrefabData, ShopProductData> productsByItem = new();
+        private IShopPurchaseService purchaseService;
+        private bool checkoutPending;
         private int lastDisplayedPrice = -1;
+        private int lastDisplayedCredits = -1;
         private string temporaryStatus;
         private float temporaryStatusUntil;
 
@@ -37,14 +40,9 @@ namespace LastJumpCrew.ParkHanSol.Interaction
 
         private void Awake()
         {
-            RebuildProductLookup(true);
+            purchaseService = purchaseServiceSource as IShopPurchaseService;
             ValidateSetup();
             RefreshPriceText(true);
-        }
-
-        private void OnValidate()
-        {
-            RebuildProductLookup(false);
         }
 
         private void Update()
@@ -85,17 +83,26 @@ namespace LastJumpCrew.ParkHanSol.Interaction
 
         public bool CanCheckout()
         {
-            if (!IsTriggerConfigured())
+            if (checkoutPending || !IsTriggerConfigured())
             {
                 return false;
             }
 
             RefreshCheckoutItemsFromZone();
-            return BuildCheckoutSnapshot(null, out var totalPrice, false) && totalPrice > 0;
+            return BuildCheckoutSnapshot(null, out var totalPrice, false) &&
+                totalPrice > 0 &&
+                purchaseService != null &&
+                totalPrice <= purchaseService.AvailableCredits;
         }
 
         public bool TryCheckout()
         {
+            if (checkoutPending)
+            {
+                ShowTemporaryStatus("PURCHASE PENDING");
+                return false;
+            }
+
             if (!ValidateSetup())
             {
                 ShowTemporaryStatus("CHECKOUT ERROR");
@@ -110,38 +117,61 @@ namespace LastJumpCrew.ParkHanSol.Interaction
                 return false;
             }
 
-            wallet ??= SessionPartyCreditsWallet.Instance;
-            if (wallet == null)
+            var availableCredits = purchaseService.AvailableCredits;
+            if (totalPrice > availableCredits)
             {
-                Debug.LogError($"PHS_SHOP_CHECKOUT_FAILED reason=wallet_missing zone={name}");
-                ShowTemporaryStatus("WALLET OFFLINE");
+                ShowTemporaryStatus($"NOT ENOUGH CR\nNEED {totalPrice} / HAVE {availableCredits}");
                 return false;
             }
 
-            var deliveryService = SessionPurchaseDeliveryService.Instance;
-            if (deliveryService == null)
+            var requests = new List<ShopPurchaseRequest>(entries.Count);
+            foreach (var entry in entries)
             {
-                Debug.LogError($"PHS_SHOP_CHECKOUT_FAILED reason=delivery_service_missing zone={name}");
-                ShowTemporaryStatus("DELIVERY OFFLINE");
+                requests.Add(new ShopPurchaseRequest(entry.ItemObject.GetEntityId().ToString(), entry.ProductData));
+            }
+
+            checkoutPending = true;
+            ShowTemporaryStatus("PURCHASE PENDING");
+            if (!purchaseService.RequestPurchase(
+                    requests,
+                    result => HandlePurchaseCompleted(entries, totalPrice, result)))
+            {
+                checkoutPending = false;
                 return false;
             }
 
-            if (!wallet.TrySpendCredits(totalPrice))
+            return true;
+        }
+
+        private void HandlePurchaseCompleted(
+            IReadOnlyList<CheckoutEntry> entries,
+            int requestedTotalPrice,
+            ShopPurchaseResult result)
+        {
+            checkoutPending = false;
+            if (!result.Success)
             {
-                ShowTemporaryStatus($"NEED {totalPrice} CR");
-                return false;
+                var status = result.Reason switch
+                {
+                    "insufficient_credits" => $"NEED {requestedTotalPrice} CR",
+                    "out_of_stock" => "ITEM SOLD OUT",
+                    _ => "PURCHASE FAILED"
+                };
+                ShowTemporaryStatus(status);
+                return;
             }
 
             foreach (var entry in entries)
             {
-                deliveryService.QueueDelivery(entry.ProductData.ItemPrefabData);
                 checkoutItems.Remove(entry.ItemObject);
-                Destroy(entry.ItemObject.gameObject);
+                if (entry.ItemObject != null)
+                {
+                    Destroy(entry.ItemObject.gameObject);
+                }
             }
 
-            Debug.Log($"PHS_SHOP_CHECKOUT_COMPLETED zone={name} totalPrice={totalPrice} itemCount={entries.Count} pendingDelivery={deliveryService.PendingCount}");
-            ShowTemporaryStatus($"PAID {totalPrice} CR\nSHIP DELIVERY");
-            return true;
+            Debug.Log($"PHS_SHOP_CHECKOUT_COMPLETED zone={name} totalPrice={result.TotalPrice} itemCount={result.PurchasedCount}");
+            ShowTemporaryStatus($"PAID {result.TotalPrice} CR\nSHIP DELIVERY");
         }
 
         private bool BuildCheckoutSnapshot(List<CheckoutEntry> entries, out int totalPrice, bool shouldLog)
@@ -182,7 +212,7 @@ namespace LastJumpCrew.ParkHanSol.Interaction
                 return false;
             }
 
-            if (!productsByItem.TryGetValue(itemPrefabData, out productData))
+            if (catalog == null || !catalog.TryGetByItemData(itemPrefabData, out productData))
             {
                 if (shouldLog)
                 {
@@ -201,33 +231,6 @@ namespace LastJumpCrew.ParkHanSol.Interaction
             return totalPrice;
         }
 
-        private void RebuildProductLookup(bool shouldLog)
-        {
-            productsByItem.Clear();
-            if (products == null)
-            {
-                return;
-            }
-
-            foreach (var productData in products)
-            {
-                if (productData == null || !productData.IsConfigured)
-                {
-                    if (shouldLog)
-                    {
-                        Debug.LogError($"PHS_SHOP_PRODUCT_SETUP_FAILED reason=product_invalid zone={name}", this);
-                    }
-
-                    continue;
-                }
-
-                if (!productsByItem.TryAdd(productData.ItemPrefabData, productData) && shouldLog)
-                {
-                    Debug.LogError($"PHS_SHOP_PRODUCT_SETUP_FAILED reason=item_duplicate zone={name} item={productData.ItemPrefabData.ItemId}", productData);
-                }
-            }
-        }
-
         private void RefreshPriceText(bool force)
         {
             if (priceText == null)
@@ -243,13 +246,21 @@ namespace LastJumpCrew.ParkHanSol.Interaction
 
             temporaryStatus = string.Empty;
             var totalPrice = CalculateTotalPrice();
-            if (!force && totalPrice == lastDisplayedPrice)
+            var availableCredits = purchaseService?.AvailableCredits ?? -1;
+            if (!force &&
+                totalPrice == lastDisplayedPrice &&
+                availableCredits == lastDisplayedCredits)
             {
                 return;
             }
 
             lastDisplayedPrice = totalPrice;
-            priceText.text = $"{pricePrefix} ${totalPrice}";
+            lastDisplayedCredits = availableCredits;
+            priceText.text = totalPrice > 0 &&
+                availableCredits >= 0 &&
+                totalPrice > availableCredits
+                    ? $"{pricePrefix} ${totalPrice}\nHAVE ${availableCredits} - NOT ENOUGH"
+                    : $"{pricePrefix} ${totalPrice}";
         }
 
         private void ShowTemporaryStatus(string message)
@@ -257,6 +268,7 @@ namespace LastJumpCrew.ParkHanSol.Interaction
             temporaryStatus = message;
             temporaryStatusUntil = Time.unscaledTime + statusDuration;
             lastDisplayedPrice = -1;
+            lastDisplayedCredits = -1;
             RefreshPriceText(true);
         }
 
@@ -268,9 +280,15 @@ namespace LastJumpCrew.ParkHanSol.Interaction
                 Debug.LogError($"PHS_SHOP_CHECKOUT_SETUP_FAILED reason=checkout_trigger_invalid zone={name}");
             }
 
-            if (productsByItem.Count == 0)
+            if (catalog == null || catalog.Products.Count == 0)
             {
-                Debug.LogError($"PHS_SHOP_CHECKOUT_SETUP_FAILED reason=products_missing zone={name}");
+                Debug.LogError($"PHS_SHOP_CHECKOUT_SETUP_FAILED reason=catalog_missing zone={name}");
+                isValid = false;
+            }
+
+            if (purchaseService == null)
+            {
+                Debug.LogError($"PHS_SHOP_CHECKOUT_SETUP_FAILED reason=purchase_service_missing zone={name}");
                 isValid = false;
             }
 
