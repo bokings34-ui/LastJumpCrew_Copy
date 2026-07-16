@@ -5,7 +5,7 @@ using UnityEngine;
 
 namespace SM
 {
-    public class EventManager : MonoSingleton<EventManager>, IEventSpawner
+    public class EventManager : MonoSingleton<EventManager>
     {
         [Header("이벤트 데이터 레지스트리")]
         [SerializeField] private EventRegistrySO registry;
@@ -60,7 +60,7 @@ namespace SM
             }
 
             var evt = EventFactory.Create(id);
-            var context = new EventContext(targetRoom, this);
+            var context = new EventContext(targetRoom, EventScheduler.Instance);
 
             evt.OnFinished += HandleEventFinished;
             if (onFinished != null) evt.OnFinished += onFinished;
