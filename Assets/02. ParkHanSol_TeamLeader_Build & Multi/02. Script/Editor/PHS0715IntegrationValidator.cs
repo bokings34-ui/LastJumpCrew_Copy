@@ -5,6 +5,7 @@ using LastJumpCrew.ParkHanSol.Interaction;
 using LastJumpCrew.ParkHanSol.Items;
 using LastJumpCrew.ParkHanSol.Multiplayer;
 using LastJumpCrew.ParkHanSol.Multiplayer.Events;
+using LastJumpCrew.ParkHanSol.Multiplayer.Events.MiniGames;
 using LastJumpCrew.ParkHanSol.Multiplayer.Validation;
 using LastJumpCrew.ParkHanSol.Shop;
 using SM;
@@ -152,39 +153,32 @@ namespace LastJumpCrew.ParkHanSol.Editor
                 RequireArray(serializedConsole, "debrisChoiceObjects", 1, "map_debris_choice_objects_missing", errors);
             }
 
-            var warpController = FindOne<WarpTerminal>("map_warp_controller", errors);
-            if (warpController != null)
+            var warpPresenter = FindOne<WarpTransitionPresenter>("map_warp_presenter", errors);
+            if (warpPresenter != null)
             {
-                var serializedWarpController = new SerializedObject(warpController);
-                RequireObject(serializedWarpController, "travelConsole", "map_warp_controller_console_missing", errors);
-                RequireObject(serializedWarpController, "availabilityRenderer", "map_warp_controller_renderer_missing", errors);
-                RequireObject(serializedWarpController, "interactionCollider", "map_warp_controller_collider_missing", errors);
+                var serializedWarpPresenter = new SerializedObject(warpPresenter);
+                RequireObject(serializedWarpPresenter, "transitionCanvasGroup", "map_warp_canvas_missing", errors);
+                RequireObject(serializedWarpPresenter, "warpVisualRoot", "map_warp_visual_missing", errors);
+                RequireObject(serializedWarpPresenter, "normalSkybox", "map_warp_normal_skybox_missing", errors);
+                RequireObject(serializedWarpPresenter, "warpSkybox", "map_warp_skybox_missing", errors);
+                RequireObject(serializedWarpPresenter, "arrivalSkybox", "map_warp_arrival_skybox_missing", errors);
             }
 
             FindOne<MiniGameManager>("map_minigame_manager", errors);
-            var miniGameTerminals = UnityEngine.Object.FindObjectsByType<MiniGameTerminal>(
+            var miniGameTerminals = UnityEngine.Object.FindObjectsByType<PHSFinalMiniGameTerminal>(
                 FindObjectsInactive.Include,
                 FindObjectsSortMode.None);
             Require(
                 miniGameTerminals.Length >= 3,
                 "map_event_minigame_terminals_insufficient",
                 errors);
-            foreach (var terminal in miniGameTerminals.Where(terminal =>
-                         terminal.miniGameType == MiniGameType.Cannon
-                         || terminal.miniGameType == MiniGameType.WireFix
-                         || terminal.miniGameType == MiniGameType.PowerSync))
+            foreach (var terminal in miniGameTerminals)
             {
-                var serializedTerminal = new SerializedObject(terminal);
-                RequireObject(
-                    serializedTerminal,
-                    "availabilityRenderer",
-                    $"map_minigame_renderer_missing terminal={terminal.name}",
-                    errors);
-                RequireObject(
-                    serializedTerminal,
-                    "interactionCollider",
-                    $"map_minigame_collider_missing terminal={terminal.name}",
-                    errors);
+                Require(terminal.IsConfigured, $"map_minigame_pair_invalid terminal={terminal.name}", errors);
+                Require(terminal.GetComponent<Collider>() != null,
+                    $"map_minigame_collider_missing terminal={terminal.name}", errors);
+                Require(terminal.GetComponent<MiniGameEventStatusIndicator>() != null,
+                    $"map_minigame_indicator_missing terminal={terminal.name}", errors);
             }
 
             Require(
@@ -226,7 +220,7 @@ namespace LastJumpCrew.ParkHanSol.Editor
                     errors);
             }
 
-            var eventScheduler = FindOne<EventScheduler>("map_event_scheduler", errors);
+            var eventScheduler = FindOne<PHSNetworkEventScheduler>("map_event_scheduler", errors);
             if (eventScheduler != null)
             {
                 var serializedScheduler = new SerializedObject(eventScheduler);

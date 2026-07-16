@@ -5,6 +5,8 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
         Waiting,
         Charging,
         WarpReady,
+        Warping,
+        WarpArrival,
         Rearming,
         Shop,
         FinalShop,
@@ -18,6 +20,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
         float WarpChargeNormalized { get; }
         int ClearedZoneCount { get; }
         int CompletedShopCycleCount { get; }
+        int SelectedZoneId { get; }
         int SafePlayerCount { get; }
         bool IsFinalShopPending { get; }
     }

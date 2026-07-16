@@ -77,6 +77,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
         private bool gameplayInputEnabled;
         private bool pauseInputBlocked;
         private bool lifeInputBlocked;
+        private bool warpInputBlocked;
         private bool autoMoveEnabled;
         private float autoMoveSeconds;
         private float autoMoveEndTime;
@@ -664,6 +665,22 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
             }
         }
 
+        public void SetWarpInputBlocked(bool blocked)
+        {
+            if (IsSpawned && !IsOwner)
+            {
+                return;
+            }
+
+            warpInputBlocked = blocked;
+            if (blocked)
+            {
+                HasMoveInput = false;
+                IsRunning = false;
+                UpdateLocalThrusterFeedback(false);
+            }
+        }
+
         public void ResetMovementForRespawn()
         {
             HasMoveInput = false;
@@ -1185,10 +1202,14 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
         {
             if (!IsSpawned)
             {
-                return !pauseInputBlocked && !lifeInputBlocked;
+                return !pauseInputBlocked && !lifeInputBlocked && !warpInputBlocked;
             }
 
-            return IsOwner && gameplayInputEnabled && !pauseInputBlocked && !lifeInputBlocked;
+            return IsOwner
+                && gameplayInputEnabled
+                && !pauseInputBlocked
+                && !lifeInputBlocked
+                && !warpInputBlocked;
         }
 
         private static float ReadVerticalMove()
