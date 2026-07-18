@@ -44,6 +44,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.ShipAccidents
         public int ActiveAccidentCount => activeAccidents.Count;
         public static PHSNetworkShipAccidentCoordinator Instance { get; private set; }
         public event Action ActiveAccidentsChanged;
+        public event Action<uint, PHSShipAccidentId, bool> ServerAccidentFinished;
 
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
         private static void ResetStatics()
@@ -72,6 +73,49 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.ShipAccidents
 
             definition = null;
             return false;
+        }
+
+        public bool TryCopyAvailableCompatibleAnchorIdsServer(
+            PHSShipAccidentId accidentId,
+            List<string> destination,
+            out string reason)
+        {
+            if (destination == null)
+            {
+                throw new ArgumentNullException(nameof(destination));
+            }
+
+            destination.Clear();
+            if (!CanExecuteServerCommand(out reason))
+            {
+                return false;
+            }
+
+            if (!accidentCatalog.TryResolve(accidentId, out var definition))
+            {
+                reason = $"definition_missing:{accidentId}";
+                return false;
+            }
+
+            foreach (var anchor in anchors)
+            {
+                if (anchor != null
+                    && anchor.Supports(definition)
+                    && !IsAnchorOccupied(anchor.AnchorId))
+                {
+                    destination.Add(anchor.AnchorId);
+                }
+            }
+
+            destination.Sort(StringComparer.Ordinal);
+            if (destination.Count == 0)
+            {
+                reason = $"compatible_anchor_unavailable:{accidentId}";
+                return false;
+            }
+
+            reason = null;
+            return true;
         }
 
         private void Awake()
@@ -246,6 +290,47 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.ShipAccidents
 
             isRunning = false;
             nextSpawnTime = 0d;
+            reason = null;
+            return true;
+        }
+
+        public bool TryTerminateAllServer(string cause, out string reason)
+        {
+            if (!CanExecuteServerCommand(out reason))
+            {
+                return false;
+            }
+
+            if (string.IsNullOrWhiteSpace(cause))
+            {
+                reason = "termination_cause_required";
+                return false;
+            }
+
+            isRunning = false;
+            nextSpawnTime = 0d;
+            var terminated = new List<NetworkShipAccidentSnapshot>(
+                activeAccidents.Count);
+            for (var index = 0; index < activeAccidents.Count; index++)
+            {
+                terminated.Add(activeAccidents[index]);
+            }
+
+            activeAccidents.Clear();
+            nextDamageTimes.Clear();
+            repairRequestSequences.Clear();
+            foreach (var snapshot in terminated)
+            {
+                NotifyServerAccidentFinished(
+                    snapshot.InstanceId,
+                    snapshot.AccidentId,
+                    false);
+            }
+
+            Debug.Log(
+                $"PHS_SHIP_ACCIDENT_TERMINATE_ALL count={terminated.Count} " +
+                $"cause={cause}",
+                this);
             reason = null;
             return true;
         }
@@ -468,6 +553,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.ShipAccidents
                 Debug.Log(
                     $"PHS_SHIP_ACCIDENT_RESOLVED instance={accidentInstanceId} accident={definition.Id} client={senderClientId} shipHp={shipSystemsState.CurrentShipHp}",
                     this);
+                NotifyServerAccidentFinished(accidentInstanceId, definition.Id, true);
                 return true;
             }
 
@@ -667,6 +753,30 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.ShipAccidents
             selectedAnchor = null;
             reason = "weighted_roll_out_of_range";
             return false;
+        }
+
+        private void NotifyServerAccidentFinished(
+            uint instanceId,
+            PHSShipAccidentId accidentId,
+            bool success)
+        {
+            var handlers = ServerAccidentFinished;
+            if (handlers == null)
+            {
+                return;
+            }
+
+            foreach (Action<uint, PHSShipAccidentId, bool> handler in handlers.GetInvocationList())
+            {
+                try
+                {
+                    handler(instanceId, accidentId, success);
+                }
+                catch (Exception exception)
+                {
+                    Debug.LogException(exception, this);
+                }
+            }
         }
 
         private bool TryFindAvailableAnchor(

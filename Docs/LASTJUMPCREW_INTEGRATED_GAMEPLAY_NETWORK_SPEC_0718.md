@@ -2,7 +2,7 @@
 
 - 문서 버전: `0.1`
 - 작성일: `2026-07-18`
-- 상태: 설계 동결 / P0 핵심 생명주기 구현 / 2인 전체 루프 검증
+- 상태: 설계 동결 / Incident 원장·Director·Map Consumer 포함 P0 핵심 생명주기 2인 검증 완료
 - 제품 기준: 4인 협동 밸런스, 기술 상한 8인
 - 활성 통합 기준 씬:
   - `0715/ParkHanSol_LobbyScene`
@@ -353,7 +353,10 @@ Lobby에서 Server가 Spawn하고 Run 종료까지 유지한다.
 - 구매 차감과 Delivery Entry 추가는 한 서버 API로 커밋하고, Entry는 `Pending → Claimed → Delivered` 상태를 복제한다.
 - `NetworkRunRandomLedger`의 Seed/Algorithm Snapshot과 Stream/Scope 결정론을 연결했다.
 - 첫 RNG 소비자인 Map Choice는 다른 사건 Stream 소비와 분리했다.
-- Incident Pressure와 Compatibility는 후속 범위.
+- `NetworkRunIncidentLedger`와 `PHSNetworkIncidentDirector`를 Persistent Root에 구현했다.
+- Map Scene의 `PHSMapIncidentCommandConsumer`가 원장 명령을 외부 Event Coordinator와 내부 Ship Accident Coordinator에 연결한다.
+- Incident Pressure `3`, 외부 활성 `1`, 내부 활성 `2`를 기본 계약으로 고정했다.
+- Incident와 Compatibility 중 Compatibility만 후속 범위다. Incident 신규 경로는 Unity Migration·Compile·Validator·Build와 2 Peer P0 검증을 완료했다.
 - 상세 구현·검증: `Docs/PHS_RUN_SESSION_ROOT_IMPLEMENTATION_0718.md`.
 
 소유 상태:
@@ -434,6 +437,17 @@ P0 기본 한도:
 - 전역 Pressure Budget 여유.
 - Anchor/Terminal/Content 준비 완료.
 - 같은 Instance의 Consequence가 이미 적용되지 않음.
+
+2026-07-18 구현 상태:
+
+- `NetworkRunIncidentLedger`가 Stage, Pressure, Command 상태를 서버 권위로 복제한다.
+- `PHSNetworkIncidentDirector`는 `ExternalThreat=200`, `InternalAccident=300` 결정론 RNG Stream과 Stage/Channel/Slot Scope를 사용한다.
+- 기존 외부/내부 자율 Scheduler는 새 Command 발행 권위를 가지지 않는다. `NetworkEventCoordinator.startSchedulerOnServerSpawn=false`이며 Map Runtime이 기존 Scheduler를 정지한다.
+- `Charging`에서만 신규 명령을 발행한다. `WarpSafe`에서는 신규 발행을 멈추고 이미 활성화된 사고 수리는 유지한다.
+- 점프가 승인된 `WarpArrival`, Shop, FinalShop, Clear, GameOver 전환에서는 Scene Runtime을 종료한 뒤 남은 Stage 명령과 Pressure를 명시 취소한다.
+- Scene의 `PHSMapIncidentCommandConsumer`가 외부 사건과 내부 사고를 실행하고 Runtime 종료를 원장에 완료 보고한다.
+- Unity Migration·Compile·Validator·Build를 통과했고 2 Peer에서 Command `4`, revision `14`, issued/resolved `4/4`, exact signature 복제를 확인했다.
+- Fire Patch 면적 확산·범위 피해는 이 원장 작업에 포함되지 않았으며 P1 후속이다.
 
 ## 6. 도메인별 상세 계약
 
@@ -824,7 +838,7 @@ P0는 Run 중 참가 금지지만 Snapshot은 복원 가능해야 한다.
 ### P0 구조 안정화
 
 1. Persistent `PHSNetworkRunSessionRoot`. — 1차 완료
-2. Run/Ship/Wallet/RNG Scene 독립. — Map Choice RNG까지 완료
+2. Run/Ship/Wallet/RNG/Incident Scene 독립. — Incident Migration·Build·2 Peer P0 완료
 3. Stage Timer 서버 복제. — `NetworkRunStageClock` 구현 완료
 4. 9구역/3구역 상점 규칙 통일. — 2인 Runtime 계약 통과, Map 시간·보상 Adapter 남음
 5. Shop Phase 우회 제거.
@@ -860,18 +874,21 @@ P0는 Run 중 참가 금지지만 Snapshot은 복원 가능해야 한다.
 
 ### 2026-07-18 현재 증거
 
+아래 증거는 Incident 원장·Director·Map Consumer를 포함한 최종 통합 Build의 2 Peer 자동 실행 결과다.
+
 - Unity `6000.5.2f1`, Compile Error `0`.
 - `PHS_0715_VALIDATE_OK errors=0 scenes=3 prefabs=11`.
-- `PHS_0717_VALIDATION_BUILD_OK path=Builds/PHS0717Validation/LastJumpCrew.exe size=345187300`.
-- 새 Development Build에서 `PHS_P0_RESULT PASS ... zones=9 shopCycles=3 runPhase=Clear`.
-- Stage Clock sequence `1~9`의 MapId가 Active Map과 일치했고 Host/Client Remaining 최대 차는 `0.054초`였다.
+- `PHS_0717_VALIDATION_BUILD_OK path=Builds/PHS0717Validation/LastJumpCrew.exe size=345281876`.
+- 새 Development Build에서 `PHS_P0_RESULT PASS ... zones=9 shopCycles=3 runPhase=Clear incidentCommands=4 incidentRevision=14 incidentPeers=2`.
+- Incident 원장은 issued/resolved `4/4`, revision `14`였고 Host/Client signature `6ED83C1DA5F496F4`가 일치했다.
+- Stage Clock sequence `1~9`의 MapId가 Active Map과 일치했고 Host/Client Remaining 최대 차는 `0.065초`였다.
 - Warp Pause 뒤 `1.5초` 동안 Remaining 변화는 `0.000초`였고, Shop 복귀 전 선택 Map Commit 뒤 sequence `5`를 시작했다.
-- Debris 판매 후 2 Peer가 같은 `SaleCredit` 거래와 `credits=553`을 수신했다.
+- Debris 판매 후 2 Peer가 같은 `SaleCredit` 거래와 `credits=531`을 수신했다.
 - 구매 실패는 Economy revision/Delivery count 변화 없이 거절됐고, 성공은 `pending=1`로 복제됐다.
-- Map 복귀 상자 적용 뒤 2 Peer가 `credits=443`, `pending=0`, `claimed=0`, `delivered=1`을 수신했다.
-- Root RNG Snapshot은 2 Peer에서 `seed=12137645481030649992`, `algorithm=1`, `revision=1`로 일치했다.
+- Map 복귀 상자 적용 뒤 2 Peer가 `credits=411`, `pending=0`, `claimed=0`, `delivered=1`을 수신했다.
+- Root RNG Snapshot은 2 Peer에서 `seed=3042137847702369989`, `algorithm=1`, `revision=1`로 일치했다.
 - 9회 Map Choice의 실제 좌·우 MapId가 같은 Seed/Stream/Scope 재생값과 모두 일치했고, `ExternalThreat` Stream 소비 전후 결과도 같았다.
-- Runner 표준 Health `PHS_P0_LOG_HEALTH_OK`.
+- Runner 표준 Health `PHS_P0_LOG_HEALTH_OK`; `PHS_MAP_INCIDENT_SCHEDULE_PENDING_FAILED`도 Host/Client 모두 `0`.
 - 정확한 Debris 중복 등록 예외, `SceneEventInProgress`, `PHS_NETWORK_ITEM_PHYSICS_FAILED`, `PHS_DEBRIS_STREAM_SETUP_FAILED`는 Host/Client 모두 `0`.
 - Headless NullGfx에서만 발생하던 MiniGame Lamp Shader 속성 오탐을 분리했고, 실제 Material의 `_EMISSION`을 활성화했다.
 - `PHS_MINIGAME_INDICATOR_SLOT_INVALID`와 `PHS_MINIGAME_INDICATOR_SETUP_INVALID`도 Host/Client 모두 `0`.

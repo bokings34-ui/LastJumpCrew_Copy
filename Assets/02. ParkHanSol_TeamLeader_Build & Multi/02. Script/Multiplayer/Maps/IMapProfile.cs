@@ -36,6 +36,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Maps
         PHSMapSkyboxMode SkyboxMode { get; }
         Material GameplaySkybox { get; }
         Material ArrivalSkybox { get; }
+        int IncidentPressureCapacity { get; }
         IReadOnlyList<PHSMapEventWeight> ExternalThreatWeights { get; }
         float ExternalThreatIntervalMinSeconds { get; }
         float ExternalThreatIntervalMaxSeconds { get; }

@@ -18,6 +18,8 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
     [RequireComponent(typeof(PHSShipEventImpactAdapter))]
     [RequireComponent(typeof(NetworkRunEconomyLedger))]
     [RequireComponent(typeof(NetworkRunRandomLedger))]
+    [RequireComponent(typeof(NetworkRunIncidentLedger))]
+    [RequireComponent(typeof(PHSNetworkIncidentDirector))]
     public sealed class NetworkRunSessionRoot : NetworkBehaviour
     {
         public static NetworkRunSessionRoot Instance { get; private set; }
@@ -28,6 +30,8 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
         public NetworkShipSystemsState ShipSystems { get; private set; }
         public NetworkRunEconomyLedger Economy { get; private set; }
         public NetworkRunRandomLedger Rng { get; private set; }
+        public NetworkRunIncidentLedger Incidents { get; private set; }
+        public PHSNetworkIncidentDirector IncidentDirector { get; private set; }
 
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
         private static void ResetStatics()
@@ -43,6 +47,8 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
             ShipSystems = GetComponent<NetworkShipSystemsState>();
             Economy = GetComponent<NetworkRunEconomyLedger>();
             Rng = GetComponent<NetworkRunRandomLedger>();
+            Incidents = GetComponent<NetworkRunIncidentLedger>();
+            IncidentDirector = GetComponent<PHSNetworkIncidentDirector>();
         }
 
         public override void OnNetworkSpawn()

@@ -10,6 +10,7 @@ using LastJumpCrew.ParkHanSol.Multiplayer.Events.MiniGames;
 using LastJumpCrew.ParkHanSol.Shop;
 using LastJumpCrew.SeoBoGyeong;
 using SM;
+using Unity.Collections;
 using Unity.Netcode;
 using UnityEngine;
 using UnityEngine.SceneManagement;
@@ -37,6 +38,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Validation
         private readonly Dictionary<ulong, RunFlowReport> runFlowReports = new();
         private readonly Dictionary<ulong, StageClockReport> stageClockReports = new();
         private readonly Dictionary<ulong, EconomyReport> economyReports = new();
+        private readonly Dictionary<ulong, IncidentReport> incidentReports = new();
         private readonly Dictionary<ulong, DebrisSaleStateReport> debrisSaleStateReports = new();
         private readonly Dictionary<ulong, EventSnapshotReport> eventSnapshotReports = new();
         private readonly Dictionary<ulong, EventTerminalReport> eventTerminalReports = new();
@@ -67,6 +69,8 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Validation
         private ulong activeObservedInstanceId;
         private NetworkEventCoordinator observedEventCoordinator;
         private uint initialStageClockSequence;
+        private int validatedIncidentCommandCount;
+        private uint validatedIncidentRevision;
 
         private readonly struct GaugeReport
         {
@@ -215,6 +219,26 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Validation
             public NetworkRunEconomyTransactionKind LastTransactionKind { get; }
         }
 
+        private readonly struct IncidentReport
+        {
+            public IncidentReport(
+                bool found,
+                NetworkRunIncidentSnapshot snapshot,
+                int commandCount,
+                ulong commandSignature)
+            {
+                Found = found;
+                Snapshot = snapshot;
+                CommandCount = commandCount;
+                CommandSignature = commandSignature;
+            }
+
+            public bool Found { get; }
+            public NetworkRunIncidentSnapshot Snapshot { get; }
+            public int CommandCount { get; }
+            public ulong CommandSignature { get; }
+        }
+
         private readonly struct EventSnapshotReport
         {
             public EventSnapshotReport(
@@ -354,6 +378,9 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Validation
             if (scenarioFinished) yield break;
 
             yield return ProbeScenes(MapSceneName);
+            if (scenarioFinished) yield break;
+
+            yield return RunIncidentLedgerValidation();
             if (scenarioFinished) yield break;
 
             yield return RunEventLifecycleValidation();
@@ -572,7 +599,812 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Validation
                 $"unsafeReject={unsafeReason} safe={safePlayerCountBeforeWarp}/{requiredSafePlayerCountBeforeWarp} " +
                 $"zones={coordinator.ClearedZoneCount} shopCycles={coordinator.CompletedShopCycleCount} " +
                 $"runPhase={coordinator.Phase} runPeers={runFlowReports.Count} " +
+                $"incidentCommands={validatedIncidentCommandCount} " +
+                $"incidentRevision={validatedIncidentRevision} incidentPeers={incidentReports.Count} " +
                 "events=3 miniGameApiOutcomes=6 eventPeers=2 farEventReject=true");
+        }
+
+        private IEnumerator RunIncidentLedgerValidation()
+        {
+            yield return WaitFor(
+                IsIncidentLedgerValidationReady,
+                15f,
+                "incident_ledger_validation_setup_not_ready");
+            if (scenarioFinished) yield break;
+
+            var root = NetworkRunSessionRoot.Instance;
+            var director = root.IncidentDirector;
+            var ledger = root.Incidents;
+            var schedulingWasEnabled = director.SchedulingEnabled;
+            if (!director.TrySetSchedulingEnabledServer(
+                    false,
+                    out var pauseReason))
+            {
+                Fail(
+                    $"incident_validation_pause_failed reason={pauseReason ?? "none"}");
+                yield break;
+            }
+
+            var validationSucceeded = false;
+            var validationReason = "incident_validation_unknown";
+            var expectedSnapshot = default(NetworkRunIncidentSnapshot);
+            var expectedCommandCount = 0;
+            var expectedCommandSignature = 0UL;
+            try
+            {
+                validationSucceeded = TryExerciseIncidentLedgerServer(
+                    ledger,
+                    director,
+                    out expectedSnapshot,
+                    out expectedCommandCount,
+                    out expectedCommandSignature,
+                    out validationReason);
+            }
+            catch (Exception exception)
+            {
+                validationReason =
+                    $"incident_validation_exception:{exception.GetType().Name}";
+            }
+
+            if (!validationSucceeded)
+            {
+                TryCancelValidationIncidentCommands(ledger);
+                var restored = director.TrySetSchedulingEnabledServer(
+                    schedulingWasEnabled,
+                    out var restoreReason);
+                Fail(
+                    restored
+                        ? validationReason
+                        : $"{validationReason};incident_restore_failed:" +
+                          $"{restoreReason ?? "none"}");
+                yield break;
+            }
+
+            yield return ProbeIncidentState(
+                expectedSnapshot,
+                expectedCommandCount,
+                expectedCommandSignature);
+
+            var restoreSucceeded = director.TrySetSchedulingEnabledServer(
+                schedulingWasEnabled,
+                out var finalRestoreReason);
+            if (scenarioFinished) yield break;
+            if (!restoreSucceeded)
+            {
+                Fail(
+                    $"incident_validation_restore_failed " +
+                    $"reason={finalRestoreReason ?? "none"}");
+                yield break;
+            }
+
+            validatedIncidentCommandCount = expectedCommandCount;
+            validatedIncidentRevision = expectedSnapshot.Revision;
+            Debug.Log(
+                $"PHS_P0_INCIDENT_LEDGER_OK peers={incidentReports.Count} " +
+                $"commands={expectedCommandCount} revision={expectedSnapshot.Revision} " +
+                $"issued={expectedSnapshot.StageIssuedCount} " +
+                $"resolved={expectedSnapshot.StageResolvedCount} " +
+                $"signature={expectedCommandSignature:X16}",
+                this);
+        }
+
+        private bool IsIncidentLedgerValidationReady()
+        {
+            var root = NetworkRunSessionRoot.Instance;
+            if (root == null
+                || !root.IsSpawned
+                || !root.IsServer
+                || root.IncidentDirector == null
+                || root.Incidents == null
+                || !root.Incidents.IsSpawned
+                || !root.Incidents.IsServer
+                || !root.IncidentDirector.IsConfigured
+                || root.IncidentDirector.Definition == null)
+            {
+                return false;
+            }
+
+            var snapshot = root.Incidents.Snapshot;
+            var definition = root.IncidentDirector.Definition;
+            return snapshot.State == NetworkRunIncidentStageState.Active
+                && snapshot.MapId == definition.MapId
+                && snapshot.StageSequence == definition.StageSequence;
+        }
+
+        private bool TryExerciseIncidentLedgerServer(
+            NetworkRunIncidentLedger ledger,
+            PHSNetworkIncidentDirector director,
+            out NetworkRunIncidentSnapshot finalSnapshot,
+            out int finalCommandCount,
+            out ulong finalCommandSignature,
+            out string reason)
+        {
+            finalSnapshot = default;
+            finalCommandCount = 0;
+            finalCommandSignature = 0UL;
+            var initial = ledger.Snapshot;
+            var definition = director.Definition;
+            var initialCommandCount = ledger.CommandCount;
+            if (initial.State != NetworkRunIncidentStageState.Active
+                || initial.PressureCapacity != 3
+                || definition.PressureCapacity != 3
+                || definition.MaximumActiveExternal != 1
+                || definition.MaximumActiveInternal != 2)
+            {
+                reason =
+                    $"incident_validation_capacity_contract_mismatch:" +
+                    $"state={initial.State}:pressure={initial.PressureCapacity}/" +
+                    $"{definition.PressureCapacity}:external=" +
+                    $"{definition.MaximumActiveExternal}:internal=" +
+                    $"{definition.MaximumActiveInternal}";
+                return false;
+            }
+
+            if (initial.ReservedPressure != 0
+                || initial.ActivePressure != 0
+                || initial.ActiveExternalCount != 0
+                || initial.ActiveInternalCount != 0
+                || !initial.ActiveWarpChargeMultiplier.Equals(1f))
+            {
+                reason =
+                    $"incident_validation_ledger_not_idle:" +
+                    $"reserved={initial.ReservedPressure}:active={initial.ActivePressure}:" +
+                    $"external={initial.ActiveExternalCount}:" +
+                    $"internal={initial.ActiveInternalCount}:" +
+                    $"multiplier={initial.ActiveWarpChargeMultiplier}";
+                return false;
+            }
+
+            var externalRequest = CreateValidationIncidentRequest(
+                initial,
+                "external",
+                NetworkRunIncidentChannel.External,
+                NetworkRunIncidentPayloadKind.EventManagerEvent,
+                NetworkRunIncidentFamily.Enemy,
+                int.MaxValue,
+                1,
+                0.5f);
+            var beforeMutation = ledger.Snapshot;
+            if (!ledger.TryReserveCommandServer(
+                    in externalRequest,
+                    out var externalCommand,
+                    out var operationReason))
+            {
+                reason =
+                    $"incident_external_reserve_failed:{operationReason ?? "none"}";
+                return false;
+            }
+
+            var current = ledger.Snapshot;
+            if (externalCommand.CommandId != beforeMutation.NextCommandId
+                || externalCommand.State != NetworkRunIncidentCommandState.Pending
+                || current.Revision
+                    != NextNonZeroSequence(beforeMutation.Revision)
+                || current.ReservedPressure != 1
+                || current.ActivePressure != 0
+                || current.ActiveExternalCount != 1
+                || current.ActiveInternalCount != 0
+                || current.StageIssuedCount
+                    != NextNonZeroSequence(beforeMutation.StageIssuedCount)
+                || ledger.CommandCount != initialCommandCount + 1)
+            {
+                reason = "incident_external_reserve_state_invalid";
+                return false;
+            }
+
+            beforeMutation = ledger.Snapshot;
+            var commandCountBeforeReplay = ledger.CommandCount;
+            if (!ledger.TryReserveCommandServer(
+                    in externalRequest,
+                    out var externalReplay,
+                    out operationReason)
+                || !externalReplay.Equals(externalCommand)
+                || !IsIncidentLedgerUnchanged(
+                    ledger,
+                    beforeMutation,
+                    commandCountBeforeReplay))
+            {
+                reason =
+                    $"incident_request_replay_not_idempotent:" +
+                    $"{operationReason ?? "none"}";
+                return false;
+            }
+
+            var conflictingRequest = externalRequest;
+            conflictingRequest.ContentId = int.MaxValue - 1;
+            beforeMutation = ledger.Snapshot;
+            commandCountBeforeReplay = ledger.CommandCount;
+            if (ledger.TryReserveCommandServer(
+                    in conflictingRequest,
+                    out _,
+                    out operationReason)
+                || operationReason != "request_id_conflict"
+                || !IsIncidentLedgerUnchanged(
+                    ledger,
+                    beforeMutation,
+                    commandCountBeforeReplay))
+            {
+                reason =
+                    $"incident_request_conflict_guard_failed:" +
+                    $"{operationReason ?? "none"}";
+                return false;
+            }
+
+            var externalCapRequest = CreateValidationIncidentRequest(
+                initial,
+                "external_cap",
+                NetworkRunIncidentChannel.External,
+                NetworkRunIncidentPayloadKind.EventManagerEvent,
+                NetworkRunIncidentFamily.Meteor,
+                int.MaxValue - 2,
+                1,
+                1f);
+            beforeMutation = ledger.Snapshot;
+            commandCountBeforeReplay = ledger.CommandCount;
+            if (ledger.TryReserveCommandServer(
+                    in externalCapRequest,
+                    out _,
+                    out operationReason)
+                || operationReason != "external_command_cap_reached"
+                || !IsIncidentLedgerUnchanged(
+                    ledger,
+                    beforeMutation,
+                    commandCountBeforeReplay))
+            {
+                reason =
+                    $"incident_external_cap_guard_failed:" +
+                    $"{operationReason ?? "none"}";
+                return false;
+            }
+
+            var executorId = NetworkObjectId;
+            beforeMutation = ledger.Snapshot;
+            if (!ledger.TryClaimCommandServer(
+                    externalCommand.CommandId,
+                    executorId,
+                    out var claimedExternal,
+                    out operationReason)
+                || claimedExternal.State
+                    != NetworkRunIncidentCommandState.Claimed
+                || claimedExternal.ExecutorNetworkObjectId != executorId
+                || ledger.Snapshot.Revision
+                    != NextNonZeroSequence(beforeMutation.Revision)
+                || ledger.Snapshot.ReservedPressure != 1
+                || ledger.Snapshot.ActivePressure != 0)
+            {
+                reason =
+                    $"incident_claim_failed:{operationReason ?? "none"}";
+                return false;
+            }
+
+            beforeMutation = ledger.Snapshot;
+            commandCountBeforeReplay = ledger.CommandCount;
+            if (!ledger.TryClaimCommandServer(
+                    externalCommand.CommandId,
+                    executorId,
+                    out var claimReplay,
+                    out operationReason)
+                || !claimReplay.Equals(claimedExternal)
+                || !IsIncidentLedgerUnchanged(
+                    ledger,
+                    beforeMutation,
+                    commandCountBeforeReplay))
+            {
+                reason =
+                    $"incident_claim_replay_not_idempotent:" +
+                    $"{operationReason ?? "none"}";
+                return false;
+            }
+
+            const ulong ExternalRuntimeInstanceId = 0xF000000000000001UL;
+            const string ExternalTargetId = "p0_validation_external";
+            beforeMutation = ledger.Snapshot;
+            commandCountBeforeReplay = ledger.CommandCount;
+            var commandSignatureBeforeGuard =
+                ComputeIncidentCommandSignature(ledger);
+            if (ledger.TryActivateCommandServer(
+                    externalCommand.CommandId,
+                    executorId,
+                    ExternalRuntimeInstanceId,
+                    string.Empty,
+                    out operationReason)
+                || operationReason != "target_id_required"
+                || !IsIncidentLedgerUnchanged(
+                    ledger,
+                    beforeMutation,
+                    commandCountBeforeReplay)
+                || ComputeIncidentCommandSignature(ledger)
+                    != commandSignatureBeforeGuard)
+            {
+                reason =
+                    $"incident_empty_target_guard_failed:" +
+                    $"{operationReason ?? "none"}";
+                return false;
+            }
+
+            beforeMutation = ledger.Snapshot;
+            if (!ledger.TryActivateCommandServer(
+                    externalCommand.CommandId,
+                    executorId,
+                    ExternalRuntimeInstanceId,
+                    ExternalTargetId,
+                    out operationReason)
+                || ledger.Snapshot.Revision
+                    != NextNonZeroSequence(beforeMutation.Revision)
+                || ledger.Snapshot.ReservedPressure != 0
+                || ledger.Snapshot.ActivePressure != 1
+                || !ledger.Snapshot.ActiveWarpChargeMultiplier.Equals(0.5f)
+                || !ledger.TryGetCommand(
+                    externalCommand.CommandId,
+                    out var activeExternal)
+                || activeExternal.State
+                    != NetworkRunIncidentCommandState.Active
+                || activeExternal.RuntimeInstanceId
+                    != ExternalRuntimeInstanceId
+                || activeExternal.TargetId.ToString() != ExternalTargetId)
+            {
+                reason =
+                    $"incident_activate_failed:{operationReason ?? "none"}";
+                return false;
+            }
+
+            beforeMutation = ledger.Snapshot;
+            commandCountBeforeReplay = ledger.CommandCount;
+            if (!ledger.TryActivateCommandServer(
+                    externalCommand.CommandId,
+                    executorId,
+                    ExternalRuntimeInstanceId,
+                    ExternalTargetId,
+                    out operationReason)
+                || !IsIncidentLedgerUnchanged(
+                    ledger,
+                    beforeMutation,
+                    commandCountBeforeReplay))
+            {
+                reason =
+                    $"incident_activate_replay_not_idempotent:" +
+                    $"{operationReason ?? "none"}";
+                return false;
+            }
+
+            const string ExternalOutcomeId = "p0_validation_resolved";
+            beforeMutation = ledger.Snapshot;
+            if (!ledger.TryCompleteCommandServer(
+                    externalCommand.CommandId,
+                    executorId,
+                    true,
+                    ExternalOutcomeId,
+                    out operationReason)
+                || ledger.Snapshot.Revision
+                    != NextNonZeroSequence(beforeMutation.Revision)
+                || ledger.Snapshot.ReservedPressure != 0
+                || ledger.Snapshot.ActivePressure != 0
+                || ledger.Snapshot.ActiveExternalCount != 0
+                || !ledger.Snapshot.ActiveWarpChargeMultiplier.Equals(1f)
+                || !ledger.TryGetCommand(
+                    externalCommand.CommandId,
+                    out var completedExternal)
+                || completedExternal.State
+                    != NetworkRunIncidentCommandState.Resolved
+                || completedExternal.OutcomeId.ToString()
+                    != ExternalOutcomeId)
+            {
+                reason =
+                    $"incident_complete_failed:{operationReason ?? "none"}";
+                return false;
+            }
+
+            beforeMutation = ledger.Snapshot;
+            commandCountBeforeReplay = ledger.CommandCount;
+            if (!ledger.TryCompleteCommandServer(
+                    externalCommand.CommandId,
+                    executorId,
+                    true,
+                    ExternalOutcomeId,
+                    out operationReason)
+                || !IsIncidentLedgerUnchanged(
+                    ledger,
+                    beforeMutation,
+                    commandCountBeforeReplay))
+            {
+                reason =
+                    $"incident_complete_replay_not_idempotent:" +
+                    $"{operationReason ?? "none"}";
+                return false;
+            }
+
+            var invalidMultiplierRequest = CreateValidationIncidentRequest(
+                initial,
+                "multiplier_out_of_range",
+                NetworkRunIncidentChannel.External,
+                NetworkRunIncidentPayloadKind.EventManagerEvent,
+                NetworkRunIncidentFamily.Meteor,
+                int.MaxValue - 3,
+                1,
+                1.01f);
+            beforeMutation = ledger.Snapshot;
+            commandCountBeforeReplay = ledger.CommandCount;
+            commandSignatureBeforeGuard =
+                ComputeIncidentCommandSignature(ledger);
+            if (ledger.TryReserveCommandServer(
+                    in invalidMultiplierRequest,
+                    out _,
+                    out operationReason)
+                || operationReason != "warp_charge_multiplier_out_of_range"
+                || !IsIncidentLedgerUnchanged(
+                    ledger,
+                    beforeMutation,
+                    commandCountBeforeReplay)
+                || ComputeIncidentCommandSignature(ledger)
+                    != commandSignatureBeforeGuard)
+            {
+                reason =
+                    $"incident_multiplier_range_guard_failed:" +
+                    $"{operationReason ?? "none"}";
+                return false;
+            }
+
+            var internalFirstRequest = CreateValidationIncidentRequest(
+                initial,
+                "internal_1",
+                NetworkRunIncidentChannel.Internal,
+                NetworkRunIncidentPayloadKind.ShipAccident,
+                NetworkRunIncidentFamily.Fire,
+                int.MaxValue - 10,
+                1,
+                0.8f);
+            var internalSecondRequest = CreateValidationIncidentRequest(
+                initial,
+                "internal_2",
+                NetworkRunIncidentChannel.Internal,
+                NetworkRunIncidentPayloadKind.ShipAccident,
+                NetworkRunIncidentFamily.Oxygen,
+                int.MaxValue - 11,
+                1,
+                0.8f);
+            if (!ledger.TryReserveCommandServer(
+                    in internalFirstRequest,
+                    out var internalFirst,
+                    out operationReason)
+                || !ledger.TryReserveCommandServer(
+                    in internalSecondRequest,
+                    out var internalSecond,
+                    out operationReason)
+                || ledger.Snapshot.ReservedPressure != 2
+                || ledger.Snapshot.ActivePressure != 0
+                || ledger.Snapshot.ActiveExternalCount != 0
+                || ledger.Snapshot.ActiveInternalCount != 2)
+            {
+                reason =
+                    $"incident_internal_two_reserve_failed:" +
+                    $"{operationReason ?? "none"}";
+                return false;
+            }
+
+            var internalCapRequest = CreateValidationIncidentRequest(
+                initial,
+                "internal_cap",
+                NetworkRunIncidentChannel.Internal,
+                NetworkRunIncidentPayloadKind.ShipAccident,
+                NetworkRunIncidentFamily.Power,
+                int.MaxValue - 12,
+                1,
+                1f);
+            beforeMutation = ledger.Snapshot;
+            commandCountBeforeReplay = ledger.CommandCount;
+            if (ledger.TryReserveCommandServer(
+                    in internalCapRequest,
+                    out _,
+                    out operationReason)
+                || operationReason != "internal_command_cap_reached"
+                || !IsIncidentLedgerUnchanged(
+                    ledger,
+                    beforeMutation,
+                    commandCountBeforeReplay))
+            {
+                reason =
+                    $"incident_internal_cap_guard_failed:" +
+                    $"{operationReason ?? "none"}";
+                return false;
+            }
+
+            const string CancelReason = "p0_validation_cancel";
+            beforeMutation = ledger.Snapshot;
+            if (!ledger.TryCancelCommandServer(
+                    internalFirst.CommandId,
+                    CancelReason,
+                    out operationReason)
+                || ledger.Snapshot.Revision
+                    != NextNonZeroSequence(beforeMutation.Revision)
+                || ledger.Snapshot.ReservedPressure != 1
+                || ledger.Snapshot.ActiveInternalCount != 1)
+            {
+                reason =
+                    $"incident_pending_cancel_failed:" +
+                    $"{operationReason ?? "none"}";
+                return false;
+            }
+
+            beforeMutation = ledger.Snapshot;
+            commandCountBeforeReplay = ledger.CommandCount;
+            if (!ledger.TryCancelCommandServer(
+                    internalFirst.CommandId,
+                    CancelReason,
+                    out operationReason)
+                || !IsIncidentLedgerUnchanged(
+                    ledger,
+                    beforeMutation,
+                    commandCountBeforeReplay))
+            {
+                reason =
+                    $"incident_cancel_replay_not_idempotent:" +
+                    $"{operationReason ?? "none"}";
+                return false;
+            }
+
+            if (!ledger.TryCancelCommandServer(
+                    internalSecond.CommandId,
+                    CancelReason,
+                    out operationReason)
+                || ledger.Snapshot.ReservedPressure != 0
+                || ledger.Snapshot.ActivePressure != 0
+                || ledger.Snapshot.ActiveInternalCount != 0)
+            {
+                reason =
+                    $"incident_second_internal_cancel_failed:" +
+                    $"{operationReason ?? "none"}";
+                return false;
+            }
+
+            const ulong InternalRuntimeInstanceId = 0xF000000000000002UL;
+            const string InternalTargetId = "p0_validation_internal";
+            var pressureRequest = CreateValidationIncidentRequest(
+                initial,
+                "pressure_3",
+                NetworkRunIncidentChannel.Internal,
+                NetworkRunIncidentPayloadKind.ShipAccident,
+                NetworkRunIncidentFamily.Hull,
+                int.MaxValue - 20,
+                3,
+                0f);
+            pressureRequest.TargetId =
+                new FixedString64Bytes(InternalTargetId);
+            if (!ledger.TryReserveCommandServer(
+                    in pressureRequest,
+                    out var pressureCommand,
+                    out operationReason)
+                || ledger.Snapshot.ReservedPressure != 3
+                || ledger.Snapshot.ActivePressure != 0
+                || ledger.Snapshot.ActiveInternalCount != 1)
+            {
+                reason =
+                    $"incident_total_pressure_reserve_failed:" +
+                    $"{operationReason ?? "none"}";
+                return false;
+            }
+
+            var pressureOverflowRequest = CreateValidationIncidentRequest(
+                initial,
+                "pressure_overflow",
+                NetworkRunIncidentChannel.Internal,
+                NetworkRunIncidentPayloadKind.ShipAccident,
+                NetworkRunIncidentFamily.Device,
+                int.MaxValue - 21,
+                1,
+                1f);
+            beforeMutation = ledger.Snapshot;
+            commandCountBeforeReplay = ledger.CommandCount;
+            if (ledger.TryReserveCommandServer(
+                    in pressureOverflowRequest,
+                    out _,
+                    out operationReason)
+                || operationReason
+                    != "incident_pressure_capacity_exceeded"
+                || !IsIncidentLedgerUnchanged(
+                    ledger,
+                    beforeMutation,
+                    commandCountBeforeReplay))
+            {
+                reason =
+                    $"incident_total_pressure_guard_failed:" +
+                    $"{operationReason ?? "none"}";
+                return false;
+            }
+
+            if (!ledger.TryClaimCommandServer(
+                    pressureCommand.CommandId,
+                    executorId,
+                    out _,
+                    out operationReason))
+            {
+                reason =
+                    $"incident_pressure_claim_failed:" +
+                    $"{operationReason ?? "none"}";
+                return false;
+            }
+
+            beforeMutation = ledger.Snapshot;
+            commandCountBeforeReplay = ledger.CommandCount;
+            commandSignatureBeforeGuard =
+                ComputeIncidentCommandSignature(ledger);
+            if (ledger.TryActivateCommandServer(
+                    pressureCommand.CommandId,
+                    executorId,
+                    InternalRuntimeInstanceId,
+                    "p0_validation_internal_conflict",
+                    out operationReason)
+                || operationReason != "target_id_conflict"
+                || !IsIncidentLedgerUnchanged(
+                    ledger,
+                    beforeMutation,
+                    commandCountBeforeReplay)
+                || ComputeIncidentCommandSignature(ledger)
+                    != commandSignatureBeforeGuard)
+            {
+                reason =
+                    $"incident_fixed_target_guard_failed:" +
+                    $"{operationReason ?? "none"}";
+                return false;
+            }
+
+            beforeMutation = ledger.Snapshot;
+            if (!ledger.TryActivateCommandServer(
+                    pressureCommand.CommandId,
+                    executorId,
+                    InternalRuntimeInstanceId,
+                    InternalTargetId,
+                    out operationReason)
+                || ledger.Snapshot.Revision
+                    != NextNonZeroSequence(beforeMutation.Revision)
+                || ledger.Snapshot.ReservedPressure != 0
+                || ledger.Snapshot.ActivePressure != 3
+                || !ledger.Snapshot.ActiveWarpChargeMultiplier.Equals(0f)
+                || !ledger.TryGetCommand(
+                    pressureCommand.CommandId,
+                    out var activePressureCommand)
+                || activePressureCommand.TargetId.ToString()
+                    != InternalTargetId)
+            {
+                reason =
+                    $"incident_pressure_activate_failed:" +
+                    $"{operationReason ?? "none"}";
+                return false;
+            }
+
+            const string ActiveCancelReason = "p0_validation_active_cancel";
+            beforeMutation = ledger.Snapshot;
+            if (!ledger.TryCancelCommandServer(
+                    pressureCommand.CommandId,
+                    ActiveCancelReason,
+                    out operationReason)
+                || ledger.Snapshot.Revision
+                    != NextNonZeroSequence(beforeMutation.Revision)
+                || ledger.Snapshot.ReservedPressure != 0
+                || ledger.Snapshot.ActivePressure != 0
+                || ledger.Snapshot.ActiveInternalCount != 0
+                || !ledger.Snapshot.ActiveWarpChargeMultiplier.Equals(1f))
+            {
+                reason =
+                    $"incident_active_cancel_failed:" +
+                    $"{operationReason ?? "none"}";
+                return false;
+            }
+
+            beforeMutation = ledger.Snapshot;
+            commandCountBeforeReplay = ledger.CommandCount;
+            if (!ledger.TryCancelCommandServer(
+                    pressureCommand.CommandId,
+                    ActiveCancelReason,
+                    out operationReason)
+                || !IsIncidentLedgerUnchanged(
+                    ledger,
+                    beforeMutation,
+                    commandCountBeforeReplay))
+            {
+                reason =
+                    $"incident_active_cancel_replay_not_idempotent:" +
+                    $"{operationReason ?? "none"}";
+                return false;
+            }
+
+            current = ledger.Snapshot;
+            if (current.State != NetworkRunIncidentStageState.Active
+                || current.MapId != initial.MapId
+                || current.StageSequence != initial.StageSequence
+                || current.PressureCapacity != 3
+                || current.ReservedPressure != 0
+                || current.ActivePressure != 0
+                || current.ActiveExternalCount != 0
+                || current.ActiveInternalCount != 0
+                || !current.ActiveWarpChargeMultiplier.Equals(1f)
+                || current.StageIssuedCount
+                    != AdvanceNonZeroSequence(
+                        initial.StageIssuedCount,
+                        4)
+                || current.StageResolvedCount
+                    != AdvanceNonZeroSequence(
+                        initial.StageResolvedCount,
+                        4)
+                || current.NextCommandId
+                    != AdvanceNonZeroCommandId(
+                        initial.NextCommandId,
+                        4)
+                || current.Revision
+                    != AdvanceNonZeroSequence(initial.Revision, 12)
+                || ledger.CommandCount != initialCommandCount + 4)
+            {
+                reason =
+                    $"incident_final_invariant_failed:" +
+                    $"revision={current.Revision}:issued={current.StageIssuedCount}:" +
+                    $"resolved={current.StageResolvedCount}:commands={ledger.CommandCount}:" +
+                    $"next={current.NextCommandId}";
+                return false;
+            }
+
+            finalSnapshot = current;
+            finalCommandCount = ledger.CommandCount;
+            finalCommandSignature = ComputeIncidentCommandSignature(ledger);
+            reason = null;
+            return true;
+        }
+
+        private static NetworkRunIncidentRequest CreateValidationIncidentRequest(
+            NetworkRunIncidentSnapshot stage,
+            string suffix,
+            NetworkRunIncidentChannel channel,
+            NetworkRunIncidentPayloadKind payloadKind,
+            NetworkRunIncidentFamily family,
+            int contentId,
+            ushort pressureCost,
+            float warpChargeMultiplier)
+        {
+            return new NetworkRunIncidentRequest(
+                new FixedString64Bytes(
+                    $"p0i:{stage.StageSequence}:{suffix}"),
+                0UL,
+                stage.StageSequence,
+                stage.MapId,
+                channel,
+                payloadKind,
+                family,
+                contentId,
+                NetworkRunIncidentSourceKind.Validation,
+                pressureCost,
+                warpChargeMultiplier,
+                default);
+        }
+
+        private static bool IsIncidentLedgerUnchanged(
+            NetworkRunIncidentLedger ledger,
+            NetworkRunIncidentSnapshot expectedSnapshot,
+            int expectedCommandCount)
+        {
+            return ledger.Snapshot.Equals(expectedSnapshot)
+                && ledger.CommandCount == expectedCommandCount;
+        }
+
+        private static void TryCancelValidationIncidentCommands(
+            NetworkRunIncidentLedger ledger)
+        {
+            if (ledger == null || !ledger.IsSpawned || !ledger.IsServer)
+            {
+                return;
+            }
+
+            for (var index = 0; index < ledger.CommandCount; index++)
+            {
+                var command = ledger.GetCommandAt(index);
+                if (!command.IsTerminal
+                    && command.RequestId.ToString().StartsWith(
+                        "p0i:",
+                        StringComparison.Ordinal))
+                {
+                    ledger.TryCancelCommandServer(
+                        command.CommandId,
+                        "p0_validation_cleanup",
+                        out _);
+                }
+            }
         }
 
         private IEnumerator RunEventLifecycleValidation()
@@ -1890,6 +2722,68 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Validation
                 $"pending={expectedPendingCount} claimed={expectedClaimedCount} " +
                 $"minimumDelivered={minimumDeliveredCount} transaction={expectedTransactionId} " +
                 $"kind={expectedTransactionKind} reports={reports}");
+        }
+
+        private IEnumerator ProbeIncidentState(
+            NetworkRunIncidentSnapshot expectedSnapshot,
+            int expectedCommandCount,
+            ulong expectedCommandSignature)
+        {
+            var deadline = Time.realtimeSinceStartup + 15f;
+            while (scenarioRunning
+                   && !scenarioFinished
+                   && Time.realtimeSinceStartup < deadline)
+            {
+                incidentReports.Clear();
+                var token = ++activeProbeToken;
+                ProbeIncidentStateClientRpc(token);
+
+                var probeDeadline = Mathf.Min(
+                    deadline,
+                    Time.realtimeSinceStartup + 2f);
+                while (incidentReports.Count < expectedClientCount
+                       && Time.realtimeSinceStartup < probeDeadline)
+                {
+                    yield return null;
+                }
+
+                if (incidentReports.Count >= expectedClientCount
+                    && incidentReports.Values.All(report =>
+                        report.Found
+                        && report.Snapshot.Equals(expectedSnapshot)
+                        && report.CommandCount == expectedCommandCount
+                        && report.CommandSignature
+                            == expectedCommandSignature))
+                {
+                    Debug.Log(
+                        $"PHS_P0_INCIDENT_SYNC_OK peers={incidentReports.Count} " +
+                        $"stage={expectedSnapshot.StageSequence} " +
+                        $"revision={expectedSnapshot.Revision} " +
+                        $"commands={expectedCommandCount} " +
+                        $"signature={expectedCommandSignature:X16}",
+                        this);
+                    yield break;
+                }
+
+                yield return new WaitForSecondsRealtime(0.2f);
+            }
+
+            var reports = incidentReports.Count == 0
+                ? "none"
+                : string.Join(
+                    ";",
+                    incidentReports.OrderBy(report => report.Key).Select(report =>
+                        $"{report.Key}:found={report.Value.Found}," +
+                        $"stage={report.Value.Snapshot.StageSequence}," +
+                        $"revision={report.Value.Snapshot.Revision}," +
+                        $"reserved={report.Value.Snapshot.ReservedPressure}," +
+                        $"active={report.Value.Snapshot.ActivePressure}," +
+                        $"commands={report.Value.CommandCount}," +
+                        $"signature={report.Value.CommandSignature:X16}"));
+            Fail(
+                $"incident_peer_sync_timeout stage={expectedSnapshot.StageSequence} " +
+                $"revision={expectedSnapshot.Revision} commands={expectedCommandCount} " +
+                $"signature={expectedCommandSignature:X16} reports={reports}");
         }
 
         private IEnumerator ProbeRunFlowState(
@@ -3879,6 +4773,25 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Validation
         }
 
         [ClientRpc]
+        private void ProbeIncidentStateClientRpc(uint token)
+        {
+            if (!IsScenarioEnabled()) return;
+
+            var incidentLedger = NetworkRunSessionRoot.Instance?.Incidents;
+            var found = incidentLedger != null
+                && incidentLedger.IsSpawned
+                && incidentLedger.Snapshot.Revision > 0U;
+            ReportIncidentStateServerRpc(
+                token,
+                found,
+                found ? incidentLedger.Snapshot : default,
+                found ? incidentLedger.CommandCount : -1,
+                found
+                    ? ComputeIncidentCommandSignature(incidentLedger)
+                    : 0UL);
+        }
+
+        [ClientRpc]
         private void ProbeEconomyStateClientRpc(uint token)
         {
             if (!IsScenarioEnabled()) return;
@@ -3977,6 +4890,24 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Validation
             if (!AcceptProbe(token)) return;
             debrisSaleStateReports[rpcParams.Receive.SenderClientId] =
                 new DebrisSaleStateReport(credits, revision, heldItemId);
+        }
+
+        [ServerRpc(RequireOwnership = false)]
+        private void ReportIncidentStateServerRpc(
+            uint token,
+            bool found,
+            NetworkRunIncidentSnapshot snapshot,
+            int commandCount,
+            ulong commandSignature,
+            ServerRpcParams rpcParams = default)
+        {
+            if (!AcceptProbe(token)) return;
+            incidentReports[rpcParams.Receive.SenderClientId] =
+                new IncidentReport(
+                    found,
+                    snapshot,
+                    commandCount,
+                    commandSignature);
         }
 
         [ServerRpc(RequireOwnership = false)]
@@ -4090,6 +5021,111 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Validation
                     randomRevision);
         }
 
+        private static ulong ComputeIncidentCommandSignature(
+            NetworkRunIncidentLedger ledger)
+        {
+            const ulong OffsetBasis = 14695981039346656037UL;
+            var signature = OffsetBasis;
+            MixIncidentSignature(
+                ref signature,
+                (ulong)ledger.CommandCount);
+            for (var index = 0; index < ledger.CommandCount; index++)
+            {
+                var command = ledger.GetCommandAt(index);
+                MixIncidentSignature(ref signature, command.CommandId);
+                MixIncidentSignature(ref signature, command.RequestId.ToString());
+                MixIncidentSignature(ref signature, command.ParentCommandId);
+                MixIncidentSignature(ref signature, command.StageSequence);
+                MixIncidentSignature(
+                    ref signature,
+                    unchecked((ulong)(long)command.MapId));
+                MixIncidentSignature(
+                    ref signature,
+                    (byte)command.Channel);
+                MixIncidentSignature(
+                    ref signature,
+                    (byte)command.PayloadKind);
+                MixIncidentSignature(
+                    ref signature,
+                    (byte)command.IncidentFamily);
+                MixIncidentSignature(
+                    ref signature,
+                    unchecked((ulong)(long)command.ContentId));
+                MixIncidentSignature(
+                    ref signature,
+                    (byte)command.SourceKind);
+                MixIncidentSignature(ref signature, command.PressureCost);
+                MixIncidentSignature(
+                    ref signature,
+                    BitConverter.GetBytes(command.WarpChargeMultiplier));
+                MixIncidentSignature(
+                    ref signature,
+                    (byte)command.State);
+                MixIncidentSignature(
+                    ref signature,
+                    command.ExecutorNetworkObjectId);
+                MixIncidentSignature(
+                    ref signature,
+                    command.RuntimeInstanceId);
+                MixIncidentSignature(ref signature, command.TargetId.ToString());
+                MixIncidentSignature(ref signature, command.OutcomeId.ToString());
+                MixIncidentSignature(ref signature, command.CancelReason.ToString());
+                MixIncidentSignature(ref signature, command.Revision);
+                MixIncidentSignature(ref signature, command.StateRevision);
+                MixIncidentSignature(
+                    ref signature,
+                    BitConverter.GetBytes(command.ChangedAtServerTime));
+            }
+
+            return signature;
+        }
+
+        private static void MixIncidentSignature(
+            ref ulong signature,
+            ulong value)
+        {
+            const ulong Prime = 1099511628211UL;
+            for (var shift = 0; shift < 64; shift += 8)
+            {
+                signature ^= (byte)(value >> shift);
+                signature *= Prime;
+            }
+        }
+
+        private static void MixIncidentSignature(
+            ref ulong signature,
+            byte value)
+        {
+            const ulong Prime = 1099511628211UL;
+            signature ^= value;
+            signature *= Prime;
+        }
+
+        private static void MixIncidentSignature(
+            ref ulong signature,
+            byte[] values)
+        {
+            MixIncidentSignature(ref signature, (ulong)values.Length);
+            for (var index = 0; index < values.Length; index++)
+            {
+                MixIncidentSignature(ref signature, values[index]);
+            }
+        }
+
+        private static void MixIncidentSignature(
+            ref ulong signature,
+            string value)
+        {
+            value ??= string.Empty;
+            MixIncidentSignature(ref signature, (ulong)value.Length);
+            for (var index = 0; index < value.Length; index++)
+            {
+                MixIncidentSignature(
+                    ref signature,
+                    (ulong)value[index]);
+            }
+        }
+
         private bool AcceptProbe(uint token)
         {
             return IsServer && scenarioRunning && !scenarioFinished && token == activeProbeToken;
@@ -4099,6 +5135,22 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Validation
         {
             sequence++;
             return sequence == 0U ? 1U : sequence;
+        }
+
+        private static ulong AdvanceNonZeroCommandId(
+            ulong commandId,
+            int steps)
+        {
+            for (var index = 0; index < steps; index++)
+            {
+                commandId++;
+                if (commandId == 0UL)
+                {
+                    commandId = 1UL;
+                }
+            }
+
+            return commandId;
         }
 
         private static uint AdvanceNonZeroSequence(uint sequence, int steps)

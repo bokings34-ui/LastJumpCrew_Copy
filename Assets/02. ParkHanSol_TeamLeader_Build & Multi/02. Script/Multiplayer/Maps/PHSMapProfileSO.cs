@@ -48,6 +48,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Maps
         [SerializeField] private Material arrivalSkybox;
 
         [Header("External Threat Schedule")]
+        [SerializeField, Range(1, 8)] private int incidentPressureCapacity = 3;
         [FormerlySerializedAs("eventWeights")]
         [SerializeField] private List<PHSMapEventWeight> externalThreatWeights = new();
         [FormerlySerializedAs("eventIntervalMinSeconds")]
@@ -55,14 +56,14 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Maps
         [FormerlySerializedAs("eventIntervalMaxSeconds")]
         [SerializeField, Min(0.1f)] private float externalThreatIntervalMaxSeconds = 60f;
         [FormerlySerializedAs("maximumActiveEvents")]
-        [Tooltip("0 = no limit")]
+        [Tooltip("0 = disabled. Production selectable maps use 1.")]
         [SerializeField, Min(0)] private int maximumActiveExternalThreats;
 
         [Header("Internal Accident Schedule")]
         [SerializeField] private List<PHSMapShipAccidentWeight> internalAccidentWeights = new();
         [SerializeField, Min(0.1f)] private float internalAccidentIntervalMinSeconds = 35f;
         [SerializeField, Min(0.1f)] private float internalAccidentIntervalMaxSeconds = 55f;
-        [Tooltip("0 = no limit")]
+        [Tooltip("0 = disabled. Production selectable maps use 2.")]
         [SerializeField, Min(0)] private int maximumActiveInternalAccidents;
         [SerializeField, Min(0.01f)] private float internalModuleDamageMultiplier = 1f;
         [SerializeField, Min(0.01f)] private float internalShipDamageMultiplier = 1f;
@@ -85,6 +86,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Maps
         public PHSMapSkyboxMode SkyboxMode => skyboxMode;
         public Material GameplaySkybox => gameplaySkybox;
         public Material ArrivalSkybox => arrivalSkybox;
+        public int IncidentPressureCapacity => incidentPressureCapacity;
         public IReadOnlyList<PHSMapEventWeight> ExternalThreatWeights => externalThreatWeights;
         public float ExternalThreatIntervalMinSeconds => externalThreatIntervalMinSeconds;
         public float ExternalThreatIntervalMaxSeconds => externalThreatIntervalMaxSeconds;
@@ -202,6 +204,12 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Maps
                 return false;
             }
 
+            if (incidentPressureCapacity <= 0 || incidentPressureCapacity > byte.MaxValue)
+            {
+                reason = $"incident_pressure_capacity_invalid:value={incidentPressureCapacity}";
+                return false;
+            }
+
             var eventIds = new HashSet<EventId>();
             for (var index = 0; index < (externalThreatWeights?.Count ?? 0); index++)
             {
@@ -250,6 +258,12 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Maps
                 return false;
             }
 
+            if (allowsEventGeneration && maximumActiveExternalThreats <= 0)
+            {
+                reason = "maximum_active_external_threats_required";
+                return false;
+            }
+
             if (allowsEventGeneration && (internalAccidentWeights == null || internalAccidentWeights.Count == 0))
             {
                 reason = "internal_accident_weights_missing";
@@ -289,6 +303,25 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Maps
             if (maximumActiveInternalAccidents < 0)
             {
                 reason = $"maximum_active_internal_accidents_negative:value={maximumActiveInternalAccidents}";
+                return false;
+            }
+
+            if (allowsEventGeneration && maximumActiveInternalAccidents <= 0)
+            {
+                reason = "maximum_active_internal_accidents_required";
+                return false;
+            }
+
+            if (maximumActiveExternalThreats > incidentPressureCapacity
+                || maximumActiveInternalAccidents > incidentPressureCapacity
+                || maximumActiveExternalThreats + maximumActiveInternalAccidents
+                    > incidentPressureCapacity)
+            {
+                reason =
+                    $"incident_channel_capacity_invalid:" +
+                    $"external={maximumActiveExternalThreats}:" +
+                    $"internal={maximumActiveInternalAccidents}:" +
+                    $"capacity={incidentPressureCapacity}";
                 return false;
             }
 

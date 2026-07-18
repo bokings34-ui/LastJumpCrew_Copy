@@ -7,9 +7,10 @@
 - 배분 원칙:
   - 기존 담당 폴더와 Notion 담당을 유지한다.
   - 팀원은 자기 담당 구역의 게임 투입 가능한 GameReady 최종 완성 Prefab을 납품한다.
+  - 조각 Prefab이나 미연결 기능은 받지 않는다. 실제 게임에 넣을 최종 완성품 하나와 그 종속 SO/자산만 접수한다.
   - 공용 씬, NetworkManager, Network Prefab, Build Settings는 통합 담당자만 수정한다.
   - NetworkObject/NetworkBehaviour/RPC와 네트워크 권위는 `02` 통합 계층에만 둔다.
-  - 박한솔은 팀 콘텐츠를 대신 완성하지 않고 배치·포트 연결·네트워크 조립만 한다.
+  - 박한솔은 팀 콘텐츠를 대신 완성하지 않고 배치·선언 포트·Network Adapter·Registry·검증만 한다.
 
 ## 1. 최종 소유권
 
@@ -65,6 +66,7 @@
 3. 같은 최종 Prefab을 Sandbox Scene에서 전체 생명주기로 증명한다.
 4. Manifest/README에 외부 통합 포트와 실제 자산 GUID를 기록한다.
 5. 박한솔은 Final Prefab/0715 Scene에 배치하고 `02` Network Adapter만 연결한다.
+6. 내부 기능 보완이 필요한 제출물은 박한솔이 수정하지 않고 원 담당자에게 revision 반려한다.
 
 ## 3. 공용 계약 동결
 
@@ -106,7 +108,7 @@
 
 ### PHS-P0-01 Persistent RunSessionRoot
 
-상태: `P0 핵심 생명주기·Stage Clock·Economy·RNG 원장 완료 / Incident 이후 연결 중`
+상태: `Stage Clock·Economy·RNG·Incident 원장 통합 및 2 Peer P0 검증 완료 / 4·8인·Late Join 검증 대기`
 
 완료:
 
@@ -122,7 +124,7 @@
 - 같은 루프에서 Root `NetworkObjectId=2` 단일 생성과 Ship State `revision=17` 재바인딩 확인.
 - Headless 시각 검증 오탐 제거, MiniGame Lamp 발광 Material과 Inspector Validator 수정.
 - Map Profile 기반 서버 권위 `NetworkRunStageClock`과 Host/Client HUD 단일 조회 연결.
-- 2인 전체 루프에서 Stage Clock sequence `1~9`, Shop 복귀 Commit, Remaining 최대 차 `0.054초`, Pause 안정 `0.000초` 검증.
+- 2인 전체 루프에서 Stage Clock sequence `1~9`, Shop 복귀 Commit, Remaining 최대 차 `0.065초`, Pause 안정 `0.000초` 검증.
 - `NetworkRunEconomyLedger`에서 Wallet과 Delivery Queue를 Root 수명으로 통합.
 - 구매 차감+Delivery 추가 단일 커밋, 판매 거래 ID 중복 방지, 수리 결제/환불 원장 기록 연결.
 - 개별 PurchaseId 영속 중복 차단, Root 늦은 Spawn 재바인딩, Snapshot/Delivery revision 관찰 순서 보강.
@@ -131,6 +133,10 @@
 - `NetworkRunRandomLedger`의 Seed/Algorithm Snapshot과 8개 고정 Stream ID 계약 구현.
 - Map Choice를 다음 구역 Scope 기반 결정론 RNG로 전환하고 다른 Stream 소비와 격리.
 - 2인 9구역 루프에서 실제 Map Choice를 원장 재생 기대값과 9회 대조하고, 다른 Stream 소비 비간섭과 `algorithm=1` golden vector를 검증.
+- Persistent `NetworkRunIncidentLedger`, `PHSNetworkIncidentDirector`, Map `PHSMapIncidentCommandConsumer` 코드 구현.
+- Incident Pressure `3`, 외부 `1`, 내부 `2`와 External/Internal/Anchor 결정론 RNG Stream 계약 구현.
+- 기존 자율 Scheduler 정지, WarpSafe 신규 발행 정지·기존 수리 유지, 점프 승인 후 WarpArrival/Terminal Runtime 종료와 Stage Cancel 생명주기 구현.
+- Incident Migration·Compile·Validator·Build와 2 Peer 원장 수명주기 검증 완료. Command `4`, revision `14`, Host/Client signature `6ED83C1DA5F496F4`.
 
 남음:
 
@@ -143,7 +149,7 @@
 
 목표:
 
-- Run/Ship/Wallet/RNG가 Scene과 Player 생명주기에 종속되지 않게 한다.
+- Run/Ship/Wallet/RNG/Incident가 Scene과 Player 생명주기에 종속되지 않게 한다.
 
 작업:
 
@@ -216,14 +222,34 @@
 
 ### PHS-P0-05 Incident Network Authority
 
-작업:
+구현 완료:
 
-- 외부/내부 Incident 공용 Pressure Budget.
-- Legacy Scheduler 활성 0개 Validator.
+- Persistent 외부/내부 Incident 공용 Pressure Budget과 Command 원장.
+- Pressure `3`, External `1`, Internal `2` 기본 한도.
+- External/Internal/Anchor 결정론 RNG Stream과 Schedule RequestId.
+- Map Scene Consumer의 Event/Ship Accident 실행과 Runtime 완료 보고.
+- Legacy 자율 Scheduler 정지와 `startSchedulerOnServerSpawn=false` Validator.
+- WarpSafe 신규 발행 정지·기존 수리 유지, 점프 승인 후 WarpArrival/Terminal Runtime 종료와 Stage Cancel.
+
+검증 완료:
+
+- Unity Migration·Compile·0715 Validator·Windows Build.
+- Host+Client Command 발행/Claim/Active/Complete/Cancel, Pressure `3`, multiplier `0..1`, 경계값 무변경 거절과 exact signature 복제.
+- `PHS_P0_RESULT PASS ... incidentCommands=4 incidentRevision=14 incidentPeers=2`.
+- `PHS_P0_LOG_HEALTH_OK`, Incident Stage 대기 실패 `0`.
+
+검증 대기:
+
+- 팀 GameReady Incident/Fire/Enemy Prefab 수령 뒤 Director → Consumer 실제 콘텐츠 자동 실행.
+- Legacy/New Fire 이중 발생 `0`.
+
+후속 작업:
+
 - External 720x만 NGO Scheduler에 허용.
 - 내부 1~7은 Ship Accident Coordinator만 허용.
 - Consequence 단계별 Idempotency.
 - MiniGame Session/Nonce/Occupancy/Expiry.
+- Fire Patch 확산·범위 피해.
 
 완료 기준:
 
@@ -254,11 +280,12 @@
 - Contract Validator.
 - 2인 Runtime Validation.
 - 9구역 전체 Loop 자동 검증.
-- Incident/Shop/Item 자동 회귀 검증.
+- 기존 Shop/Item 자동 회귀 검증.
 - Debris Hash/Physics/Scene Event/MiniGame Indicator 오류를 Runner Health 실패 조건에 추가.
 
 남음:
 
+- Incident 신규 원장·Director·Consumer 자동 회귀 검증.
 - Fire Patch 확산·범위 피해 회귀 검증.
 - 4/8인 Runtime Validation.
 - Late Join/복구 검증.
@@ -683,14 +710,15 @@ flowchart LR
 3. 2인 9구역/Shop 3회/FinalShop/Clear 자동 검증.
 4. Wallet/Delivery Economy 원장, 구매 원자 커밋, Map 복귀 Delivery 동기화.
 5. Run RNG 원장과 Map Choice 결정론적 Stream/Scope 연결.
+6. Incident 원장·Director·Scene Consumer와 Pressure/RNG/Phase 생명주기 구현 및 2 Peer P0 검증.
 
 현재 직접 남음:
 
-1. Incident Pressure/Budget 원장과 통합 Scheduler 계약.
-2. Debris/Shop RNG 소비자 연결.
-3. Compatibility와 Session Approval 계약.
-4. Run 규칙/Active Map Commit의 남은 통합 검증.
-5. 외부 수집 Safe/Danger의 남은 통합.
+1. Debris/Shop RNG 소비자 연결.
+2. Compatibility와 Session Approval 계약.
+3. Run 규칙/Active Map Commit의 남은 통합 검증.
+4. 외부 수집 Safe/Danger의 남은 통합.
+5. 팀 GameReady Incident/Fire/Enemy Prefab의 Director → Consumer 실제 실행 연결.
 6. Legacy Scheduler 차단과 MiniGame Session Authority.
 7. 팀 납품 Prefab의 최종 Scene/Inspector 조립.
 8. 4/8인과 Late Join 검증.
@@ -703,7 +731,7 @@ flowchart LR
 - 탁현재: Layout/Fire Surface/MiniGame View/Map Environment GameReady 완성본.
 - 조한용: Player Combat/도구/투척 GameReady Module/Prefab 완성본.
 
-즉, 박한솔은 완성품의 내부를 고치지 않는다. 공용 권위, 배치, 선언 포트, Network Adapter, Registry와 검증만 맡는다.
+즉, 각 팀원에게서는 자기 구역의 게임 투입용 GameReady 최종 완성품만 받는다. 박한솔은 완성품 내부를 고치지 않고 공용 권위, 배치, 선언 포트, Network Adapter, Registry와 검증만 맡는다.
 
 ## 13. 팀 배포용 요약문
 

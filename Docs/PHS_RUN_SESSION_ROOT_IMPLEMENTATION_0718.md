@@ -1,7 +1,7 @@
 # PHS Network RunSessionRoot 설계·제작 명세
 
 - 작성일: `2026-07-18`
-- 구현 단계: `P0 핵심 생명주기·Stage Clock·Economy·RNG 원장 완료 / Incident 이후 연결 중`
+- 구현 단계: `Stage Clock·Economy·RNG·Incident 원장 통합 및 2 Peer P0 검증 완료 / 4·8인·Late Join 검증 대기`
 - 담당: 박한솔 / `Assets/02. ParkHanSol_TeamLeader_Build & Multi/`
 
 ## 1. 목적
@@ -29,7 +29,12 @@ flowchart TB
     D --> H["PHSShipEventImpactAdapter"]
     D --> L["NetworkRunEconomyLedger"]
     D --> M["NetworkRunRandomLedger"]
+    D --> N["NetworkRunIncidentLedger"]
+    D --> O["PHSNetworkIncidentDirector"]
+    O --> N
     I["Map PHS_ShipRuntime"] --> J["PHSNetworkShipAccidentCoordinator"]
+    P["Map PHSMapIncidentCommandConsumer"] --> N
+    P --> J
     J -->|"NetworkShipSystemsState.Instance 재바인딩"| G
     K["Map/Shop HUD·Device·Service"] -->|"Instance/Snapshot"| D
 ```
@@ -48,6 +53,8 @@ Root Prefab:
 - `NetworkRunSessionRoot`
 - `NetworkRunEconomyLedger`
 - `NetworkRunRandomLedger`
+- `NetworkRunIncidentLedger`
+- `PHSNetworkIncidentDirector`
 
 Bootstrap:
 
@@ -77,11 +84,12 @@ Bootstrap:
 | Party Credits/Wallet Revision | `NetworkRunEconomyLedger` |
 | Purchase Delivery Entry/State | `NetworkRunEconomyLedger` |
 | Run Seed/Algorithm Version | `NetworkRunRandomLedger` |
+| Incident Stage/Pressure/Command State | `NetworkRunIncidentLedger` |
+| Incident Schedule/Channel Slot | `PHSNetworkIncidentDirector` |
 
 ### 후속 구현
 
 - Protocol Version/Content Catalog Hash.
-- Incident Pressure/Budget.
 
 후속 상태도 Root에 같은 GameObject로 무조건 몰아넣지 않는다. 상태별 OOP 컴포넌트를 두고 `NetworkRunSessionRoot`는 수명과 조립 경계만 담당한다.
 
@@ -130,6 +138,20 @@ Bootstrap:
 - 선택 가능 Map Profile은 `MapId` 오름차순으로 정렬한 뒤 좌/우 두 값을 뽑는다.
 - 실패 시 예전 선택값이나 로컬 Random으로 fallback하지 않고 선택값 `0/0`으로 닫는다.
 
+### Incident 계약
+
+- `NetworkRunIncidentLedger`는 Persistent Root에서 Stage, Pressure와 Incident Command 생명주기를 서버 권위로 소유한다.
+- 기본 계약은 Pressure Capacity `3`, External Command 최대 `1`, Internal Command 최대 `2`다.
+- `PHSNetworkIncidentDirector`는 `Charging`에서만 신규 명령을 예약한다.
+- 외부 선택은 `ExternalThreat=200`, 내부 선택은 `InternalAccident=300`, 내부 Anchor 선택은 `InternalAccidentAnchor=301` Stream을 사용한다.
+- Schedule RequestId는 `schedule:{stage}:{channel}:{slot}`이며 같은 요청 재처리는 원장에서 멱등 처리한다.
+- `WarpSafe`에서는 신규 예약만 멈추고 기존 Active 사고와 수리 상태를 유지한다.
+- 점프가 승인된 `WarpArrival`, Shop, FinalShop, Clear, GameOver 전환에서는 Scene Runtime을 종료한 뒤 `TryCancelStageServer`로 남은 Pending/Claimed/Active 명령을 취소한다.
+- `PHSMapIncidentCommandConsumer`가 Map Scene의 Event Coordinator, Ship Accident Coordinator, 정렬된 `ShipRoom[]`를 사용해 명령을 실행한다.
+- 기존 자율 Scheduler는 중지하고 `NetworkEventCoordinator.startSchedulerOnServerSpawn=false`를 강제한다.
+- Fire Patch 확산과 범위 피해는 이 원장 구현에 포함되지 않은 후속 작업이다.
+- Unity Migration·Compile·Validator·Build와 Host+Client 2 Peer P0 검증을 완료했다.
+
 ## 4. Scene 책임
 
 Persistent:
@@ -142,6 +164,7 @@ Scene Local:
 
 - 함선 Room/Device/Accident Anchor.
 - `PHSNetworkShipAccidentCoordinator`.
+- `PHSMapIncidentCommandConsumer`.
 - Fire/Steam/Oxygen Presentation.
 - HUD와 실제 Device View.
 
@@ -156,6 +179,7 @@ Scene Local:
 - Stage Clock 시작·정지·일시정지·만료 판정.
 - Ship/Module 피해·수리.
 - 사건 결과 적용.
+- Incident Stage/Pressure/Command 예약·취소·완료.
 - 파티 크레딧·구매 Delivery 거래 커밋.
 
 클라이언트 처리:
@@ -181,18 +205,32 @@ Local 전용:
 - Lobby `NetworkManager`에 Bootstrap과 Root Prefab Inspector 참조 연결.
 - `PHS0715IntegrationValidator`를 Player/Map 소유 검사에서 Root 소유 검사로 변경.
 - `PHSShipDockRepairService`는 Root Singleton을 실행 시점에 조회하도록 변경.
-- Root Prefab의 마지막 `NetworkBehaviour`로 `NetworkRunEconomyLedger`를 추가해 기존 NGO Behaviour 인덱스를 보존.
+- Root Prefab의 기존 Behaviour 순서를 보존하고 `NetworkRunIncidentLedger`를 마지막 `NetworkBehaviour`로 추가한다.
+- Root에 `PHSNetworkIncidentDirector`를 추가하고 Map Runtime Context에 `PHSMapIncidentCommandConsumer`를 Inspector 연결한다.
+- Map Profile `8001~8004`는 Pressure `3`, External `1`, Internal `2`로 고정한다.
 - 활성 Map/Shop의 `PHS_PurchaseSessionState`에서 `SessionPurchaseStateRoot`만 제거하고 Delivery Adapter는 유지.
 - Shop 구매의 결제 차감과 Delivery Queue 등록을 단일 원장 API로 교체.
 
 ## 7. 검증 결과
+
+### Incident 신규 경로
+
+- `NetworkRunIncidentLedger`, `PHSNetworkIncidentDirector`, `PHSMapIncidentCommandConsumer` 코드 구현 완료.
+- Root/Map/Profile Migration과 정적 Validator 계약 구현 완료.
+- `PHS_INCIDENT_MIGRATION_OK`, Compile Error `0`, `PHS_0715_VALIDATE_OK errors=0 scenes=3 prefabs=11`.
+- `PHS_0717_VALIDATION_BUILD_OK path=Builds/PHS0717Validation/LastJumpCrew.exe size=345281876`.
+- 2 Peer에서 Incident Command `4`개, 최종 revision `14`, issued/resolved `4/4`를 검증했다.
+- Host/Client Command signature는 `6ED83C1DA5F496F4`로 일치했다.
+- `PHS_MAP_INCIDENT_SCHEDULE_PENDING_FAILED`를 포함한 Runner 금지 로그는 `0`이다.
+
+### 기존 검증 기준선
 
 Editor:
 
 - Unity `6000.5.2f1`.
 - Compile Error `0`.
 - `PHS_0715_VALIDATE_OK errors=0 scenes=3 prefabs=11`.
-- `PHS_0717_VALIDATION_BUILD_OK path=Builds/PHS0717Validation/LastJumpCrew.exe size=345187300`.
+- `PHS_0717_VALIDATION_BUILD_OK path=Builds/PHS0717Validation/LastJumpCrew.exe size=345281876`.
 
 Host Runtime:
 
@@ -213,19 +251,20 @@ Host Runtime:
 - Ship State `revision=17`이 반복 Map/Shop 전환 뒤 Scene HUD와 Gravity View에 재바인딩됨.
 - 2 Peer로 `9`구역, Shop `3`회, `FinalShop -> Clear` 완료.
 - Stage Clock sequence `1~9`에서 모든 Peer의 MapId/State/Revision이 일치했다.
-- Running Remaining 최대 차는 `0.054초`, Warp Pause 뒤 `1.5초` 안정 변화는 `0.000초`였다.
+- Running Remaining 최대 차는 `0.065초`, Warp Pause 뒤 `1.5초` 안정 변화는 `0.000초`였다.
 - 첫 Shop 복귀에서 선택 Map을 Active Map으로 선행 Commit한 뒤 sequence `5`를 시작했다.
 - 외부 사건 `3`종, MiniGame API Outcome `6`, 원격 Item 소유권, Debris 판매·재진입 통과.
-- Debris 판매 후 2 Peer가 `credits=553`, `revision=2`, 동일 `SaleCredit` 거래 ID를 수신.
+- Debris 판매 후 2 Peer가 `credits=531`, `revision=2`, 동일 `SaleCredit` 거래 ID를 수신.
 - 구매 잔액 부족 요청은 Wallet/Delivery revision 변화 없이 거절.
-- 구매 성공 시 2 Peer가 `credits=443`, `pending=1`, `PurchaseDebit` 거래를 수신.
+- 구매 성공 시 2 Peer가 `credits=411`, `pending=1`, `PurchaseDebit` 거래를 수신.
 - Map 복귀 상자가 Entry를 적용한 뒤 2 Peer가 `pending=0`, `claimed=0`, `delivered=1`을 수신.
 - Map Scene을 `10`회 로드했고 매번 Network Debris가 설정 범위 `20~30` 안에서 서버 생성됨.
-- Root RNG는 `seed=12137645481030649992`, `algorithm=1`, `revision=1`로 2 Peer에 동일 복제됨.
+- Root RNG는 `seed=3042137847702369989`, `algorithm=1`, `revision=1`로 2 Peer에 동일 복제됨.
 - Map Choice `9`회마다 정렬된 MapId 목록과 같은 `MapChoice/다음 구역` Scope로 기대 좌·우 값을 재생했고 실제 선택과 모두 일치함.
 - `ExternalThreat` Stream을 중간 소비한 뒤에도 같은 Map Choice Scope의 raw draw와 좌·우 선택이 변하지 않음을 확인함.
 - 최종 로그:
-  - `PHS_P0_RESULT PASS ... left=8001 right=8002 rngSeed=12137645481030649992 rngAlgorithm=1 ... zones=9 shopCycles=3 runPhase=Clear`.
+  - `PHS_P0_RESULT PASS ... left=8003 right=8002 rngSeed=3042137847702369989 rngAlgorithm=1 ... zones=9 shopCycles=3 runPhase=Clear incidentCommands=4 incidentRevision=14 incidentPeers=2`.
+  - `PHS_P0_INCIDENT_LEDGER_OK peers=2 commands=4 revision=14 issued=4 resolved=4 signature=6ED83C1DA5F496F4`.
   - `PHS_P0_LOG_HEALTH_OK`.
 - 금지 로그 `0`:
   - `ScenePlacedObjects which already contains`.
@@ -235,12 +274,14 @@ Host Runtime:
   - `SceneEventInProgress`.
   - `PHS_MINIGAME_INDICATOR_SLOT_INVALID`.
   - `PHS_MINIGAME_INDICATOR_SETUP_INVALID`.
+  - `PHS_MAP_INCIDENT_SCHEDULE_PENDING_FAILED`.
 
 미검증:
 
 - 실제 원격 Client Late Join.
 - 4/8인.
-- Debris/Shop/Incident RNG 소비자와 Compatibility.
+- Debris/Shop RNG 소비자와 Compatibility.
+- Fire Patch 확산·범위 피해.
 - Late Join Stage Clock/Economy 복원과 짧은 Timeout 단발 시나리오.
 - 미수령 배송품의 Map → Shop → Map 재구축과 실제 수령 확정.
 
@@ -270,7 +311,8 @@ Host Runtime:
 
 ## 9. 다음 작업 순서
 
-1. Incident Pressure/Budget 원장 연결.
-2. Debris/Shop RNG 소비자 연결.
-3. Compatibility Gate/Protocol/Catalog Hash 연결.
-4. 4/8인과 Late Join 검증.
+1. Debris/Shop RNG 소비자 연결.
+2. Compatibility Gate/Protocol/Catalog Hash 연결.
+3. Fire Patch 확산·범위 피해 구현.
+4. 팀 GameReady Incident/Fire/Enemy Prefab 수령 후 실제 콘텐츠 자동 실행 검증.
+5. 4/8인과 Late Join 검증.

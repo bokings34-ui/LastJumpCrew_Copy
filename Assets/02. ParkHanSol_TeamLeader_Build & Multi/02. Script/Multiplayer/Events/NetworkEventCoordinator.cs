@@ -76,6 +76,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Events
 
         public event Action LifecycleSnapshotsChanged;
         public event Action EffectSnapshotsChanged;
+        public event Action<ulong, EventId, bool> ServerEventFinished;
 
         private void Awake()
         {
@@ -371,6 +372,44 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Events
         {
             instanceId = 0UL;
 
+            if (!CanSpawnEventServer(eventId))
+            {
+                return false;
+            }
+
+            var room = roomRegistry.GetRandomRoom();
+            if (room == null)
+            {
+                Debug.LogWarning($"PHS_EVENT_SERVER_SPAWN_REJECTED reason=room_missing event={eventId}", this);
+                return false;
+            }
+
+            return TrySpawnEventInRoomServer(eventId, room, out instanceId);
+        }
+
+        public bool TrySpawnEventServer(
+            EventId eventId,
+            ShipRoom room,
+            out ulong instanceId)
+        {
+            instanceId = 0UL;
+
+            if (!CanSpawnEventServer(eventId))
+            {
+                return false;
+            }
+
+            if (room == null)
+            {
+                Debug.LogWarning($"PHS_EVENT_SERVER_SPAWN_REJECTED reason=room_missing event={eventId}", this);
+                return false;
+            }
+
+            return TrySpawnEventInRoomServer(eventId, room, out instanceId);
+        }
+
+        private bool CanSpawnEventServer(EventId eventId)
+        {
             if (!IsAuthoritative)
             {
                 Debug.LogWarning($"PHS_EVENT_SERVER_SPAWN_REJECTED reason=not_server event={eventId}", this);
@@ -389,13 +428,14 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Events
                 return false;
             }
 
-            var room = roomRegistry.GetRandomRoom();
-            if (room == null)
-            {
-                Debug.LogWarning($"PHS_EVENT_SERVER_SPAWN_REJECTED reason=room_missing event={eventId}", this);
-                return false;
-            }
+            return true;
+        }
 
+        private bool TrySpawnEventInRoomServer(
+            EventId eventId,
+            IRoom room,
+            out ulong instanceId)
+        {
             var accepted = eventManager.TrySpawnEvent(eventId, room, out instanceId);
             Debug.Log(
                 $"PHS_EVENT_SERVER_SPAWN_RESULT accepted={accepted} instance={instanceId} event={eventId} room={room.RoomId}",
@@ -761,6 +801,31 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Events
                 $"PHS_EVENT_LIFECYCLE_FINISHED instance={instanceId} event={eventId} success={success} revision={revision}",
                 this);
             StartCoroutine(RemoveTerminalSnapshotAfterDelay(instanceId, revision));
+            NotifyServerEventFinished(instanceId, eventId, success);
+        }
+
+        private void NotifyServerEventFinished(
+            ulong instanceId,
+            EventId eventId,
+            bool success)
+        {
+            var handlers = ServerEventFinished;
+            if (handlers == null)
+            {
+                return;
+            }
+
+            foreach (Action<ulong, EventId, bool> handler in handlers.GetInvocationList())
+            {
+                try
+                {
+                    handler(instanceId, eventId, success);
+                }
+                catch (Exception exception)
+                {
+                    Debug.LogException(exception, this);
+                }
+            }
         }
 
         [ServerRpc(RequireOwnership = false)]

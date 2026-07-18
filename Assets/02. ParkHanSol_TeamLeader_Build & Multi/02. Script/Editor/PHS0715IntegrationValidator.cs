@@ -52,12 +52,22 @@ namespace LastJumpCrew.ParkHanSol.Editor
             "Assets/01. MainGame/02. Final_Prefab/02. Prefab_SeoBoGyeong_Game Economy/Shelf_Dummy.prefab";
         private const string EventPresentationPrefabFolder =
             "Assets/02. ParkHanSol_TeamLeader_Build & Multi/03. Prefab/Props/Prefabs/EventPresentation";
+        private const string MapProfileFolder =
+            "Assets/02. ParkHanSol_TeamLeader_Build & Multi/04. Data/Maps";
 
         private static readonly string[] RequiredBuildScenes =
         {
             LobbyScenePath,
             MapScenePath,
             ShopScenePath
+        };
+
+        private static readonly int[] IncidentGameplayMapIds =
+        {
+            8001,
+            8002,
+            8003,
+            8004
         };
 
         private static readonly Type[] GravityDuplicateGuardTypes =
@@ -155,16 +165,360 @@ namespace LastJumpCrew.ParkHanSol.Editor
                 $"PHS_RUN_RNG_MIGRATION_OK prefab={RunSessionRootPrefabPath}");
         }
 
-        public static string ValidateOrThrow()
+        [MenuItem("Tools/ParkHanSol/Migrate 0718 Incident Ledger")]
+        public static void MigrateRunIncidentLedgerIntegration()
         {
-            var activeScene = UnityEngine.SceneManagement.SceneManager.GetActiveScene();
-            if (activeScene.isDirty)
+            var originalActiveScene =
+                UnityEngine.SceneManagement.SceneManager.GetActiveScene();
+            if (originalActiveScene.IsValid() && originalActiveScene.isDirty)
             {
                 throw new InvalidOperationException(
-                    $"PHS_0715_VALIDATE_FAILED reason=active_scene_dirty scene={activeScene.path}");
+                    $"PHS_INCIDENT_MIGRATION_FAILED reason=active_scene_dirty scene={originalActiveScene.path}");
             }
 
-            var originalScenePath = activeScene.path;
+            var loadedMapScene =
+                UnityEngine.SceneManagement.SceneManager.GetSceneByPath(MapScenePath);
+            if (loadedMapScene.IsValid()
+                && loadedMapScene.isLoaded
+                && loadedMapScene.isDirty)
+            {
+                throw new InvalidOperationException(
+                    $"PHS_INCIDENT_MIGRATION_FAILED reason=map_scene_dirty scene={MapScenePath}");
+            }
+
+            var profileCount = MigrateIncidentMapProfiles();
+            MigrateIncidentRootPrefab();
+            var roomCount = MigrateMapIncidentConsumerPreservingActiveScene(
+                originalActiveScene);
+            Debug.Log(
+                $"PHS_INCIDENT_MIGRATION_OK prefab={RunSessionRootPrefabPath} " +
+                $"profiles={profileCount} rooms={roomCount} scene={MapScenePath}");
+        }
+
+        private static int MigrateIncidentMapProfiles()
+        {
+            var targetIds = new HashSet<int>(IncidentGameplayMapIds);
+            var profiles = AssetDatabase
+                .FindAssets(
+                    "t:PHSMapProfileSO",
+                    new[] { MapProfileFolder })
+                .Select(AssetDatabase.GUIDToAssetPath)
+                .Select(path =>
+                    AssetDatabase.LoadAssetAtPath<PHSMapProfileSO>(path))
+                .Where(profile => profile != null && targetIds.Contains(profile.MapId))
+                .ToArray();
+            foreach (var mapId in IncidentGameplayMapIds)
+            {
+                var matches = profiles
+                    .Where(profile => profile.MapId == mapId)
+                    .ToArray();
+                if (matches.Length != 1)
+                {
+                    throw new InvalidOperationException(
+                        $"PHS_INCIDENT_MIGRATION_FAILED reason=profile_count_invalid " +
+                        $"map={mapId} actual={matches.Length}");
+                }
+
+                var profile = matches[0];
+                var serializedProfile = new SerializedObject(profile);
+                var pressureCapacity =
+                    serializedProfile.FindProperty("incidentPressureCapacity");
+                var maximumExternal =
+                    serializedProfile.FindProperty("maximumActiveExternalThreats");
+                var maximumInternal =
+                    serializedProfile.FindProperty("maximumActiveInternalAccidents");
+                if (pressureCapacity == null
+                    || maximumExternal == null
+                    || maximumInternal == null)
+                {
+                    throw new InvalidOperationException(
+                        $"PHS_INCIDENT_MIGRATION_FAILED reason=profile_contract_missing " +
+                        $"map={mapId} path={AssetDatabase.GetAssetPath(profile)}");
+                }
+
+                pressureCapacity.intValue = 3;
+                maximumExternal.intValue = 1;
+                maximumInternal.intValue = 2;
+                serializedProfile.ApplyModifiedPropertiesWithoutUndo();
+                EditorUtility.SetDirty(profile);
+            }
+
+            AssetDatabase.SaveAssets();
+            return profiles.Length;
+        }
+
+        private static void MigrateIncidentRootPrefab()
+        {
+            var prefab = PrefabUtility.LoadPrefabContents(RunSessionRootPrefabPath);
+            if (prefab == null)
+            {
+                throw new InvalidOperationException(
+                    $"PHS_INCIDENT_MIGRATION_FAILED reason=prefab_missing " +
+                    $"path={RunSessionRootPrefabPath}");
+            }
+
+            try
+            {
+                var ledgers =
+                    prefab.GetComponentsInChildren<NetworkRunIncidentLedger>(true);
+                if (ledgers.Length > 1
+                    || (ledgers.Length == 1
+                        && ledgers[0].gameObject != prefab))
+                {
+                    throw new InvalidOperationException(
+                        $"PHS_INCIDENT_MIGRATION_FAILED " +
+                        $"reason=incident_ledger_owner_invalid count={ledgers.Length}");
+                }
+
+                var ledger = ledgers.Length == 1
+                    ? ledgers[0]
+                    : prefab.AddComponent<NetworkRunIncidentLedger>();
+                var serializedLedger = new SerializedObject(ledger);
+                var defaultPressure = serializedLedger
+                    .FindProperty("defaultPressureCapacity");
+                var defaultExternal = serializedLedger
+                    .FindProperty("defaultMaximumExternalCommands");
+                var defaultInternal = serializedLedger
+                    .FindProperty("defaultMaximumInternalCommands");
+                var commandHistory = serializedLedger
+                    .FindProperty("maximumCommandHistory");
+                if (defaultPressure == null
+                    || defaultExternal == null
+                    || defaultInternal == null
+                    || commandHistory == null)
+                {
+                    throw new InvalidOperationException(
+                        "PHS_INCIDENT_MIGRATION_FAILED " +
+                        "reason=incident_ledger_contract_missing");
+                }
+
+                defaultPressure.intValue = 3;
+                defaultExternal.intValue = 1;
+                defaultInternal.intValue = 2;
+                commandHistory.intValue = Math.Max(
+                    32,
+                    commandHistory.intValue);
+                serializedLedger.ApplyModifiedPropertiesWithoutUndo();
+                var directors =
+                    prefab.GetComponentsInChildren<PHSNetworkIncidentDirector>(true);
+                if (directors.Length > 1
+                    || (directors.Length == 1
+                        && directors[0].gameObject != prefab))
+                {
+                    throw new InvalidOperationException(
+                        $"PHS_INCIDENT_MIGRATION_FAILED " +
+                        $"reason=incident_director_owner_invalid count={directors.Length}");
+                }
+
+                _ = directors.Length == 1
+                    ? directors[0]
+                    : prefab.AddComponent<PHSNetworkIncidentDirector>();
+                var networkBehaviours = prefab.GetComponents<NetworkBehaviour>();
+                if (networkBehaviours.Length == 0
+                    || networkBehaviours[networkBehaviours.Length - 1] != ledger)
+                {
+                    throw new InvalidOperationException(
+                        "PHS_INCIDENT_MIGRATION_FAILED " +
+                        "reason=incident_ledger_not_last_network_behaviour");
+                }
+
+                if (PrefabUtility.SaveAsPrefabAsset(
+                        prefab,
+                        RunSessionRootPrefabPath) == null)
+                {
+                    throw new InvalidOperationException(
+                        "PHS_INCIDENT_MIGRATION_FAILED reason=prefab_save_failed");
+                }
+            }
+            finally
+            {
+                PrefabUtility.UnloadPrefabContents(prefab);
+            }
+        }
+
+        private static int MigrateMapIncidentConsumerPreservingActiveScene(
+            UnityEngine.SceneManagement.Scene originalActiveScene)
+        {
+            var mapScene =
+                UnityEngine.SceneManagement.SceneManager.GetSceneByPath(MapScenePath);
+            var openedMapScene = false;
+            try
+            {
+                if (!mapScene.IsValid() || !mapScene.isLoaded)
+                {
+                    mapScene = EditorSceneManager.OpenScene(
+                        MapScenePath,
+                        OpenSceneMode.Additive);
+                    openedMapScene = true;
+                }
+
+                if (!mapScene.IsValid() || !mapScene.isLoaded)
+                {
+                    throw new InvalidOperationException(
+                        $"PHS_INCIDENT_MIGRATION_FAILED reason=map_scene_open_failed " +
+                        $"scene={MapScenePath}");
+                }
+
+                var runtimes = FindSceneComponents<PHSMapRuntimeContext>(mapScene);
+                var eventCoordinators =
+                    FindSceneComponents<NetworkEventCoordinator>(mapScene);
+                var accidentCoordinators =
+                    FindSceneComponents<PHSNetworkShipAccidentCoordinator>(mapScene);
+                var rooms = FindSceneComponents<ShipRoom>(mapScene)
+                    .OrderBy(room => room.RoomId, StringComparer.Ordinal)
+                    .ToArray();
+                if (runtimes.Length != 1
+                    || eventCoordinators.Length != 1
+                    || accidentCoordinators.Length != 1
+                    || rooms.Length == 0)
+                {
+                    throw new InvalidOperationException(
+                        $"PHS_INCIDENT_MIGRATION_FAILED reason=map_contract_invalid " +
+                        $"runtime={runtimes.Length} event={eventCoordinators.Length} " +
+                        $"accident={accidentCoordinators.Length} rooms={rooms.Length}");
+                }
+
+                if (rooms.Any(room => string.IsNullOrWhiteSpace(room.RoomId))
+                    || rooms.Select(room => room.RoomId)
+                        .Distinct(StringComparer.Ordinal)
+                        .Count() != rooms.Length)
+                {
+                    throw new InvalidOperationException(
+                        "PHS_INCIDENT_MIGRATION_FAILED " +
+                        "reason=map_room_ids_invalid");
+                }
+
+                var runtime = runtimes[0];
+                var eventCoordinator = eventCoordinators[0];
+                var accidentCoordinator = accidentCoordinators[0];
+                var consumers =
+                    FindSceneComponents<PHSMapIncidentCommandConsumer>(mapScene);
+                if (consumers.Length > 1
+                    || (consumers.Length == 1
+                        && consumers[0].gameObject != runtime.gameObject))
+                {
+                    throw new InvalidOperationException(
+                        $"PHS_INCIDENT_MIGRATION_FAILED " +
+                        $"reason=incident_consumer_owner_invalid count={consumers.Length}");
+                }
+
+                var consumer = consumers.Length == 1
+                    ? consumers[0]
+                    : runtime.gameObject.AddComponent<PHSMapIncidentCommandConsumer>();
+                var serializedConsumer = new SerializedObject(consumer);
+                var consumerEvent =
+                    serializedConsumer.FindProperty("eventCoordinator");
+                var consumerAccident =
+                    serializedConsumer.FindProperty("accidentCoordinator");
+                var consumerRooms = serializedConsumer.FindProperty("rooms");
+                if (consumerEvent == null
+                    || consumerAccident == null
+                    || consumerRooms == null
+                    || !consumerRooms.isArray)
+                {
+                    throw new InvalidOperationException(
+                        "PHS_INCIDENT_MIGRATION_FAILED " +
+                        "reason=incident_consumer_contract_missing");
+                }
+
+                consumerEvent.objectReferenceValue = eventCoordinator;
+                consumerAccident.objectReferenceValue = accidentCoordinator;
+                consumerRooms.arraySize = rooms.Length;
+                for (var index = 0; index < rooms.Length; index++)
+                {
+                    consumerRooms
+                        .GetArrayElementAtIndex(index)
+                        .objectReferenceValue = rooms[index];
+                }
+
+                serializedConsumer.ApplyModifiedPropertiesWithoutUndo();
+                PrefabUtility.RecordPrefabInstancePropertyModifications(consumer);
+
+                var serializedRuntime = new SerializedObject(runtime);
+                var runtimeConsumer =
+                    serializedRuntime.FindProperty("incidentCommandConsumer");
+                if (runtimeConsumer == null)
+                {
+                    throw new InvalidOperationException(
+                        "PHS_INCIDENT_MIGRATION_FAILED " +
+                        "reason=map_runtime_consumer_contract_missing");
+                }
+
+                runtimeConsumer.objectReferenceValue = consumer;
+                serializedRuntime.ApplyModifiedPropertiesWithoutUndo();
+                PrefabUtility.RecordPrefabInstancePropertyModifications(runtime);
+
+                var serializedEventCoordinator =
+                    new SerializedObject(eventCoordinator);
+                var autoStart = serializedEventCoordinator
+                    .FindProperty("startSchedulerOnServerSpawn");
+                if (autoStart == null)
+                {
+                    throw new InvalidOperationException(
+                        "PHS_INCIDENT_MIGRATION_FAILED " +
+                        "reason=event_auto_start_contract_missing");
+                }
+
+                autoStart.boolValue = false;
+                serializedEventCoordinator.ApplyModifiedPropertiesWithoutUndo();
+                PrefabUtility.RecordPrefabInstancePropertyModifications(
+                    eventCoordinator);
+
+                EditorSceneManager.MarkSceneDirty(mapScene);
+                if (!EditorSceneManager.SaveScene(mapScene))
+                {
+                    throw new InvalidOperationException(
+                        $"PHS_INCIDENT_MIGRATION_FAILED reason=map_scene_save_failed " +
+                        $"scene={MapScenePath}");
+                }
+
+                return rooms.Length;
+            }
+            finally
+            {
+                if (originalActiveScene.IsValid()
+                    && originalActiveScene.isLoaded)
+                {
+                    UnityEngine.SceneManagement.SceneManager.SetActiveScene(
+                        originalActiveScene);
+                }
+
+                if (openedMapScene
+                    && mapScene.IsValid()
+                    && mapScene.isLoaded)
+                {
+                    EditorSceneManager.CloseScene(mapScene, true);
+                }
+            }
+        }
+
+        public static string ValidateOrThrow()
+        {
+            var originalSceneSetup = EditorSceneManager.GetSceneManagerSetup();
+            var canRestoreOriginalSceneSetup = originalSceneSetup.Any(
+                setup => setup.isLoaded && setup.isActive);
+            var dirtyLoadedScenes = Enumerable
+                .Range(
+                    0,
+                    UnityEngine.SceneManagement.SceneManager.sceneCount)
+                .Select(
+                    UnityEngine.SceneManagement.SceneManager.GetSceneAt)
+                .Where(scene =>
+                    scene.IsValid()
+                    && scene.isLoaded
+                    && scene.isDirty)
+                .Select(scene =>
+                    string.IsNullOrWhiteSpace(scene.path)
+                        ? $"<unsaved>:{scene.name}"
+                        : scene.path)
+                .ToArray();
+            if (dirtyLoadedScenes.Length > 0)
+            {
+                throw new InvalidOperationException(
+                    $"PHS_0715_VALIDATE_FAILED reason=loaded_scene_dirty " +
+                    $"scenes={string.Join(",", dirtyLoadedScenes)}");
+            }
+
             var errors = new List<string>();
             try
             {
@@ -183,9 +537,10 @@ namespace LastJumpCrew.ParkHanSol.Editor
             }
             finally
             {
-                if (!string.IsNullOrWhiteSpace(originalScenePath))
+                if (canRestoreOriginalSceneSetup)
                 {
-                    EditorSceneManager.OpenScene(originalScenePath, OpenSceneMode.Single);
+                    EditorSceneManager.RestoreSceneManagerSetup(
+                        originalSceneSetup);
                 }
             }
 
@@ -229,6 +584,7 @@ namespace LastJumpCrew.ParkHanSol.Editor
             ValidateNoSceneOwnedStageClock("lobby", errors);
             ValidateNoSceneOwnedEconomyLedger("lobby", errors);
             ValidateNoSceneOwnedRandomLedger("lobby", errors);
+            ValidateNoSceneOwnedIncidentRootComponents("lobby", errors);
             ValidateNoLegacyEconomyOwner("lobby", errors);
             var networkManager = FindOne<NetworkManager>("lobby_network_manager", errors);
             if (networkManager == null)
@@ -323,6 +679,7 @@ namespace LastJumpCrew.ParkHanSol.Editor
             ValidateNoSceneOwnedStageClock("map", errors);
             ValidateNoSceneOwnedEconomyLedger("map", errors);
             ValidateNoSceneOwnedRandomLedger("map", errors);
+            ValidateNoSceneOwnedIncidentRootComponents("map", errors);
             ValidateNoLegacyEconomyOwner("map", errors);
             ValidateGravityDuplicateComponents("map", errors);
             ValidateGameplayContext("map", errors);
@@ -642,6 +999,7 @@ namespace LastJumpCrew.ParkHanSol.Editor
             ValidateNoSceneOwnedStageClock("shop", errors);
             ValidateNoSceneOwnedEconomyLedger("shop", errors);
             ValidateNoSceneOwnedRandomLedger("shop", errors);
+            ValidateNoSceneOwnedIncidentRootComponents("shop", errors);
             ValidateNoLegacyEconomyOwner("shop", errors);
             ValidateGameplayContext("shop", errors);
             ValidateNetworkScenePortal(
@@ -881,6 +1239,49 @@ namespace LastJumpCrew.ParkHanSol.Editor
                 >= minimumSelectableProfiles,
                 $"{label}_map_catalog_selectable_profiles_insufficient",
                 errors);
+            ValidateIncidentMapProfiles(label, mapCatalog, errors);
+        }
+
+        private static void ValidateIncidentMapProfiles(
+            string label,
+            PHSMapCatalogSO mapCatalog,
+            ICollection<string> errors)
+        {
+            foreach (var mapId in IncidentGameplayMapIds)
+            {
+                var matches = mapCatalog.Profiles
+                    .Where(profile => profile != null && profile.MapId == mapId)
+                    .ToArray();
+                Require(
+                    matches.Length == 1,
+                    $"{label}_incident_profile_count_invalid " +
+                    $"map={mapId} expected=1 actual={matches.Length}",
+                    errors);
+                if (matches.Length != 1)
+                {
+                    continue;
+                }
+
+                var profile = matches[0];
+                Require(
+                    profile.IncidentPressureCapacity == 3,
+                    $"{label}_incident_pressure_invalid " +
+                    $"map={mapId} expected=3 " +
+                    $"actual={profile.IncidentPressureCapacity}",
+                    errors);
+                Require(
+                    profile.MaximumActiveExternalThreats == 1,
+                    $"{label}_incident_external_cap_invalid " +
+                    $"map={mapId} expected=1 " +
+                    $"actual={profile.MaximumActiveExternalThreats}",
+                    errors);
+                Require(
+                    profile.MaximumActiveInternalAccidents == 2,
+                    $"{label}_incident_internal_cap_invalid " +
+                    $"map={mapId} expected=2 " +
+                    $"actual={profile.MaximumActiveInternalAccidents}",
+                    errors);
+            }
         }
 
         private static HashSet<EventId> CollectWeightedSchedulerEvents(SerializedObject serializedScheduler)
@@ -928,6 +1329,10 @@ namespace LastJumpCrew.ParkHanSol.Editor
                 return;
             }
 
+            Require(
+                mapRuntime.enabled,
+                "map_runtime_context_disabled",
+                errors);
             var serializedRuntime = new SerializedObject(mapRuntime);
             RequireObject(serializedRuntime, "mapCatalog", "map_runtime_catalog_missing", errors);
             RequireObject(serializedRuntime, "environmentRoot", "map_runtime_environment_root_missing", errors);
@@ -945,6 +1350,11 @@ namespace LastJumpCrew.ParkHanSol.Editor
 
             RequireObject(serializedRuntime, "externalThreatScheduler", "map_runtime_external_scheduler_missing", errors);
             RequireObject(serializedRuntime, "internalAccidentCoordinator", "map_runtime_internal_accident_missing", errors);
+            RequireObject(
+                serializedRuntime,
+                "incidentCommandConsumer",
+                "map_runtime_incident_consumer_missing",
+                errors);
             Require(
                 mapCatalog == null
                 || serializedRuntime.FindProperty("mapCatalog")?.objectReferenceValue == mapCatalog,
@@ -961,6 +1371,12 @@ namespace LastJumpCrew.ParkHanSol.Editor
                 eventCoordinator.GetComponent<PHSNetworkEventScheduler>(),
                 "map_runtime_event_coordinator_scheduler_mismatch",
                 errors);
+            ValidateMapIncidentCommandConsumer(
+                mapRuntime,
+                eventCoordinator,
+                serializedRuntime.FindProperty("incidentCommandConsumer")
+                    ?.objectReferenceValue as PHSMapIncidentCommandConsumer,
+                errors);
             var shopPortalRoot =
                 serializedRuntime.FindProperty("shopPortalRoot")?.objectReferenceValue as GameObject;
             Require(
@@ -968,6 +1384,112 @@ namespace LastJumpCrew.ParkHanSol.Editor
                 shopPortalRoot.GetComponent<NetworkScenePortalInteractable>() != null,
                 "map_runtime_shop_portal_component_missing",
                 errors);
+        }
+
+        private static void ValidateMapIncidentCommandConsumer(
+            PHSMapRuntimeContext mapRuntime,
+            NetworkEventCoordinator eventCoordinator,
+            PHSMapIncidentCommandConsumer configuredConsumer,
+            ICollection<string> errors)
+        {
+            var consumers =
+                UnityEngine.Object.FindObjectsByType<PHSMapIncidentCommandConsumer>(
+                    FindObjectsInactive.Include,
+                    FindObjectsSortMode.None);
+            Require(
+                consumers.Length == 1,
+                $"map_incident_consumer_count_invalid expected=1 " +
+                $"actual={consumers.Length}",
+                errors);
+            if (consumers.Length != 1)
+            {
+                return;
+            }
+
+            var consumer = consumers[0];
+            Require(
+                consumer.gameObject == mapRuntime.gameObject,
+                "map_incident_consumer_owner_invalid expected=map_runtime_context",
+                errors);
+            Require(
+                configuredConsumer == consumer,
+                "map_runtime_incident_consumer_reference_mismatch",
+                errors);
+            Require(
+                consumer.enabled,
+                "map_incident_consumer_disabled",
+                errors);
+
+            var accidentCoordinators =
+                UnityEngine.Object.FindObjectsByType<PHSNetworkShipAccidentCoordinator>(
+                    FindObjectsInactive.Include,
+                    FindObjectsSortMode.None);
+            Require(
+                accidentCoordinators.Length == 1,
+                $"map_incident_accident_coordinator_count_invalid expected=1 " +
+                $"actual={accidentCoordinators.Length}",
+                errors);
+            var expectedAccidentCoordinator = accidentCoordinators.Length == 1
+                ? accidentCoordinators[0]
+                : null;
+            var sceneRooms = UnityEngine.Object.FindObjectsByType<ShipRoom>(
+                    FindObjectsInactive.Include,
+                    FindObjectsSortMode.None)
+                .OrderBy(room => room.RoomId, StringComparer.Ordinal)
+                .ToArray();
+            Require(
+                sceneRooms.Length > 0,
+                "map_incident_rooms_empty",
+                errors);
+            Require(
+                sceneRooms.All(room => !string.IsNullOrWhiteSpace(room.RoomId)),
+                "map_incident_room_id_missing",
+                errors);
+            Require(
+                sceneRooms.Select(room => room.RoomId)
+                    .Distinct(StringComparer.Ordinal)
+                    .Count() == sceneRooms.Length,
+                "map_incident_room_id_duplicate",
+                errors);
+
+            var serializedConsumer = new SerializedObject(consumer);
+            Require(
+                eventCoordinator == null
+                || serializedConsumer.FindProperty("eventCoordinator")
+                    ?.objectReferenceValue == eventCoordinator,
+                "map_incident_event_coordinator_mismatch",
+                errors);
+            Require(
+                expectedAccidentCoordinator == null
+                || serializedConsumer.FindProperty("accidentCoordinator")
+                    ?.objectReferenceValue == expectedAccidentCoordinator,
+                "map_incident_accident_coordinator_mismatch",
+                errors);
+            var configuredRooms = serializedConsumer.FindProperty("rooms");
+            Require(
+                configuredRooms != null
+                && configuredRooms.isArray
+                && configuredRooms.arraySize == sceneRooms.Length,
+                $"map_incident_room_count_invalid expected={sceneRooms.Length} " +
+                $"actual={(configuredRooms != null && configuredRooms.isArray ? configuredRooms.arraySize : -1)}",
+                errors);
+            if (configuredRooms == null
+                || !configuredRooms.isArray
+                || configuredRooms.arraySize != sceneRooms.Length)
+            {
+                return;
+            }
+
+            for (var index = 0; index < sceneRooms.Length; index++)
+            {
+                Require(
+                    configuredRooms
+                        .GetArrayElementAtIndex(index)
+                        .objectReferenceValue == sceneRooms[index],
+                    $"map_incident_room_order_invalid index={index} " +
+                    $"expected={sceneRooms[index].RoomId}",
+                    errors);
+            }
         }
 
         private static void ValidateMiniGameIndicator(
@@ -1308,6 +1830,14 @@ namespace LastJumpCrew.ParkHanSol.Editor
                 prefab.GetComponentsInChildren<NetworkRunRandomLedger>(true).Length == 0,
                 "player_random_ledger_must_be_session_owned",
                 errors);
+            Require(
+                prefab.GetComponentsInChildren<NetworkRunIncidentLedger>(true).Length == 0,
+                "player_incident_ledger_must_be_session_owned",
+                errors);
+            Require(
+                prefab.GetComponentsInChildren<PHSNetworkIncidentDirector>(true).Length == 0,
+                "player_incident_director_must_be_session_owned",
+                errors);
 
             ValidateCombatItemRoute(
                 "Assets/02. ParkHanSol_TeamLeader_Build & Multi/04. Data/UtilityItems/ParkHanSol_WrenchItemPrefabData.asset",
@@ -1384,6 +1914,14 @@ namespace LastJumpCrew.ParkHanSol.Editor
                 Require(
                     prefab.GetComponentsInChildren<NetworkRunRandomLedger>(true).Length == 0,
                     "ship_runtime_random_ledger_must_be_session_owned",
+                    errors);
+                Require(
+                    prefab.GetComponentsInChildren<NetworkRunIncidentLedger>(true).Length == 0,
+                    "ship_runtime_incident_ledger_must_be_session_owned",
+                    errors);
+                Require(
+                    prefab.GetComponentsInChildren<PHSNetworkIncidentDirector>(true).Length == 0,
+                    "ship_runtime_incident_director_must_be_session_owned",
                     errors);
                 var coordinator = prefab.GetComponent<PHSNetworkShipAccidentCoordinator>();
                 Require(coordinator != null, "ship_runtime_accident_coordinator_missing", errors);
@@ -1482,6 +2020,74 @@ namespace LastJumpCrew.ParkHanSol.Editor
                     $"run_session_root_random_algorithm_contract_invalid reason={randomAlgorithmReason}",
                     errors);
 
+                var incidentLedgers =
+                    prefab.GetComponentsInChildren<NetworkRunIncidentLedger>(true);
+                Require(
+                    incidentLedgers.Length == 1,
+                    $"run_session_root_incident_ledger_count_invalid " +
+                    $"expected=1 actual={incidentLedgers.Length}",
+                    errors);
+                var incidentLedger =
+                    prefab.GetComponent<NetworkRunIncidentLedger>();
+                Require(
+                    incidentLedger != null,
+                    "run_session_root_incident_ledger_owner_invalid expected=root",
+                    errors);
+                if (incidentLedger != null)
+                {
+                    var serializedIncidentLedger =
+                        new SerializedObject(incidentLedger);
+                    Require(
+                        serializedIncidentLedger
+                            .FindProperty("defaultPressureCapacity")
+                            ?.intValue == 3,
+                        "run_session_root_incident_default_pressure_invalid " +
+                        "expected=3",
+                        errors);
+                    Require(
+                        serializedIncidentLedger
+                            .FindProperty("defaultMaximumExternalCommands")
+                            ?.intValue == 1,
+                        "run_session_root_incident_default_external_cap_invalid " +
+                        "expected=1",
+                        errors);
+                    Require(
+                        serializedIncidentLedger
+                            .FindProperty("defaultMaximumInternalCommands")
+                            ?.intValue == 2,
+                        "run_session_root_incident_default_internal_cap_invalid " +
+                        "expected=2",
+                        errors);
+                    Require(
+                        serializedIncidentLedger
+                            .FindProperty("maximumCommandHistory")
+                            ?.intValue >= 32,
+                        "run_session_root_incident_command_history_invalid " +
+                        "expected_minimum=32",
+                        errors);
+                }
+
+                var incidentDirectors =
+                    prefab.GetComponentsInChildren<PHSNetworkIncidentDirector>(true);
+                Require(
+                    incidentDirectors.Length == 1,
+                    $"run_session_root_incident_director_count_invalid " +
+                    $"expected=1 actual={incidentDirectors.Length}",
+                    errors);
+                var incidentDirector =
+                    prefab.GetComponent<PHSNetworkIncidentDirector>();
+                Require(
+                    incidentDirector != null,
+                    "run_session_root_incident_director_owner_invalid expected=root",
+                    errors);
+                if (incidentDirector != null)
+                {
+                    Require(
+                        incidentDirector.enabled,
+                        "run_session_root_incident_director_disabled",
+                        errors);
+                }
+
                 var networkBehaviours = prefab.GetComponents<NetworkBehaviour>();
                 var expectedBehaviourTypes = new[]
                 {
@@ -1490,7 +2096,8 @@ namespace LastJumpCrew.ParkHanSol.Editor
                     typeof(NetworkRunSessionRoot),
                     typeof(NetworkRunStageClock),
                     typeof(NetworkRunEconomyLedger),
-                    typeof(NetworkRunRandomLedger)
+                    typeof(NetworkRunRandomLedger),
+                    typeof(NetworkRunIncidentLedger)
                 };
                 Require(
                     networkBehaviours.Length == expectedBehaviourTypes.Length,
@@ -2295,6 +2902,30 @@ namespace LastJumpCrew.ParkHanSol.Editor
                 errors);
         }
 
+        private static void ValidateNoSceneOwnedIncidentRootComponents(
+            string sceneLabel,
+            ICollection<string> errors)
+        {
+            var ledgers =
+                UnityEngine.Object.FindObjectsByType<NetworkRunIncidentLedger>(
+                    FindObjectsInactive.Include,
+                    FindObjectsSortMode.None);
+            Require(
+                ledgers.Length == 0,
+                $"{sceneLabel}_incident_ledger_must_be_session_owned " +
+                $"actual={ledgers.Length}",
+                errors);
+            var directors =
+                UnityEngine.Object.FindObjectsByType<PHSNetworkIncidentDirector>(
+                    FindObjectsInactive.Include,
+                    FindObjectsSortMode.None);
+            Require(
+                directors.Length == 0,
+                $"{sceneLabel}_incident_director_must_be_session_owned " +
+                $"actual={directors.Length}",
+                errors);
+        }
+
         private static void ValidateNoLegacyEconomyOwner(
             string sceneLabel,
             ICollection<string> errors)
@@ -2326,6 +2957,20 @@ namespace LastJumpCrew.ParkHanSol.Editor
                 FindObjectsSortMode.None);
             Require(matches.Length == 1, $"{label}_count_invalid actual={matches.Length}", errors);
             return matches.Length == 1 ? matches[0] : null;
+        }
+
+        private static T[] FindSceneComponents<T>(
+            UnityEngine.SceneManagement.Scene scene)
+            where T : Component
+        {
+            if (!scene.IsValid() || !scene.isLoaded)
+            {
+                return Array.Empty<T>();
+            }
+
+            return scene.GetRootGameObjects()
+                .SelectMany(root => root.GetComponentsInChildren<T>(true))
+                .ToArray();
         }
 
         private static MonoBehaviour[] FindAllMonoBehaviours()

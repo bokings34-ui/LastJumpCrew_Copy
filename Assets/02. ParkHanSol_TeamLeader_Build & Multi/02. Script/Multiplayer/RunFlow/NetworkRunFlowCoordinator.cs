@@ -759,52 +759,21 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
                 return 0f;
             }
 
-            if (!mapCatalog.TryResolve(ActiveMapId, out var profile))
+            var incidentLedger = NetworkRunSessionRoot.Instance?.Incidents;
+            if (incidentLedger == null)
             {
                 return 1f;
             }
 
-            var multiplier = 1f;
-            var eventCoordinator = NetworkEventCoordinator.Instance;
-            if (eventCoordinator != null)
+            var incidentSnapshot = incidentLedger.Snapshot;
+            if (incidentSnapshot.MapId != ActiveMapId
+                || incidentSnapshot.StageSequence == 0U
+                || incidentSnapshot.StageSequence != stageClock.StageSequence)
             {
-                for (var snapshotIndex = 0; snapshotIndex < eventCoordinator.SnapshotCount; snapshotIndex++)
-                {
-                    var snapshot = eventCoordinator.GetLifecycleSnapshotAt(snapshotIndex);
-                    if (snapshot.State != SM.EventState.InProgress)
-                    {
-                        continue;
-                    }
-
-                    foreach (var entry in profile.ExternalThreatWeights)
-                    {
-                        if (entry.EventId == snapshot.EventId)
-                        {
-                            multiplier *= entry.WarpChargeMultiplier;
-                            break;
-                        }
-                    }
-                }
+                return 1f;
             }
 
-            var accidentCoordinator = PHSNetworkShipAccidentCoordinator.Instance;
-            if (accidentCoordinator != null)
-            {
-                for (var snapshotIndex = 0; snapshotIndex < accidentCoordinator.ActiveAccidentCount; snapshotIndex++)
-                {
-                    var snapshot = accidentCoordinator.GetActiveAccidentAt(snapshotIndex);
-                    foreach (var entry in profile.InternalAccidentWeights)
-                    {
-                        if (entry.Definition.Id == snapshot.AccidentId)
-                        {
-                            multiplier *= entry.WarpChargeMultiplier;
-                            break;
-                        }
-                    }
-                }
-            }
-
-            return Mathf.Clamp01(multiplier);
+            return Mathf.Clamp01(incidentSnapshot.ActiveWarpChargeMultiplier);
         }
 
         private void TickScheduledWarpExecution()
