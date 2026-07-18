@@ -6,7 +6,7 @@
 
 목표는 다음과 같다.
 
-1. 팀원이 통합 씬과 공용 프리팹을 직접 수정하지 않고도 완성된 기능 단위를 제출할 수 있게 한다.
+1. 팀원이 통합 씬과 공용 프리팹을 직접 수정하지 않고도 자기 구역의 게임 투입 가능한 최종 완성 Prefab을 제출하게 한다.
 2. 프리팹의 루트 컴포넌트, 자식 소켓, Collider/Layer, ID, 네트워크 경계를 제출 전에 고정한다.
 3. 정적 검수, 샌드박스 검증, 최종 통합, 네트워크 검증의 책임을 분리한다.
 4. `.meta`와 GUID를 보존하여 프리팹 참조가 병합 과정에서 끊기지 않게 한다.
@@ -55,6 +55,50 @@
 - 기존 경제 자산을 보유하고 있다는 이유만으로 신규 Shop/Catalog 구현까지 자동 배정하지 않는다.
 - 신규 Shop/Catalog/Display 제작 담당자는 `[확인 필요]`로 둔다.
 - 가격, 보상, 재고, 확률 등 수치 밸런스는 담당자가 제안할 수 있으나 박한솔/사용자 승인 전에는 최종값으로 취급하지 않는다.
+
+### 1.3 최종 완성품 납품 원칙
+
+팀원이 제출하는 것은 코드 조각, 구성표, 미완성 View가 아니다. 자기 담당 범위 안에서는 바로 게임에 넣을 수 있는 `GameReady Prefab Bundle`이어야 한다.
+
+완성품에 포함되는 것:
+
+- 대표 Root Prefab 1개 또는 명세에 적은 소수의 완결된 Prefab 세트
+- 필요한 ScriptableObject/Data와 안정적인 ID
+- 모든 시각 Mesh, Material, Animator Controller, Clip, VFX, Audio
+- 모든 내부 Child Socket, Collider, Layer, Rigidbody와 Inspector 참조
+- 시작 → 작동 → 성공/실패/취소 → Cleanup/Reset 전체 로컬 동작
+- 재사용과 Pool 복귀 동작
+- 실제 완성품을 그대로 실행하는 Sandbox Scene 또는 Test Driver
+- `.meta`, Manifest, README, 변경 내역, 정적/실행 증거
+
+팀원이 비워둘 수 있는 것은 Manifest에 선언된 외부 통합 포트뿐이다.
+
+1. 서버 Snapshot/상태 입력 포트
+2. 플레이어 요청/결과 제출 출력 포트
+3. 최종 Scene Parent/Anchor/Socket
+4. 박한솔이 등록할 Catalog/Registry/Network Prefab 항목
+
+이 외의 내부 참조는 `null`이면 안 된다. 박한솔이 자식 오브젝트, Collider, Animator 상태, VFX, Audio, 게임 규칙 또는 누락 Script를 추가해야 하는 제출물은 최종 완성품이 아니다.
+
+박한솔은 완성품을 받은 뒤 다음만 수행한다.
+
+1. 잠금 Scene 또는 canonical Prefab에 배치
+2. 선언된 외부 통합 포트 연결
+3. `02` 소유 Network Adapter 부착
+4. ID/Catalog/Registry/Network Prefab List 등록
+5. Host/Client/Late Join 검증
+
+콘텐츠 내부를 고치거나 기능을 대신 완성하는 일은 조립에 포함하지 않는다. 통합 중 완성품 내부 결함이 발견되면 원 담당자에게 같은 `BundleId`의 다음 revision으로 돌려보낸다.
+
+### 1.4 담당자별 최종 완성품
+
+| 담당 | 받아야 하는 최종 완성품 | 내부에서 반드시 끝낼 것 | 박한솔이 연결할 것 |
+|---|---|---|---|
+| 서보경 | Device/Object Animation GameReady Prefab 세트 | Animator, Clip, Parameter, Telegraph/Active/Resolve/Cleanup, Reset | 서버 상태 → 애니메이션 상태 Adapter와 실제 Device 배치 |
+| 노석민 | External/Internal Incident, Fire Content, Enemy GameReady Prefab 세트 | 사건 규칙, Outcome, 로컬 생명주기, Fire 면적/피해 규칙, 적 상태/표현, Cleanup | Incident 명령/예산/RNG, 서버 피해 확정, Network Snapshot |
+| 탁현재 | Ship Layout/Room/Device, Fire Surface Graph, Minigame View, Map Environment GameReady Prefab 세트 | 실제 공간 배치, Anchor/Socket, Collider/Layer, 퍼즐 UI·입력·Reset, Map/Warp 표현 | Scene Parent, Incident/Minigame Session Adapter, 서버 Seed/Result |
+| 조한용 | Player Combat Module과 Held/Dropped Tool GameReady Prefab 세트 | 공격/피격/넉백 감각, 도구 사용/투척, Animator/VFX/Audio, 로컬 규칙/Reset | 기존 Player NetworkObject, 소유권/Spawn/RPC, 서버 판정 Adapter |
+| Shop 담당 `[확인 필요]` | Shop Display/Catalog Presentation GameReady Prefab 세트 | 진열/선택/구매 피드백, 상품 View, Reset | Economy Ledger, Catalog 승인값, 구매/배송 Network Adapter |
 
 ---
 
@@ -366,13 +410,16 @@ Docs/
 
 ### 6.5 네트워크 공통 금지
 
-팀 제출 프리팹에는 기본적으로 다음을 넣지 않는다.
+신규 팀 제출 Prefab과 Script에는 예외 없이 다음을 넣지 않는다.
 
 - `NetworkManager`
 - 독립 `NetworkObject`
 - 독립 `NetworkTransform`
+- `NetworkBehaviour`
+- `NetworkVariable`, `NetworkList`
 - Network Prefab List 수정
-- `ServerRpc`/`ClientRpc`로 직접 스케줄링
+- `ServerRpc`/`ClientRpc`
+- NGO Singleton 또는 Transport 직접 조회
 - 클라이언트의 체력·지갑·재고·보상 확정
 - 클라이언트의 사고 발생·종료 확정
 - 클라이언트의 아이템 소유권 변경
@@ -380,11 +427,9 @@ Docs/
 - Audio/VFX별 NetworkObject
 - 씬 로드와 Run Phase 변경
 
-예외:
+네트워크가 필요한 동작은 `I`로 시작하는 공용 입력/출력 계약과 순수 데이터로만 노출한다. 팀 Sandbox에서는 Local Test Driver가 그 계약을 구동한다. 실제 `NetworkBehaviour`, RPC, Snapshot, Spawn/Despawn, Ownership 코드는 박한솔이 `02` Network Adapter에 작성하고 최종 Prefab에 부착한다.
 
-- Player 기능 컴포넌트가 기존 활성 Player의 `NetworkObject` 아래에서 동작해야 하는 경우, 승인된 `NetworkBehaviour` 소스는 제출할 수 있다.
-- 이 경우에도 팀원 제출 프리팹에 새 `NetworkObject`를 붙이지 않는다.
-- RPC 방향, 호출자, 서버 검증 항목, 중복 방지 키를 Manifest에 적고 박한솔이 활성 Player에 직접 통합한다.
+기존 팀 폴더에 이미 있는 Network Script는 자동 삭제하거나 재작성하지 않는다. 다만 신규 최종 완성품 Bundle에는 포함하지 않으며, 필요한 순수 도메인/View를 분리해 제출한다.
 
 ---
 
@@ -465,14 +510,15 @@ Docs/
 
 허용:
 
-- 승인된 기존 Player NetworkObject 아래에서 동작하는 `NetworkBehaviour`
-- 서버 요청 메시지와 서버 검증 코드
+- 순수 입력/출력 인터페이스와 요청 데이터
+- Local Test Driver
 - 로컬 입력, 카메라, 애니메이션, 로컬 피드백
 
 금지:
 
 - Player Prefab 복제품 활성화
 - 새 Player `NetworkObject`
+- `NetworkBehaviour`, RPC, NetworkVariable
 - 클라이언트 체력/피격/아이템 소유 확정
 - 입력만으로 직접 서버 상태를 덮어쓰기
 - 씬 검색으로 공용 컴포넌트 자동 생성
@@ -1016,12 +1062,13 @@ View가 소비하는 값:
 허용:
 
 - 로컬 Held 표현
-- 입력 요청
+- 순수 입력 요청 데이터
 - 순수 사용/충돌 계산
-- 승인된 Player NetworkBehaviour 소스
+- Local Test Driver
 
 금지:
 
+- `NetworkBehaviour`, RPC, NetworkVariable
 - 클라이언트 World Item Despawn
 - 클라이언트 Held 확정
 - 클라이언트 판매/구매 확정
@@ -1536,6 +1583,7 @@ SUBMITTED
 ### 19.2 상태 변경 규칙
 
 - 중간 단계를 건너뛰지 않는다.
+- `SUBMITTED`는 작업 중간본이 아니다. 제작 담당 범위에서 GameReady 완성 및 Sandbox 증거까지 끝난 Bundle만 접수한다.
 - 제작 담당자는 `SUBMITTED`까지만 직접 설정한다.
 - `STATIC_VALIDATED` 이후 자산이 바뀌면 revision을 올리고 영향 단계부터 재검증한다.
 - GUID, Root, Network Contract가 바뀌면 `STATIC_VALIDATED`부터 다시 시작한다.
@@ -1574,6 +1622,9 @@ Unity Services 프로젝트 연결이 없어 실제 Relay/Lobby 접속이 불가
 - [ ] 필수 Root Component 존재
 - [ ] 필수 Child Socket 존재
 - [ ] Inspector 참조 null 없음
+- [ ] 선언한 외부 통합 포트 외 내부 참조 null 0
+- [ ] 대표 Prefab만으로 나타남 → 작동 → 종료/취소 → Reset 재현
+- [ ] Placeholder/TODO/임시 Cube/통합자 추가 구현 요구 없음
 - [ ] Collider Trigger 설정 일치
 - [ ] 기존 Layer만 사용
 - [ ] ID 형식과 중복 검사 통과
@@ -1633,6 +1684,8 @@ Unity Services 프로젝트 연결이 없어 실제 Relay/Lobby 접속이 불가
 | `R16_BALANCE_UNAPPROVED` | 승인 없는 가격/보상/확률을 최종값으로 사용 |
 | `R17_PERFORMANCE_LIMIT` | Fire/Incident/VFX 최대 조건에서 제한 위반 |
 | `R18_LEGACY_AUTHORITY` | Legacy Manager/Scheduler/Spawn Point가 최종 권한으로 활성 |
+| `R19_NOT_GAME_READY` | 내부 기능·참조·표현·Reset이 미완성이라 통합자가 콘텐츠를 추가 구현해야 함 |
+| `R20_UNDECLARED_PORT` | Manifest에 없는 외부 참조나 Scene 의존성이 필요함 |
 
 ### 21.1 재제출
 
@@ -1660,6 +1713,8 @@ Unity Services 프로젝트 연결이 없어 실제 Relay/Lobby 접속이 불가
 10. Manifest 상태를 `ACCEPTED`로 변경한다.
 
 팀 제출 프리팹은 최종 목적지가 아니다. 최종 목적지는 박한솔이 관리하는 활성 씬, Final Prefab, canonical Data, Network Prefab List다.
+
+조립 허용 범위는 `배치 + 선언 포트 연결 + Network Adapter 부착 + Registry 등록`이다. 이 과정에서 팀 Prefab의 내부 Hierarchy, Animator, Collider, Material, VFX, Audio, 로컬 게임 규칙을 수정해야 하면 통합을 중단하고 원 담당자에게 반려한다.
 
 ---
 
@@ -1704,8 +1759,9 @@ Unity Services 프로젝트 연결이 없어 실제 Relay/Lobby 접속이 불가
 위 항목은 폴더명과 역할의 확정 문제다. 기술 경계는 이미 다음처럼 고정한다.
 
 - 팀원은 자기 폴더에서 독립 제출한다.
+- 팀원은 자기 담당 범위의 GameReady 최종 완성품을 제출한다.
 - Final Scene/Prefab/Network Prefab List는 박한솔만 수정한다.
-- 팀 제출 프리팹은 기본적으로 NetworkObject를 갖지 않는다.
+- 팀 제출 프리팹과 Script는 NetworkObject/NetworkBehaviour/RPC를 갖지 않는다.
 - 모든 Inspector 참조와 소켓은 명시한다.
 - `.meta`와 GUID를 보존한다.
 - 수치 밸런스는 박한솔/사용자 승인 후 확정한다.
@@ -1720,12 +1776,12 @@ Unity Services 프로젝트 연결이 없어 실제 Relay/Lobby 접속이 불가
 ```text
 1. 자기 담당 Assets 폴더 안에서만 작업합니다.
 2. Final Scene, Final Prefab, 활성 Player Prefab, Network Prefab List는 수정하지 않습니다.
-3. 기능 프리팹/SO/스크립트와 .meta를 함께 제출합니다.
+3. 부품이나 구성표가 아니라 자기 구역의 GameReady 최종 완성 Prefab/SO/Script와 .meta를 함께 제출합니다.
 4. Docs/Handoffs/<역할>/<BundleId>/에 Manifest, README, Evidence를 둡니다.
-5. Root Component, Child Socket, Collider/Layer, ID, Network 금지 요소를 Manifest에 적습니다.
-6. 자기 샌드박스에서 나타남 → 작동 → 종료/Reset까지 증명합니다.
+5. Root Component, Child Socket, Collider/Layer, ID, 외부 통합 포트, Network 금지 요소를 Manifest에 적습니다.
+6. 내부 Inspector 참조를 모두 연결하고 자기 샌드박스에서 나타남 → 작동 → 성공/실패/취소 → Cleanup/Reset까지 증명합니다.
 7. 제출 상태는 SUBMITTED로 시작합니다.
-8. 이후 통합과 Host/Client/Late Join 검증은 박한솔이 수행합니다.
+8. NetworkObject/NetworkBehaviour/NetworkVariable/RPC는 넣지 않습니다. 이후 배치, 네트워크 Adapter 연결, Host/Client/Late Join 검증은 박한솔이 수행합니다.
 9. 반려되면 같은 BundleId의 revision을 올리고 원인을 수정합니다.
-10. 승인 전에는 잠금 자산 복사본을 최종본이라고 부르지 않습니다.
+10. 박한솔이 내부 기능을 추가 제작해야 하는 제출물은 완성품으로 접수하지 않습니다.
 ```

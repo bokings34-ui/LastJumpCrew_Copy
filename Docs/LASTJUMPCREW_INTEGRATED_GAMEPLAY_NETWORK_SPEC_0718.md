@@ -810,6 +810,15 @@ P0는 Run 중 참가 금지지만 Snapshot은 복원 가능해야 한다.
 - NGO 타입을 03/04/05/06 순수 도메인 Interface에 노출하지 않는다.
 - Scene/Prefab 연결은 Inspector에서 드러나야 한다.
 
+### 8.1 팀 완성품과 네트워크 조립 경계
+
+- 03/04/05/06 담당자는 자기 구역의 내부 참조와 전체 로컬 생명주기가 끝난 GameReady Prefab을 제출한다.
+- 팀 제출 Prefab/Script에는 `NetworkObject`, `NetworkBehaviour`, `NetworkVariable`, RPC를 넣지 않는다.
+- 상태 입력과 요청 출력은 `I`로 시작하는 순수 계약과 데이터로 노출하고 Sandbox Local Driver로 증명한다.
+- 02는 완성품 내부를 수정하지 않고 Scene 배치, 선언 포트 연결, Network Adapter, Registry/Network Prefab 등록만 수행한다.
+- 내부 Hierarchy, Collider, Animator, VFX/Audio, 로컬 규칙 또는 Reset 보완이 필요하면 통합하지 않고 원 담당자에게 revision 반려한다.
+- 세부 접수·반려 기준은 `Docs/LASTJUMPCREW_TEAM_PREFAB_INTAKE_SPEC_0718.md`를 따른다.
+
 ## 9. 우선순위
 
 ### P0 구조 안정화
@@ -943,3 +952,4 @@ P0는 Run 중 참가 금지지만 Snapshot은 복원 가능해야 한다.
 10. MiniGame은 Client View, Server Session/Result Authority.
 11. Fire는 Zone/Patch 면적 그래프.
 12. 공유 Scene과 Network Prefab은 박한솔 통합 단일 소유.
+13. 팀원은 GameReady 로컬 완성품을 제출하고 박한솔은 네트워크와 최종 조립만 수행.

@@ -6,9 +6,10 @@
 - 상태: 팀 배포 전 검토본
 - 배분 원칙:
   - 기존 담당 폴더와 Notion 담당을 유지한다.
-  - 팀원은 기능 프리팹과 순수 도메인을 납품한다.
+  - 팀원은 자기 담당 구역의 게임 투입 가능한 GameReady 최종 완성 Prefab을 납품한다.
   - 공용 씬, NetworkManager, Network Prefab, Build Settings는 통합 담당자만 수정한다.
-  - 네트워크 권위는 02 통합 계층에 모은다.
+  - NetworkObject/NetworkBehaviour/RPC와 네트워크 권위는 `02` 통합 계층에만 둔다.
+  - 박한솔은 팀 콘텐츠를 대신 완성하지 않고 배치·포트 연결·네트워크 조립만 한다.
 
 ## 1. 최종 소유권
 
@@ -21,6 +22,24 @@
 | 노석민 | 외부 사건 콘텐츠, 내부 사고 규칙, 적, 사건 SO/Pool/Outcome | `Assets/04. NohSeokMin_Game Event/` |
 | 탁현재 | 함선 공간, Room/Device 배치, Map 환경, Fire 표면, 미니게임 View, Warp 연출 | `Assets/05. TakHyunJae_Map & MiniGame/` |
 | 조한용 | 플레이어 전투/체력/넉백, 아이템 공격·사용·투척, 도구 UX | `Assets/06. JoHanYong_PlayerSystem/` |
+
+### 1.1 한 사람 한 구역·완성품 경계
+
+| 담당 | 자기 구역에서 끝내서 줄 최종 완성품 | 박한솔이 마지막에 할 일 |
+|---|---|---|
+| 서보경 | Door/Console/Generator/Repair/Shop Object Animation Prefab, Animator/Clip/Parameter, 상태 전환과 Reset | 서버 Snapshot을 상태 입력 포트에 연결하고 실제 Device 아래 배치 |
+| 노석민 | 외부 사건·내부 사고·Fire Content·Enemy Prefab, SO/Outcome, 로컬 전체 생명주기와 Cleanup | Incident Director 명령, RNG/Budget, 서버 피해와 Network Snapshot 연결 |
+| 탁현재 | Ship Layout/Room/Device, Fire Surface Graph, Minigame View, Map Environment/Warp Prefab | Scene Parent/Anchor, Minigame Session, 서버 Seed/Result 연결 |
+| 조한용 | Player Combat/Health/Knockback Module, Held/Dropped Tool Prefab, 사용·투척·피드백·Reset | 기존 Player NetworkObject, RPC/소유권/Spawn, 서버 판정 연결 |
+| Shop 담당 `[확인 필요]` | Shop Display/Catalog Presentation Prefab, 상품 표시·선택·피드백·Reset | Economy Ledger, 승인 Catalog, 구매/배송 네트워크 연결 |
+
+최종 완성품 기준:
+
+- 내부 Inspector 참조, Collider, Layer, Animator, Material, VFX, Audio, Data가 모두 연결돼 있다.
+- 담당자 Sandbox에서 나타남 → 작동 → 성공/실패/취소 → Cleanup/Reset까지 실행된다.
+- 외부에 남기는 것은 Manifest에 적은 상태 입력, 요청 출력, Scene Anchor, Registry 항목뿐이다.
+- `NetworkObject`, `NetworkBehaviour`, `NetworkVariable`, RPC는 포함하지 않는다.
+- 박한솔이 내부 자식·Clip·Collider·로컬 규칙을 추가해야 하면 완성품이 아니므로 원 담당자에게 반려한다.
 
 ## 2. 공유 파일 잠금
 
@@ -41,11 +60,11 @@
 
 팀원 납품 방식:
 
-1. 자기 폴더의 Prefab/SO/Script 작성.
-2. Inspector 연결 완료.
-3. 테스트 Prefab 또는 Test Scene 제공.
-4. 필요한 통합 연결점을 짧은 README로 기록.
-5. 박한솔이 Final Prefab과 0715 Scene에 조립.
+1. 자기 폴더에서 GameReady Root Prefab과 필요한 SO/Script/표현 자산을 완성한다.
+2. 외부 통합 포트를 제외한 모든 Inspector 참조를 연결한다.
+3. 같은 최종 Prefab을 Sandbox Scene에서 전체 생명주기로 증명한다.
+4. Manifest/README에 외부 통합 포트와 실제 자산 GUID를 기록한다.
+5. 박한솔은 Final Prefab/0715 Scene에 배치하고 `02` Network Adapter만 연결한다.
 
 ## 3. 공용 계약 동결
 
@@ -252,6 +271,7 @@
 - Map Geometry와 Room 배치 제작.
 - 플레이어 공격 감각과 도구 애니메이션 제작.
 - 상품 가격/보상 수치 단독 결정.
+- 팀 완성품의 누락 Hierarchy/Collider/Animator/VFX/Audio/로컬 기능 보완.
 
 ## 5. 서보경 배정
 
@@ -268,13 +288,14 @@
 
 납품:
 
-- 독립 Prefab.
+- GameReady 독립 Prefab.
 - Animator Controller와 사용 Clip.
 - Parameter 표.
 - 시작/Loop/복구/종료 상태표.
 - Animation Event 목록.
 - 샌드박스 실행 캡처.
 - Prefab/SO/Controller/Clip의 `.meta`.
+- 외부 상태 입력 포트를 구동하는 Local Test Driver.
 
 필수 계약:
 
@@ -290,6 +311,7 @@
 - Loop에서 Resolve/Cleanup으로 정상 이탈.
 - Animator Warning 0.
 - Prefab 비활성→활성→정리 재사용 가능.
+- 실제 Device에 배치하기 전 내부 추가 작업 0.
 
 ### SBG-P1-01 오브젝트 세트 확장
 
@@ -332,6 +354,7 @@
 
 - 사건당 피해/Child Incident 최대 1회.
 - EventInstanceId 기반 결과 추적.
+- 사건별 GameReady Root Prefab에서 Telegraph → Active → Resolve/Fail/Expire → Cleanup 재현.
 
 ### NSM-P0-02 Legacy Scheduler 격리
 
@@ -368,13 +391,14 @@
 권위 제한:
 
 - 순수 계산과 Scene Authoring Component를 제공.
-- NetworkList, ServerRpc, NetworkObject Spawn은 소유하지 않는다.
+- NetworkBehaviour, NetworkList, RPC, NetworkObject Spawn은 소유하지 않는다.
 
 완료 기준:
 
 - 점이 아닌 면적 Patch.
 - 인접하지 않은 Patch 확산 없음.
 - 동일 대상 Collider 중복 피해 제거 가능.
+- Fire Content GameReady Prefab의 VFX/Audio/피해 Volume/소화/Reset 내부 연결 완료.
 
 ### NSM-P0-04 적 침투 콘텐츠
 
@@ -413,7 +437,7 @@
 
 납품:
 
-- 함선 Layout Prefab.
+- GameReady 함선 Layout Prefab.
 - Anchor ID 표.
 - Room ID 표.
 - Fire Patch Link 표.
@@ -423,6 +447,7 @@
 - Generic 빈 Box Anchor 없음.
 - 실제 설비 또는 표면에 사고 발생.
 - Presentation Root 위치 오류 없음.
+- 박한솔이 Anchor/Collider/표현 자식을 추가하지 않아도 됨.
 
 ### THJ-P0-02 MiniGame View
 
@@ -441,6 +466,7 @@
 - EventInstance와 TerminalInstance를 표시 가능.
 - Timeout/Cancel/Disconnect 처리.
 - DoorKeypad는 P0 Event 매핑에서 제외.
+- 각 GameReady View Prefab이 Local Test Driver로 Start/Progress/Success/Fail/Timeout/Cancel/Reset을 모두 재현.
 
 ### THJ-P0-03 Warp/Map Presentation
 
@@ -461,7 +487,7 @@
 
 납품:
 
-- Map별 Environment Prefab.
+- Map별 GameReady Environment Prefab.
 - Skybox/Lighting.
 - Debris Spawn Volume.
 - 위험 Volume.
@@ -482,15 +508,16 @@
 작업:
 
 - 06의 Player Prefab 복사본을 활성 Prefab으로 사용하지 않는다.
-- `NetworkPlayerCombatController`.
-- `NetworkPlayerHealth`.
-- `NetworkPlayerKnockbackReceiver`.
-- 활성 02 Player Prefab에 붙일 Component Prefab 또는 구성표 납품.
+- Player Combat/Health/Knockback GameReady Module Prefab.
+- 로컬 입력·피격·넉백·사망/복구 표현.
+- 활성 02 Player Prefab에 붙일 완성 Module Prefab과 Socket Manifest 납품.
 
 완료 기준:
 
 - 이동 권위는 02 `NetworkPlayerController` 하나.
 - 전투/체력/넉백은 중복 Component 없음.
+- Local Test Driver에서 공격→피격→넉백→사망/복구→Reset 완료.
+- 내부 Animator/VFX/Audio/Collider/Layer 참조 null 0.
 
 ### JHY-P0-02 기본 도구
 
@@ -501,14 +528,15 @@
 - Battery.
 - Use/Throw/Impact.
 - Held ItemId 검증.
-- Server Cooldown.
-- Continuous Use 전송 Rate 제한.
+- Cooldown/Range/Continuous Use Rate 순수 규칙.
+- Held/Dropped 전환 표현과 Local Test Driver.
 
 완료 기준:
 
-- 서버가 ItemId/Revision/Range를 검증.
-- Frame마다 무제한 RPC/VFX 송신 없음.
-- Wrong Item/원거리/Replay 거절.
+- ItemId/Range/Cooldown/연속 사용 규칙 테스트 통과.
+- Frame마다 무제한 요청 Event/VFX 생성 없음.
+- Wrong Item/원거리/연속 요청 거절 기대값 제공.
+- 실제 서버 Owner/Revision/Replay 검증은 박한솔 Network Adapter 검증 항목으로 전달.
 
 ### JHY-P0-03 사고 대응 연결
 
@@ -585,8 +613,9 @@ flowchart LR
 ### M1 팀별 독립 납품
 
 - 팀 폴더 안에서 작업.
-- Test Prefab/Test Scene으로 기능 증명.
-- NGO 권위 없이 순수 Domain/View 납품.
+- GameReady 최종 Prefab을 같은 Sandbox Scene에서 기능 증명.
+- 내부 기능·표현·참조·Reset까지 완성.
+- NGO 권위 없이 순수 Domain/View와 선언된 통합 포트만 납품.
 
 ### M2 통합
 
@@ -609,8 +638,12 @@ flowchart LR
 - [ ] Interface 파일명 `I` 시작.
 - [ ] Inspector 참조 Null 없음.
 - [ ] 자동 `Find` fallback 없음.
-- [ ] 기능 Prefab 제공.
+- [ ] GameReady 최종 Root Prefab 제공.
 - [ ] SO/Data 제공.
+- [ ] 선언 포트 외 Inspector 참조 null 0.
+- [ ] Animator/Collider/VFX/Audio/Reset 내부 완성.
+- [ ] 같은 최종 Prefab으로 전체 생명주기 Sandbox 증명.
+- [ ] NetworkObject/NetworkBehaviour/NetworkVariable/RPC 없음.
 - [ ] 입력/출력 계약 기록.
 - [ ] 실패 로그 이유 기록.
 - [ ] Compile Error 0.
@@ -630,7 +663,7 @@ flowchart LR
 
 팀 배분 작업 완료는 코드 작성이 아니라 아래 결과까지다.
 
-1. 팀별 Prefab/SO/Script 납품.
+1. 팀별 GameReady 최종 Prefab/SO/Script 납품.
 2. 공용 계약 준수.
 3. 0715 통합 씬 연결.
 4. Host+Client 실제 실행.
@@ -664,32 +697,32 @@ flowchart LR
 
 박한솔이 기다려야 하는 입력:
 
-- 서보경: 오브젝트 애니메이션 Prefab/Controller/Clip/Parameter 표.
-- 신규 Shop 담당 `[확인 필요]`: Catalog/Display 콘텐츠.
-- 노석민: Incident Outcome과 Fire/Enemy 콘텐츠.
-- 탁현재: Layout/Fire Patch/MiniGame View/Map Prefab.
-- 조한용: Player Combat/도구/투척 Component.
+- 서보경: Object Animation GameReady Prefab/Controller/Clip/Parameter/Reset 완성본.
+- 신규 Shop 담당 `[확인 필요]`: Shop Display/Catalog Presentation GameReady 완성본.
+- 노석민: Incident/Fire/Enemy GameReady Prefab과 Outcome/SO 완성본.
+- 탁현재: Layout/Fire Surface/MiniGame View/Map Environment GameReady 완성본.
+- 조한용: Player Combat/도구/투척 GameReady Module/Prefab 완성본.
 
-즉, 박한솔 작업을 더 추가하는 단계가 아니라 공용 권위와 통합만 맡고 콘텐츠 구현은 팀에 넘겨야 한다.
+즉, 박한솔은 완성품의 내부를 고치지 않는다. 공용 권위, 배치, 선언 포트, Network Adapter, Registry와 검증만 맡는다.
 
 ## 13. 팀 배포용 요약문
 
 ### 서보경 전달
 
-`03`의 신규 담당은 오브젝트 애니메이션입니다. Door/Console/Generator/Repair/Shop 오브젝트의 Prefab, Animator Controller, Clip, Parameter/상태표, 샌드박스 증거를 함께 제출해주세요. NetworkVariable/RPC/Scheduler/게임 결과 판정은 넣지 않고 Telegraph/Active/Resolve/Cleanup 표현만 담당합니다. 기존 경제 자산은 GUID와 이력을 유지하며 별도 합의 없이 이동하거나 재작성하지 않습니다.
+`03`의 신규 담당은 오브젝트 애니메이션입니다. Door/Console/Generator/Repair/Shop별로 내부 참조가 모두 연결된 GameReady Prefab, Animator Controller, Clip, Parameter/상태표, Local Test Driver, 전체 Reset 증거를 함께 제출해주세요. NetworkObject/NetworkBehaviour/NetworkVariable/RPC/Scheduler/게임 결과 판정은 넣지 않습니다. 박한솔은 상태 입력 포트와 실제 Device 배치만 연결합니다. 기존 경제 자산은 GUID와 이력을 유지하며 별도 합의 없이 이동하거나 재작성하지 않습니다.
 
 ### 노석민 전달
 
-`04`에서 외부 사건, 내부 사고 규칙, Fire, Enemy 콘텐츠를 맡습니다. P0는 720x 사건 Outcome 표, Legacy Scheduler 비활성화, Fire Zone/Patch/Link 도메인, Enemy 상태 읽기 계약입니다. 사건 자동 Spawn과 네트워크 권위는 02가 담당하므로 Local Update Scheduler와 직접 Ship Damage 중복은 넣지 않습니다.
+`04`에서 외부 사건, 내부 사고 규칙, Fire, Enemy 콘텐츠를 GameReady Prefab으로 완성합니다. 720x Outcome/SO, Telegraph→Active→Resolve/Fail/Expire→Cleanup, Fire 면적·피해·소화·Reset, Enemy 상태/표현까지 Sandbox에서 완결해야 합니다. NetworkObject/NetworkBehaviour/RPC, 자동 Spawn 권위, 직접 Network Ship Damage는 넣지 않습니다. 박한솔은 Incident 명령·Budget·RNG·서버 피해와 Snapshot만 연결합니다.
 
 ### 탁현재 전달
 
-`05`에서 함선 공간, 실제 사고 위치, Fire 표면, 미니게임 View, Warp/Map 연출을 맡습니다. P0는 실제 Device/Room Anchor, Fire Patch 링크, Cannon/PowerSync/WireFix `IMiniGameView`입니다. Run Phase·Scene Load·결과 확정은 하지 않고 Prefab/Inspector 연결본으로 납품해주세요.
+`05`에서 함선 공간, 실제 사고 위치, Fire 표면, 미니게임 View, Warp/Map 연출을 GameReady Prefab으로 완성합니다. 실제 Device/Room Anchor, Fire Patch 링크, Collider/Layer, Cannon/PowerSync/WireFix 전체 UI·입력·성공/실패/취소·Reset까지 내부 연결해서 납품해주세요. NetworkObject/NetworkBehaviour/RPC, Run Phase·Scene Load·결과 확정은 넣지 않습니다. 박한솔은 Scene Parent와 Incident/Minigame Session 포트만 연결합니다.
 
 ### 조한용 전달
 
-`06`에서 Player Combat/Health/Knockback과 도구 사용·투척을 맡습니다. P0는 Wrench/Extinguisher/Battery 서버 검증, Continuous Use Rate 제한, 사고 대응 입력 단일화입니다. 이동 권위와 활성 Player Prefab은 02 한 개를 사용하고 06 Player Prefab 복사본을 새 활성본으로 만들지 않습니다.
+`06`에서 Player Combat/Health/Knockback Module과 Wrench/Extinguisher/Battery Held/Dropped Tool을 GameReady Prefab으로 완성합니다. 공격·피격·넉백·사용·투척·VFX/Audio·실패·Cleanup/Reset과 ItemId/Range/Cooldown 순수 규칙까지 Sandbox에서 끝내주세요. NetworkObject/NetworkBehaviour/NetworkVariable/RPC는 넣지 않고 06 Player 복사본을 활성본으로 만들지 않습니다. 박한솔은 기존 Player NetworkObject, 소유권/Spawn/RPC와 서버 판정만 연결합니다.
 
 ### 박한솔 통합
 
-`02`에서 Persistent RunSessionRoot, Run/Ship/Wallet 지속화, Network 설정, Scene/Prefab 조립, Incident/MiniGame Session 권위, Validator와 2·4·8인 검증을 맡습니다. 팀원 콘텐츠를 직접 대신 구현하지 않고 Interface/Adapter와 최종 Inspector 연결만 담당합니다.
+`02`에서 Persistent RunSessionRoot, Run/Ship/Wallet/RNG/Incident 원장, Network 설정, Scene/Prefab 조립, Incident/MiniGame Session 권위, Registry, Validator와 2·4·8인 검증을 맡습니다. 팀원 GameReady Prefab 내부는 수정하지 않고 배치, 선언된 포트, Network Adapter와 최종 Inspector 연결만 담당합니다. 내부 미완성은 원 담당자에게 revision 반려합니다.
