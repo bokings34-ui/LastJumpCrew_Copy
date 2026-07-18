@@ -11,6 +11,7 @@ using UnityEngine.SceneManagement;
 namespace LastJumpCrew.ParkHanSol.Multiplayer
 {
     [RequireComponent(typeof(NetworkObject))]
+    [RequireComponent(typeof(NetworkRunStageClock))]
     public sealed class NetworkRunFlowCoordinator : NetworkBehaviour, IRunFlowStatus
     {
         [Header("Run Rules")]
@@ -19,6 +20,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
         [SerializeField, Min(0.1f)] private float warpArrivalSeconds = 1f;
         [SerializeField, Min(0f)] private float rearmSeconds = 8f;
         [SerializeField] private PHSMapCatalogSO mapCatalog;
+        [SerializeField] private NetworkRunStageClock stageClock;
         [SerializeField, Range(PHSMapProfileSO.MinimumMapId, PHSMapProfileSO.MaximumMapId)]
         private int initialMapId = PHSMapProfileSO.MinimumMapId;
         [SerializeField] private string mapSceneName = "PHS_Map_ver1";
@@ -82,6 +84,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
         private float scheduledWarpReviveTime = -1f;
         private int pendingNextMapId;
         private bool departingWarpSafeZone;
+        private uint handledExpiredStageSequence;
 
         public static NetworkRunFlowCoordinator Instance { get; private set; }
 
@@ -197,12 +200,13 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
             }
 
             Instance = this;
-            if (!ValidateMapCatalog())
+            if (!ValidateStageClockReference() || !ValidateMapCatalog())
             {
                 enabled = false;
                 return;
             }
 
+            stageClock.ExpiredServer += HandleStageClockExpiredServer;
             synchronizedPhase.OnValueChanged += HandleSynchronizedPhaseChanged;
             synchronizedActiveMapId.OnValueChanged += HandleSynchronizedActiveMapChanged;
             synchronizedActiveMapRevision.OnValueChanged += HandleSynchronizedActiveMapRevisionChanged;
@@ -219,6 +223,11 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
 
         public override void OnNetworkDespawn()
         {
+            if (stageClock != null)
+            {
+                stageClock.ExpiredServer -= HandleStageClockExpiredServer;
+            }
+
             synchronizedPhase.OnValueChanged -= HandleSynchronizedPhaseChanged;
             synchronizedActiveMapId.OnValueChanged -= HandleSynchronizedActiveMapChanged;
             synchronizedActiveMapRevision.OnValueChanged -= HandleSynchronizedActiveMapRevisionChanged;
@@ -336,6 +345,21 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
                 return false;
             }
 
+            if (stageClock.State == NetworkRunStageClockState.Running)
+            {
+                if (!stageClock.TryPauseServer(out var clockReason)
+                    || stageClock.State != NetworkRunStageClockState.Paused)
+                {
+                    reason = $"stage_clock_pause_failed:{clockReason ?? stageClock.State.ToString()}";
+                    return false;
+                }
+            }
+            else if (stageClock.State != NetworkRunStageClockState.Stopped)
+            {
+                reason = $"stage_clock_state_invalid:{stageClock.State}";
+                return false;
+            }
+
             departingWarpSafeZone = false;
             scheduledWarpExecutionTime = Time.time + warpTransitionSeconds;
             SetPhase(NetworkRunPhase.Warping);
@@ -426,6 +450,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
             finalShopCompleted = true;
             synchronizedFinalShopPending.Value = false;
             synchronizedShopCycles.Value = 3;
+            TryStopStageClockServer("final_shop_completed");
             synchronizedPhase.Value = NetworkRunPhase.Clear;
             reason = null;
             Debug.Log($"PHS_RUN_FLOW_CLEAR zones={synchronizedClearedZones.Value} shopCycles={synchronizedShopCycles.Value}");
@@ -490,12 +515,15 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
                     TickWarpCharge(deltaTime);
                     break;
                 case GamePhase.Shop:
+                    TryStopStageClockServer("shop_entered");
                     SetPhase(NetworkRunPhase.Shop);
                     break;
                 case GamePhase.GameClear:
+                    TryStopStageClockServer("game_clear");
                     TickFinalShop();
                     break;
                 case GamePhase.GameOver:
+                    TryStopStageClockServer("game_over");
                     SetPhase(NetworkRunPhase.GameOver);
                     break;
             }
@@ -503,6 +531,32 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
 
         private void TickRearm(float deltaTime)
         {
+            if (pendingNextMapId > 0 && ActiveMapId != pendingNextMapId)
+            {
+                if (SelectedNextMapId != pendingNextMapId)
+                {
+                    Debug.LogError(
+                        $"PHS_RUN_FLOW_MAP_COMMIT_FAILED reason=pending_selection_mismatch pending={pendingNextMapId} selected={SelectedNextMapId}",
+                        this);
+                    return;
+                }
+
+                if (!TryResolveMapScene(pendingNextMapId, out _, out var pendingMapSceneName)
+                    || SceneManager.GetActiveScene().name != pendingMapSceneName)
+                {
+                    return;
+                }
+
+                if (!TryCommitActiveMap())
+                {
+                    return;
+                }
+
+                Debug.Log(
+                    $"PHS_RUN_FLOW_MAP_COMMITTED_BEFORE_REARM mapId={ActiveMapId}",
+                    this);
+            }
+
             if (!TryResolveMapScene(ActiveMapId, out _, out var activeMapSceneName))
             {
                 return;
@@ -547,9 +601,47 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
 
             var nextZoneId = pendingNextMapId;
             gameCommands.SelectZone(nextZoneId);
+            gameCommands.SetStageTimerPaused(true);
+            if (gameState.Phase != GamePhase.Play || gameState.SelectedZoneId != nextZoneId)
+            {
+                Debug.LogError(
+                    $"PHS_RUN_FLOW_ZONE_START_FAILED reason=game_state_rejected mapId={nextZoneId} phase={gameState.Phase} selected={gameState.SelectedZoneId}",
+                    this);
+                gameCommands.ReportGameOver(GameOverReason.TimeOver);
+                return;
+            }
+
+            if (profile.AdvancesStageTime)
+            {
+                if (!stageClock.TryStartServer(
+                        nextZoneId,
+                        profile.StageTimeLimitSeconds,
+                        out var clockReason))
+                {
+                    Debug.LogError(
+                        $"PHS_RUN_FLOW_ZONE_START_FAILED reason=stage_clock_start_failed detail={clockReason} mapId={nextZoneId}",
+                        this);
+                    gameCommands.ReportGameOver(GameOverReason.TimeOver);
+                    return;
+                }
+            }
+            else
+            {
+                TryStopStageClockServer("map_time_disabled");
+                if (stageClock.State != NetworkRunStageClockState.Stopped)
+                {
+                    Debug.LogError(
+                        $"PHS_RUN_FLOW_ZONE_START_FAILED reason=stage_clock_terminal state={stageClock.State} mapId={nextZoneId}",
+                        this);
+                    gameCommands.ReportGameOver(GameOverReason.TimeOver);
+                    return;
+                }
+            }
+
             pendingNextMapId = 0;
             synchronizedSelectedNextMapId.Value = 0;
-            Debug.Log($"PHS_RUN_FLOW_ZONE_STARTED zone={nextZoneId} cleared={gameState.ClearedZoneCount}");
+            Debug.Log(
+                $"PHS_RUN_FLOW_ZONE_STARTED zone={nextZoneId} cleared={gameState.ClearedZoneCount} clock={stageClock.State} sequence={stageClock.StageSequence}");
         }
 
         private void TickWarpCharge(float deltaTime)
@@ -619,19 +711,34 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
             switch (gameState.Phase)
             {
                 case GamePhase.ZoneSelect:
+                    TryStopStageClockServer("jump_completed");
                     SetPhase(NetworkRunPhase.WarpArrival);
                     RequestMapRefresh();
                     break;
                 case GamePhase.Shop:
+                    TryStopStageClockServer("jump_completed_shop");
                     SetPhase(NetworkRunPhase.Shop);
                     break;
                 case GamePhase.GameClear:
+                    TryStopStageClockServer("jump_completed_clear");
                     SetPhase(NetworkRunPhase.FinalShop);
                     break;
                 case GamePhase.GameOver:
+                    TryStopStageClockServer("jump_completed_game_over");
                     SetPhase(NetworkRunPhase.GameOver);
                     break;
                 default:
+                    if (stageClock.State == NetworkRunStageClockState.Paused
+                        && !stageClock.TryResumeServer(out var clockReason))
+                    {
+                        Debug.LogError(
+                            $"PHS_RUN_FLOW_WARP_FAILED reason=stage_clock_resume_failed detail={clockReason}",
+                            this);
+                        gameCommands.ReportGameOver(GameOverReason.TimeOver);
+                        SetPhase(NetworkRunPhase.GameOver);
+                        break;
+                    }
+
                     SetPhase(NetworkRunPhase.WarpReady);
                     Debug.LogError(
                         $"PHS_RUN_FLOW_WARP_FAILED reason=jump_rejected phase={gameState.Phase}",
@@ -878,7 +985,90 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
             if (IsServer)
             {
                 MirrorGameState();
+                if (gameState != null && gameState.Phase == GamePhase.GameOver)
+                {
+                    TryStopStageClockServer("game_state_changed_game_over");
+                    SetPhase(NetworkRunPhase.GameOver);
+                }
             }
+        }
+
+        private void HandleStageClockExpiredServer(NetworkRunStageClockSnapshot expiredSnapshot)
+        {
+            if (!IsSpawned
+                || !IsServer
+                || expiredSnapshot.StageSequence == 0U
+                || handledExpiredStageSequence == expiredSnapshot.StageSequence)
+            {
+                return;
+            }
+
+            handledExpiredStageSequence = expiredSnapshot.StageSequence;
+            if (expiredSnapshot.MapId != ActiveMapId)
+            {
+                Debug.LogError(
+                    $"PHS_STAGE_CLOCK_TIMEOUT_MAP_MISMATCH snapshot={expiredSnapshot.MapId} active={ActiveMapId} sequence={expiredSnapshot.StageSequence}",
+                    this);
+            }
+
+            if (!TryBindGameFlow() || gameState == null || gameCommands == null)
+            {
+                Debug.LogError(
+                    $"PHS_STAGE_CLOCK_TIMEOUT_FAILED reason=game_flow_unavailable map={expiredSnapshot.MapId} sequence={expiredSnapshot.StageSequence}",
+                    this);
+                return;
+            }
+
+            var shipSystems = NetworkShipSystemsState.Instance;
+            var damageReason = "ship_systems_missing";
+            if (shipSystems != null
+                && shipSystems.TryApplyShipDamage(999, "stage_timeout", out damageReason))
+            {
+                Debug.Log(
+                    $"PHS_STAGE_CLOCK_TIMEOUT_DAMAGE_APPLIED map={expiredSnapshot.MapId} sequence={expiredSnapshot.StageSequence} hp={shipSystems.CurrentShipHp}",
+                    this);
+            }
+            else
+            {
+                Debug.LogError(
+                    $"PHS_STAGE_CLOCK_TIMEOUT_DAMAGE_FAILED reason={damageReason} map={expiredSnapshot.MapId} sequence={expiredSnapshot.StageSequence}",
+                    this);
+            }
+
+            if (gameState.Phase != GamePhase.GameOver)
+            {
+                gameCommands.ReportGameOver(GameOverReason.TimeOver);
+            }
+
+            MirrorGameState();
+            SetPhase(NetworkRunPhase.GameOver);
+            Debug.Log(
+                $"PHS_STAGE_CLOCK_TIMEOUT_RESOLVED map={expiredSnapshot.MapId} sequence={expiredSnapshot.StageSequence} gameOver={gameState.Phase}",
+                this);
+        }
+
+        private bool TryStopStageClockServer(string context)
+        {
+            if (!IsServer || stageClock == null)
+            {
+                return false;
+            }
+
+            if (stageClock.State == NetworkRunStageClockState.Stopped
+                || stageClock.State == NetworkRunStageClockState.Expired)
+            {
+                return true;
+            }
+
+            if (stageClock.TryStopServer(out var reason))
+            {
+                return true;
+            }
+
+            Debug.LogError(
+                $"PHS_STAGE_CLOCK_STOP_FAILED context={context} reason={reason} state={stageClock.State}",
+                this);
+            return false;
         }
 
         private void MirrorGameState()
@@ -1073,6 +1263,26 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
             {
                 Debug.LogError(
                     $"PHS_RUN_FLOW_SETUP_FAILED reason=initial_map_missing mapId={initialMapId}",
+                    this);
+                return false;
+            }
+
+            return true;
+        }
+
+        private bool ValidateStageClockReference()
+        {
+            if (stageClock == null)
+            {
+                Debug.LogError("PHS_RUN_FLOW_SETUP_FAILED reason=stage_clock_missing", this);
+                return false;
+            }
+
+            if (stageClock.gameObject != gameObject
+                || GetComponent<NetworkRunStageClock>() != stageClock)
+            {
+                Debug.LogError(
+                    "PHS_RUN_FLOW_SETUP_FAILED reason=stage_clock_reference_invalid expected=same_root",
                     this);
                 return false;
             }

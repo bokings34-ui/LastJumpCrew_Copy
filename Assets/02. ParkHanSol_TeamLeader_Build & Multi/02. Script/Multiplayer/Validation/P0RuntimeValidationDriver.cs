@@ -35,6 +35,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Validation
         private readonly Dictionary<ulong, MapChoiceReport> mapChoiceReports = new();
         private readonly Dictionary<ulong, ShopStateReport> shopStateReports = new();
         private readonly Dictionary<ulong, RunFlowReport> runFlowReports = new();
+        private readonly Dictionary<ulong, StageClockReport> stageClockReports = new();
         private readonly Dictionary<ulong, DebrisSaleStateReport> debrisSaleStateReports = new();
         private readonly Dictionary<ulong, EventSnapshotReport> eventSnapshotReports = new();
         private readonly Dictionary<ulong, EventTerminalReport> eventTerminalReports = new();
@@ -64,6 +65,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Validation
         private uint observedTerminalRevision;
         private ulong activeObservedInstanceId;
         private NetworkEventCoordinator observedEventCoordinator;
+        private uint initialStageClockSequence;
 
         private readonly struct GaugeReport
         {
@@ -123,6 +125,32 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Validation
             public int ClearedZoneCount { get; }
             public int CompletedShopCycleCount { get; }
             public bool FinalShopPending { get; }
+        }
+
+        private readonly struct StageClockReport
+        {
+            public StageClockReport(
+                bool found,
+                int mapId,
+                uint stageSequence,
+                uint revision,
+                NetworkRunStageClockState state,
+                float remainingSeconds)
+            {
+                Found = found;
+                MapId = mapId;
+                StageSequence = stageSequence;
+                Revision = revision;
+                State = state;
+                RemainingSeconds = remainingSeconds;
+            }
+
+            public bool Found { get; }
+            public int MapId { get; }
+            public uint StageSequence { get; }
+            public uint Revision { get; }
+            public NetworkRunStageClockState State { get; }
+            public float RemainingSeconds { get; }
         }
 
         private readonly struct DebrisSaleStateReport
@@ -316,6 +344,12 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Validation
                 "charging_not_reached_for_debris");
             if (scenarioFinished) yield break;
 
+            yield return ProbeRunningStageClock(
+                NetworkRunFlowCoordinator.Instance.ActiveMapId,
+                expectedSequence: 0U,
+                captureInitialSequence: true);
+            if (scenarioFinished) yield break;
+
             yield return RunDebrisRoundTrip();
             if (scenarioFinished) yield break;
 
@@ -357,6 +391,9 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Validation
                 () => warpReadyCoordinator.Phase == NetworkRunPhase.WarpSafe,
                 10f,
                 "warp_safe_not_reached");
+            if (scenarioFinished) yield break;
+
+            yield return ProbePausedStageClock(warpReadyCoordinator.ActiveMapId);
             if (scenarioFinished) yield break;
 
             yield return ProbeMapChoices();
@@ -1658,6 +1695,198 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Validation
                 $"cycles={expectedShopCycles} final={finalShopPending} reports={reports}");
         }
 
+        private IEnumerator ProbeRunningStageClock(
+            int expectedMapId,
+            uint expectedSequence,
+            bool captureInitialSequence)
+        {
+            var deadline = Time.realtimeSinceStartup + 15f;
+            while (scenarioRunning && !scenarioFinished && Time.realtimeSinceStartup < deadline)
+            {
+                stageClockReports.Clear();
+                var token = ++activeProbeToken;
+                ProbeStageClockClientRpc(token);
+
+                var probeDeadline = Mathf.Min(deadline, Time.realtimeSinceStartup + 2f);
+                while (stageClockReports.Count < expectedClientCount &&
+                       Time.realtimeSinceStartup < probeDeadline)
+                {
+                    yield return null;
+                }
+
+                if (TryValidateStageClockReports(
+                        NetworkRunStageClockState.Running,
+                        expectedMapId,
+                        expectedSequence,
+                        out var first,
+                        out var remainingDelta))
+                {
+                    if (captureInitialSequence)
+                    {
+                        initialStageClockSequence = first.StageSequence;
+                    }
+
+                    Debug.Log(
+                        $"PHS_P0_STAGE_CLOCK_RUNNING_OK peers={stageClockReports.Count} " +
+                        $"map={first.MapId} sequence={first.StageSequence} revision={first.Revision} " +
+                        $"remainingDelta={remainingDelta:F3}",
+                        this);
+                    yield break;
+                }
+
+                yield return new WaitForSecondsRealtime(0.25f);
+            }
+
+            Fail(
+                $"stage_clock_running_sync_timeout expectedMap={expectedMapId} " +
+                $"expectedSequence={expectedSequence} reports={DescribeStageClockReports()}");
+        }
+
+        private IEnumerator ProbePausedStageClock(int expectedMapId)
+        {
+            var deadline = Time.realtimeSinceStartup + 15f;
+            Dictionary<ulong, StageClockReport> baselineReports = null;
+            StageClockReport baseline = default;
+            while (scenarioRunning && !scenarioFinished && Time.realtimeSinceStartup < deadline)
+            {
+                stageClockReports.Clear();
+                var token = ++activeProbeToken;
+                ProbeStageClockClientRpc(token);
+
+                var probeDeadline = Mathf.Min(deadline, Time.realtimeSinceStartup + 2f);
+                while (stageClockReports.Count < expectedClientCount &&
+                       Time.realtimeSinceStartup < probeDeadline)
+                {
+                    yield return null;
+                }
+
+                if (TryValidateStageClockReports(
+                        NetworkRunStageClockState.Paused,
+                        expectedMapId,
+                        initialStageClockSequence,
+                        out baseline,
+                        out _))
+                {
+                    baselineReports = stageClockReports.ToDictionary(
+                        pair => pair.Key,
+                        pair => pair.Value);
+                    break;
+                }
+
+                yield return new WaitForSecondsRealtime(0.25f);
+            }
+
+            if (baselineReports == null)
+            {
+                Fail(
+                    $"stage_clock_paused_sync_timeout expectedMap={expectedMapId} " +
+                    $"expectedSequence={initialStageClockSequence} reports={DescribeStageClockReports()}");
+                yield break;
+            }
+
+            yield return new WaitForSecondsRealtime(1.5f);
+            if (scenarioFinished) yield break;
+
+            deadline = Time.realtimeSinceStartup + 10f;
+            while (scenarioRunning && !scenarioFinished && Time.realtimeSinceStartup < deadline)
+            {
+                stageClockReports.Clear();
+                var token = ++activeProbeToken;
+                ProbeStageClockClientRpc(token);
+
+                var probeDeadline = Mathf.Min(deadline, Time.realtimeSinceStartup + 2f);
+                while (stageClockReports.Count < expectedClientCount &&
+                       Time.realtimeSinceStartup < probeDeadline)
+                {
+                    yield return null;
+                }
+
+                if (TryValidateStageClockReports(
+                        NetworkRunStageClockState.Paused,
+                        expectedMapId,
+                        baseline.StageSequence,
+                        out var current,
+                        out var peerRemainingDelta)
+                    && current.Revision == baseline.Revision
+                    && stageClockReports.Count == baselineReports.Count
+                    && stageClockReports.Keys.All(baselineReports.ContainsKey))
+                {
+                    var stableDelta = stageClockReports.Max(pair =>
+                        Mathf.Abs(
+                            pair.Value.RemainingSeconds -
+                            baselineReports[pair.Key].RemainingSeconds));
+                    if (stableDelta <= 0.1f)
+                    {
+                        Debug.Log(
+                            $"PHS_P0_STAGE_CLOCK_PAUSED_OK peers={stageClockReports.Count} " +
+                            $"map={current.MapId} sequence={current.StageSequence} revision={current.Revision} " +
+                            $"peerDelta={peerRemainingDelta:F3} stableDelta={stableDelta:F3}",
+                            this);
+                        yield break;
+                    }
+                }
+
+                yield return new WaitForSecondsRealtime(0.25f);
+            }
+
+            Fail(
+                $"stage_clock_paused_not_stable expectedMap={expectedMapId} " +
+                $"sequence={baseline.StageSequence} revision={baseline.Revision} " +
+                $"reports={DescribeStageClockReports()}");
+        }
+
+        private bool TryValidateStageClockReports(
+            NetworkRunStageClockState expectedState,
+            int expectedMapId,
+            uint expectedSequence,
+            out StageClockReport first,
+            out float remainingDelta)
+        {
+            first = default;
+            remainingDelta = float.PositiveInfinity;
+            if (stageClockReports.Count < expectedClientCount)
+            {
+                return false;
+            }
+
+            first = stageClockReports.Values.First();
+            var referenceReport = first;
+            if (!referenceReport.Found
+                || referenceReport.MapId != expectedMapId
+                || referenceReport.StageSequence == 0U
+                || referenceReport.Revision == 0U
+                || referenceReport.State != expectedState
+                || (expectedSequence != 0U && referenceReport.StageSequence != expectedSequence)
+                || (expectedState == NetworkRunStageClockState.Running && referenceReport.RemainingSeconds <= 0f)
+                || stageClockReports.Values.Any(report =>
+                    !report.Found
+                    || report.MapId != referenceReport.MapId
+                    || report.StageSequence != referenceReport.StageSequence
+                    || report.Revision != referenceReport.Revision
+                    || report.State != referenceReport.State))
+            {
+                return false;
+            }
+
+            var remainingValues = stageClockReports.Values
+                .Select(report => report.RemainingSeconds)
+                .ToArray();
+            remainingDelta = remainingValues.Max() - remainingValues.Min();
+            return remainingDelta <= 1f;
+        }
+
+        private string DescribeStageClockReports()
+        {
+            return stageClockReports.Count == 0
+                ? "none"
+                : string.Join(
+                    ";",
+                    stageClockReports.OrderBy(report => report.Key).Select(report =>
+                        $"{report.Key}:found={report.Value.Found},map={report.Value.MapId}," +
+                        $"sequence={report.Value.StageSequence},revision={report.Value.Revision}," +
+                        $"state={report.Value.State},remaining={report.Value.RemainingSeconds:F3}"));
+        }
+
         private static string GetShopOfferSignature(ShopRandomDisplayController display)
         {
             return string.Join(
@@ -1711,6 +1940,17 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Validation
                 DefaultStepTimeout,
                 $"cycle_charging_not_reached cycle={expectedClearedZones}");
             if (scenarioFinished) yield break;
+
+            if (initialStageClockSequence != 0U)
+            {
+                yield return ProbeRunningStageClock(
+                    coordinator.ActiveMapId,
+                    AdvanceNonZeroSequence(
+                        initialStageClockSequence,
+                        expectedClearedZones - 1),
+                    captureInitialSequence: false);
+                if (scenarioFinished) yield break;
+            }
 
             if (coordinator.TrySelectNextZone(expectedClearedZones, out var earlyReason) ||
                 earlyReason != "warp_safe_required")
@@ -3219,6 +3459,23 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Validation
         }
 
         [ClientRpc]
+        private void ProbeStageClockClientRpc(uint token)
+        {
+            if (!IsScenarioEnabled()) return;
+
+            var stageClock = NetworkRunSessionRoot.Instance?.StageClock;
+            var found = stageClock != null && stageClock.IsSpawned;
+            ReportStageClockServerRpc(
+                token,
+                found,
+                found ? stageClock.MapId : 0,
+                found ? stageClock.StageSequence : 0U,
+                found ? stageClock.Revision : 0U,
+                found ? stageClock.State : NetworkRunStageClockState.Stopped,
+                found ? stageClock.RemainingSeconds : 0f);
+        }
+
+        [ClientRpc]
         private void ProbeDebrisSaleStateClientRpc(uint token)
         {
             if (!IsScenarioEnabled()) return;
@@ -3328,6 +3585,27 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Validation
         }
 
         [ServerRpc(RequireOwnership = false)]
+        private void ReportStageClockServerRpc(
+            uint token,
+            bool found,
+            int mapId,
+            uint stageSequence,
+            uint revision,
+            NetworkRunStageClockState state,
+            float remainingSeconds,
+            ServerRpcParams rpcParams = default)
+        {
+            if (!AcceptProbe(token)) return;
+            stageClockReports[rpcParams.Receive.SenderClientId] = new StageClockReport(
+                found,
+                mapId,
+                stageSequence,
+                revision,
+                state,
+                remainingSeconds);
+        }
+
+        [ServerRpc(RequireOwnership = false)]
         private void ReportFarSelectProbeServerRpc(
             uint token,
             bool requestIssued,
@@ -3354,6 +3632,22 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Validation
         private bool AcceptProbe(uint token)
         {
             return IsServer && scenarioRunning && !scenarioFinished && token == activeProbeToken;
+        }
+
+        private static uint NextNonZeroSequence(uint sequence)
+        {
+            sequence++;
+            return sequence == 0U ? 1U : sequence;
+        }
+
+        private static uint AdvanceNonZeroSequence(uint sequence, int steps)
+        {
+            for (var index = 0; index < steps; index++)
+            {
+                sequence = NextNonZeroSequence(sequence);
+            }
+
+            return sequence;
         }
 
         private void Pass(string details)

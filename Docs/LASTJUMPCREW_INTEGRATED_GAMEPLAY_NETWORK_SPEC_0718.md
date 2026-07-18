@@ -82,7 +82,8 @@
 - Map Profile ID는 `8000~8999`.
 - 선택 가능 맵은 `8001~8004`.
 - 현재 4개 맵은 이름과 사건 가중치는 다르지만 같은 빈 Environment Placeholder와 같은 Skybox를 사용한다.
-- `Difficulty`, `StageTimeLimitSeconds`, `ClearRewardCredits`, `AdvancesStageTime`은 현재 실제 게임 규칙에 연결되지 않았다.
+- `StageTimeLimitSeconds`와 `AdvancesStageTime`은 `NetworkRunStageClock`에 연결했다.
+- `Difficulty`와 `ClearRewardCredits`는 아직 실제 게임 규칙에 연결되지 않았다.
 - 2026-07-18 새 Development Build에서 2 Peer, 9구역, Shop 3회, `FinalShop -> Clear` 자동 루프를 통과했다.
 
 ### 2.5 현재 함선과 사건
@@ -127,12 +128,13 @@
 - `NetworkShipSystemsState`와 외부 사건 Impact Adapter는 Map Ship Runtime에서 Persistent Root로 이동했다.
 - Root는 Server-Owned NetworkObject이며 `destroyWithScene=false`로 한 세션 동안 유지된다.
 - Scene Local Ship Runtime, HUD, Gravity, Accident View는 Root Snapshot에 다시 바인딩한다.
-- Party Wallet, Delivery Queue, RNG/Compatibility, Stage Deadline은 아직 Root 수명에 연결되지 않았다.
+- Stage Deadline은 `NetworkRunStageClock`으로 Root 수명에 연결했다.
+- Party Wallet, Delivery Queue, RNG/Compatibility는 아직 Root 수명에 연결되지 않았다.
 
 결론:
 
 - Run/Ship 이동은 완료했다.
-- Wallet/RNG/Stage Deadline도 같은 수명 경계 안에서 상태별 OOP 컴포넌트로 연결한다.
+- Wallet/RNG도 같은 수명 경계 안에서 상태별 OOP 컴포넌트로 연결한다.
 
 ### 3.2 게임 규칙 원장이 두 개
 
@@ -163,6 +165,13 @@
 
 - Stage Deadline 또는 Remaining Time을 서버 권위 Snapshot으로 복제한다.
 - Client는 로컬 Timer를 실행하지 않고 Server Time 기준으로 표시만 보간한다.
+
+2026-07-18 구현:
+
+- `NetworkRunStageClock`이 Map Profile 제한시간과 Stage Sequence를 소유한다.
+- 상태 전환 때만 단일 Snapshot을 복제하고 Running Remaining은 NGO Server Time으로 계산한다.
+- 워프 승인 시 Pause, 점프 거절 시 Resume, 구역 종료·Shop·Clear·GameOver 시 Stop한다.
+- `RunFlowHudBinder`는 Local `GameCore` fallback 없이 Persistent Root Stage Clock만 읽는다.
 
 ### 3.4 상점 진입이 Phase를 우회
 
@@ -335,7 +344,8 @@ Lobby에서 Server가 Spawn하고 Run 종료까지 유지한다.
 - Network Debris는 NGO Scene Populate 완료 뒤 서버만 Spawn하도록 생명주기를 분리했다.
 - 2 Peer 전체 자동 루프에서 Root `NetworkObjectId=2`가 한 번만 생성되고 Ship State `revision=17`이 반복 Scene 전환 뒤 재바인딩됐다.
 - 같은 루프에서 9구역, Shop 3회, `FinalShop -> Clear`를 완료했다.
-- Party Wallet, Delivery Queue, RNG, Compatibility, Stage Deadline은 후속 범위.
+- Stage Deadline은 `NetworkRunStageClock`으로 연결 완료.
+- Party Wallet, Delivery Queue, RNG, Compatibility는 후속 범위.
 - 상세 구현·검증: `Docs/PHS_RUN_SESSION_ROOT_IMPLEMENTATION_0718.md`.
 
 소유 상태:
@@ -798,7 +808,7 @@ P0는 Run 중 참가 금지지만 Snapshot은 복원 가능해야 한다.
 
 1. Persistent `PHSNetworkRunSessionRoot`. — 1차 완료
 2. Run/Ship/Wallet/RNG Scene 독립.
-3. Stage Timer 서버 복제.
+3. Stage Timer 서버 복제. — `NetworkRunStageClock` 구현 완료
 4. 9구역/3구역 상점 규칙 통일. — 2인 Runtime 계약 통과, Map 시간·보상 Adapter 남음
 5. Shop Phase 우회 제거.
 6. Active Map 상점 경계 Commit 수정.
@@ -835,12 +845,15 @@ P0는 Run 중 참가 금지지만 Snapshot은 복원 가능해야 한다.
 
 - Unity `6000.5.2f1`, Compile Error `0`.
 - `PHS_0715_VALIDATE_OK errors=0 scenes=3 prefabs=11`.
+- `PHS_0717_VALIDATION_BUILD_OK path=Builds/PHS0717Validation/LastJumpCrew.exe size=345130228`.
 - 새 Development Build에서 `PHS_P0_RESULT PASS ... zones=9 shopCycles=3 runPhase=Clear`.
+- Stage Clock sequence `1~9`의 MapId가 Active Map과 일치했고 Host/Client Remaining 최대 차는 `0.054초`였다.
+- Warp Pause 뒤 `1.5초` 동안 Remaining 변화는 `0.000초`였고, Shop 복귀 전 선택 Map Commit 뒤 sequence `5`를 시작했다.
 - Runner 표준 Health `PHS_P0_LOG_HEALTH_OK`.
 - 정확한 Debris 중복 등록 예외, `SceneEventInProgress`, `PHS_NETWORK_ITEM_PHYSICS_FAILED`, `PHS_DEBRIS_STREAM_SETUP_FAILED`는 Host/Client 모두 `0`.
 - Headless NullGfx에서만 발생하던 MiniGame Lamp Shader 속성 오탐을 분리했고, 실제 Material의 `_EMISSION`을 활성화했다.
 - `PHS_MINIGAME_INDICATOR_SLOT_INVALID`와 `PHS_MINIGAME_INDICATOR_SETUP_INVALID`도 Host/Client 모두 `0`.
-- 4/8인, Late Join, Wallet/RNG/Stage Timer 지속성은 아직 미검증.
+- 4/8인, Late Join Stage Clock 복원, 짧은 Timeout 단발 시나리오, Wallet/RNG는 아직 미검증.
 
 ### Editor
 

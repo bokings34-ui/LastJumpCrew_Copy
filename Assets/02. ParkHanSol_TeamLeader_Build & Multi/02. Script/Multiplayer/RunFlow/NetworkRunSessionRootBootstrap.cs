@@ -99,6 +99,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
 
             if (runSessionRootPrefab.GetComponent<NetworkObject>() == null
                 || runSessionRootPrefab.GetComponent<NetworkRunFlowCoordinator>() == null
+                || runSessionRootPrefab.GetComponent<NetworkRunStageClock>() == null
                 || runSessionRootPrefab.GetComponent<NetworkShipSystemsState>() == null)
             {
                 Debug.LogError(

@@ -84,7 +84,7 @@
 
 ### PHS-P0-01 Persistent RunSessionRoot
 
-상태: `P0 핵심 생명주기·2인 전체 루프 완료 / 후속 상태 연결 남음`
+상태: `P0 핵심 생명주기·Stage Clock 원장·2인 전체 루프 완료 / 후속 상태 연결 남음`
 
 완료:
 
@@ -99,12 +99,13 @@
 - 새 Development Build에서 2인, 9구역, Shop 3회, `FinalShop -> Clear` 자동 루프 통과.
 - 같은 루프에서 Root `NetworkObjectId=2` 단일 생성과 Ship State `revision=17` 재바인딩 확인.
 - Headless 시각 검증 오탐 제거, MiniGame Lamp 발광 Material과 Inspector Validator 수정.
+- Map Profile 기반 서버 권위 `NetworkRunStageClock`과 Host/Client HUD 단일 조회 연결.
+- 2인 전체 루프에서 Stage Clock sequence `1~9`, Shop 복귀 Commit, Remaining 최대 차 `0.054초`, Pause 안정 `0.000초` 검증.
 
 남음:
 
 - Party Wallet/Delivery Queue.
 - Server RNG/Compatibility.
-- Stage Deadline.
 - 4/8인과 Late Join.
 
 구현 문서:
@@ -658,13 +659,12 @@ flowchart LR
 현재 직접 남음:
 
 1. Wallet/Delivery Queue 지속화 Adapter.
-2. Stage Deadline 서버 복제.
-3. Server RNG/Compatibility와 Session Approval 계약.
-4. Run 규칙/Active Map Commit의 남은 통합 검증.
-5. 외부 수집 Safe/Danger와 Sale 원자성 통합.
-6. Incident Budget/Legacy Scheduler 차단과 MiniGame Session Authority.
-7. 팀 납품 Prefab의 최종 Scene/Inspector 조립.
-8. 4/8인과 Late Join 검증.
+2. Server RNG/Compatibility와 Session Approval 계약.
+3. Run 규칙/Active Map Commit의 남은 통합 검증.
+4. 외부 수집 Safe/Danger와 Sale 원자성 통합.
+5. Incident Budget/Legacy Scheduler 차단과 MiniGame Session Authority.
+6. 팀 납품 Prefab의 최종 Scene/Inspector 조립.
+7. 4/8인과 Late Join 검증.
 
 박한솔이 기다려야 하는 입력:
 

@@ -1,5 +1,4 @@
 using UnityEngine;
-using LastJumpCrew.SeoBoGyeong;
 
 namespace LastJumpCrew.ParkHanSol.Multiplayer
 {
@@ -33,11 +32,10 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
                 presenter.SetWarpGauge(coordinator.WarpChargeNormalized);
             }
 
-            var gameCore = GameCore.Instance;
-            if (gameCore != null && gameCore.Services != null
-                && gameCore.Services.TryGet<IGameStateProvider>(out var gameState))
+            var stageClock = NetworkRunSessionRoot.Instance?.StageClock;
+            if (stageClock != null)
             {
-                presenter.SetTimeLimit(gameState.StageTimeRemaining);
+                presenter.SetTimeLimit(stageClock.RemainingSeconds);
             }
         }
     }

@@ -1,7 +1,7 @@
 # PHS Network RunSessionRoot 설계·제작 명세
 
 - 작성일: `2026-07-18`
-- 구현 단계: `P0 핵심 생명주기 완료 / 후속 상태 연결 남음`
+- 구현 단계: `P0 핵심 생명주기·Stage Clock 원장 완료 / 후속 상태 연결 남음`
 - 담당: 박한솔 / `Assets/02. ParkHanSol_TeamLeader_Build & Multi/`
 
 ## 1. 목적
@@ -23,11 +23,12 @@ flowchart TB
     B -->|"Server OnServerStarted"| C["InstantiateAndSpawn(destroyWithScene=false)"]
     C --> D["PHS_NetworkRunSessionRoot.prefab"]
     D --> E["NetworkRunFlowCoordinator"]
-    D --> F["NetworkShipSystemsState"]
-    D --> G["PHSShipEventImpactAdapter"]
-    H["Map PHS_ShipRuntime"] --> I["PHSNetworkShipAccidentCoordinator"]
-    I -->|"NetworkShipSystemsState.Instance 재바인딩"| F
-    J["Map/Shop HUD·Device·Service"] -->|"Instance/Snapshot"| D
+    D --> F["NetworkRunStageClock"]
+    D --> G["NetworkShipSystemsState"]
+    D --> H["PHSShipEventImpactAdapter"]
+    I["Map PHS_ShipRuntime"] --> J["PHSNetworkShipAccidentCoordinator"]
+    J -->|"NetworkShipSystemsState.Instance 재바인딩"| G
+    K["Map/Shop HUD·Device·Service"] -->|"Instance/Snapshot"| D
 ```
 
 Root Prefab:
@@ -38,6 +39,7 @@ Root Prefab:
 
 - `NetworkObject`
 - `NetworkRunFlowCoordinator`
+- `NetworkRunStageClock`
 - `NetworkShipSystemsState`
 - `PHSShipEventImpactAdapter`
 - `NetworkRunSessionRoot`
@@ -62,6 +64,7 @@ Bootstrap:
 | Shop Cycle Count | `NetworkRunFlowCoordinator` |
 | Active/Selected Map Id | `NetworkRunFlowCoordinator` |
 | Warp Safe Player Count | `NetworkRunFlowCoordinator` |
+| Stage Deadline/Remaining/Sequence | `NetworkRunStageClock` |
 | Ship HP | `NetworkShipSystemsState` |
 | Module HP/Fault | `NetworkShipSystemsState` |
 | Power/Gravity/Battery | `NetworkShipSystemsState` |
@@ -73,10 +76,19 @@ Bootstrap:
 - Purchase Delivery Queue.
 - Server RNG Seed/Sequence.
 - Protocol Version/Content Catalog Hash.
-- Stage Deadline 또는 Remaining Time 복제.
 - Incident Pressure/Budget.
 
 후속 상태도 Root에 같은 GameObject로 무조건 몰아넣지 않는다. 상태별 OOP 컴포넌트를 두고 `NetworkRunSessionRoot`는 수명과 조립 경계만 담당한다.
+
+### Stage Clock 계약
+
+- `PHSMapProfileSO.StageTimeLimitSeconds`가 구역별 제한시간 원본이다.
+- 서버만 `Start / Pause / Resume / Stop / Expire` 전환을 실행한다.
+- `MapId / StageSequence / Revision / State / DeadlineServerTime / FrozenRemainingSeconds`를 하나의 Snapshot으로 복제한다.
+- Running 중에는 매 프레임 값을 쓰지 않고 각 Peer가 NGO Server Time과 Deadline 차이로 Remaining을 계산한다.
+- 워프 요청이 승인되는 순간 Pause하고, 점프 거절 때만 Resume한다.
+- 성공한 점프·Shop·Clear·GameOver에서 Stop하며, Expire 결과 피해와 GameOver는 Sequence별 한 번만 처리한다.
+- 구형 `LocalGameSession` Stage Timer는 구역 선택 직후 Pause하고 HUD fallback으로 사용하지 않는다.
 
 ## 4. Scene 책임
 
@@ -101,12 +113,14 @@ Scene Local:
 
 - Root 생성/소유.
 - Run Phase와 Map Commit.
+- Stage Clock 시작·정지·일시정지·만료 판정.
 - Ship/Module 피해·수리.
 - 사건 결과 적용.
 
 클라이언트 처리:
 
 - NetworkVariable/NetworkList Snapshot 읽기.
+- 동기화된 Server Deadline으로 Stage Remaining 표시.
 - HUD, VFX, Audio, Device 표시.
 - Root 생성 또는 상태 직접 변경 금지.
 
@@ -133,7 +147,7 @@ Editor:
 - Unity `6000.5.2f1`.
 - Compile Error `0`.
 - `PHS_0715_VALIDATE_OK errors=0 scenes=3 prefabs=11`.
-- `PHS_0717_VALIDATION_BUILD_OK path=Builds/PHS0717Validation/LastJumpCrew.exe size=345094732`.
+- `PHS_0717_VALIDATION_BUILD_OK path=Builds/PHS0717Validation/LastJumpCrew.exe size=345130228`.
 
 Host Runtime:
 
@@ -153,6 +167,9 @@ Host Runtime:
 - Root 생성 로그는 `READY 1회`, `SPAWNED 1회`, `NetworkObjectId=2`.
 - Ship State `revision=17`이 반복 Map/Shop 전환 뒤 Scene HUD와 Gravity View에 재바인딩됨.
 - 2 Peer로 `9`구역, Shop `3`회, `FinalShop -> Clear` 완료.
+- Stage Clock sequence `1~9`에서 모든 Peer의 MapId/State/Revision이 일치했다.
+- Running Remaining 최대 차는 `0.054초`, Warp Pause 뒤 `1.5초` 안정 변화는 `0.000초`였다.
+- 첫 Shop 복귀에서 선택 Map을 Active Map으로 선행 Commit한 뒤 sequence `5`를 시작했다.
 - 외부 사건 `3`종, MiniGame API Outcome `6`, 원격 Item 소유권, Debris 판매·재진입 통과.
 - Map Scene을 `10`회 로드했고 매번 Network Debris가 설정 범위 `20~30` 안에서 서버 생성됨.
 - 최종 로그:
@@ -171,7 +188,8 @@ Host Runtime:
 
 - 실제 원격 Client Late Join.
 - 4/8인.
-- Wallet/RNG/Stage Timer 지속성.
+- Wallet/RNG.
+- Late Join Stage Clock 복원과 짧은 Timeout 단발 시나리오.
 
 ## 8. Debris Scene Load 차단점 해결
 
@@ -199,7 +217,7 @@ Host Runtime:
 
 ## 9. 다음 작업 순서
 
-1. Stage Deadline 복제.
-2. Party Wallet/Delivery Queue를 Root 수명에 연결.
-3. Run RNG/Compatibility Snapshot 추가.
+1. Party Wallet/Delivery Queue를 Root 수명에 연결.
+2. Run RNG/Compatibility Snapshot 추가.
+3. Incident Pressure/Budget 원장 연결.
 4. 4/8인과 Late Join 검증.

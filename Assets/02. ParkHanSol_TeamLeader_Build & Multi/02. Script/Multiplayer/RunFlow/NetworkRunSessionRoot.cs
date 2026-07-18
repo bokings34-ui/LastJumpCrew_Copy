@@ -12,6 +12,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
     [DisallowMultipleComponent]
     [RequireComponent(typeof(NetworkObject))]
     [RequireComponent(typeof(NetworkRunFlowCoordinator))]
+    [RequireComponent(typeof(NetworkRunStageClock))]
     [RequireComponent(typeof(NetworkShipSystemsState))]
     [RequireComponent(typeof(PHSShipEventImpactAdapter))]
     public sealed class NetworkRunSessionRoot : NetworkBehaviour
@@ -19,6 +20,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
         public static NetworkRunSessionRoot Instance { get; private set; }
 
         public NetworkRunFlowCoordinator RunFlow { get; private set; }
+        public NetworkRunStageClock StageClock { get; private set; }
         public NetworkShipSystemsState ShipSystems { get; private set; }
 
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
@@ -30,6 +32,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
         private void Awake()
         {
             RunFlow = GetComponent<NetworkRunFlowCoordinator>();
+            StageClock = GetComponent<NetworkRunStageClock>();
             ShipSystems = GetComponent<NetworkShipSystemsState>();
         }
 

@@ -146,6 +146,7 @@ namespace LastJumpCrew.ParkHanSol.Editor
         private static void ValidateLobbyScene(ICollection<string> errors)
         {
             OpenAndValidateScene(LobbyScenePath, errors);
+            ValidateNoSceneOwnedStageClock("lobby", errors);
             var networkManager = FindOne<NetworkManager>("lobby_network_manager", errors);
             if (networkManager == null)
             {
@@ -236,6 +237,7 @@ namespace LastJumpCrew.ParkHanSol.Editor
         private static void ValidateMapScene(ICollection<string> errors)
         {
             OpenAndValidateScene(MapScenePath, errors);
+            ValidateNoSceneOwnedStageClock("map", errors);
             ValidateGravityDuplicateComponents("map", errors);
             ValidateGameplayContext("map", errors);
 
@@ -550,6 +552,7 @@ namespace LastJumpCrew.ParkHanSol.Editor
         private static void ValidateShopScene(ICollection<string> errors)
         {
             OpenAndValidateScene(ShopScenePath, errors);
+            ValidateNoSceneOwnedStageClock("shop", errors);
             ValidateGameplayContext("shop", errors);
             ValidateNetworkScenePortal(
                 "shop_return",
@@ -1196,6 +1199,10 @@ namespace LastJumpCrew.ParkHanSol.Editor
                 prefab.GetComponent<NetworkRunFlowCoordinator>() == null,
                 "player_run_flow_coordinator_must_be_session_owned",
                 errors);
+            Require(
+                prefab.GetComponentsInChildren<NetworkRunStageClock>(true).Length == 0,
+                "player_stage_clock_must_be_session_owned",
+                errors);
 
             ValidateCombatItemRoute(
                 "Assets/02. ParkHanSol_TeamLeader_Build & Multi/04. Data/UtilityItems/ParkHanSol_WrenchItemPrefabData.asset",
@@ -1261,6 +1268,10 @@ namespace LastJumpCrew.ParkHanSol.Editor
                     prefab.GetComponent<PHSShipEventImpactAdapter>() == null,
                     "ship_runtime_event_impact_must_be_session_owned",
                     errors);
+                Require(
+                    prefab.GetComponentsInChildren<NetworkRunStageClock>(true).Length == 0,
+                    "ship_runtime_stage_clock_must_be_session_owned",
+                    errors);
                 var coordinator = prefab.GetComponent<PHSNetworkShipAccidentCoordinator>();
                 Require(coordinator != null, "ship_runtime_accident_coordinator_missing", errors);
                 if (coordinator != null)
@@ -1309,16 +1320,31 @@ namespace LastJumpCrew.ParkHanSol.Editor
                     prefab.GetComponents<NetworkObject>().Length == 1,
                     "run_session_root_network_object_count_invalid expected=1",
                     errors);
+                var stageClocks = prefab.GetComponentsInChildren<NetworkRunStageClock>(true);
+                Require(
+                    stageClocks.Length == 1,
+                    $"run_session_root_stage_clock_count_invalid expected=1 actual={stageClocks.Length}",
+                    errors);
+                var stageClock = prefab.GetComponent<NetworkRunStageClock>();
+                Require(
+                    stageClock != null,
+                    "run_session_root_stage_clock_owner_invalid expected=root",
+                    errors);
 
                 var coordinator = prefab.GetComponent<NetworkRunFlowCoordinator>();
                 Require(coordinator != null, "run_session_root_run_flow_missing", errors);
                 if (coordinator != null)
                 {
                     var serializedCoordinator = new SerializedObject(coordinator);
-                    RequireObject(
-                        serializedCoordinator,
-                        "mapCatalog",
-                        "run_session_root_map_catalog_missing",
+                    var mapCatalog = serializedCoordinator
+                        .FindProperty("mapCatalog")
+                        ?.objectReferenceValue as PHSMapCatalogSO;
+                    ValidateMapCatalog("run_session_root", mapCatalog, 2, errors);
+                    Require(
+                        stageClock != null
+                        && serializedCoordinator.FindProperty("stageClock")?.objectReferenceValue
+                        == stageClock,
+                        "run_session_root_stage_clock_reference_invalid",
                         errors);
                     Require(
                         serializedCoordinator.FindProperty("initialMapId")?.intValue == 8001,
@@ -2022,6 +2048,19 @@ namespace LastJumpCrew.ParkHanSol.Editor
             }
 
             Require(missingScriptCount == 0, $"scene_missing_scripts path={path} count={missingScriptCount}", errors);
+        }
+
+        private static void ValidateNoSceneOwnedStageClock(
+            string sceneLabel,
+            ICollection<string> errors)
+        {
+            var stageClocks = UnityEngine.Object.FindObjectsByType<NetworkRunStageClock>(
+                FindObjectsInactive.Include,
+                FindObjectsSortMode.None);
+            Require(
+                stageClocks.Length == 0,
+                $"{sceneLabel}_stage_clock_must_be_session_owned actual={stageClocks.Length}",
+                errors);
         }
 
         private static T FindOne<T>(string label, ICollection<string> errors) where T : UnityEngine.Object
