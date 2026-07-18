@@ -1,3 +1,4 @@
+using System;
 using LastJumpCrew.ParkHanSol.Multiplayer.Events;
 using Unity.Netcode;
 using UnityEngine;
@@ -15,18 +16,22 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
     [RequireComponent(typeof(NetworkRunStageClock))]
     [RequireComponent(typeof(NetworkShipSystemsState))]
     [RequireComponent(typeof(PHSShipEventImpactAdapter))]
+    [RequireComponent(typeof(NetworkRunEconomyLedger))]
     public sealed class NetworkRunSessionRoot : NetworkBehaviour
     {
         public static NetworkRunSessionRoot Instance { get; private set; }
+        public static event Action<NetworkRunSessionRoot> InstanceAvailable;
 
         public NetworkRunFlowCoordinator RunFlow { get; private set; }
         public NetworkRunStageClock StageClock { get; private set; }
         public NetworkShipSystemsState ShipSystems { get; private set; }
+        public NetworkRunEconomyLedger Economy { get; private set; }
 
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
         private static void ResetStatics()
         {
             Instance = null;
+            InstanceAvailable = null;
         }
 
         private void Awake()
@@ -34,6 +39,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
             RunFlow = GetComponent<NetworkRunFlowCoordinator>();
             StageClock = GetComponent<NetworkRunStageClock>();
             ShipSystems = GetComponent<NetworkShipSystemsState>();
+            Economy = GetComponent<NetworkRunEconomyLedger>();
         }
 
         public override void OnNetworkSpawn()
@@ -68,6 +74,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
             }
 
             Instance = this;
+            NotifyInstanceAvailable();
             Debug.Log(
                 $"PHS_RUN_SESSION_ROOT_READY server={IsServer} objectId={NetworkObjectId}",
                 this);
@@ -81,6 +88,29 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
             }
 
             base.OnNetworkDespawn();
+        }
+
+        private void NotifyInstanceAvailable()
+        {
+            var handlers = InstanceAvailable;
+            if (handlers == null)
+            {
+                return;
+            }
+
+            foreach (Action<NetworkRunSessionRoot> handler in handlers.GetInvocationList())
+            {
+                try
+                {
+                    handler(this);
+                }
+                catch (Exception exception)
+                {
+                    Debug.LogError(
+                        $"PHS_RUN_SESSION_ROOT_OBSERVER_FAILED observer={handler.Method.Name} exception={exception.GetType().Name}",
+                        this);
+                }
+            }
         }
     }
 }

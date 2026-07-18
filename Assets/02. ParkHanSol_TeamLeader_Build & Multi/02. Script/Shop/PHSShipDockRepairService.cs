@@ -80,6 +80,15 @@ namespace LastJumpCrew.ParkHanSol.Shop
                 return false;
             }
 
+            var economyLedger = NetworkRunSessionRoot.Instance?.Economy;
+            if (economyLedger == null
+                || !economyLedger.IsSpawned
+                || economyLedger.Revision == 0U)
+            {
+                reason = "run_economy_ledger_missing";
+                return false;
+            }
+
             if (shipSystemsState.CurrentShipHp <= 0)
             {
                 reason = "ship_destroyed";
@@ -92,18 +101,33 @@ namespace LastJumpCrew.ParkHanSol.Shop
                 return false;
             }
 
-            if (!wallet.TrySpendCredits(offer.Price))
+            var paymentTransactionId = $"ship_repair:{purchaseId}";
+            if (!economyLedger.TrySpendCreditsServer(
+                    paymentTransactionId,
+                    offer.Price,
+                    NetworkRunEconomyTransactionKind.RepairDebit,
+                    NetworkManager.ServerClientId,
+                    out var paymentReason))
             {
-                reason = $"credits_insufficient:price={offer.Price}:balance={wallet.Credits}";
+                reason = paymentReason == "transaction_already_committed"
+                    ? $"purchase_duplicate:{purchaseId}"
+                    : paymentReason == "insufficient_credits"
+                        ? $"credits_insufficient:price={offer.Price}:balance={wallet.Credits}"
+                        : $"payment_failed:{paymentReason}";
                 return false;
             }
 
             if (!shipSystemsState.TryRestoreShipDurabilityAtDock(offer.RepairAmount, out var repairReason))
             {
-                if (!wallet.TryAddCredits(offer.Price))
+                if (!economyLedger.TryAddCreditsServer(
+                        $"ship_repair_refund:{purchaseId}",
+                        offer.Price,
+                        NetworkRunEconomyTransactionKind.RefundCredit,
+                        NetworkManager.ServerClientId,
+                        out var refundReason))
                 {
                     Debug.LogError(
-                        $"PHS_SHIP_DOCK_REPAIR_TRANSACTION_FAILED reason=rollback_failed purchase={purchaseId} offer={offerId} repairReason={repairReason}",
+                        $"PHS_SHIP_DOCK_REPAIR_TRANSACTION_FAILED reason=rollback_failed purchase={purchaseId} offer={offerId} repairReason={repairReason} refundReason={refundReason}",
                         this);
                     reason = "rollback_failed";
                     return false;

@@ -1,27 +1,46 @@
 using System.Collections.Generic;
 using LastJumpCrew.ParkHanSol.Items;
+using LastJumpCrew.ParkHanSol.Multiplayer;
 using LastJumpCrew.ParkHanSol.Shop;
+using Unity.Netcode;
 using UnityEngine;
 
 namespace LastJumpCrew.ParkHanSol.Interaction
 {
-    /// <summary>Persists Host-confirmed shop purchases while gameplay scenes change.</summary>
+    /// <summary>
+    /// Scene-facing delivery adapter. Network sessions commit to the persistent
+    /// run economy ledger; the static queue remains only for standalone scenes.
+    /// </summary>
     [DefaultExecutionOrder(-190)]
-    public sealed class SessionPurchaseDeliveryService : MonoBehaviour, IShopDeliveryService
+    public sealed class SessionPurchaseDeliveryService :
+        MonoBehaviour,
+        IShopDeliveryService,
+        IShopPurchaseTransactionService
     {
         public static SessionPurchaseDeliveryService Instance { get; private set; }
 
-        // Network scene transitions can recreate the scene's online-session object.
-        // Keep the Host queue independent from that scene instance until delivery succeeds.
-        private static readonly Queue<UtilityItemPrefabData> pendingItems = new();
+        private static readonly Queue<UtilityItemPrefabData> offlinePendingItems = new();
 
-        public int PendingCount => pendingItems.Count;
+        public int PendingCount
+        {
+            get
+            {
+                if (!IsNetworkSessionActive())
+                {
+                    return offlinePendingItems.Count;
+                }
+
+                return TryGetNetworkLedger(out var ledger)
+                    ? ledger.Snapshot.PendingDeliveryCount
+                    : 0;
+            }
+        }
 
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
         private static void ResetStatics()
         {
             Instance = null;
-            pendingItems.Clear();
+            offlinePendingItems.Clear();
         }
 
         private void Awake()
@@ -50,20 +69,22 @@ namespace LastJumpCrew.ParkHanSol.Interaction
 
         public bool CanQueueDeliveries(IReadOnlyList<UtilityItemPrefabData> itemPrefabData)
         {
-            if (itemPrefabData == null || itemPrefabData.Count == 0)
+            if (!ValidateItems(itemPrefabData))
             {
-                Debug.LogError($"PHS_PURCHASE_DELIVERY_QUEUE_FAILED reason=items_missing service={name}");
                 return false;
             }
 
-            for (var index = 0; index < itemPrefabData.Count; index++)
+            if (!IsNetworkSessionActive())
             {
-                if (itemPrefabData[index] == null)
-                {
-                    Debug.LogError(
-                        $"PHS_PURCHASE_DELIVERY_QUEUE_FAILED reason=item_missing service={name} index={index}");
-                    return false;
-                }
+                return true;
+            }
+
+            if (!TryGetNetworkLedger(out _))
+            {
+                Debug.LogError(
+                    $"PHS_PURCHASE_DELIVERY_QUEUE_FAILED reason=run_economy_ledger_missing service={name}",
+                    this);
+                return false;
             }
 
             return true;
@@ -76,14 +97,74 @@ namespace LastJumpCrew.ParkHanSol.Interaction
                 return false;
             }
 
+            if (IsNetworkSessionActive())
+            {
+                Debug.LogError(
+                    $"PHS_PURCHASE_DELIVERY_QUEUE_FAILED reason=atomic_purchase_commit_required service={name}",
+                    this);
+                return false;
+            }
+
             foreach (var item in itemPrefabData)
             {
-                pendingItems.Enqueue(item);
+                offlinePendingItems.Enqueue(item);
             }
 
             Debug.Log(
-                $"PHS_PURCHASE_DELIVERY_BATCH_QUEUED service={name} count={itemPrefabData.Count} pending={pendingItems.Count}");
+                $"PHS_PURCHASE_DELIVERY_BATCH_QUEUED service={name} count={itemPrefabData.Count} pending={offlinePendingItems.Count}",
+                this);
             return true;
+        }
+
+        public bool TryCommitPurchase(
+            string transactionId,
+            int totalPrice,
+            IReadOnlyList<ShopPurchaseDeliveryRequest> deliveries,
+            ulong purchaserClientId,
+            out string reason)
+        {
+            if (!IsNetworkSessionActive())
+            {
+                reason = "network_session_required";
+                return false;
+            }
+
+            if (!TryGetNetworkLedger(out var ledger))
+            {
+                reason = "run_economy_ledger_missing";
+                return false;
+            }
+
+            if (deliveries == null || deliveries.Count == 0)
+            {
+                reason = "purchase_items_required";
+                return false;
+            }
+
+            var purchaseIds = new string[deliveries.Count];
+            var itemIds = new string[deliveries.Count];
+            for (var index = 0; index < deliveries.Count; index++)
+            {
+                var delivery = deliveries[index];
+                if (string.IsNullOrWhiteSpace(delivery.PurchaseId)
+                    || delivery.ItemPrefabData == null
+                    || string.IsNullOrWhiteSpace(delivery.ItemPrefabData.ItemId))
+                {
+                    reason = $"purchase_delivery_invalid:{index}";
+                    return false;
+                }
+
+                purchaseIds[index] = delivery.PurchaseId;
+                itemIds[index] = delivery.ItemPrefabData.ItemId;
+            }
+
+            return ledger.TryCommitPurchaseServer(
+                transactionId,
+                purchaseIds,
+                itemIds,
+                totalPrice,
+                purchaserClientId,
+                out reason);
         }
 
         public void QueueDelivery(UtilityItemPrefabData itemPrefabData)
@@ -93,16 +174,58 @@ namespace LastJumpCrew.ParkHanSol.Interaction
 
         public void DeliverTo(PurchaseDeliveryBox deliveryBox)
         {
-            if (deliveryBox == null)
+            if (deliveryBox == null || IsNetworkSessionActive())
             {
                 return;
             }
 
-            while (pendingItems.Count > 0 && deliveryBox.TryReceive(pendingItems.Peek()))
+            while (offlinePendingItems.Count > 0
+                   && deliveryBox.TryReceive(offlinePendingItems.Peek()))
             {
-                var delivered = pendingItems.Dequeue();
-                Debug.Log($"PHS_PURCHASE_DELIVERY_COMPLETED service={name} item={delivered.ItemId} pending={pendingItems.Count}");
+                var delivered = offlinePendingItems.Dequeue();
+                Debug.Log(
+                    $"PHS_PURCHASE_DELIVERY_COMPLETED service={name} item={delivered.ItemId} pending={offlinePendingItems.Count}",
+                    this);
             }
+        }
+
+        private bool ValidateItems(IReadOnlyList<UtilityItemPrefabData> itemPrefabData)
+        {
+            if (itemPrefabData == null || itemPrefabData.Count == 0)
+            {
+                Debug.LogError(
+                    $"PHS_PURCHASE_DELIVERY_QUEUE_FAILED reason=items_missing service={name}",
+                    this);
+                return false;
+            }
+
+            for (var index = 0; index < itemPrefabData.Count; index++)
+            {
+                var item = itemPrefabData[index];
+                if (item == null || string.IsNullOrWhiteSpace(item.ItemId))
+                {
+                    Debug.LogError(
+                        $"PHS_PURCHASE_DELIVERY_QUEUE_FAILED reason=item_missing service={name} index={index}",
+                        this);
+                    return false;
+                }
+            }
+
+            return true;
+        }
+
+        private static bool TryGetNetworkLedger(out NetworkRunEconomyLedger ledger)
+        {
+            ledger = NetworkRunSessionRoot.Instance?.Economy;
+            return ledger != null
+                && ledger.IsSpawned
+                && ledger.Revision > 0U;
+        }
+
+        private static bool IsNetworkSessionActive()
+        {
+            var networkManager = NetworkManager.Singleton;
+            return networkManager != null && networkManager.IsListening;
         }
     }
 }

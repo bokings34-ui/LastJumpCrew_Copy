@@ -1,7 +1,7 @@
 # PHS Network RunSessionRoot 설계·제작 명세
 
 - 작성일: `2026-07-18`
-- 구현 단계: `P0 핵심 생명주기·Stage Clock 원장 완료 / 후속 상태 연결 남음`
+- 구현 단계: `P0 핵심 생명주기·Stage Clock·Economy 원장 완료 / RNG 이후 원장 연결 중`
 - 담당: 박한솔 / `Assets/02. ParkHanSol_TeamLeader_Build & Multi/`
 
 ## 1. 목적
@@ -26,6 +26,7 @@ flowchart TB
     D --> F["NetworkRunStageClock"]
     D --> G["NetworkShipSystemsState"]
     D --> H["PHSShipEventImpactAdapter"]
+    D --> L["NetworkRunEconomyLedger"]
     I["Map PHS_ShipRuntime"] --> J["PHSNetworkShipAccidentCoordinator"]
     J -->|"NetworkShipSystemsState.Instance 재바인딩"| G
     K["Map/Shop HUD·Device·Service"] -->|"Instance/Snapshot"| D
@@ -43,6 +44,7 @@ Root Prefab:
 - `NetworkShipSystemsState`
 - `PHSShipEventImpactAdapter`
 - `NetworkRunSessionRoot`
+- `NetworkRunEconomyLedger`
 
 Bootstrap:
 
@@ -69,11 +71,11 @@ Bootstrap:
 | Module HP/Fault | `NetworkShipSystemsState` |
 | Power/Gravity/Battery | `NetworkShipSystemsState` |
 | Last Damage Cause/Revision | `NetworkShipSystemsState` |
+| Party Credits/Wallet Revision | `NetworkRunEconomyLedger` |
+| Purchase Delivery Entry/State | `NetworkRunEconomyLedger` |
 
 ### 후속 구현
 
-- Party Wallet.
-- Purchase Delivery Queue.
 - Server RNG Seed/Sequence.
 - Protocol Version/Content Catalog Hash.
 - Incident Pressure/Budget.
@@ -89,6 +91,29 @@ Bootstrap:
 - 워프 요청이 승인되는 순간 Pause하고, 점프 거절 때만 Resume한다.
 - 성공한 점프·Shop·Clear·GameOver에서 Stop하며, Expire 결과 피해와 GameOver는 Sequence별 한 번만 처리한다.
 - 구형 `LocalGameSession` Stage Timer는 구역 선택 직후 Pause하고 HUD fallback으로 사용하지 않는다.
+
+### Economy 계약
+
+- 시작 파티 크레딧은 Root Prefab Inspector의 `startingCredits=500`이다.
+- 서버만 판매·보상·수리·구매 거래를 커밋한다.
+- 일반 거래는 안정적인 `transactionId`로 중복 커밋을 차단한다.
+- 구매는 `TryCommitPurchaseServer` 하나에서 잔액 차감과 Delivery Entry 추가를 함께 처리한다.
+- 각 Delivery Entry에 개별 `PurchaseId`를 보존하여 Shop 씬 재생성 뒤 순서 변경·부분 재시도도 중복 결제하지 않는다.
+- Delivery Entry는 삭제하지 않고 `Pending → Claimed → Delivered` 상태와 revision을 남긴다.
+- 상자 적용 실패는 `Claimed → Pending`으로 복구하고, 성공한 경우만 `Delivered`로 확정한다.
+- Delivery 변경 알림은 같은 revision의 Economy Snapshot이 도착한 뒤 공개한다.
+- Shop Wallet Adapter는 Root가 늦게 Spawn되어도 `InstanceAvailable` 신호로 다시 바인딩한다.
+- `ShopEconomyWalletAdapter`와 `SessionPurchaseDeliveryService`는 씬 상태 소유자가 아니라 Root 원장의 어댑터다.
+- Network Session에서는 `GameCore`의 로컬 `CreditWallet`과 static Delivery Queue를 사용하지 않는다.
+- 개인 로비 꾸미기 크레딧은 파티 Economy 원장과 분리한다.
+
+### Economy P1 잔여 경계
+
+- 현재 `Delivered`는 “배송 상자/Overflow에 배치 완료” 의미이며 “플레이어가 실제 수령 완료” 의미가 아니다.
+- 미수령 물건을 둔 채 Shop으로 이동했다가 Map으로 돌아오면 Scene Local 슬롯·Overflow가 초기화되므로 재구축되지 않는다.
+- 해결 시 상태를 `Pending → Boxed → Collected`로 분리하고, `EntryId ↔ Slot` 할당을 복제해야 한다.
+- 실제 수령은 플레이어 Held Item 서버 할당 성공 뒤에만 확정하고, Map Scene 종료 시 미수령 `Boxed` Claim을 반환해야 한다.
+- 이 변경은 슬롯 상호작용의 서버 RPC 경로와 Held Item rollback이 함께 필요하므로 Economy 원장 PR 뒤 별도 통합 작업으로 둔다.
 
 ## 4. Scene 책임
 
@@ -116,11 +141,13 @@ Scene Local:
 - Stage Clock 시작·정지·일시정지·만료 판정.
 - Ship/Module 피해·수리.
 - 사건 결과 적용.
+- 파티 크레딧·구매 Delivery 거래 커밋.
 
 클라이언트 처리:
 
 - NetworkVariable/NetworkList Snapshot 읽기.
 - 동기화된 Server Deadline으로 Stage Remaining 표시.
+- Economy Snapshot과 Delivery 상태 표시.
 - HUD, VFX, Audio, Device 표시.
 - Root 생성 또는 상태 직접 변경 금지.
 
@@ -139,6 +166,9 @@ Local 전용:
 - Lobby `NetworkManager`에 Bootstrap과 Root Prefab Inspector 참조 연결.
 - `PHS0715IntegrationValidator`를 Player/Map 소유 검사에서 Root 소유 검사로 변경.
 - `PHSShipDockRepairService`는 Root Singleton을 실행 시점에 조회하도록 변경.
+- Root Prefab의 마지막 `NetworkBehaviour`로 `NetworkRunEconomyLedger`를 추가해 기존 NGO Behaviour 인덱스를 보존.
+- 활성 Map/Shop의 `PHS_PurchaseSessionState`에서 `SessionPurchaseStateRoot`만 제거하고 Delivery Adapter는 유지.
+- Shop 구매의 결제 차감과 Delivery Queue 등록을 단일 원장 API로 교체.
 
 ## 7. 검증 결과
 
@@ -147,7 +177,7 @@ Editor:
 - Unity `6000.5.2f1`.
 - Compile Error `0`.
 - `PHS_0715_VALIDATE_OK errors=0 scenes=3 prefabs=11`.
-- `PHS_0717_VALIDATION_BUILD_OK path=Builds/PHS0717Validation/LastJumpCrew.exe size=345130228`.
+- `PHS_0717_VALIDATION_BUILD_OK path=Builds/PHS0717Validation/LastJumpCrew.exe size=345165983`.
 
 Host Runtime:
 
@@ -171,6 +201,10 @@ Host Runtime:
 - Running Remaining 최대 차는 `0.054초`, Warp Pause 뒤 `1.5초` 안정 변화는 `0.000초`였다.
 - 첫 Shop 복귀에서 선택 Map을 Active Map으로 선행 Commit한 뒤 sequence `5`를 시작했다.
 - 외부 사건 `3`종, MiniGame API Outcome `6`, 원격 Item 소유권, Debris 판매·재진입 통과.
+- Debris 판매 후 2 Peer가 `credits=553`, `revision=2`, 동일 `SaleCredit` 거래 ID를 수신.
+- 구매 잔액 부족 요청은 Wallet/Delivery revision 변화 없이 거절.
+- 구매 성공 시 2 Peer가 `credits=443`, `pending=1`, `PurchaseDebit` 거래를 수신.
+- Map 복귀 상자가 Entry를 적용한 뒤 2 Peer가 `pending=0`, `claimed=0`, `delivered=1`을 수신.
 - Map Scene을 `10`회 로드했고 매번 Network Debris가 설정 범위 `20~30` 안에서 서버 생성됨.
 - 최종 로그:
   - `PHS_P0_RESULT PASS ... zones=9 shopCycles=3 runPhase=Clear`.
@@ -188,8 +222,9 @@ Host Runtime:
 
 - 실제 원격 Client Late Join.
 - 4/8인.
-- Wallet/RNG.
-- Late Join Stage Clock 복원과 짧은 Timeout 단발 시나리오.
+- RNG/Compatibility.
+- Late Join Stage Clock/Economy 복원과 짧은 Timeout 단발 시나리오.
+- 미수령 배송품의 Map → Shop → Map 재구축과 실제 수령 확정.
 
 ## 8. Debris Scene Load 차단점 해결
 
@@ -217,7 +252,8 @@ Host Runtime:
 
 ## 9. 다음 작업 순서
 
-1. Party Wallet/Delivery Queue를 Root 수명에 연결.
-2. Run RNG/Compatibility Snapshot 추가.
-3. Incident Pressure/Budget 원장 연결.
-4. 4/8인과 Late Join 검증.
+1. Run RNG 원장과 Map Choice 소비자 연결.
+2. Incident Pressure/Budget 원장 연결.
+3. Debris/Shop RNG 소비자 연결.
+4. Compatibility Gate/Protocol/Catalog Hash 연결.
+5. 4/8인과 Late Join 검증.

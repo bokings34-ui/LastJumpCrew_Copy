@@ -36,6 +36,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Validation
         private readonly Dictionary<ulong, ShopStateReport> shopStateReports = new();
         private readonly Dictionary<ulong, RunFlowReport> runFlowReports = new();
         private readonly Dictionary<ulong, StageClockReport> stageClockReports = new();
+        private readonly Dictionary<ulong, EconomyReport> economyReports = new();
         private readonly Dictionary<ulong, DebrisSaleStateReport> debrisSaleStateReports = new();
         private readonly Dictionary<ulong, EventSnapshotReport> eventSnapshotReports = new();
         private readonly Dictionary<ulong, EventTerminalReport> eventTerminalReports = new();
@@ -165,6 +166,38 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Validation
             public int Credits { get; }
             public uint Revision { get; }
             public string HeldItemId { get; }
+        }
+
+        private readonly struct EconomyReport
+        {
+            public EconomyReport(
+                bool found,
+                int credits,
+                uint revision,
+                int pendingCount,
+                int claimedCount,
+                int deliveredCount,
+                string lastTransactionId,
+                NetworkRunEconomyTransactionKind lastTransactionKind)
+            {
+                Found = found;
+                Credits = credits;
+                Revision = revision;
+                PendingCount = pendingCount;
+                ClaimedCount = claimedCount;
+                DeliveredCount = deliveredCount;
+                LastTransactionId = lastTransactionId;
+                LastTransactionKind = lastTransactionKind;
+            }
+
+            public bool Found { get; }
+            public int Credits { get; }
+            public uint Revision { get; }
+            public int PendingCount { get; }
+            public int ClaimedCount { get; }
+            public int DeliveredCount { get; }
+            public string LastTransactionId { get; }
+            public NetworkRunEconomyTransactionKind LastTransactionKind { get; }
         }
 
         private readonly struct EventSnapshotReport
@@ -1477,6 +1510,8 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Validation
 
             var initialCount = display.DisplayedProductCount;
             var initialSignature = GetShopOfferSignature(display);
+            var expectedDeliveryCredits = -1;
+            var minimumDeliveredAfterReturn = -1;
             display.PopulateDisplays();
             if (display.DisplayedProductCount != initialCount ||
                 GetShopOfferSignature(display) != initialSignature)
@@ -1489,9 +1524,14 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Validation
             {
                 var purchaseService = FindAnyObjectByType<ShopPurchaseService>(FindObjectsInactive.Include);
                 var deliveryService = SessionPurchaseDeliveryService.Instance;
-                if (purchaseService == null || deliveryService == null)
+                var economyLedger = NetworkRunSessionRoot.Instance?.Economy;
+                if (purchaseService == null
+                    || deliveryService == null
+                    || economyLedger == null
+                    || !economyLedger.IsSpawned
+                    || economyLedger.Revision == 0U)
                 {
-                    Fail("shop_purchase_services_missing");
+                    Fail("shop_purchase_services_or_economy_ledger_missing");
                     yield break;
                 }
 
@@ -1504,23 +1544,68 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Validation
                     yield break;
                 }
 
+                var originalCredits = purchaseService.AvailableCredits;
+                var setupDebit = originalCredits >= product.PurchasePrice
+                    ? originalCredits - product.PurchasePrice + 1
+                    : 0;
+                if (setupDebit > 0
+                    && !economyLedger.TrySpendCreditsServer(
+                        $"p0:insufficient:debit:{expectedClearedZones}:{economyLedger.Revision}",
+                        setupDebit,
+                        NetworkRunEconomyTransactionKind.PenaltyDebit,
+                        NetworkManager.ServerClientId,
+                        out var setupDebitReason))
+                {
+                    Fail($"shop_insufficient_setup_debit_failed reason={setupDebitReason}");
+                    yield break;
+                }
+
                 var creditsBeforeFailure = purchaseService.AvailableCredits;
                 var pendingBeforeFailure = deliveryService.PendingCount;
-                var excessiveCount = Mathf.Clamp(creditsBeforeFailure / product.PurchasePrice + 1, 1, 16);
-                var excessiveRequests = Enumerable.Range(0, excessiveCount)
-                    .Select(index => new ShopPurchaseRequest($"p0_fail_{index}", product))
-                    .ToArray();
-                var failureAccepted = purchaseService.TryPurchase(excessiveRequests, out var failureResult);
-                if (failureAccepted || failureResult.Success || failureResult.Reason != "insufficient_credits" ||
-                    purchaseService.AvailableCredits != creditsBeforeFailure ||
-                    deliveryService.PendingCount != pendingBeforeFailure ||
-                    display.DisplayedProductCount != initialCount ||
-                    GetShopOfferSignature(display) != initialSignature)
+                var revisionBeforeFailure = economyLedger.Revision;
+                var deliveryEntriesBeforeFailure = economyLedger.DeliveryEntryCount;
+                var excessiveRequests = new[]
+                {
+                    new ShopPurchaseRequest(
+                        $"p0_fail_{expectedClearedZones}_{revisionBeforeFailure}",
+                        product)
+                };
+                var failureAccepted = purchaseService.TryPurchase(
+                    excessiveRequests,
+                    out var failureResult);
+                var creditsAfterFailure = purchaseService.AvailableCredits;
+                var pendingAfterFailure = deliveryService.PendingCount;
+                var revisionAfterFailure = economyLedger.Revision;
+                var deliveryEntriesAfterFailure = economyLedger.DeliveryEntryCount;
+                var failureWasAtomic =
+                    !failureAccepted
+                    && !failureResult.Success
+                    && failureResult.Reason == "insufficient_credits"
+                    && creditsAfterFailure == creditsBeforeFailure
+                    && pendingAfterFailure == pendingBeforeFailure
+                    && revisionAfterFailure == revisionBeforeFailure
+                    && deliveryEntriesAfterFailure == deliveryEntriesBeforeFailure
+                    && display.DisplayedProductCount == initialCount
+                    && GetShopOfferSignature(display) == initialSignature;
+
+                if (setupDebit > 0
+                    && !economyLedger.TryAddCreditsServer(
+                        $"p0:insufficient:refund:{expectedClearedZones}:{economyLedger.Revision}",
+                        setupDebit,
+                        NetworkRunEconomyTransactionKind.RefundCredit,
+                        NetworkManager.ServerClientId,
+                        out var setupRefundReason))
+                {
+                    Fail($"shop_insufficient_setup_refund_failed reason={setupRefundReason}");
+                    yield break;
+                }
+
+                if (!failureWasAtomic || purchaseService.AvailableCredits != originalCredits)
                 {
                     Fail(
                         $"shop_insufficient_atomicity_failed accepted={failureAccepted} reason={failureResult.Reason ?? "none"} " +
-                        $"credits={purchaseService.AvailableCredits}/{creditsBeforeFailure} " +
-                        $"pending={deliveryService.PendingCount}/{pendingBeforeFailure}");
+                        $"credits={creditsAfterFailure}/{creditsBeforeFailure} restored={purchaseService.AvailableCredits}/{originalCredits} " +
+                        $"pending={pendingAfterFailure}/{pendingBeforeFailure}");
                     yield break;
                 }
 
@@ -1530,12 +1615,22 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Validation
 
                 var creditsBeforeSuccess = purchaseService.AvailableCredits;
                 var pendingBeforeSuccess = deliveryService.PendingCount;
+                var revisionBeforeSuccess = economyLedger.Revision;
+                var walletRevisionBeforeSuccess = economyLedger.Snapshot.WalletRevision;
+                var deliveryRevisionBeforeSuccess = economyLedger.Snapshot.DeliveryRevision;
+                var deliveredBeforeSuccess = economyLedger.Snapshot.DeliveredCount;
                 var successAccepted = purchaseService.TryPurchase(
                     new[] { new ShopPurchaseRequest("p0_success", product) },
                     out var successResult);
                 if (!successAccepted || !successResult.Success || successResult.PurchasedCount != 1 ||
                     purchaseService.AvailableCredits != creditsBeforeSuccess - product.PurchasePrice ||
                     deliveryService.PendingCount != pendingBeforeSuccess + 1 ||
+                    economyLedger.Revision != revisionBeforeSuccess + 1U ||
+                    economyLedger.Snapshot.WalletRevision != walletRevisionBeforeSuccess + 1U ||
+                    economyLedger.Snapshot.DeliveryRevision != deliveryRevisionBeforeSuccess + 1U ||
+                    economyLedger.Snapshot.LastTransactionKind
+                        != NetworkRunEconomyTransactionKind.PurchaseDebit ||
+                    economyLedger.Snapshot.LastTransactionId.ToString() != "p0_success" ||
                     display.DisplayedProductCount != initialCount - 1)
                 {
                     Fail(
@@ -1544,6 +1639,42 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Validation
                         $"displayed={display.DisplayedProductCount}/{initialCount - 1}");
                     yield break;
                 }
+
+                var snapshotBeforeDuplicate = economyLedger.Snapshot;
+                var entriesBeforeDuplicate = economyLedger.DeliveryEntryCount;
+                var duplicateAccepted = economyLedger.TryCommitPurchaseServer(
+                    "p0_duplicate_probe",
+                    new[] { "p0_success" },
+                    new[] { product.ItemPrefabData.ItemId },
+                    product.PurchasePrice,
+                    NetworkManager.ServerClientId,
+                    out var duplicateReason);
+                if (duplicateAccepted
+                    || duplicateReason != "purchase_already_committed"
+                    || !economyLedger.Snapshot.Equals(snapshotBeforeDuplicate)
+                    || economyLedger.DeliveryEntryCount != entriesBeforeDuplicate)
+                {
+                    Fail(
+                        $"shop_purchase_idempotency_failed accepted={duplicateAccepted} reason={duplicateReason ?? "none"} " +
+                        $"entries={economyLedger.DeliveryEntryCount}/{entriesBeforeDuplicate}");
+                    yield break;
+                }
+
+                Debug.Log(
+                    $"PHS_P0_SHOP_PURCHASE_IDEMPOTENCY_OK purchase=p0_success reason={duplicateReason}",
+                    this);
+
+                expectedDeliveryCredits = purchaseService.AvailableCredits;
+                minimumDeliveredAfterReturn = deliveredBeforeSuccess + 1;
+                yield return ProbeEconomyState(
+                    expectedDeliveryCredits,
+                    pendingBeforeSuccess + 1,
+                    0,
+                    deliveredBeforeSuccess,
+                    NetworkRunEconomyTransactionKind.PurchaseDebit,
+                    "p0_success",
+                    "purchase_pending");
+                if (scenarioFinished) yield break;
 
                 var postPurchaseSignature = GetShopOfferSignature(display);
                 display.PopulateDisplays();
@@ -1587,6 +1718,32 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Validation
 
             yield return ProbeScenes(MapSceneName);
             if (scenarioFinished) yield break;
+
+            if (minimumDeliveredAfterReturn >= 0)
+            {
+                yield return WaitFor(
+                    () =>
+                    {
+                        var economy = NetworkRunSessionRoot.Instance?.Economy;
+                        return economy != null
+                            && economy.Snapshot.PendingDeliveryCount == 0
+                            && economy.Snapshot.ClaimedDeliveryCount == 0
+                            && economy.Snapshot.DeliveredCount >= minimumDeliveredAfterReturn;
+                    },
+                    10f,
+                    $"shop_delivery_not_completed expectedDelivered={minimumDeliveredAfterReturn}");
+                if (scenarioFinished) yield break;
+
+                yield return ProbeEconomyState(
+                    expectedDeliveryCredits,
+                    0,
+                    0,
+                    minimumDeliveredAfterReturn,
+                    NetworkRunEconomyTransactionKind.PurchaseDebit,
+                    "p0_success",
+                    "purchase_delivered");
+                if (scenarioFinished) yield break;
+            }
 
             yield return WaitFor(
                 () => NetworkRunFlowCoordinator.Instance != null &&
@@ -1644,6 +1801,79 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Validation
             }
 
             Fail($"shop_state_sync_timeout expected={expectedDisplayedCount}");
+        }
+
+        private IEnumerator ProbeEconomyState(
+            int expectedCredits,
+            int expectedPendingCount,
+            int expectedClaimedCount,
+            int minimumDeliveredCount,
+            NetworkRunEconomyTransactionKind expectedTransactionKind,
+            string expectedTransactionId,
+            string label)
+        {
+            var deadline = Time.realtimeSinceStartup + 15f;
+            while (scenarioRunning && !scenarioFinished && Time.realtimeSinceStartup < deadline)
+            {
+                economyReports.Clear();
+                var token = ++activeProbeToken;
+                ProbeEconomyStateClientRpc(token);
+
+                var probeDeadline = Mathf.Min(deadline, Time.realtimeSinceStartup + 2f);
+                while (economyReports.Count < expectedClientCount
+                       && Time.realtimeSinceStartup < probeDeadline)
+                {
+                    yield return null;
+                }
+
+                if (economyReports.Count >= expectedClientCount)
+                {
+                    var first = economyReports.Values.First();
+                    if (first.Found
+                        && first.Credits == expectedCredits
+                        && first.Revision > 0U
+                        && first.PendingCount == expectedPendingCount
+                        && first.ClaimedCount == expectedClaimedCount
+                        && first.DeliveredCount >= minimumDeliveredCount
+                        && first.LastTransactionKind == expectedTransactionKind
+                        && first.LastTransactionId == expectedTransactionId
+                        && economyReports.Values.All(report =>
+                            report.Found
+                            && report.Credits == first.Credits
+                            && report.Revision == first.Revision
+                            && report.PendingCount == first.PendingCount
+                            && report.ClaimedCount == first.ClaimedCount
+                            && report.DeliveredCount == first.DeliveredCount
+                            && report.LastTransactionKind == first.LastTransactionKind
+                            && report.LastTransactionId == first.LastTransactionId))
+                    {
+                        Debug.Log(
+                            $"PHS_P0_ECONOMY_SYNC_OK label={label} peers={economyReports.Count} " +
+                            $"credits={first.Credits} revision={first.Revision} pending={first.PendingCount} " +
+                            $"claimed={first.ClaimedCount} delivered={first.DeliveredCount} " +
+                            $"transaction={first.LastTransactionId} kind={first.LastTransactionKind}",
+                            this);
+                        yield break;
+                    }
+                }
+
+                yield return new WaitForSecondsRealtime(0.25f);
+            }
+
+            var reports = economyReports.Count == 0
+                ? "none"
+                : string.Join(
+                    ";",
+                    economyReports.OrderBy(report => report.Key).Select(report =>
+                        $"{report.Key}:found={report.Value.Found},credits={report.Value.Credits}," +
+                        $"revision={report.Value.Revision},pending={report.Value.PendingCount}," +
+                        $"claimed={report.Value.ClaimedCount},delivered={report.Value.DeliveredCount}," +
+                        $"transaction={report.Value.LastTransactionId},kind={report.Value.LastTransactionKind}"));
+            Fail(
+                $"economy_peer_sync_timeout label={label} credits={expectedCredits} " +
+                $"pending={expectedPendingCount} claimed={expectedClaimedCount} " +
+                $"minimumDelivered={minimumDeliveredCount} transaction={expectedTransactionId} " +
+                $"kind={expectedTransactionKind} reports={reports}");
         }
 
         private IEnumerator ProbeRunFlowState(
@@ -2059,6 +2289,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Validation
 
             yield return ProbeScenes(MapSceneName);
             if (scenarioFinished) yield break;
+
             Debug.Log("PHS_P0_DEBRIS_LOCAL_ENTRY_OK scene=PHS_Map_ver1", this);
 
             yield return ValidatePhysicalDebrisSale(playerObject, holder);
@@ -2524,6 +2755,23 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Validation
             }
 
             yield return ProbeDebrisSaleState(creditsAfterFirstSale, revisionAfterFirstSale);
+            if (scenarioFinished) yield break;
+
+            var economy = NetworkRunSessionRoot.Instance?.Economy;
+            if (economy == null || economy.Revision == 0U)
+            {
+                Fail("debris_sale_economy_ledger_missing");
+                yield break;
+            }
+
+            yield return ProbeEconomyState(
+                creditsAfterFirstSale,
+                economy.Snapshot.PendingDeliveryCount,
+                economy.Snapshot.ClaimedDeliveryCount,
+                economy.Snapshot.DeliveredCount,
+                NetworkRunEconomyTransactionKind.SaleCredit,
+                $"debris_sale:held:{NetworkManager.ServerClientId}:{saleRevision}",
+                "debris_sale");
             if (scenarioFinished) yield break;
 
             Debug.Log(
@@ -3476,6 +3724,28 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Validation
         }
 
         [ClientRpc]
+        private void ProbeEconomyStateClientRpc(uint token)
+        {
+            if (!IsScenarioEnabled()) return;
+
+            var economy = NetworkRunSessionRoot.Instance?.Economy;
+            var found = economy != null
+                && economy.IsSpawned
+                && economy.Revision > 0U;
+            var snapshot = found ? economy.Snapshot : default;
+            ReportEconomyStateServerRpc(
+                token,
+                found,
+                found ? snapshot.Credits : int.MinValue,
+                found ? snapshot.Revision : 0U,
+                found ? snapshot.PendingDeliveryCount : -1,
+                found ? snapshot.ClaimedDeliveryCount : -1,
+                found ? snapshot.DeliveredCount : -1,
+                found ? snapshot.LastTransactionId.ToString() : string.Empty,
+                found ? snapshot.LastTransactionKind : NetworkRunEconomyTransactionKind.None);
+        }
+
+        [ClientRpc]
         private void ProbeDebrisSaleStateClientRpc(uint token)
         {
             if (!IsScenarioEnabled()) return;
@@ -3552,6 +3822,31 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Validation
             if (!AcceptProbe(token)) return;
             debrisSaleStateReports[rpcParams.Receive.SenderClientId] =
                 new DebrisSaleStateReport(credits, revision, heldItemId);
+        }
+
+        [ServerRpc(RequireOwnership = false)]
+        private void ReportEconomyStateServerRpc(
+            uint token,
+            bool found,
+            int credits,
+            uint revision,
+            int pendingCount,
+            int claimedCount,
+            int deliveredCount,
+            string lastTransactionId,
+            NetworkRunEconomyTransactionKind lastTransactionKind,
+            ServerRpcParams rpcParams = default)
+        {
+            if (!AcceptProbe(token)) return;
+            economyReports[rpcParams.Receive.SenderClientId] = new EconomyReport(
+                found,
+                credits,
+                revision,
+                pendingCount,
+                claimedCount,
+                deliveredCount,
+                lastTransactionId,
+                lastTransactionKind);
         }
 
         [ServerRpc(RequireOwnership = false)]

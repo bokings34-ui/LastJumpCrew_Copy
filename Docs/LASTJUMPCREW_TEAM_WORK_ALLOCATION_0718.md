@@ -2,6 +2,7 @@
 
 - 작성일: `2026-07-18`
 - 기준 문서: `LASTJUMPCREW_INTEGRATED_GAMEPLAY_NETWORK_SPEC_0718.md`
+- 프리팹 접수 기준: `LASTJUMPCREW_TEAM_PREFAB_INTAKE_SPEC_0718.md`
 - 상태: 팀 배포 전 검토본
 - 배분 원칙:
   - 기존 담당 폴더와 Notion 담당을 유지한다.
@@ -14,7 +15,9 @@
 | 담당 | 최종 소유 | 폴더 |
 |---|---|---|
 | 박한솔 | 온라인 세션, NGO 권위, Run/Ship 지속 상태, 통합 씬, Network Prefab, Validator, Build | `Assets/02. ParkHanSol_TeamLeader_Build & Multi/` |
-| 서보경 | 게임 규칙, 제한시간, 보상, Wallet, 가격, 재고, 상점 도메인 | `Assets/03. SeoBoGyeong_Game Economy/` |
+| 서보경 | 오브젝트 애니메이션 Prefab/Controller/Clip과 상태 표현 | `Assets/03. SeoBoGyeong_Game Economy/` |
+| 박한솔/사용자 | Network Economy 원장 통합, 가격·보상·재고·확률 최종 밸런스 승인 | `Assets/02. ParkHanSol_TeamLeader_Build & Multi/` |
+| 신규 Shop 콘텐츠 담당 | Shop/Catalog/Display 신규 제작 `[확인 필요]` | 담당 폴더 `[확인 필요]` |
 | 노석민 | 외부 사건 콘텐츠, 내부 사고 규칙, 적, 사건 SO/Pool/Outcome | `Assets/04. NohSeokMin_Game Event/` |
 | 탁현재 | 함선 공간, Room/Device 배치, Map 환경, Fire 표면, 미니게임 View, Warp 연출 | `Assets/05. TakHyunJae_Map & MiniGame/` |
 | 조한용 | 플레이어 전투/체력/넉백, 아이템 공격·사용·투척, 도구 UX | `Assets/06. JoHanYong_PlayerSystem/` |
@@ -69,22 +72,22 @@
 
 | 계약 | 검토 담당 |
 |---|---|
-| `INetworkRunSessionState` | 박한솔, 서보경 |
-| `IMapRuleProvider` | 서보경 |
+| `INetworkRunSessionState` | 박한솔 |
+| `IMapRuleProvider` | 박한솔, 사용자 |
 | `IExternalIncidentRuntime` | 박한솔 |
 | `IExternalIncidentContent` | 노석민 |
 | `IShipAccidentRuntime` | 박한솔, 노석민 |
 | `IMiniGameSessionService` | 박한솔 |
 | `IMiniGameView` | 탁현재 |
 | `IIncidentConsequencePolicy` | 노석민 |
-| `IAtomicSaleService` | 박한솔, 서보경 |
+| `IAtomicSaleService` | 박한솔 |
 | `IUtilityAttackTarget` 확장 여부 | 노석민, 조한용 |
 
 ## 4. 박한솔 배정
 
 ### PHS-P0-01 Persistent RunSessionRoot
 
-상태: `P0 핵심 생명주기·Stage Clock 원장·2인 전체 루프 완료 / 후속 상태 연결 남음`
+상태: `P0 핵심 생명주기·Stage Clock·Economy 원장·2인 전체 루프 완료 / RNG 이후 연결 중`
 
 완료:
 
@@ -101,10 +104,14 @@
 - Headless 시각 검증 오탐 제거, MiniGame Lamp 발광 Material과 Inspector Validator 수정.
 - Map Profile 기반 서버 권위 `NetworkRunStageClock`과 Host/Client HUD 단일 조회 연결.
 - 2인 전체 루프에서 Stage Clock sequence `1~9`, Shop 복귀 Commit, Remaining 최대 차 `0.054초`, Pause 안정 `0.000초` 검증.
+- `NetworkRunEconomyLedger`에서 Wallet과 Delivery Queue를 Root 수명으로 통합.
+- 구매 차감+Delivery 추가 단일 커밋, 판매 거래 ID 중복 방지, 수리 결제/환불 원장 기록 연결.
+- 개별 PurchaseId 영속 중복 차단, Root 늦은 Spawn 재바인딩, Snapshot/Delivery revision 관찰 순서 보강.
+- 미수령 배송품의 Scene 왕복 보존은 `Boxed/Collected + EntryId/Slot + 서버 수령` 계약으로 후속 분리.
+- 2인 전체 루프에서 구매 실패 무변경, `pending=1`, Map 복귀 `delivered=1` Peer 동기화 검증.
 
 남음:
 
-- Party Wallet/Delivery Queue.
 - Server RNG/Compatibility.
 - 4/8인과 Late Join.
 
@@ -122,7 +129,7 @@
 - `NetworkRunFlowCoordinator`를 Player Prefab에서 분리.
 - `NetworkShipSystemsState`를 Map Scene 상태에서 분리.
 - Stage Deadline, Active Map, Cleared Zone, Shop Cycle 복제.
-- Party Wallet/Delivery Queue 지속성 연결.
+- Party Wallet/Delivery Queue 지속성 연결. — 완료
 - Scene View 재바인딩 계약 추가.
 
 완료 기준:
@@ -245,73 +252,54 @@
 
 ## 5. 서보경 배정
 
-### SBG-P0-01 게임 규칙 원장 정리
+최신 사용자 지시로 신규 담당을 `오브젝트 애니메이션`으로 변경한다. 기존 03 경제 코드와 자산은 이력·GUID를 보존하지만, 새 경제/밸런스 작업을 자동 배정하지 않는다.
+
+### SBG-P0-01 오브젝트 애니메이션 표현 번들
 
 대상:
 
-- `GameLoopState`
-- `GameLoopController`
-- `IGameStateProvider`
-- `IGameCommands`
-
-작업:
-
-- `SHOP_INTERVAL=3`.
-- `TOTAL_ZONES=9`.
-- 고정 300초 제거.
-- `IMapRuleProvider`에서 제한시간과 보상을 받는다.
-- Stage Timer를 Deadline 기반으로 표현 가능하게 한다.
-- Shop/FinalShop/CloseShop 전이를 명시한다.
+- 함선 Door/Console/Generator/Power Device.
+- 사고 Telegraph/Active/Resolve/Cleanup 표현.
+- 상점 진열대·버튼·배송 상자의 동작 표현.
+- 수리 성공/실패와 고장/복구 상태 표현.
 
 납품:
 
-- NGO 의존 없는 순수 규칙.
-- 단위 테스트 또는 Test Driver.
+- 독립 Prefab.
+- Animator Controller와 사용 Clip.
+- Parameter 표.
+- 시작/Loop/복구/종료 상태표.
+- Animation Event 목록.
+- 샌드박스 실행 캡처.
+- Prefab/SO/Controller/Clip의 `.meta`.
+
+필수 계약:
+
+- Animator와 시각 자식은 Network 상태를 소유하지 않는다.
+- NetworkVariable, ServerRpc, ClientRpc, Scheduler, Ship HP 직접 변경을 넣지 않는다.
+- 게임 결과는 박한솔 통합 Adapter가 확정하고, 애니메이션은 전달받은 상태만 표시한다.
+- 제안 View 계약 이름은 `IObjectAnimationView`이며 실제 공용 인터페이스 추가 전 `[확인 필요]`다.
+- Telegraph/Active/Cleanup이 눈에 보이게 분리돼야 한다.
 
 완료 기준:
 
-- 3/6 Shop, 9 FinalShop.
-- Map별 시간값 적용.
-- Pause/Resume 후 시간 손실 없음.
+- 상태별 Clip 누락 0.
+- Loop에서 Resolve/Cleanup으로 정상 이탈.
+- Animator Warning 0.
+- Prefab 비활성→활성→정리 재사용 가능.
 
-### SBG-P0-02 Wallet과 원자 거래
+### SBG-P1-01 오브젝트 세트 확장
 
-작업:
+- Door/Engine/Gravity/Power/Repair/Shop 계열을 같은 Parameter 계약으로 확장.
+- 사건별 전용 연출은 노석민 VFX/사건 Prefab과 합성 가능한 시각 자식으로 제출.
+- 활성 Ship/Map/Shop 씬과 Final Prefab은 직접 수정하지 않는다.
 
-- `IWallet`의 실패 조건 명시.
-- Credit Add/Spend의 Transaction 결과 타입 제공.
-- Sale/Purchase Rollback에 필요한 예약 계약 제공.
-- RewardGrantId 중복 방지 정책.
+### 경제·밸런스 재배정
 
-완료 기준:
-
-- 같은 TransactionId 두 번 반영 안 됨.
-- 부분 성공 없음.
-
-### SBG-P0-03 가격/상품 Source of Truth
-
-작업:
-
-- 구매가격은 `ShopProductData`.
-- 판매가격은 `UtilityItemPrefabData`.
-- 03 int ItemData는 메타/프로토타입 또는 Adapter 입력으로 제한.
-- 같은 상품의 3중 가격표 제거.
-- 미구현 고급 도구는 Shop 노출 금지.
-
-완료 기준:
-
-- Catalog 검증에서 가격 충돌 0.
-- Buy/Sell 가격표 문서 제공.
-
-### SBG-P1-01 Map 보상과 Shop 밸런스
-
-작업:
-
-- Difficulty별 Clear Reward.
-- Debris 판매 기대값.
-- 3구역 Shop 구매력.
-- Dock Repair 가격.
-- 4인 기준 공유 Wallet 소비량.
+- Network Wallet/Delivery 거래 원장은 박한솔이 통합한다.
+- 가격, 보상, 재고, 확률의 최종값은 박한솔/사용자가 승인한다.
+- 신규 Shop/Catalog/Display 콘텐츠 담당은 `[확인 필요]`다.
+- 기존 03 경제 자산 수정이 필요하면 변경 목록을 먼저 합의하고 별도 번들로 받는다.
 
 ### 서보경이 건드리지 않는 것
 
@@ -321,6 +309,8 @@
 - 0715 통합 씬.
 - Player Prefab.
 - Event Scheduler.
+- Wallet/Delivery Root 원장.
+- 가격·보상·확률 최종값.
 
 ## 6. 노석민 배정
 
@@ -569,7 +559,7 @@
 ```mermaid
 flowchart LR
     M0["M0 계약 동결"] --> M1A["박한솔 SessionRoot"]
-    M0 --> M1B["서보경 순수 규칙/경제"]
+    M0 --> M1B["서보경 Object Animation"]
     M0 --> M1C["노석민 Incident 콘텐츠"]
     M0 --> M1D["탁현재 Layout/MiniGame View"]
     M0 --> M1E["조한용 Player/Item"]
@@ -655,20 +645,22 @@ flowchart LR
 1. Persistent RunSessionRoot와 Run/Ship 상태의 Scene 독립.
 2. Debris NGO Scene Load 생명주기와 Rigidbody 참조 수정.
 3. 2인 9구역/Shop 3회/FinalShop/Clear 자동 검증.
+4. Wallet/Delivery Economy 원장, 구매 원자 커밋, Map 복귀 Delivery 동기화.
 
 현재 직접 남음:
 
-1. Wallet/Delivery Queue 지속화 Adapter.
-2. Server RNG/Compatibility와 Session Approval 계약.
+1. Server RNG/Compatibility와 Session Approval 계약.
+2. Incident Pressure/Budget 원장과 통합 Scheduler 계약.
 3. Run 규칙/Active Map Commit의 남은 통합 검증.
-4. 외부 수집 Safe/Danger와 Sale 원자성 통합.
-5. Incident Budget/Legacy Scheduler 차단과 MiniGame Session Authority.
+4. 외부 수집 Safe/Danger의 남은 통합.
+5. Legacy Scheduler 차단과 MiniGame Session Authority.
 6. 팀 납품 Prefab의 최종 Scene/Inspector 조립.
 7. 4/8인과 Late Join 검증.
 
 박한솔이 기다려야 하는 입력:
 
-- 서보경: 순수 규칙, Wallet/가격 계약.
+- 서보경: 오브젝트 애니메이션 Prefab/Controller/Clip/Parameter 표.
+- 신규 Shop 담당 `[확인 필요]`: Catalog/Display 콘텐츠.
 - 노석민: Incident Outcome과 Fire/Enemy 콘텐츠.
 - 탁현재: Layout/Fire Patch/MiniGame View/Map Prefab.
 - 조한용: Player Combat/도구/투척 Component.
@@ -679,7 +671,7 @@ flowchart LR
 
 ### 서보경 전달
 
-`03`에서 게임 규칙과 경제 원장을 맡습니다. P0는 9구역/3구역 상점 규칙, Map Profile 기반 제한시간·보상, Wallet 원자 거래, 구매/판매 가격 Source of Truth 정리입니다. NGO/공용 씬은 수정하지 말고 순수 규칙·Interface·Test Driver로 납품해주세요.
+`03`의 신규 담당은 오브젝트 애니메이션입니다. Door/Console/Generator/Repair/Shop 오브젝트의 Prefab, Animator Controller, Clip, Parameter/상태표, 샌드박스 증거를 함께 제출해주세요. NetworkVariable/RPC/Scheduler/게임 결과 판정은 넣지 않고 Telegraph/Active/Resolve/Cleanup 표현만 담당합니다. 기존 경제 자산은 GUID와 이력을 유지하며 별도 합의 없이 이동하거나 재작성하지 않습니다.
 
 ### 노석민 전달
 

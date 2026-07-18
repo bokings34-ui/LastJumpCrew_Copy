@@ -75,6 +75,41 @@ namespace LastJumpCrew.ParkHanSol.Editor
             ValidateOrThrow();
         }
 
+        [MenuItem("Tools/ParkHanSol/Migrate 0715 Economy Ledger")]
+        public static void MigrateLegacyEconomyOwnersToRunRoot()
+        {
+            var scenePaths = new[] { MapScenePath, ShopScenePath };
+            var removedCount = 0;
+            foreach (var scenePath in scenePaths)
+            {
+                var scene = EditorSceneManager.OpenScene(scenePath, OpenSceneMode.Single);
+                var legacyRoots = UnityEngine.Object.FindObjectsByType<SessionPurchaseStateRoot>(
+                    FindObjectsInactive.Include,
+                    FindObjectsSortMode.None);
+                foreach (var legacyRoot in legacyRoots)
+                {
+                    var owner = legacyRoot.gameObject;
+                    UnityEngine.Object.DestroyImmediate(legacyRoot, true);
+                    removedCount++;
+                    Debug.Log(
+                        $"PHS_ECONOMY_LEDGER_MIGRATED scene={scenePath} object={GetHierarchyPath(owner.transform)} keptDeliveryAdapter={owner.GetComponent<SessionPurchaseDeliveryService>() != null}",
+                        owner);
+                }
+
+                if (legacyRoots.Length > 0)
+                {
+                    EditorSceneManager.MarkSceneDirty(scene);
+                    if (!EditorSceneManager.SaveScene(scene))
+                    {
+                        throw new InvalidOperationException(
+                            $"PHS_ECONOMY_LEDGER_MIGRATION_FAILED scene={scenePath}");
+                    }
+                }
+            }
+
+            Debug.Log($"PHS_ECONOMY_LEDGER_MIGRATION_OK removed={removedCount} scenes={scenePaths.Length}");
+        }
+
         public static string ValidateOrThrow()
         {
             var activeScene = UnityEngine.SceneManagement.SceneManager.GetActiveScene();
@@ -147,6 +182,8 @@ namespace LastJumpCrew.ParkHanSol.Editor
         {
             OpenAndValidateScene(LobbyScenePath, errors);
             ValidateNoSceneOwnedStageClock("lobby", errors);
+            ValidateNoSceneOwnedEconomyLedger("lobby", errors);
+            ValidateNoLegacyEconomyOwner("lobby", errors);
             var networkManager = FindOne<NetworkManager>("lobby_network_manager", errors);
             if (networkManager == null)
             {
@@ -238,6 +275,8 @@ namespace LastJumpCrew.ParkHanSol.Editor
         {
             OpenAndValidateScene(MapScenePath, errors);
             ValidateNoSceneOwnedStageClock("map", errors);
+            ValidateNoSceneOwnedEconomyLedger("map", errors);
+            ValidateNoLegacyEconomyOwner("map", errors);
             ValidateGravityDuplicateComponents("map", errors);
             ValidateGameplayContext("map", errors);
 
@@ -545,6 +584,7 @@ namespace LastJumpCrew.ParkHanSol.Editor
                 "map",
                 FindOne<PartyCreditsHudBinder>("map_party_credits_hud_binder", errors),
                 errors);
+            ValidatePurchaseDeliveryBox(errors);
 
             ValidateShipPowerWiring(errors);
         }
@@ -553,6 +593,8 @@ namespace LastJumpCrew.ParkHanSol.Editor
         {
             OpenAndValidateScene(ShopScenePath, errors);
             ValidateNoSceneOwnedStageClock("shop", errors);
+            ValidateNoSceneOwnedEconomyLedger("shop", errors);
+            ValidateNoLegacyEconomyOwner("shop", errors);
             ValidateGameplayContext("shop", errors);
             ValidateNetworkScenePortal(
                 "shop_return",
@@ -587,6 +629,13 @@ namespace LastJumpCrew.ParkHanSol.Editor
                 RequireObject(serializedPurchase, "catalog", "shop_catalog_missing", errors);
                 RequireObject(serializedPurchase, "walletSource", "shop_wallet_source_missing", errors);
                 RequireObject(serializedPurchase, "deliverySource", "shop_delivery_source_missing", errors);
+                var deliverySource = serializedPurchase
+                    .FindProperty("deliverySource")
+                    ?.objectReferenceValue as MonoBehaviour;
+                Require(
+                    deliverySource is IShopPurchaseTransactionService,
+                    "shop_purchase_transaction_service_missing",
+                    errors);
             }
 
             var checkoutZone = FindOne<ShopCheckoutZone>("shop_trade_station_checkout_zone", errors);
@@ -1203,6 +1252,10 @@ namespace LastJumpCrew.ParkHanSol.Editor
                 prefab.GetComponentsInChildren<NetworkRunStageClock>(true).Length == 0,
                 "player_stage_clock_must_be_session_owned",
                 errors);
+            Require(
+                prefab.GetComponentsInChildren<NetworkRunEconomyLedger>(true).Length == 0,
+                "player_economy_ledger_must_be_session_owned",
+                errors);
 
             ValidateCombatItemRoute(
                 "Assets/02. ParkHanSol_TeamLeader_Build & Multi/04. Data/UtilityItems/ParkHanSol_WrenchItemPrefabData.asset",
@@ -1272,6 +1325,10 @@ namespace LastJumpCrew.ParkHanSol.Editor
                     prefab.GetComponentsInChildren<NetworkRunStageClock>(true).Length == 0,
                     "ship_runtime_stage_clock_must_be_session_owned",
                     errors);
+                Require(
+                    prefab.GetComponentsInChildren<NetworkRunEconomyLedger>(true).Length == 0,
+                    "ship_runtime_economy_ledger_must_be_session_owned",
+                    errors);
                 var coordinator = prefab.GetComponent<PHSNetworkShipAccidentCoordinator>();
                 Require(coordinator != null, "ship_runtime_accident_coordinator_missing", errors);
                 if (coordinator != null)
@@ -1330,6 +1387,35 @@ namespace LastJumpCrew.ParkHanSol.Editor
                     stageClock != null,
                     "run_session_root_stage_clock_owner_invalid expected=root",
                     errors);
+                var economyLedgers = prefab.GetComponentsInChildren<NetworkRunEconomyLedger>(true);
+                Require(
+                    economyLedgers.Length == 1,
+                    $"run_session_root_economy_ledger_count_invalid expected=1 actual={economyLedgers.Length}",
+                    errors);
+                var economyLedger = prefab.GetComponent<NetworkRunEconomyLedger>();
+                Require(
+                    economyLedger != null,
+                    "run_session_root_economy_ledger_owner_invalid expected=root",
+                    errors);
+                if (economyLedger != null)
+                {
+                    var serializedEconomy = new SerializedObject(economyLedger);
+                    Require(
+                        serializedEconomy.FindProperty("startingCredits")?.intValue >= 0,
+                        "run_session_root_economy_starting_credits_invalid expected_non_negative",
+                        errors);
+                    Require(
+                        serializedEconomy.FindProperty("maximumDeliveryEntries")?.intValue >= 16,
+                        "run_session_root_economy_delivery_capacity_invalid",
+                        errors);
+
+                    var networkBehaviours = prefab.GetComponents<NetworkBehaviour>();
+                    Require(
+                        networkBehaviours.Length > 0
+                        && networkBehaviours[networkBehaviours.Length - 1] == economyLedger,
+                        "run_session_root_economy_ledger_must_be_last_network_behaviour",
+                        errors);
+                }
 
                 var coordinator = prefab.GetComponent<NetworkRunFlowCoordinator>();
                 Require(coordinator != null, "run_session_root_run_flow_missing", errors);
@@ -1756,6 +1842,35 @@ namespace LastJumpCrew.ParkHanSol.Editor
             }
         }
 
+        private static void ValidatePurchaseDeliveryBox(ICollection<string> errors)
+        {
+            var deliveryBox = FindOne<PurchaseDeliveryBox>(
+                "map_purchase_delivery_box",
+                errors);
+            if (deliveryBox == null)
+            {
+                return;
+            }
+
+            var serializedBox = new SerializedObject(deliveryBox);
+            RequireObject(
+                serializedBox,
+                "catalog",
+                "map_purchase_delivery_catalog_missing",
+                errors);
+            RequireArray(
+                serializedBox,
+                "deliverySlots",
+                1,
+                "map_purchase_delivery_slots_missing",
+                errors);
+            Require(
+                !string.IsNullOrWhiteSpace(
+                    serializedBox.FindProperty("deliveryBoxId")?.stringValue),
+                "map_purchase_delivery_box_id_missing",
+                errors);
+        }
+
         private static void ValidateShopDroppedPrefab(
             ShopProductData product,
             ISet<long> networkPrefabHashes,
@@ -2060,6 +2175,43 @@ namespace LastJumpCrew.ParkHanSol.Editor
             Require(
                 stageClocks.Length == 0,
                 $"{sceneLabel}_stage_clock_must_be_session_owned actual={stageClocks.Length}",
+                errors);
+        }
+
+        private static void ValidateNoSceneOwnedEconomyLedger(
+            string sceneLabel,
+            ICollection<string> errors)
+        {
+            var ledgers = UnityEngine.Object.FindObjectsByType<NetworkRunEconomyLedger>(
+                FindObjectsInactive.Include,
+                FindObjectsSortMode.None);
+            Require(
+                ledgers.Length == 0,
+                $"{sceneLabel}_economy_ledger_must_be_session_owned actual={ledgers.Length}",
+                errors);
+        }
+
+        private static void ValidateNoLegacyEconomyOwner(
+            string sceneLabel,
+            ICollection<string> errors)
+        {
+            var legacyWallets = UnityEngine.Object.FindObjectsByType<SessionPartyCreditsWallet>(
+                FindObjectsInactive.Include,
+                FindObjectsSortMode.None);
+            Require(
+                legacyWallets.Length == 0,
+                $"{sceneLabel}_legacy_party_wallet_present actual={legacyWallets.Length}",
+                errors);
+
+            var legacyRoots = UnityEngine.Object.FindObjectsByType<SessionPurchaseStateRoot>(
+                FindObjectsInactive.Include,
+                FindObjectsSortMode.None);
+            Require(
+                legacyRoots.Length == 0,
+                $"{sceneLabel}_legacy_purchase_state_root_present actual={legacyRoots.Length} " +
+                $"objects={string.Join(",", legacyRoots.Select(root => GetHierarchyPath(root.transform)))} " +
+                $"components={string.Join("|", legacyRoots.SelectMany(root => root.GetComponents<Component>()).Where(component => component != null).Select(component => component.GetType().Name))} " +
+                $"prefabs={string.Join(",", legacyRoots.Select(root => PrefabUtility.GetPrefabAssetPathOfNearestInstanceRoot(root.gameObject)))}",
                 errors);
         }
 
