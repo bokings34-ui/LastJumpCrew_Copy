@@ -110,6 +110,51 @@ namespace LastJumpCrew.ParkHanSol.Editor
             Debug.Log($"PHS_ECONOMY_LEDGER_MIGRATION_OK removed={removedCount} scenes={scenePaths.Length}");
         }
 
+        [MenuItem("Tools/ParkHanSol/Migrate 0718 Run RNG Ledger")]
+        public static void MigrateRunRandomLedgerToRoot()
+        {
+            var prefab = PrefabUtility.LoadPrefabContents(RunSessionRootPrefabPath);
+            if (prefab == null)
+            {
+                throw new InvalidOperationException(
+                    $"PHS_RUN_RNG_MIGRATION_FAILED reason=prefab_missing path={RunSessionRootPrefabPath}");
+            }
+
+            try
+            {
+                var ledgers = prefab.GetComponents<NetworkRunRandomLedger>();
+                if (ledgers.Length > 1)
+                {
+                    throw new InvalidOperationException(
+                        $"PHS_RUN_RNG_MIGRATION_FAILED reason=duplicate_ledger count={ledgers.Length}");
+                }
+
+                var ledger = ledgers.Length == 1
+                    ? ledgers[0]
+                    : prefab.AddComponent<NetworkRunRandomLedger>();
+                var networkBehaviours = prefab.GetComponents<NetworkBehaviour>();
+                if (networkBehaviours.Length == 0
+                    || networkBehaviours[networkBehaviours.Length - 1] != ledger)
+                {
+                    throw new InvalidOperationException(
+                        "PHS_RUN_RNG_MIGRATION_FAILED reason=ledger_not_last_network_behaviour");
+                }
+
+                if (PrefabUtility.SaveAsPrefabAsset(prefab, RunSessionRootPrefabPath) == null)
+                {
+                    throw new InvalidOperationException(
+                        "PHS_RUN_RNG_MIGRATION_FAILED reason=prefab_save_failed");
+                }
+            }
+            finally
+            {
+                PrefabUtility.UnloadPrefabContents(prefab);
+            }
+
+            Debug.Log(
+                $"PHS_RUN_RNG_MIGRATION_OK prefab={RunSessionRootPrefabPath}");
+        }
+
         public static string ValidateOrThrow()
         {
             var activeScene = UnityEngine.SceneManagement.SceneManager.GetActiveScene();
@@ -183,6 +228,7 @@ namespace LastJumpCrew.ParkHanSol.Editor
             OpenAndValidateScene(LobbyScenePath, errors);
             ValidateNoSceneOwnedStageClock("lobby", errors);
             ValidateNoSceneOwnedEconomyLedger("lobby", errors);
+            ValidateNoSceneOwnedRandomLedger("lobby", errors);
             ValidateNoLegacyEconomyOwner("lobby", errors);
             var networkManager = FindOne<NetworkManager>("lobby_network_manager", errors);
             if (networkManager == null)
@@ -276,6 +322,7 @@ namespace LastJumpCrew.ParkHanSol.Editor
             OpenAndValidateScene(MapScenePath, errors);
             ValidateNoSceneOwnedStageClock("map", errors);
             ValidateNoSceneOwnedEconomyLedger("map", errors);
+            ValidateNoSceneOwnedRandomLedger("map", errors);
             ValidateNoLegacyEconomyOwner("map", errors);
             ValidateGravityDuplicateComponents("map", errors);
             ValidateGameplayContext("map", errors);
@@ -594,6 +641,7 @@ namespace LastJumpCrew.ParkHanSol.Editor
             OpenAndValidateScene(ShopScenePath, errors);
             ValidateNoSceneOwnedStageClock("shop", errors);
             ValidateNoSceneOwnedEconomyLedger("shop", errors);
+            ValidateNoSceneOwnedRandomLedger("shop", errors);
             ValidateNoLegacyEconomyOwner("shop", errors);
             ValidateGameplayContext("shop", errors);
             ValidateNetworkScenePortal(
@@ -1256,6 +1304,10 @@ namespace LastJumpCrew.ParkHanSol.Editor
                 prefab.GetComponentsInChildren<NetworkRunEconomyLedger>(true).Length == 0,
                 "player_economy_ledger_must_be_session_owned",
                 errors);
+            Require(
+                prefab.GetComponentsInChildren<NetworkRunRandomLedger>(true).Length == 0,
+                "player_random_ledger_must_be_session_owned",
+                errors);
 
             ValidateCombatItemRoute(
                 "Assets/02. ParkHanSol_TeamLeader_Build & Multi/04. Data/UtilityItems/ParkHanSol_WrenchItemPrefabData.asset",
@@ -1328,6 +1380,10 @@ namespace LastJumpCrew.ParkHanSol.Editor
                 Require(
                     prefab.GetComponentsInChildren<NetworkRunEconomyLedger>(true).Length == 0,
                     "ship_runtime_economy_ledger_must_be_session_owned",
+                    errors);
+                Require(
+                    prefab.GetComponentsInChildren<NetworkRunRandomLedger>(true).Length == 0,
+                    "ship_runtime_random_ledger_must_be_session_owned",
                     errors);
                 var coordinator = prefab.GetComponent<PHSNetworkShipAccidentCoordinator>();
                 Require(coordinator != null, "ship_runtime_accident_coordinator_missing", errors);
@@ -1408,12 +1464,47 @@ namespace LastJumpCrew.ParkHanSol.Editor
                         serializedEconomy.FindProperty("maximumDeliveryEntries")?.intValue >= 16,
                         "run_session_root_economy_delivery_capacity_invalid",
                         errors);
+                }
 
-                    var networkBehaviours = prefab.GetComponents<NetworkBehaviour>();
+                var randomLedgers = prefab.GetComponentsInChildren<NetworkRunRandomLedger>(true);
+                Require(
+                    randomLedgers.Length == 1,
+                    $"run_session_root_random_ledger_count_invalid expected=1 actual={randomLedgers.Length}",
+                    errors);
+                var randomLedger = prefab.GetComponent<NetworkRunRandomLedger>();
+                Require(
+                    randomLedger != null,
+                    "run_session_root_random_ledger_owner_invalid expected=root",
+                    errors);
+                Require(
+                    NetworkRunRandomLedger.TryValidateAlgorithmContract(
+                        out var randomAlgorithmReason),
+                    $"run_session_root_random_algorithm_contract_invalid reason={randomAlgorithmReason}",
+                    errors);
+
+                var networkBehaviours = prefab.GetComponents<NetworkBehaviour>();
+                var expectedBehaviourTypes = new[]
+                {
+                    typeof(NetworkRunFlowCoordinator),
+                    typeof(NetworkShipSystemsState),
+                    typeof(NetworkRunSessionRoot),
+                    typeof(NetworkRunStageClock),
+                    typeof(NetworkRunEconomyLedger),
+                    typeof(NetworkRunRandomLedger)
+                };
+                Require(
+                    networkBehaviours.Length == expectedBehaviourTypes.Length,
+                    $"run_session_root_network_behaviour_count_invalid expected={expectedBehaviourTypes.Length} actual={networkBehaviours.Length}",
+                    errors);
+                var comparableBehaviourCount = Math.Min(
+                    networkBehaviours.Length,
+                    expectedBehaviourTypes.Length);
+                for (var index = 0; index < comparableBehaviourCount; index++)
+                {
                     Require(
-                        networkBehaviours.Length > 0
-                        && networkBehaviours[networkBehaviours.Length - 1] == economyLedger,
-                        "run_session_root_economy_ledger_must_be_last_network_behaviour",
+                        networkBehaviours[index] != null
+                        && networkBehaviours[index].GetType() == expectedBehaviourTypes[index],
+                        $"run_session_root_network_behaviour_order_invalid index={index} expected={expectedBehaviourTypes[index].Name} actual={networkBehaviours[index]?.GetType().Name ?? "null"}",
                         errors);
                 }
 
@@ -2188,6 +2279,19 @@ namespace LastJumpCrew.ParkHanSol.Editor
             Require(
                 ledgers.Length == 0,
                 $"{sceneLabel}_economy_ledger_must_be_session_owned actual={ledgers.Length}",
+                errors);
+        }
+
+        private static void ValidateNoSceneOwnedRandomLedger(
+            string sceneLabel,
+            ICollection<string> errors)
+        {
+            var ledgers = UnityEngine.Object.FindObjectsByType<NetworkRunRandomLedger>(
+                FindObjectsInactive.Include,
+                FindObjectsSortMode.None);
+            Require(
+                ledgers.Length == 0,
+                $"{sceneLabel}_random_ledger_must_be_session_owned actual={ledgers.Length}",
                 errors);
         }
 

@@ -87,7 +87,7 @@
 
 ### PHS-P0-01 Persistent RunSessionRoot
 
-상태: `P0 핵심 생명주기·Stage Clock·Economy 원장·2인 전체 루프 완료 / RNG 이후 연결 중`
+상태: `P0 핵심 생명주기·Stage Clock·Economy·RNG 원장 완료 / Incident 이후 연결 중`
 
 완료:
 
@@ -109,10 +109,13 @@
 - 개별 PurchaseId 영속 중복 차단, Root 늦은 Spawn 재바인딩, Snapshot/Delivery revision 관찰 순서 보강.
 - 미수령 배송품의 Scene 왕복 보존은 `Boxed/Collected + EntryId/Slot + 서버 수령` 계약으로 후속 분리.
 - 2인 전체 루프에서 구매 실패 무변경, `pending=1`, Map 복귀 `delivered=1` Peer 동기화 검증.
+- `NetworkRunRandomLedger`의 Seed/Algorithm Snapshot과 8개 고정 Stream ID 계약 구현.
+- Map Choice를 다음 구역 Scope 기반 결정론 RNG로 전환하고 다른 Stream 소비와 격리.
+- 2인 9구역 루프에서 실제 Map Choice를 원장 재생 기대값과 9회 대조하고, 다른 Stream 소비 비간섭과 `algorithm=1` golden vector를 검증.
 
 남음:
 
-- Server RNG/Compatibility.
+- Compatibility/Session Approval.
 - 4/8인과 Late Join.
 
 구현 문서:
@@ -646,16 +649,18 @@ flowchart LR
 2. Debris NGO Scene Load 생명주기와 Rigidbody 참조 수정.
 3. 2인 9구역/Shop 3회/FinalShop/Clear 자동 검증.
 4. Wallet/Delivery Economy 원장, 구매 원자 커밋, Map 복귀 Delivery 동기화.
+5. Run RNG 원장과 Map Choice 결정론적 Stream/Scope 연결.
 
 현재 직접 남음:
 
-1. Server RNG/Compatibility와 Session Approval 계약.
-2. Incident Pressure/Budget 원장과 통합 Scheduler 계약.
-3. Run 규칙/Active Map Commit의 남은 통합 검증.
-4. 외부 수집 Safe/Danger의 남은 통합.
-5. Legacy Scheduler 차단과 MiniGame Session Authority.
-6. 팀 납품 Prefab의 최종 Scene/Inspector 조립.
-7. 4/8인과 Late Join 검증.
+1. Incident Pressure/Budget 원장과 통합 Scheduler 계약.
+2. Debris/Shop RNG 소비자 연결.
+3. Compatibility와 Session Approval 계약.
+4. Run 규칙/Active Map Commit의 남은 통합 검증.
+5. 외부 수집 Safe/Danger의 남은 통합.
+6. Legacy Scheduler 차단과 MiniGame Session Authority.
+7. 팀 납품 Prefab의 최종 Scene/Inspector 조립.
+8. 4/8인과 Late Join 검증.
 
 박한솔이 기다려야 하는 입력:
 

@@ -131,12 +131,14 @@
 - Stage Deadline은 `NetworkRunStageClock`으로 Root 수명에 연결했다.
 - Party Wallet과 Delivery Queue는 `NetworkRunEconomyLedger`로 Root 수명에 연결했다.
 - Delivery Entry는 개별 `PurchaseId`를 보존하여 Shop 재진입 뒤 부분·순서 변경 재시도의 중복 결제를 차단한다.
-- RNG/Compatibility는 아직 Root 수명에 연결되지 않았다.
+- Run Seed와 의미 Scope RNG는 `NetworkRunRandomLedger`로 Root 수명에 연결했다.
+- Map Choice는 `MapChoice=100` Stream과 다음 구역 번호 Scope를 사용한다.
+- Compatibility는 아직 Root 수명과 접속 승인에 연결되지 않았다.
 
 결론:
 
 - Run/Ship 이동은 완료했다.
-- RNG 이후 원장도 같은 수명 경계 안에서 상태별 OOP 컴포넌트로 연결한다.
+- Incident/Compatibility도 같은 수명 경계 안에서 상태별 OOP 컴포넌트로 연결한다.
 
 ### 3.2 게임 규칙 원장이 두 개
 
@@ -349,7 +351,9 @@ Lobby에서 Server가 Spawn하고 Run 종료까지 유지한다.
 - Stage Deadline은 `NetworkRunStageClock`으로 연결 완료.
 - Party Wallet과 Delivery Queue는 `NetworkRunEconomyLedger`로 연결 완료.
 - 구매 차감과 Delivery Entry 추가는 한 서버 API로 커밋하고, Entry는 `Pending → Claimed → Delivered` 상태를 복제한다.
-- RNG, Incident Pressure, Compatibility는 후속 범위.
+- `NetworkRunRandomLedger`의 Seed/Algorithm Snapshot과 Stream/Scope 결정론을 연결했다.
+- 첫 RNG 소비자인 Map Choice는 다른 사건 Stream 소비와 분리했다.
+- Incident Pressure와 Compatibility는 후속 범위.
 - 상세 구현·검증: `Docs/PHS_RUN_SESSION_ROOT_IMPLEMENTATION_0718.md`.
 
 소유 상태:
@@ -363,7 +367,7 @@ Lobby에서 Server가 Spawn하고 Run 종료까지 유지한다.
 - Active Map Id
 - Selected Map Id
 - Stage Deadline
-- Server RNG Seed와 Sequence
+- Server RNG Seed와 Algorithm Version
 - Ship State
 - Party Credit
 - Purchase Delivery Queue
@@ -811,7 +815,7 @@ P0는 Run 중 참가 금지지만 Snapshot은 복원 가능해야 한다.
 ### P0 구조 안정화
 
 1. Persistent `PHSNetworkRunSessionRoot`. — 1차 완료
-2. Run/Ship/Wallet/RNG Scene 독립.
+2. Run/Ship/Wallet/RNG Scene 독립. — Map Choice RNG까지 완료
 3. Stage Timer 서버 복제. — `NetworkRunStageClock` 구현 완료
 4. 9구역/3구역 상점 규칙 통일. — 2인 Runtime 계약 통과, Map 시간·보상 Adapter 남음
 5. Shop Phase 우회 제거.
@@ -849,18 +853,20 @@ P0는 Run 중 참가 금지지만 Snapshot은 복원 가능해야 한다.
 
 - Unity `6000.5.2f1`, Compile Error `0`.
 - `PHS_0715_VALIDATE_OK errors=0 scenes=3 prefabs=11`.
-- `PHS_0717_VALIDATION_BUILD_OK path=Builds/PHS0717Validation/LastJumpCrew.exe size=345165983`.
+- `PHS_0717_VALIDATION_BUILD_OK path=Builds/PHS0717Validation/LastJumpCrew.exe size=345187300`.
 - 새 Development Build에서 `PHS_P0_RESULT PASS ... zones=9 shopCycles=3 runPhase=Clear`.
 - Stage Clock sequence `1~9`의 MapId가 Active Map과 일치했고 Host/Client Remaining 최대 차는 `0.054초`였다.
 - Warp Pause 뒤 `1.5초` 동안 Remaining 변화는 `0.000초`였고, Shop 복귀 전 선택 Map Commit 뒤 sequence `5`를 시작했다.
 - Debris 판매 후 2 Peer가 같은 `SaleCredit` 거래와 `credits=553`을 수신했다.
 - 구매 실패는 Economy revision/Delivery count 변화 없이 거절됐고, 성공은 `pending=1`로 복제됐다.
 - Map 복귀 상자 적용 뒤 2 Peer가 `credits=443`, `pending=0`, `claimed=0`, `delivered=1`을 수신했다.
+- Root RNG Snapshot은 2 Peer에서 `seed=12137645481030649992`, `algorithm=1`, `revision=1`로 일치했다.
+- 9회 Map Choice의 실제 좌·우 MapId가 같은 Seed/Stream/Scope 재생값과 모두 일치했고, `ExternalThreat` Stream 소비 전후 결과도 같았다.
 - Runner 표준 Health `PHS_P0_LOG_HEALTH_OK`.
 - 정확한 Debris 중복 등록 예외, `SceneEventInProgress`, `PHS_NETWORK_ITEM_PHYSICS_FAILED`, `PHS_DEBRIS_STREAM_SETUP_FAILED`는 Host/Client 모두 `0`.
 - Headless NullGfx에서만 발생하던 MiniGame Lamp Shader 속성 오탐을 분리했고, 실제 Material의 `_EMISSION`을 활성화했다.
 - `PHS_MINIGAME_INDICATOR_SLOT_INVALID`와 `PHS_MINIGAME_INDICATOR_SETUP_INVALID`도 Host/Client 모두 `0`.
-- 4/8인, Late Join Stage Clock/Economy 복원, 짧은 Timeout 단발 시나리오, RNG는 아직 미검증.
+- 4/8인, Late Join Stage Clock/Economy/RNG 복원, 짧은 Timeout 단발 시나리오는 아직 미검증.
 - 배송 상자에 배치했지만 플레이어가 수령하지 않은 Item의 Map → Shop → Map 복원은 `Boxed/Collected` 상태 분리 전까지 P1 미검증이다.
 
 ### Editor

@@ -71,6 +71,19 @@ namespace LastJumpCrew.ParkHanSol.Interaction
         private NetworkRunPhase lastServerPhase = (NetworkRunPhase)byte.MaxValue;
 
         public TravelConsoleDestination SelectedDestination => synchronizedDestination.Value;
+        internal int SelectableMapCount => selectableProfiles.Count;
+
+        internal bool TryGetSelectableMapIdAt(int index, out int mapId)
+        {
+            if (index < 0 || index >= selectableProfiles.Count)
+            {
+                mapId = 0;
+                return false;
+            }
+
+            mapId = selectableProfiles[index].MapId;
+            return mapId > 0;
+        }
 
         public bool TryGetCurrentMapChoices(out int leftZoneId, out int rightZoneId)
         {
@@ -399,14 +412,41 @@ namespace LastJumpCrew.ParkHanSol.Interaction
 
         private void RollMapChoices()
         {
+            synchronizedLeftMapId.Value = 0;
+            synchronizedRightMapId.Value = 0;
             if (selectableProfiles.Count < 2)
             {
                 Debug.LogError("PHS_TRAVEL_MAP_ROLL_FAILED reason=selectable_profiles_insufficient", this);
                 return;
             }
 
-            var leftIndex = Random.Range(0, selectableProfiles.Count);
-            var rightIndex = Random.Range(0, selectableProfiles.Count - 1);
+            var runSessionRoot = NetworkRunSessionRoot.Instance;
+            var runFlow = NetworkRunFlowCoordinator.Instance;
+            if (runSessionRoot == null
+                || runSessionRoot.Rng == null
+                || runFlow == null)
+            {
+                Debug.LogError(
+                    "PHS_TRAVEL_MAP_ROLL_FAILED reason=run_random_ledger_missing",
+                    this);
+                return;
+            }
+
+            var scopeKey = (ulong)(runFlow.ClearedZoneCount + 1);
+            if (!runSessionRoot.Rng.TryCreateServerScope(
+                    NetworkRunRandomStream.MapChoice,
+                    scopeKey,
+                    out var random,
+                    out var reason))
+            {
+                Debug.LogError(
+                    $"PHS_TRAVEL_MAP_ROLL_FAILED reason={reason} scope={scopeKey}",
+                    this);
+                return;
+            }
+
+            var leftIndex = random.NextInt(0, selectableProfiles.Count);
+            var rightIndex = random.NextInt(0, selectableProfiles.Count - 1);
             if (rightIndex >= leftIndex)
             {
                 rightIndex++;
@@ -417,7 +457,8 @@ namespace LastJumpCrew.ParkHanSol.Interaction
             synchronizedLeftMapId.Value = leftProfile.MapId;
             synchronizedRightMapId.Value = rightProfile.MapId;
             Debug.Log(
-                $"PHS_TRAVEL_MAP_CHOICES_ROLLED left={leftProfile.MapId} right={rightProfile.MapId}",
+                $"PHS_TRAVEL_MAP_CHOICES_ROLLED left={leftProfile.MapId} right={rightProfile.MapId} " +
+                $"seed={runSessionRoot.Rng.Snapshot.RunSeed} scope={scopeKey}",
                 this);
         }
 
@@ -661,6 +702,7 @@ namespace LastJumpCrew.ParkHanSol.Interaction
                 }
             }
 
+            selectableProfiles.Sort((left, right) => left.MapId.CompareTo(right.MapId));
             if (selectableProfiles.Count < 2)
             {
                 Debug.LogError("PHS_TRAVEL_CONSOLE_SETUP_FAILED reason=selectable_profiles_insufficient", this);

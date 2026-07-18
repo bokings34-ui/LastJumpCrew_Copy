@@ -82,16 +82,31 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Validation
 
         private readonly struct MapChoiceReport
         {
-            public MapChoiceReport(int leftZoneId, int rightZoneId, bool ready)
+            public MapChoiceReport(
+                int leftZoneId,
+                int rightZoneId,
+                bool ready,
+                bool randomLedgerFound,
+                ulong runSeed,
+                uint algorithmVersion,
+                uint randomRevision)
             {
                 LeftZoneId = leftZoneId;
                 RightZoneId = rightZoneId;
                 Ready = ready;
+                RandomLedgerFound = randomLedgerFound;
+                RunSeed = runSeed;
+                AlgorithmVersion = algorithmVersion;
+                RandomRevision = randomRevision;
             }
 
             public int LeftZoneId { get; }
             public int RightZoneId { get; }
             public bool Ready { get; }
+            public bool RandomLedgerFound { get; }
+            public ulong RunSeed { get; }
+            public uint AlgorithmVersion { get; }
+            public uint RandomRevision { get; }
         }
 
         private readonly struct ShopStateReport
@@ -553,6 +568,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Validation
             Pass(
                 $"mapPeers={sceneReports.Count} gaugePeers={gaugeReports.Count} gaugeDelta={gaugeDelta:F3} " +
                 $"choicePeers={mapChoiceReports.Count} left={firstChoices.LeftZoneId} right={firstChoices.RightZoneId} " +
+                $"rngSeed={firstChoices.RunSeed} rngAlgorithm={firstChoices.AlgorithmVersion} " +
                 $"unsafeReject={unsafeReason} safe={safePlayerCountBeforeWarp}/{requiredSafePlayerCountBeforeWarp} " +
                 $"zones={coordinator.ClearedZoneCount} shopCycles={coordinator.CompletedShopCycleCount} " +
                 $"runPhase={coordinator.Phase} runPeers={runFlowReports.Count} " +
@@ -2891,6 +2907,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Validation
         private IEnumerator ProbeMapChoices()
         {
             var deadline = Time.realtimeSinceStartup + 15f;
+            var isolationFailureReason = "not_checked";
             while (scenarioRunning && !scenarioFinished && Time.realtimeSinceStartup < deadline)
             {
                 mapChoiceReports.Clear();
@@ -2906,15 +2923,33 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Validation
                 if (mapChoiceReports.Count >= expectedClientCount)
                 {
                     var first = mapChoiceReports.Values.First();
-                    if (first.Ready && first.LeftZoneId > 0 && first.RightZoneId > 0 &&
-                        first.LeftZoneId != first.RightZoneId &&
-                        mapChoiceReports.Values.All(report =>
-                            report.Ready &&
-                            report.LeftZoneId == first.LeftZoneId &&
-                            report.RightZoneId == first.RightZoneId))
+                    var randomScopeIsolated = ValidateRandomScopeIsolation(
+                        first.LeftZoneId,
+                        first.RightZoneId,
+                        out isolationFailureReason);
+                    if (first.Ready
+                        && first.LeftZoneId > 0
+                        && first.RightZoneId > 0
+                        && first.LeftZoneId != first.RightZoneId
+                        && first.RandomLedgerFound
+                        && first.RunSeed != 0UL
+                        && first.AlgorithmVersion
+                            == NetworkRunRandomLedger.CurrentAlgorithmVersion
+                        && first.RandomRevision > 0U
+                        && mapChoiceReports.Values.All(report =>
+                            report.Ready
+                            && report.LeftZoneId == first.LeftZoneId
+                            && report.RightZoneId == first.RightZoneId
+                            && report.RandomLedgerFound
+                            && report.RunSeed == first.RunSeed
+                            && report.AlgorithmVersion == first.AlgorithmVersion
+                            && report.RandomRevision == first.RandomRevision)
+                        && randomScopeIsolated)
                     {
                         Debug.Log(
-                            $"PHS_P0_CHOICES_OK peers={mapChoiceReports.Count} left={first.LeftZoneId} right={first.RightZoneId}",
+                            $"PHS_P0_RNG_MAP_CHOICE_OK peers={mapChoiceReports.Count} " +
+                            $"left={first.LeftZoneId} right={first.RightZoneId} seed={first.RunSeed} " +
+                            $"algorithm={first.AlgorithmVersion} revision={first.RandomRevision}",
                             this);
                         yield break;
                     }
@@ -2923,7 +2958,112 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Validation
                 yield return new WaitForSecondsRealtime(0.25f);
             }
 
-            Fail("peer_map_choice_sync_timeout");
+            var reports = mapChoiceReports.Count == 0
+                ? "none"
+                : string.Join(
+                    ";",
+                    mapChoiceReports.OrderBy(report => report.Key).Select(report =>
+                        $"{report.Key}:ready={report.Value.Ready},left={report.Value.LeftZoneId}," +
+                        $"right={report.Value.RightZoneId},rng={report.Value.RandomLedgerFound}," +
+                        $"seed={report.Value.RunSeed},algorithm={report.Value.AlgorithmVersion}," +
+                        $"revision={report.Value.RandomRevision}"));
+            Fail(
+                $"peer_map_choice_sync_timeout isolation={isolationFailureReason} reports={reports}");
+        }
+
+        private bool ValidateRandomScopeIsolation(
+            int actualLeftMapId,
+            int actualRightMapId,
+            out string reason)
+        {
+            var runSessionRoot = NetworkRunSessionRoot.Instance;
+            var runFlow = NetworkRunFlowCoordinator.Instance;
+            var console = FindAnyObjectByType<NetworkTravelConsoleController>(
+                FindObjectsInactive.Include);
+            if (runSessionRoot == null
+                || runSessionRoot.Rng == null
+                || runFlow == null
+                || console == null
+                || console.SelectableMapCount < 2)
+            {
+                reason = "run_random_validation_context_missing";
+                return false;
+            }
+
+            var scopeKey = (ulong)(runFlow.ClearedZoneCount + 1);
+            if (!runSessionRoot.Rng.TryCreateServerScope(
+                    NetworkRunRandomStream.MapChoice,
+                    scopeKey,
+                    out var firstMapScope,
+                    out reason))
+            {
+                return false;
+            }
+
+            var expectedLeftIndex = firstMapScope.NextInt(
+                0,
+                console.SelectableMapCount);
+            var expectedRightDraw = firstMapScope.NextInt(
+                0,
+                console.SelectableMapCount - 1);
+            var expectedRightIndex = expectedRightDraw;
+            if (expectedRightIndex >= expectedLeftIndex)
+            {
+                expectedRightIndex++;
+            }
+
+            if (!console.TryGetSelectableMapIdAt(
+                    expectedLeftIndex,
+                    out var expectedLeftMapId)
+                || !console.TryGetSelectableMapIdAt(
+                    expectedRightIndex,
+                    out var expectedRightMapId))
+            {
+                reason = "expected_map_choice_resolution_failed";
+                return false;
+            }
+
+            if (actualLeftMapId != expectedLeftMapId
+                || actualRightMapId != expectedRightMapId)
+            {
+                reason =
+                    $"map_choice_not_from_ledger:" +
+                    $"{actualLeftMapId},{actualRightMapId}!=" +
+                    $"{expectedLeftMapId},{expectedRightMapId}";
+                return false;
+            }
+
+            if (!runSessionRoot.Rng.TryCreateServerScope(
+                    NetworkRunRandomStream.ExternalThreat,
+                    scopeKey,
+                    out var otherStreamScope,
+                    out reason))
+            {
+                return false;
+            }
+
+            otherStreamScope.NextInt(0, console.SelectableMapCount);
+            otherStreamScope.NextInt(0, console.SelectableMapCount - 1);
+            if (!runSessionRoot.Rng.TryCreateServerScope(
+                    NetworkRunRandomStream.MapChoice,
+                    scopeKey,
+                    out var repeatedMapScope,
+                    out reason))
+            {
+                return false;
+            }
+
+            if (repeatedMapScope.NextInt(0, console.SelectableMapCount)
+                    != expectedLeftIndex
+                || repeatedMapScope.NextInt(0, console.SelectableMapCount - 1)
+                    != expectedRightDraw)
+            {
+                reason = "map_scope_changed_after_other_stream";
+                return false;
+            }
+
+            reason = null;
+            return true;
         }
 
         private IEnumerator ProbeFarSelectRejection()
@@ -3652,7 +3792,22 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Validation
             var left = 0;
             var right = 0;
             var ready = console != null && console.TryGetCurrentMapChoices(out left, out right);
-            ReportMapChoicesServerRpc(token, left, right, ready);
+            var randomLedger = NetworkRunSessionRoot.Instance?.Rng;
+            var randomLedgerFound = randomLedger != null
+                && randomLedger.IsSpawned
+                && randomLedger.Snapshot.Revision > 0U;
+            var randomSnapshot = randomLedgerFound
+                ? randomLedger.Snapshot
+                : default;
+            ReportMapChoicesServerRpc(
+                token,
+                left,
+                right,
+                ready,
+                randomLedgerFound,
+                randomSnapshot.RunSeed,
+                randomSnapshot.AlgorithmVersion,
+                randomSnapshot.Revision);
         }
 
         [ClientRpc]
@@ -3917,11 +4072,22 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Validation
             int leftZoneId,
             int rightZoneId,
             bool ready,
+            bool randomLedgerFound,
+            ulong runSeed,
+            uint algorithmVersion,
+            uint randomRevision,
             ServerRpcParams rpcParams = default)
         {
             if (!AcceptProbe(token)) return;
             mapChoiceReports[rpcParams.Receive.SenderClientId] =
-                new MapChoiceReport(leftZoneId, rightZoneId, ready);
+                new MapChoiceReport(
+                    leftZoneId,
+                    rightZoneId,
+                    ready,
+                    randomLedgerFound,
+                    runSeed,
+                    algorithmVersion,
+                    randomRevision);
         }
 
         private bool AcceptProbe(uint token)

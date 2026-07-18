@@ -1,7 +1,7 @@
 # PHS Network RunSessionRoot 설계·제작 명세
 
 - 작성일: `2026-07-18`
-- 구현 단계: `P0 핵심 생명주기·Stage Clock·Economy 원장 완료 / RNG 이후 원장 연결 중`
+- 구현 단계: `P0 핵심 생명주기·Stage Clock·Economy·RNG 원장 완료 / Incident 이후 연결 중`
 - 담당: 박한솔 / `Assets/02. ParkHanSol_TeamLeader_Build & Multi/`
 
 ## 1. 목적
@@ -14,6 +14,7 @@
 - `Single` Scene 전환 때 Ship HP와 Module 상태가 초기화될 수 있던 구조 제거.
 - Host Player 유무에 RunFlow 생성이 종속되던 구조 제거.
 - 외부 사건 결과 피해가 Persistent Ship State에 적용되도록 Impact Adapter 이동.
+- 전역 `UnityEngine.Random` 소비 순서가 Map 선택 결과를 바꾸던 구조 제거.
 
 ## 2. 런타임 구조
 
@@ -27,6 +28,7 @@ flowchart TB
     D --> G["NetworkShipSystemsState"]
     D --> H["PHSShipEventImpactAdapter"]
     D --> L["NetworkRunEconomyLedger"]
+    D --> M["NetworkRunRandomLedger"]
     I["Map PHS_ShipRuntime"] --> J["PHSNetworkShipAccidentCoordinator"]
     J -->|"NetworkShipSystemsState.Instance 재바인딩"| G
     K["Map/Shop HUD·Device·Service"] -->|"Instance/Snapshot"| D
@@ -45,6 +47,7 @@ Root Prefab:
 - `PHSShipEventImpactAdapter`
 - `NetworkRunSessionRoot`
 - `NetworkRunEconomyLedger`
+- `NetworkRunRandomLedger`
 
 Bootstrap:
 
@@ -73,10 +76,10 @@ Bootstrap:
 | Last Damage Cause/Revision | `NetworkShipSystemsState` |
 | Party Credits/Wallet Revision | `NetworkRunEconomyLedger` |
 | Purchase Delivery Entry/State | `NetworkRunEconomyLedger` |
+| Run Seed/Algorithm Version | `NetworkRunRandomLedger` |
 
 ### 후속 구현
 
-- Server RNG Seed/Sequence.
 - Protocol Version/Content Catalog Hash.
 - Incident Pressure/Budget.
 
@@ -114,6 +117,18 @@ Bootstrap:
 - 해결 시 상태를 `Pending → Boxed → Collected`로 분리하고, `EntryId ↔ Slot` 할당을 복제해야 한다.
 - 실제 수령은 플레이어 Held Item 서버 할당 성공 뒤에만 확정하고, Map Scene 종료 시 미수령 `Boxed` Claim을 반환해야 한다.
 - 이 변경은 슬롯 상호작용의 서버 RPC 경로와 Held Item rollback이 함께 필요하므로 Economy 원장 PR 뒤 별도 통합 작업으로 둔다.
+
+### RNG 계약
+
+- 서버가 Root Spawn 때 암호학적 nonzero `RunSeed`를 한 번 생성하고 Snapshot으로 복제한다.
+- RNG 알고리즘은 `AlgorithmVersion=1`로 고정하며 Unity/System 전역 Random에 의존하지 않는다.
+- 소비자는 `RunSeed + 명시적 Stream ID + 의미 Scope Key`로 독립 `PHSDeterministicRandom`을 받는다.
+- Scope 생성은 원장 상태를 변경하지 않는다. 같은 Seed/Version/Stream/Scope는 같은 결과를 만든다.
+- 다른 Stream을 먼저 소비해도 `MapChoice` 결과는 바뀌지 않는다.
+- Stream ID는 `MapChoice=100`, `ExternalThreat=200`, `InternalAccident=300`, `InternalAccidentAnchor=301`, `DebrisLayout=400`, `DebrisRecycle=401`, `ShopStock=500`, `IncidentSpread=600`으로 고정한다.
+- 첫 소비자는 `NetworkTravelConsoleController`다. 다음 구역 번호(`ClearedZoneCount + 1`)를 Scope Key로 사용한다.
+- 선택 가능 Map Profile은 `MapId` 오름차순으로 정렬한 뒤 좌/우 두 값을 뽑는다.
+- 실패 시 예전 선택값이나 로컬 Random으로 fallback하지 않고 선택값 `0/0`으로 닫는다.
 
 ## 4. Scene 책임
 
@@ -177,7 +192,7 @@ Editor:
 - Unity `6000.5.2f1`.
 - Compile Error `0`.
 - `PHS_0715_VALIDATE_OK errors=0 scenes=3 prefabs=11`.
-- `PHS_0717_VALIDATION_BUILD_OK path=Builds/PHS0717Validation/LastJumpCrew.exe size=345165983`.
+- `PHS_0717_VALIDATION_BUILD_OK path=Builds/PHS0717Validation/LastJumpCrew.exe size=345187300`.
 
 Host Runtime:
 
@@ -206,8 +221,11 @@ Host Runtime:
 - 구매 성공 시 2 Peer가 `credits=443`, `pending=1`, `PurchaseDebit` 거래를 수신.
 - Map 복귀 상자가 Entry를 적용한 뒤 2 Peer가 `pending=0`, `claimed=0`, `delivered=1`을 수신.
 - Map Scene을 `10`회 로드했고 매번 Network Debris가 설정 범위 `20~30` 안에서 서버 생성됨.
+- Root RNG는 `seed=12137645481030649992`, `algorithm=1`, `revision=1`로 2 Peer에 동일 복제됨.
+- Map Choice `9`회마다 정렬된 MapId 목록과 같은 `MapChoice/다음 구역` Scope로 기대 좌·우 값을 재생했고 실제 선택과 모두 일치함.
+- `ExternalThreat` Stream을 중간 소비한 뒤에도 같은 Map Choice Scope의 raw draw와 좌·우 선택이 변하지 않음을 확인함.
 - 최종 로그:
-  - `PHS_P0_RESULT PASS ... zones=9 shopCycles=3 runPhase=Clear`.
+  - `PHS_P0_RESULT PASS ... left=8001 right=8002 rngSeed=12137645481030649992 rngAlgorithm=1 ... zones=9 shopCycles=3 runPhase=Clear`.
   - `PHS_P0_LOG_HEALTH_OK`.
 - 금지 로그 `0`:
   - `ScenePlacedObjects which already contains`.
@@ -222,7 +240,7 @@ Host Runtime:
 
 - 실제 원격 Client Late Join.
 - 4/8인.
-- RNG/Compatibility.
+- Debris/Shop/Incident RNG 소비자와 Compatibility.
 - Late Join Stage Clock/Economy 복원과 짧은 Timeout 단발 시나리오.
 - 미수령 배송품의 Map → Shop → Map 재구축과 실제 수령 확정.
 
@@ -252,8 +270,7 @@ Host Runtime:
 
 ## 9. 다음 작업 순서
 
-1. Run RNG 원장과 Map Choice 소비자 연결.
-2. Incident Pressure/Budget 원장 연결.
-3. Debris/Shop RNG 소비자 연결.
-4. Compatibility Gate/Protocol/Catalog Hash 연결.
-5. 4/8인과 Late Join 검증.
+1. Incident Pressure/Budget 원장 연결.
+2. Debris/Shop RNG 소비자 연결.
+3. Compatibility Gate/Protocol/Catalog Hash 연결.
+4. 4/8인과 Late Join 검증.
