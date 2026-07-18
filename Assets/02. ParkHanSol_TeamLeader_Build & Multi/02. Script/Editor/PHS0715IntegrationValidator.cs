@@ -13,6 +13,7 @@ using LastJumpCrew.ParkHanSol.Shop;
 using LastJumpCrew.SeoBoGyeong.Economy;
 using SM;
 using Unity.Netcode;
+using Unity.Netcode.Components;
 using Unity.Netcode.Transports.UTP;
 using UnityEditor;
 using UnityEditor.SceneManagement;
@@ -29,14 +30,20 @@ namespace LastJumpCrew.ParkHanSol.Editor
             "Assets/02. ParkHanSol_TeamLeader_Build & Multi/01. Scene/0715/PHS_Map_ver1.unity";
         private const string ShopScenePath =
             "Assets/02. ParkHanSol_TeamLeader_Build & Multi/01. Scene/0715/PHS_ExteriorShopScene.unity";
-        private const string GravityScenePath =
-            "Assets/02. ParkHanSol_TeamLeader_Build & Multi/01. Scene/0715/ParkHanSol_GravitySpaceTestScene_0715.unity";
+        private const string MapSceneName = "PHS_Map_ver1";
+        private const string ShopSceneName = "PHS_ExteriorShopScene";
+        private const string ShopCatalogPath =
+            "Assets/02. ParkHanSol_TeamLeader_Build & Multi/04. Data/ShopProducts/PHS_ShopCatalog_0715.asset";
+        private const string UtilityItemCatalogPath =
+            "Assets/02. ParkHanSol_TeamLeader_Build & Multi/04. Data/UtilityItems/PHS_UtilityItemCatalog_0717.asset";
         private const string SellStationPrefabPath =
             "Assets/02. ParkHanSol_TeamLeader_Build & Multi/03. Prefab/Props/Prefabs/ShopCheckoutCounter/PHS_DebrisSellStation.prefab";
         private const string PlayHudPrefabPath =
             "Assets/02. ParkHanSol_TeamLeader_Build & Multi/03. Prefab/UI/ParkHanSol_PlayHudUI.prefab";
         private const string PlayerPrefabPath =
             "Assets/02. ParkHanSol_TeamLeader_Build & Multi/03. Prefab/PlayerPrefab/PHS_CuteWhiteGhost_Player.prefab";
+        private const string RunSessionRootPrefabPath =
+            "Assets/02. ParkHanSol_TeamLeader_Build & Multi/03. Prefab/Integration/PHS_NetworkRunSessionRoot.prefab";
         private const string ShipRuntimePrefabPath =
             "Assets/01. MainGame/02. Final_Prefab/PHS_ShipRuntime.prefab";
         private const string TradeStationPrefabPath =
@@ -86,10 +93,11 @@ namespace LastJumpCrew.ParkHanSol.Editor
                 ValidateMapScene(errors);
                 ValidateShopScene(errors);
                 ValidateShopPresentationPrefabs(errors);
-                ValidateGravityScene(errors);
+                ValidateUtilityItemCatalog(errors);
                 ValidateSellStationPrefab(errors);
                 ValidatePlayHudPrefab(errors);
                 ValidatePlayerPrefab(errors);
+                ValidateRunSessionRootPrefab(errors);
                 ValidateShipRuntimePrefab(errors);
                 ValidateEventPresentationPrefabs(errors);
             }
@@ -108,20 +116,31 @@ namespace LastJumpCrew.ParkHanSol.Editor
                 throw new InvalidOperationException(message);
             }
 
-            const string success = "PHS_0715_VALIDATE_OK errors=0 scenes=4 prefabs=10";
+            const string success = "PHS_0715_VALIDATE_OK errors=0 scenes=3 prefabs=11";
             Debug.Log(success);
             return success;
         }
 
         private static void ValidateBuildSettings(ICollection<string> errors)
         {
-            var enabledScenes = new HashSet<string>(
-                EditorBuildSettings.scenes.Where(scene => scene.enabled).Select(scene => scene.path),
-                StringComparer.Ordinal);
-            foreach (var requiredScene in RequiredBuildScenes)
+            var configuredScenes = EditorBuildSettings.scenes;
+            foreach (var configuredScene in configuredScenes)
             {
-                Require(enabledScenes.Contains(requiredScene), $"build_scene_disabled path={requiredScene}", errors);
+                Require(
+                    !string.IsNullOrWhiteSpace(configuredScene.path)
+                    && AssetDatabase.LoadAssetAtPath<SceneAsset>(configuredScene.path) != null,
+                    $"build_scene_missing path={configuredScene.path}",
+                    errors);
             }
+
+            var enabledScenes = configuredScenes
+                .Where(scene => scene.enabled)
+                .Select(scene => scene.path)
+                .ToArray();
+            Require(
+                enabledScenes.SequenceEqual(RequiredBuildScenes, StringComparer.Ordinal),
+                $"build_scenes_invalid expected={string.Join(",", RequiredBuildScenes)} actual={string.Join(",", enabledScenes)}",
+                errors);
         }
 
         private static void ValidateLobbyScene(ICollection<string> errors)
@@ -139,12 +158,85 @@ namespace LastJumpCrew.ParkHanSol.Editor
                 networkManager.NetworkConfig != null && networkManager.NetworkConfig.PlayerPrefab != null,
                 "lobby_player_prefab_missing",
                 errors);
+            ValidateLobbyNetworkPrefabRegistration(networkManager, errors);
+            var rootBootstrap = FindOne<NetworkRunSessionRootBootstrap>(
+                "lobby_run_session_root_bootstrap",
+                errors);
+            if (rootBootstrap != null)
+            {
+                Require(
+                    rootBootstrap.gameObject == networkManager.gameObject,
+                    "lobby_run_session_root_bootstrap_owner_invalid",
+                    errors);
+                var serializedBootstrap = new SerializedObject(rootBootstrap);
+                var configuredRoot = serializedBootstrap
+                    .FindProperty("runSessionRootPrefab")
+                    ?.objectReferenceValue;
+                Require(
+                    configuredRoot != null
+                    && AssetDatabase.GetAssetPath(configuredRoot) == RunSessionRootPrefabPath,
+                    "lobby_run_session_root_prefab_invalid",
+                    errors);
+            }
+
             FindOne<MultiplayerRoomService>("lobby_room_service", errors);
+        }
+
+        private static void ValidateLobbyNetworkPrefabRegistration(
+            NetworkManager networkManager,
+            ICollection<string> errors)
+        {
+            var catalog = AssetDatabase.LoadAssetAtPath<UtilityItemCatalogSO>(UtilityItemCatalogPath);
+            Require(catalog != null, "lobby_utility_item_catalog_missing", errors);
+            if (catalog == null || networkManager.NetworkConfig == null)
+            {
+                return;
+            }
+
+            var networkPrefabLists = networkManager.NetworkConfig.Prefabs?.NetworkPrefabsLists;
+            Require(
+                networkPrefabLists != null && networkPrefabLists.Count > 0,
+                "lobby_network_prefab_lists_missing",
+                errors);
+            if (networkPrefabLists == null)
+            {
+                return;
+            }
+
+            var runSessionRootPrefab =
+                AssetDatabase.LoadAssetAtPath<GameObject>(RunSessionRootPrefabPath);
+            Require(
+                runSessionRootPrefab != null,
+                $"lobby_run_session_root_prefab_missing path={RunSessionRootPrefabPath}",
+                errors);
+            if (runSessionRootPrefab != null)
+            {
+                Require(
+                    networkPrefabLists.Any(
+                        list => list != null && list.Contains(runSessionRootPrefab)),
+                    "lobby_run_session_root_prefab_unregistered",
+                    errors);
+            }
+
+            foreach (var itemData in catalog.Items)
+            {
+                var droppedPrefab = itemData?.DroppedPrefab;
+                if (droppedPrefab == null)
+                {
+                    continue;
+                }
+
+                Require(
+                    networkPrefabLists.Any(list => list != null && list.Contains(droppedPrefab)),
+                    $"lobby_network_prefab_unregistered item={itemData.ItemId} path={AssetDatabase.GetAssetPath(droppedPrefab)}",
+                    errors);
+            }
         }
 
         private static void ValidateMapScene(ICollection<string> errors)
         {
             OpenAndValidateScene(MapScenePath, errors);
+            ValidateGravityDuplicateComponents("map", errors);
             ValidateGameplayContext("map", errors);
 
             PHSMapCatalogSO mapCatalog = null;
@@ -189,23 +281,42 @@ namespace LastJumpCrew.ParkHanSol.Editor
                 Require(terminal.IsConfigured, $"map_minigame_pair_invalid terminal={terminal.name}", errors);
                 Require(terminal.GetComponent<Collider>() != null,
                     $"map_minigame_collider_missing terminal={terminal.name}", errors);
-                Require(terminal.GetComponent<MiniGameEventStatusIndicator>() != null,
-                    $"map_minigame_indicator_missing terminal={terminal.name}", errors);
+                ValidateMiniGameIndicator(terminal, errors);
             }
 
             var localDebrisPortals = UnityEngine.Object.FindObjectsByType<ExteriorTestTeleportInteractable>(
                 FindObjectsInactive.Include,
                 FindObjectsSortMode.None);
-            Require(localDebrisPortals.Length >= 2, "map_debris_portal_pair_missing", errors);
+            Require(
+                localDebrisPortals.Length == 2,
+                $"map_debris_portal_pair_count_invalid actual={localDebrisPortals.Length}",
+                errors);
+            var portalNames = new HashSet<string>(StringComparer.Ordinal);
             foreach (var portal in localDebrisPortals)
             {
+                Require(portal.isActiveAndEnabled, $"map_debris_portal_inactive portal={portal.name}", errors);
+                Require(
+                    portalNames.Add(portal.name),
+                    $"map_debris_portal_name_duplicate portal={portal.name}",
+                    errors);
                 var serializedPortal = new SerializedObject(portal);
                 RequireObject(
                     serializedPortal,
                     "destination",
                     $"map_debris_portal_destination_missing portal={portal.name}",
                     errors);
+                Require(
+                    serializedPortal.FindProperty("serverInteractionDistance")?.floatValue >= 0.5f,
+                    $"map_debris_portal_distance_invalid portal={portal.name}",
+                    errors);
             }
+
+            ValidateNetworkScenePortal(
+                "map_shop_entry",
+                "PHS_ExteriorShopPortal_0717",
+                ShopSceneName,
+                ShopSceneTransitionMode.RequireShopPhase,
+                errors);
 
             FindOne<WarpChargeDebugInput>("map_warp_charge_debug_input", errors);
             ValidateSceneSellZones("map", errors);
@@ -440,6 +551,12 @@ namespace LastJumpCrew.ParkHanSol.Editor
         {
             OpenAndValidateScene(ShopScenePath, errors);
             ValidateGameplayContext("shop", errors);
+            ValidateNetworkScenePortal(
+                "shop_return",
+                "PHS_ReturnToShipPortal",
+                MapSceneName,
+                ShopSceneTransitionMode.CompleteShop,
+                errors);
 
             var displayController = FindOne<ShopRandomDisplayController>("shop_display_controller", errors);
             if (displayController != null)
@@ -719,6 +836,13 @@ namespace LastJumpCrew.ParkHanSol.Editor
             RequireObject(serializedRuntime, "shopPortalProfile", "map_runtime_shop_portal_profile_missing", errors);
             RequireObject(serializedRuntime, "shopPortalRoot", "map_runtime_shop_portal_root_missing", errors);
             RequireObject(serializedRuntime, "debrisStream", "map_runtime_debris_stream_missing", errors);
+            var debrisStream =
+                serializedRuntime.FindProperty("debrisStream")?.objectReferenceValue as PHSRandomDebrisStream;
+            if (debrisStream != null)
+            {
+                ValidateMapDebrisPhysicsReferences(debrisStream, errors);
+            }
+
             RequireObject(serializedRuntime, "externalThreatScheduler", "map_runtime_external_scheduler_missing", errors);
             RequireObject(serializedRuntime, "internalAccidentCoordinator", "map_runtime_internal_accident_missing", errors);
             Require(
@@ -737,6 +861,149 @@ namespace LastJumpCrew.ParkHanSol.Editor
                 eventCoordinator.GetComponent<PHSNetworkEventScheduler>(),
                 "map_runtime_event_coordinator_scheduler_mismatch",
                 errors);
+            var shopPortalRoot =
+                serializedRuntime.FindProperty("shopPortalRoot")?.objectReferenceValue as GameObject;
+            Require(
+                shopPortalRoot != null &&
+                shopPortalRoot.GetComponent<NetworkScenePortalInteractable>() != null,
+                "map_runtime_shop_portal_component_missing",
+                errors);
+        }
+
+        private static void ValidateMiniGameIndicator(
+            PHSFinalMiniGameTerminal terminal,
+            ICollection<string> errors)
+        {
+            var indicator = terminal.GetComponent<MiniGameEventStatusIndicator>();
+            Require(
+                indicator != null,
+                $"map_minigame_indicator_missing terminal={terminal.name}",
+                errors);
+            if (indicator == null)
+            {
+                return;
+            }
+
+            var serializedIndicator = new SerializedObject(indicator);
+            Require(
+                serializedIndicator.FindProperty("terminalSource")?.objectReferenceValue == terminal,
+                $"map_minigame_indicator_terminal_invalid terminal={terminal.name}",
+                errors);
+
+            var visualSlots = serializedIndicator.FindProperty("visualSlots");
+            Require(
+                visualSlots != null && visualSlots.isArray && visualSlots.arraySize > 0,
+                $"map_minigame_indicator_slots_missing terminal={terminal.name}",
+                errors);
+            if (visualSlots == null || !visualSlots.isArray)
+            {
+                return;
+            }
+
+            for (var index = 0; index < visualSlots.arraySize; index++)
+            {
+                var slot = visualSlots.GetArrayElementAtIndex(index);
+                var statusLight =
+                    slot.FindPropertyRelative("statusLight")?.objectReferenceValue as Light;
+                var emissiveRenderer =
+                    slot.FindPropertyRelative("emissiveRenderer")?.objectReferenceValue as Renderer;
+                Require(
+                    statusLight != null || emissiveRenderer != null,
+                    $"map_minigame_indicator_visual_missing terminal={terminal.name} slot={index}",
+                    errors);
+                if (emissiveRenderer == null)
+                {
+                    continue;
+                }
+
+                var materialIndex =
+                    slot.FindPropertyRelative("materialIndex")?.intValue ?? -1;
+                var materials = emissiveRenderer.sharedMaterials;
+                Require(
+                    materialIndex >= 0
+                    && materialIndex < materials.Length
+                    && materials[materialIndex] != null,
+                    $"map_minigame_indicator_material_invalid terminal={terminal.name} slot={index} index={materialIndex}",
+                    errors);
+                if (materialIndex < 0
+                    || materialIndex >= materials.Length
+                    || materials[materialIndex] == null)
+                {
+                    continue;
+                }
+
+                var material = materials[materialIndex];
+                Require(
+                    material.shader != null && material.shader.isSupported,
+                    $"map_minigame_indicator_shader_invalid terminal={terminal.name} slot={index}",
+                    errors);
+                Require(
+                    material.HasProperty("_BaseColor")
+                    && material.HasProperty("_EmissionColor"),
+                    $"map_minigame_indicator_properties_invalid terminal={terminal.name} slot={index} material={material.name}",
+                    errors);
+                Require(
+                    material.IsKeywordEnabled("_EMISSION"),
+                    $"map_minigame_indicator_emission_disabled terminal={terminal.name} slot={index} material={material.name}",
+                    errors);
+            }
+        }
+
+        private static void ValidateMapDebrisPhysicsReferences(
+            PHSRandomDebrisStream debrisStream,
+            ICollection<string> errors)
+        {
+            var serializedStream = new SerializedObject(debrisStream);
+            var debrisRoots = serializedStream.FindProperty("debrisRoots");
+            Require(
+                debrisRoots != null && debrisRoots.isArray && debrisRoots.arraySize > 0,
+                "map_debris_stream_roots_missing",
+                errors);
+            if (debrisRoots == null || !debrisRoots.isArray)
+            {
+                return;
+            }
+
+            for (var index = 0; index < debrisRoots.arraySize; index++)
+            {
+                var seed =
+                    debrisRoots.GetArrayElementAtIndex(index).objectReferenceValue as Transform;
+                Require(
+                    seed != null,
+                    $"map_debris_stream_seed_missing index={index}",
+                    errors);
+                if (seed == null)
+                {
+                    continue;
+                }
+
+                var droppedPrefab =
+                    seed.GetComponent<UtilityItemObject>()?.ItemPrefabData?.DroppedPrefab;
+                var droppedPath = AssetDatabase.GetAssetPath(droppedPrefab);
+                Require(
+                    droppedPrefab != null,
+                    $"map_debris_stream_dropped_prefab_missing seed={seed.name}",
+                    errors);
+                if (droppedPrefab == null)
+                {
+                    continue;
+                }
+
+                var physicsAuthority =
+                    droppedPrefab.GetComponent<NetworkItemPhysicsAuthority>();
+                Require(
+                    physicsAuthority != null,
+                    $"map_debris_stream_physics_authority_missing seed={seed.name} path={droppedPath}",
+                    errors);
+                if (physicsAuthority != null)
+                {
+                    RequireObject(
+                        new SerializedObject(physicsAuthority),
+                        "targetRigidbody",
+                        $"map_debris_stream_physics_rigidbody_reference_missing seed={seed.name} path={droppedPath}",
+                        errors);
+                }
+            }
         }
 
         private static void ValidateShipAccidentRuntime(
@@ -767,7 +1034,6 @@ namespace LastJumpCrew.ParkHanSol.Editor
                         errors);
                 }
 
-                RequireObject(serializedCoordinator, "shipSystemsState", "map_ship_accident_ship_state_missing", errors);
                 RequireArray(serializedCoordinator, "anchors", 5, "map_ship_accident_registered_anchors_insufficient", errors);
             }
 
@@ -805,10 +1071,10 @@ namespace LastJumpCrew.ParkHanSol.Editor
             }
         }
 
-        private static void ValidateGravityScene(ICollection<string> errors)
+        private static void ValidateGravityDuplicateComponents(
+            string sceneLabel,
+            ICollection<string> errors)
         {
-            OpenAndValidateScene(GravityScenePath, errors);
-
             foreach (var transform in UnityEngine.Object.FindObjectsByType<Transform>(
                          FindObjectsInactive.Include,
                          FindObjectsSortMode.None))
@@ -818,7 +1084,7 @@ namespace LastJumpCrew.ParkHanSol.Editor
                     var count = transform.GetComponents(componentType).Length;
                     Require(
                         count <= 1,
-                        $"gravity_duplicate_component object={GetHierarchyPath(transform)} type={componentType.Name} count={count}",
+                        $"{sceneLabel}_gravity_duplicate_component object={GetHierarchyPath(transform)} type={componentType.Name} count={count}",
                         errors);
                 }
             }
@@ -895,6 +1161,17 @@ namespace LastJumpCrew.ParkHanSol.Editor
             }
             Require(prefab.GetComponent<NetworkPlayerItemRecord>() != null, "player_item_record_missing", errors);
             Require(prefab.GetComponent<TempPlayerItemHolder>() != null, "player_item_holder_missing", errors);
+            var itemLifecycle = prefab.GetComponent<NetworkPlayerItemLifecycle>();
+            Require(itemLifecycle != null, "player_item_lifecycle_missing", errors);
+            if (itemLifecycle != null)
+            {
+                var serializedItemLifecycle = new SerializedObject(itemLifecycle);
+                RequireObject(
+                    serializedItemLifecycle,
+                    "itemCatalog",
+                    "player_item_lifecycle_catalog_missing",
+                    errors);
+            }
             Require(
                 prefab.GetComponents<P0RuntimeValidationDriver>().Length == 1,
                 "player_p0_validation_driver_count_invalid expected=1",
@@ -908,22 +1185,17 @@ namespace LastJumpCrew.ParkHanSol.Editor
                     "validationBatteryItem",
                     "player_p0_validation_battery_missing",
                     errors);
+                RequireObject(
+                    serializedDriver,
+                    "validationThrownItem",
+                    "player_p0_validation_thrown_item_missing",
+                    errors);
             }
 
-            var coordinator = prefab.GetComponent<NetworkRunFlowCoordinator>();
-            Require(coordinator != null, "player_run_flow_coordinator_missing", errors);
-            if (coordinator != null)
-            {
-                var serializedCoordinator = new SerializedObject(coordinator);
-                Require(
-                    serializedCoordinator.FindProperty("requireAllConnectedAlivePlayersSafe")?.boolValue == false,
-                    "player_phase_based_warp_safety_disabled",
-                    errors);
-                Require(
-                    serializedCoordinator.FindProperty("automaticallyLoadShop")?.boolValue == true,
-                    "player_automatic_shop_load_disabled",
-                    errors);
-            }
+            Require(
+                prefab.GetComponent<NetworkRunFlowCoordinator>() == null,
+                "player_run_flow_coordinator_must_be_session_owned",
+                errors);
 
             ValidateCombatItemRoute(
                 "Assets/02. ParkHanSol_TeamLeader_Build & Multi/04. Data/UtilityItems/ParkHanSol_WrenchItemPrefabData.asset",
@@ -981,7 +1253,14 @@ namespace LastJumpCrew.ParkHanSol.Editor
             try
             {
                 Require(prefab.GetComponent<NetworkObject>() != null, "ship_runtime_network_object_missing", errors);
-                Require(prefab.GetComponent<NetworkShipSystemsState>() != null, "ship_runtime_state_missing", errors);
+                Require(
+                    prefab.GetComponent<NetworkShipSystemsState>() == null,
+                    "ship_runtime_state_must_be_session_owned",
+                    errors);
+                Require(
+                    prefab.GetComponent<PHSShipEventImpactAdapter>() == null,
+                    "ship_runtime_event_impact_must_be_session_owned",
+                    errors);
                 var coordinator = prefab.GetComponent<PHSNetworkShipAccidentCoordinator>();
                 Require(coordinator != null, "ship_runtime_accident_coordinator_missing", errors);
                 if (coordinator != null)
@@ -991,11 +1270,6 @@ namespace LastJumpCrew.ParkHanSol.Editor
                         serializedCoordinator,
                         "accidentCatalog",
                         "ship_runtime_accident_catalog_missing",
-                        errors);
-                    RequireObject(
-                        serializedCoordinator,
-                        "shipSystemsState",
-                        "ship_runtime_accident_state_missing",
                         errors);
                     RequireArray(
                         serializedCoordinator,
@@ -1016,22 +1290,97 @@ namespace LastJumpCrew.ParkHanSol.Editor
             }
         }
 
+        private static void ValidateRunSessionRootPrefab(ICollection<string> errors)
+        {
+            var prefab = PrefabUtility.LoadPrefabContents(RunSessionRootPrefabPath);
+            if (prefab == null)
+            {
+                errors.Add($"run_session_root_prefab_missing path={RunSessionRootPrefabPath}");
+                return;
+            }
+
+            try
+            {
+                Require(
+                    prefab.GetComponents<NetworkRunSessionRoot>().Length == 1,
+                    "run_session_root_component_count_invalid expected=1",
+                    errors);
+                Require(
+                    prefab.GetComponents<NetworkObject>().Length == 1,
+                    "run_session_root_network_object_count_invalid expected=1",
+                    errors);
+
+                var coordinator = prefab.GetComponent<NetworkRunFlowCoordinator>();
+                Require(coordinator != null, "run_session_root_run_flow_missing", errors);
+                if (coordinator != null)
+                {
+                    var serializedCoordinator = new SerializedObject(coordinator);
+                    RequireObject(
+                        serializedCoordinator,
+                        "mapCatalog",
+                        "run_session_root_map_catalog_missing",
+                        errors);
+                    Require(
+                        serializedCoordinator.FindProperty("initialMapId")?.intValue == 8001,
+                        "run_session_root_initial_map_invalid expected=8001",
+                        errors);
+                    Require(
+                        serializedCoordinator.FindProperty("requireAllConnectedAlivePlayersSafe")?.boolValue == false,
+                        "run_session_root_phase_based_warp_safety_disabled",
+                        errors);
+                    Require(
+                        serializedCoordinator.FindProperty("automaticallyLoadShop")?.boolValue == true,
+                        "run_session_root_automatic_shop_load_disabled",
+                        errors);
+                }
+
+                var shipSystemsState = prefab.GetComponent<NetworkShipSystemsState>();
+                Require(
+                    shipSystemsState != null,
+                    "run_session_root_ship_systems_missing",
+                    errors);
+
+                var impactAdapter = prefab.GetComponent<PHSShipEventImpactAdapter>();
+                Require(
+                    impactAdapter != null,
+                    "run_session_root_event_impact_adapter_missing",
+                    errors);
+                if (impactAdapter != null)
+                {
+                    var serializedImpactAdapter = new SerializedObject(impactAdapter);
+                    Require(
+                        serializedImpactAdapter.FindProperty("shipSystemsState")?.objectReferenceValue
+                            == shipSystemsState,
+                        "run_session_root_event_impact_state_invalid",
+                        errors);
+                }
+            }
+            finally
+            {
+                PrefabUtility.UnloadPrefabContents(prefab);
+            }
+        }
+
         private static void ValidateEventPresentationPrefabs(ICollection<string> errors)
         {
             ValidateEventPresentationPrefab(
                 $"{EventPresentationPrefabFolder}/PHS_FireEventPresentation.prefab",
                 true,
+                true,
                 errors);
             ValidateEventPresentationPrefab(
                 $"{EventPresentationPrefabFolder}/PHS_OxygenLeakEventPresentation.prefab",
                 true,
+                false,
                 errors);
             ValidateEventPresentationPrefab(
                 $"{EventPresentationPrefabFolder}/PHS_PlayerAttackEnemyPresentation.prefab",
                 false,
+                false,
                 errors);
             ValidateEventPresentationPrefab(
                 $"{EventPresentationPrefabFolder}/PHS_DeviceAttackEnemyPresentation.prefab",
+                false,
                 false,
                 errors);
         }
@@ -1039,6 +1388,7 @@ namespace LastJumpCrew.ParkHanSol.Editor
         private static void ValidateEventPresentationPrefab(
             string path,
             bool requiresRepairCollider,
+            bool validateRendererMaterials,
             ICollection<string> errors)
         {
             var prefab = PrefabUtility.LoadPrefabContents(path);
@@ -1067,6 +1417,33 @@ namespace LastJumpCrew.ParkHanSol.Editor
                 foreach (var collider in colliders)
                 {
                     Require(collider.isTrigger, $"event_presentation_collider_not_trigger path={path}", errors);
+                }
+
+                if (validateRendererMaterials)
+                {
+                    var renderers = prefab.GetComponentsInChildren<Renderer>(true);
+                    Require(
+                        renderers.Length > 0,
+                        $"event_presentation_renderer_missing path={path}",
+                        errors);
+                    foreach (var renderer in renderers)
+                    {
+                        var materials = renderer.sharedMaterials;
+                        Require(
+                            materials.Length > 0,
+                            $"event_presentation_material_slots_missing path={path} renderer={GetHierarchyPath(renderer.transform)}",
+                            errors);
+                        for (var index = 0; index < materials.Length; index++)
+                        {
+                            var material = materials[index];
+                            Require(
+                                material != null
+                                && material.shader != null
+                                && material.shader.isSupported,
+                                $"event_presentation_material_invalid path={path} renderer={GetHierarchyPath(renderer.transform)} slot={index}",
+                                errors);
+                        }
+                    }
                 }
             }
             finally
@@ -1333,8 +1710,7 @@ namespace LastJumpCrew.ParkHanSol.Editor
 
         private static void ValidateShopCatalog(ICollection<string> errors)
         {
-            var catalog = AssetDatabase.LoadAssetAtPath<ShopCatalogSO>(
-                "Assets/02. ParkHanSol_TeamLeader_Build & Multi/04. Data/ShopProducts/PHS_ShopCatalog_0715.asset");
+            var catalog = AssetDatabase.LoadAssetAtPath<ShopCatalogSO>(ShopCatalogPath);
             Require(catalog != null, "shop_catalog_asset_missing", errors);
             if (catalog == null)
             {
@@ -1342,12 +1718,208 @@ namespace LastJumpCrew.ParkHanSol.Editor
             }
 
             Require(catalog.Products.Count == 8, $"shop_catalog_count_invalid actual={catalog.Products.Count}", errors);
+            var networkPrefabHashes = new HashSet<long>();
             foreach (var product in catalog.Products)
             {
                 Require(product != null && product.IsConfigured, "shop_product_invalid", errors);
                 Require(
                     product != null && product.StockPolicy == ShopStockPolicy.Unlimited,
                     $"shop_stock_policy_invalid offer={product?.OfferId}",
+                    errors);
+                ValidateShopDroppedPrefab(product, networkPrefabHashes, errors);
+            }
+        }
+
+        private static void ValidateShopDroppedPrefab(
+            ShopProductData product,
+            ISet<long> networkPrefabHashes,
+            ICollection<string> errors)
+        {
+            var itemData = product?.ItemPrefabData;
+            var heldPrefab = itemData?.HeldPrefab;
+            var droppedPrefab = itemData?.DroppedPrefab;
+            var offerId = product?.OfferId ?? "null";
+            Require(itemData != null, $"shop_item_data_missing offer={offerId}", errors);
+            Require(heldPrefab != null, $"shop_held_prefab_missing offer={offerId}", errors);
+            Require(droppedPrefab != null, $"shop_dropped_prefab_missing offer={offerId}", errors);
+            Require(
+                heldPrefab == null || droppedPrefab == null || heldPrefab != droppedPrefab,
+                $"shop_held_dropped_prefab_same offer={offerId}",
+                errors);
+            if (heldPrefab != null)
+            {
+                var heldPath = AssetDatabase.GetAssetPath(heldPrefab);
+                Require(
+                    heldPrefab.GetComponent<UtilityItemObject>() != null,
+                    $"shop_held_utility_item_missing offer={offerId} path={heldPath}",
+                    errors);
+                Require(
+                    heldPrefab.GetComponentsInChildren<NetworkObject>(true).Length == 0,
+                    $"shop_held_network_object_present offer={offerId} path={heldPath}",
+                    errors);
+                Require(
+                    heldPrefab.GetComponentsInChildren<NetworkTransform>(true).Length == 0,
+                    $"shop_held_network_transform_present offer={offerId} path={heldPath}",
+                    errors);
+                Require(
+                    heldPrefab.GetComponentsInChildren<ThrownItemImpact>(true).Length == 0,
+                    $"shop_held_impact_present offer={offerId} path={heldPath}",
+                    errors);
+            }
+
+            if (droppedPrefab == null)
+            {
+                return;
+            }
+
+            var path = AssetDatabase.GetAssetPath(droppedPrefab);
+            Require(
+                droppedPrefab.GetComponent<UtilityItemObject>() != null,
+                $"shop_dropped_utility_item_missing offer={offerId} path={path}",
+                errors);
+            Require(
+                droppedPrefab.GetComponent<Rigidbody>() != null,
+                $"shop_dropped_rigidbody_missing offer={offerId} path={path}",
+                errors);
+            var networkObject = droppedPrefab.GetComponent<NetworkObject>();
+            Require(
+                networkObject != null,
+                $"shop_dropped_network_object_missing offer={offerId} path={path}",
+                errors);
+            if (networkObject != null)
+            {
+                var hashProperty = new SerializedObject(networkObject).FindProperty("GlobalObjectIdHash");
+                var hash = hashProperty?.longValue ?? 0;
+                Require(
+                    hash != 0,
+                    $"shop_dropped_network_hash_missing offer={offerId} path={path}",
+                    errors);
+                Require(
+                    hash == 0 || networkPrefabHashes.Add(hash),
+                    $"shop_dropped_network_hash_duplicate offer={offerId} hash={hash} path={path}",
+                    errors);
+            }
+
+            Require(
+                droppedPrefab.GetComponent<NetworkTransform>() != null,
+                $"shop_dropped_network_transform_missing offer={offerId} path={path}",
+                errors);
+            Require(
+                droppedPrefab.GetComponent<NetworkItemPhysicsAuthority>() != null,
+                $"shop_dropped_physics_authority_missing offer={offerId} path={path}",
+                errors);
+            Require(
+                droppedPrefab.GetComponent<ThrownItemImpact>() != null,
+                $"shop_dropped_impact_missing offer={offerId} path={path}",
+                errors);
+        }
+
+        private static void ValidateUtilityItemCatalog(ICollection<string> errors)
+        {
+            var catalog = AssetDatabase.LoadAssetAtPath<UtilityItemCatalogSO>(UtilityItemCatalogPath);
+            Require(catalog != null, "utility_item_catalog_missing", errors);
+            if (catalog == null)
+            {
+                return;
+            }
+
+            Require(
+                catalog.Items.Count == 13,
+                $"utility_item_catalog_count_invalid actual={catalog.Items.Count}",
+                errors);
+
+            var itemIds = new HashSet<string>(StringComparer.Ordinal);
+            var networkPrefabHashes = new HashSet<long>();
+            foreach (var itemData in catalog.Items)
+            {
+                Require(itemData != null, "utility_item_catalog_entry_null", errors);
+                if (itemData == null)
+                {
+                    continue;
+                }
+
+                var itemId = itemData.ItemId;
+                Require(
+                    !string.IsNullOrWhiteSpace(itemId),
+                    $"utility_item_id_missing asset={AssetDatabase.GetAssetPath(itemData)}",
+                    errors);
+                Require(
+                    string.IsNullOrWhiteSpace(itemId) || itemIds.Add(itemId),
+                    $"utility_item_id_duplicate item={itemId}",
+                    errors);
+
+                var heldPrefab = itemData.HeldPrefab;
+                var droppedPrefab = itemData.DroppedPrefab;
+                Require(heldPrefab != null, $"utility_held_prefab_missing item={itemId}", errors);
+                Require(droppedPrefab != null, $"utility_dropped_prefab_missing item={itemId}", errors);
+                Require(
+                    heldPrefab == null || droppedPrefab == null || heldPrefab != droppedPrefab,
+                    $"utility_held_dropped_prefab_same item={itemId}",
+                    errors);
+
+                if (heldPrefab != null)
+                {
+                    var heldPath = AssetDatabase.GetAssetPath(heldPrefab);
+                    Require(
+                        heldPrefab.GetComponent<UtilityItemObject>() != null,
+                        $"utility_held_item_missing item={itemId} path={heldPath}",
+                        errors);
+                    Require(
+                        heldPrefab.GetComponentsInChildren<NetworkObject>(true).Length == 0,
+                        $"utility_held_network_object_present item={itemId} path={heldPath}",
+                        errors);
+                    Require(
+                        heldPrefab.GetComponentsInChildren<NetworkTransform>(true).Length == 0,
+                        $"utility_held_network_transform_present item={itemId} path={heldPath}",
+                        errors);
+                    Require(
+                        heldPrefab.GetComponentsInChildren<ThrownItemImpact>(true).Length == 0,
+                        $"utility_held_impact_present item={itemId} path={heldPath}",
+                        errors);
+                }
+
+                if (droppedPrefab == null)
+                {
+                    continue;
+                }
+
+                var droppedPath = AssetDatabase.GetAssetPath(droppedPrefab);
+                Require(
+                    droppedPrefab.GetComponent<UtilityItemObject>() != null,
+                    $"utility_dropped_item_missing item={itemId} path={droppedPath}",
+                    errors);
+                Require(
+                    droppedPrefab.GetComponent<Rigidbody>() != null,
+                    $"utility_dropped_rigidbody_missing item={itemId} path={droppedPath}",
+                    errors);
+                Require(
+                    droppedPrefab.GetComponent<NetworkTransform>() != null,
+                    $"utility_dropped_network_transform_missing item={itemId} path={droppedPath}",
+                    errors);
+                Require(
+                    droppedPrefab.GetComponent<NetworkItemPhysicsAuthority>() != null,
+                    $"utility_dropped_physics_authority_missing item={itemId} path={droppedPath}",
+                    errors);
+
+                var networkObject = droppedPrefab.GetComponent<NetworkObject>();
+                Require(
+                    networkObject != null,
+                    $"utility_dropped_network_object_missing item={itemId} path={droppedPath}",
+                    errors);
+                if (networkObject == null)
+                {
+                    continue;
+                }
+
+                var hashProperty = new SerializedObject(networkObject).FindProperty("GlobalObjectIdHash");
+                var hash = hashProperty?.longValue ?? 0;
+                Require(
+                    hash != 0,
+                    $"utility_dropped_network_hash_missing item={itemId} path={droppedPath}",
+                    errors);
+                Require(
+                    hash == 0 || networkPrefabHashes.Add(hash),
+                    $"utility_dropped_network_hash_duplicate item={itemId} hash={hash} path={droppedPath}",
                     errors);
             }
         }
@@ -1377,6 +1949,45 @@ namespace LastJumpCrew.ParkHanSol.Editor
                     $"{sceneLabel}_sellable_debris_insufficient zone={sellZone.name}",
                     errors);
             }
+        }
+
+        private static void ValidateNetworkScenePortal(
+            string label,
+            string expectedObjectName,
+            string expectedDestinationScene,
+            ShopSceneTransitionMode expectedTransitionMode,
+            ICollection<string> errors)
+        {
+            var portals = UnityEngine.Object.FindObjectsByType<NetworkScenePortalInteractable>(
+                FindObjectsInactive.Include,
+                FindObjectsSortMode.None);
+            Require(portals.Length == 1, $"{label}_count_invalid actual={portals.Length}", errors);
+
+            var portal = portals.FirstOrDefault(candidate => candidate.name == expectedObjectName);
+            Require(portal != null, $"{label}_missing expected={expectedObjectName}", errors);
+            if (portal == null)
+            {
+                return;
+            }
+
+            Require(portal.isActiveAndEnabled, $"{label}_inactive", errors);
+            Require(portal.GetComponent<Collider>() != null, $"{label}_collider_missing", errors);
+
+            var serializedPortal = new SerializedObject(portal);
+            Require(
+                serializedPortal.FindProperty("destinationSceneName")?.stringValue ==
+                expectedDestinationScene,
+                $"{label}_destination_invalid expected={expectedDestinationScene}",
+                errors);
+            Require(
+                serializedPortal.FindProperty("shopTransitionMode")?.enumValueIndex ==
+                (int)expectedTransitionMode,
+                $"{label}_transition_invalid expected={expectedTransitionMode}",
+                errors);
+            Require(
+                serializedPortal.FindProperty("serverInteractionDistance")?.floatValue >= 0.5f,
+                $"{label}_distance_invalid",
+                errors);
         }
 
         private static void ValidateGameplayContext(string sceneLabel, ICollection<string> errors)

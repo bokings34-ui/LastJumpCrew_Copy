@@ -6,6 +6,7 @@ using LastJumpCrew.ParkHanSol.Shop;
 using LastJumpCrew.Common;
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using LastJumpCrew.ParkHanSol.Interaction;
 
 namespace LastJumpCrew.ParkHanSol.Multiplayer
@@ -205,19 +206,36 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
                 return;
             }
 
-            if (!IsOwner)
+            if (!IsOwner || !IsServer)
             {
-                Debug.LogError($"PHS_TEST_TELEPORT_FAILED reason=owner_required player={name}");
+                Debug.LogError($"PHS_TEST_TELEPORT_FAILED reason=server_owner_required player={name}");
+                return;
+            }
+
+            TeleportTo(targetPosition, targetRotation);
+        }
+
+        public void RequestLocalPortalTeleport(string portalName)
+        {
+            if (string.IsNullOrWhiteSpace(portalName))
+            {
+                Debug.LogError($"PHS_LOCAL_PORTAL_FAILED reason=portal_name_missing player={name}");
+                return;
+            }
+
+            if (!IsSpawned || !IsOwner)
+            {
+                Debug.LogError($"PHS_LOCAL_PORTAL_FAILED reason=owner_required player={name}");
                 return;
             }
 
             if (IsServer)
             {
-                TeleportTo(targetPosition, targetRotation);
+                TeleportThroughLocalPortal(portalName);
                 return;
             }
 
-            RequestTestTeleportServerRpc(targetPosition, targetRotation);
+            RequestLocalPortalTeleportServerRpc(portalName);
         }
 
         public void RequestGameplaySceneTransition(
@@ -390,15 +408,54 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
         }
 
         [ServerRpc]
-        private void RequestTestTeleportServerRpc(Vector3 targetPosition, Quaternion targetRotation, ServerRpcParams rpcParams = default)
+        private void RequestLocalPortalTeleportServerRpc(
+            string portalName,
+            ServerRpcParams rpcParams = default)
         {
             if (rpcParams.Receive.SenderClientId != OwnerClientId)
             {
-                Debug.LogError($"PHS_TEST_TELEPORT_FAILED reason=owner_mismatch player={name}");
+                Debug.LogError($"PHS_LOCAL_PORTAL_FAILED reason=owner_mismatch player={name}");
                 return;
             }
 
-            TeleportTo(targetPosition, targetRotation);
+            TeleportThroughLocalPortal(portalName);
+        }
+
+        private void TeleportThroughLocalPortal(string portalName)
+        {
+            if (!IsServer)
+            {
+                return;
+            }
+
+            var matchingPortals = FindObjectsByType<ExteriorTestTeleportInteractable>(
+                    FindObjectsInactive.Exclude,
+                    FindObjectsSortMode.None)
+                .Where(portal =>
+                    portal != null
+                    && portal.gameObject.scene == gameObject.scene
+                    && string.Equals(portal.name, portalName, StringComparison.Ordinal))
+                .ToArray();
+            if (matchingPortals.Length != 1)
+            {
+                Debug.LogError(
+                    $"PHS_LOCAL_PORTAL_FAILED reason=portal_count_invalid portal={portalName} count={matchingPortals.Length}");
+                return;
+            }
+
+            if (!matchingPortals[0].TryResolveServerDestination(
+                    this,
+                    out var destinationPosition,
+                    out var destinationRotation,
+                    out var reason))
+            {
+                Debug.LogWarning(
+                    $"PHS_LOCAL_PORTAL_FAILED reason={reason ?? "invalid"} portal={portalName} clientId={OwnerClientId}");
+                return;
+            }
+
+            TeleportTo(destinationPosition, destinationRotation);
+            Debug.Log($"PHS_LOCAL_PORTAL_OK portal={portalName} clientId={OwnerClientId}");
         }
 
         public override void OnNetworkSpawn()

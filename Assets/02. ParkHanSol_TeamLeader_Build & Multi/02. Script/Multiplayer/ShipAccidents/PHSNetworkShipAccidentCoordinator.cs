@@ -14,7 +14,6 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.ShipAccidents
     {
         [Header("Inspector References")]
         [SerializeField] private PHSShipAccidentCatalogSO accidentCatalog;
-        [SerializeField] private NetworkShipSystemsState shipSystemsState;
         [SerializeField] private PHSShipAccidentAnchor[] anchors = Array.Empty<PHSShipAccidentAnchor>();
 
         [Header("Server Validation")]
@@ -40,6 +39,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.ShipAccidents
         private bool setupValid;
         private bool scheduleValid;
         private bool isRunning;
+        private NetworkShipSystemsState shipSystemsState;
 
         public int ActiveAccidentCount => activeAccidents.Count;
         public static PHSNetworkShipAccidentCoordinator Instance { get; private set; }
@@ -102,6 +102,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.ShipAccidents
 
             Instance = this;
             activeAccidents.OnListChanged += HandleAccidentListChanged;
+            TryBindShipSystemsState();
             RefreshPresentations();
             ActiveAccidentsChanged?.Invoke();
         }
@@ -125,12 +126,18 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.ShipAccidents
                 Instance = null;
             }
 
+            shipSystemsState = null;
             base.OnNetworkDespawn();
         }
 
         private void Update()
         {
             if (!IsSpawned || !IsServer || !setupValid)
+            {
+                return;
+            }
+
+            if (!TryBindShipSystemsState())
             {
                 return;
             }
@@ -387,6 +394,14 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.ShipAccidents
             uint expectedItemRevision,
             uint requestSequence)
         {
+            if (!TryBindShipSystemsState())
+            {
+                Debug.LogError(
+                    $"PHS_SHIP_ACCIDENT_REPAIR_REJECTED reason=ship_systems_not_ready instance={accidentInstanceId}",
+                    this);
+                return false;
+            }
+
             var index = FindSnapshotIndex(accidentInstanceId);
             if (index < 0)
             {
@@ -523,6 +538,12 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.ShipAccidents
             string phase,
             out string reason)
         {
+            if (!TryBindShipSystemsState())
+            {
+                reason = "ship_systems_not_ready";
+                return false;
+            }
+
             var cause = $"ship_accident:{definition.Id}:{phase}";
             var moduleDamage = ScaleDamage(baseModuleDamage, moduleDamageMultiplier);
             var shipDamage = ScaleDamage(baseShipDamage, shipDamageMultiplier);
@@ -554,6 +575,12 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.ShipAccidents
             PHSShipAccidentDefinitionSO definition,
             out string reason)
         {
+            if (!TryBindShipSystemsState())
+            {
+                reason = "ship_systems_not_ready";
+                return false;
+            }
+
             if (definition.ModuleRepairOnResolve <= 0)
             {
                 reason = null;
@@ -741,12 +768,6 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.ShipAccidents
                 return false;
             }
 
-            if (shipSystemsState == null)
-            {
-                Debug.LogError("PHS_SHIP_ACCIDENT_SETUP_FAILED reason=ship_systems_missing", this);
-                return false;
-            }
-
             if (anchors == null || anchors.Length == 0)
             {
                 Debug.LogError("PHS_SHIP_ACCIDENT_SETUP_FAILED reason=anchors_missing", this);
@@ -822,8 +843,25 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.ShipAccidents
                 return false;
             }
 
+            if (!TryBindShipSystemsState())
+            {
+                reason = "ship_systems_not_ready";
+                return false;
+            }
+
             reason = null;
             return true;
+        }
+
+        private bool TryBindShipSystemsState()
+        {
+            if (shipSystemsState != null && shipSystemsState.IsSpawned)
+            {
+                return true;
+            }
+
+            shipSystemsState = NetworkShipSystemsState.Instance;
+            return shipSystemsState != null && shipSystemsState.IsSpawned;
         }
 
         private bool ValidateSchedule(

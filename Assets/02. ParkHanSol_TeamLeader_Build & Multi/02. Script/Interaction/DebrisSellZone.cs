@@ -175,7 +175,15 @@ namespace LastJumpCrew.ParkHanSol.Interaction
             }
 
             Debug.Log($"PHS_DEBRIS_SOLD zone={name} debris={debrisItem.name} value={itemData.Price} method=thrown");
-            Destroy(debrisItem.gameObject);
+            var debrisNetworkObject = debrisItem.GetComponent<NetworkObject>();
+            if (debrisNetworkObject != null && debrisNetworkObject.IsSpawned)
+            {
+                debrisNetworkObject.Despawn(true);
+            }
+            else
+            {
+                Destroy(debrisItem.gameObject);
+            }
         }
 
         [ServerRpc(RequireOwnership = false)]

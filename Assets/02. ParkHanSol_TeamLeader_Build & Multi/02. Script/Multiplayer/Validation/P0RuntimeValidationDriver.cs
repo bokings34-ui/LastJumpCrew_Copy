@@ -21,12 +21,14 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Validation
     {
         private const string ScenarioFlag = "-phsAutoP0Scenario";
         private const string MapSceneName = "PHS_Map_ver1";
-        private const string DebrisSceneName = "PHS_DebrisCollectionScene";
         private const string ShopSceneName = "PHS_ExteriorShopScene";
+        private const string LocalDebrisEntryPortalName = "PHS_DebrisCollectionPortal_0715";
+        private const string LocalDebrisReturnPortalName = "PHS_DebrisCollectionReturnPortal_0715";
         private const float DefaultStepTimeout = 90f;
 
         [Header("P2 Runtime Validation")]
         [SerializeField] private UtilityItemPrefabData validationBatteryItem;
+        [SerializeField] private UtilityItemPrefabData validationThrownItem;
 
         private readonly Dictionary<ulong, string> sceneReports = new();
         private readonly Dictionary<ulong, GaugeReport> gaugeReports = new();
@@ -37,12 +39,21 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Validation
         private readonly Dictionary<ulong, EventSnapshotReport> eventSnapshotReports = new();
         private readonly Dictionary<ulong, EventTerminalReport> eventTerminalReports = new();
         private readonly Dictionary<ulong, ShipPowerReport> shipPowerReports = new();
+        private readonly Dictionary<ulong, bool> thrownItemReports = new();
+        private readonly Dictionary<ulong, bool> remoteHeldItemReports = new();
         private readonly HashSet<ulong> eventObservationReadyClients = new();
 
         private uint activeProbeToken;
         private int expectedClientCount;
+        private ulong activeRemoteItemClientId = ulong.MaxValue;
+        private bool remoteItemRequestReported;
+        private bool remoteItemRequestIssued;
+        private bool remoteThrowRequestReported;
+        private bool remoteThrowRequestIssued;
         private bool farSelectProbeReported;
         private bool farSelectRequestIssued;
+        private bool localPortalProbeReported;
+        private bool localPortalRequestIssued;
         private bool farEventTerminalProbeReported;
         private bool farEventTerminalRequestIssued;
         private bool scenarioRunning;
@@ -275,6 +286,9 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Validation
             yield return RunShipPowerBatteryValidation();
             if (scenarioFinished) yield break;
 
+            yield return RunThrownItemNetworkValidation();
+            if (scenarioFinished) yield break;
+
             var earlyCoordinator = NetworkRunFlowCoordinator.Instance;
             var earlyConsole = FindAnyObjectByType<NetworkTravelConsoleController>(FindObjectsInactive.Include);
             if (earlyCoordinator == null || earlyConsole == null)
@@ -431,15 +445,13 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Validation
                     $"shop_entry_not_ready cycle={expectedClearedZones}");
                 if (scenarioFinished) yield break;
 
-                NetworkTravelConsoleController shopConsole = null;
+                NetworkScenePortalInteractable shopEntryPortal = null;
                 var shopAutoLoaded = SceneManager.GetActiveScene().name == ShopSceneName;
                 if (!shopAutoLoaded &&
-                    (!TryAcquireMapSceneReferences(out coordinator, out shopConsole) ||
-                     !shopConsole.CanSelectSide(TravelConsoleSide.Left) ||
-                     shopConsole.CanSelectSide(TravelConsoleSide.Right) ||
-                     shopConsole.TryGetCurrentMapChoices(out _, out _)))
+                    (!TryAcquireMapSceneReferences(out coordinator, out _) ||
+                     !TryFindScenePortal(ShopSceneName, out shopEntryPortal)))
                 {
-                    Fail($"shop_choice_invalid cycle={expectedClearedZones}");
+                    Fail($"shop_portal_invalid cycle={expectedClearedZones}");
                     yield break;
                 }
 
@@ -449,7 +461,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Validation
                     this);
 
                 yield return RunShopRoundTrip(
-                    shopConsole,
+                    shopEntryPortal,
                     expectedClearedZones,
                     expectedShopCycles,
                     expectedShopPhase,
@@ -1367,7 +1379,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Validation
         }
 
         private IEnumerator RunShopRoundTrip(
-            NetworkTravelConsoleController console,
+            NetworkScenePortalInteractable entryPortal,
             int expectedClearedZones,
             int expectedShopCycles,
             NetworkRunPhase expectedShopPhase,
@@ -1390,22 +1402,15 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Validation
 
             if (SceneManager.GetActiveScene().name != ShopSceneName)
             {
-                if (console == null)
+                if (entryPortal == null)
                 {
-                    Fail("shop_entry_console_missing");
+                    Fail("shop_entry_portal_missing");
                     yield break;
                 }
 
-                SetPlayerPosition(playerObject, console.transform.position);
+                SetPlayerPosition(playerObject, entryPortal.transform.position);
                 yield return null;
-                console.RequestSelectSide(holder, TravelConsoleSide.Left);
-                if (console.SelectedDestination != TravelConsoleDestination.Shop || !console.CanExecute(holder))
-                {
-                    Fail($"shop_destination_not_selected destination={console.SelectedDestination}");
-                    yield break;
-                }
-
-                console.Execute(holder);
+                entryPortal.Interact(holder);
                 yield return WaitFor(
                     () => SceneManager.GetActiveScene().name == ShopSceneName,
                     30f,
@@ -1528,8 +1533,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Validation
                     this);
             }
 
-            var returnPortal = FindAnyObjectByType<NetworkScenePortalInteractable>(FindObjectsInactive.Include);
-            if (returnPortal == null)
+            if (!TryFindScenePortal(MapSceneName, out var returnPortal))
             {
                 Fail("shop_return_portal_missing");
                 yield break;
@@ -1680,10 +1684,22 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Validation
                 return true;
             }
 
-            return TryAcquireMapSceneReferences(out _, out var console) &&
-                console.CanSelectSide(TravelConsoleSide.Left) &&
-                !console.CanSelectSide(TravelConsoleSide.Right) &&
-                !console.TryGetCurrentMapChoices(out _, out _);
+            return TryAcquireMapSceneReferences(out _, out _) &&
+                TryFindScenePortal(ShopSceneName, out _);
+        }
+
+        private static bool TryFindScenePortal(
+            string destinationSceneName,
+            out NetworkScenePortalInteractable portal)
+        {
+            var activeScene = SceneManager.GetActiveScene();
+            portal = FindObjectsByType<NetworkScenePortalInteractable>(
+                    FindObjectsInactive.Exclude,
+                    FindObjectsSortMode.None)
+                .FirstOrDefault(candidate =>
+                    candidate.gameObject.scene == activeScene &&
+                    candidate.DestinationSceneName == destinationSceneName);
+            return portal != null;
         }
 
         private IEnumerator RunAdditionalWarpCycle(
@@ -1762,9 +1778,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Validation
 
         private IEnumerator RunDebrisRoundTrip()
         {
-            var console = FindAnyObjectByType<NetworkTravelConsoleController>(FindObjectsInactive.Include);
-            if (console == null ||
-                !NetworkManager.ConnectedClients.TryGetValue(NetworkManager.ServerClientId, out var hostClient) ||
+            if (!NetworkManager.ConnectedClients.TryGetValue(NetworkManager.ServerClientId, out var hostClient) ||
                 hostClient.PlayerObject == null)
             {
                 Fail("debris_entry_setup_missing");
@@ -1779,132 +1793,412 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Validation
                 yield break;
             }
 
-            SetPlayerPosition(playerObject, console.transform.position);
+            if (!TryFindLocalDebrisPortals(out var entryPortal, out var returnPortal))
+            {
+                Fail("debris_local_portal_pair_invalid");
+                yield break;
+            }
+
+            yield return ValidateRemoteLocalPortal(entryPortal, "entry");
+            if (scenarioFinished) yield break;
+
+            SetPlayerPosition(playerObject, entryPortal.transform.position);
             yield return null;
-            console.RequestSelectSide(holder, TravelConsoleSide.Right);
-            if (console.SelectedDestination != TravelConsoleDestination.DebrisCollection || !console.CanExecute(holder))
-            {
-                Fail($"debris_destination_not_selected destination={console.SelectedDestination}");
-                yield break;
-            }
-
-            console.Execute(holder);
+            entryPortal.Interact(holder);
             yield return WaitFor(
-                () => SceneManager.GetActiveScene().name == DebrisSceneName,
-                30f,
-                "debris_scene_not_loaded");
+                () => Vector3.Distance(playerObject.transform.position, entryPortal.Destination.position) <= 2f,
+                10f,
+                "debris_local_entry_teleport_failed");
             if (scenarioFinished) yield break;
 
-            yield return ProbeScenes(DebrisSceneName);
-            if (scenarioFinished) yield break;
-
-            var collectionZone = FindAnyObjectByType<NetworkDebrisCollectionZone>(FindObjectsInactive.Include);
-            var safeVolume = FindAnyObjectByType<NetworkDebrisSafeVolume>(FindObjectsInactive.Include);
-            var collectionTrigger = collectionZone == null ? null : collectionZone.GetComponent<SphereCollider>();
-            var safeTrigger = safeVolume == null ? null : safeVolume.GetComponent<SphereCollider>();
-            var lifeState = playerObject.GetComponent<NetworkPlayerLifeState>();
-            var context = GameplaySceneContext.FindForScene(SceneManager.GetActiveScene());
-            if (collectionTrigger == null || safeTrigger == null || lifeState == null || context == null ||
-                !collectionTrigger.isTrigger || !safeTrigger.isTrigger ||
-                safeTrigger.bounds.extents.z >= collectionTrigger.bounds.extents.z)
+            if (SceneManager.GetActiveScene().name != MapSceneName)
             {
-                Fail("debris_volume_setup_invalid");
+                Fail($"debris_local_entry_scene_changed scene={SceneManager.GetActiveScene().name}");
                 yield break;
             }
+
+            yield return ProbeScenes(MapSceneName);
+            if (scenarioFinished) yield break;
+            Debug.Log("PHS_P0_DEBRIS_LOCAL_ENTRY_OK scene=PHS_Map_ver1", this);
 
             yield return ValidatePhysicalDebrisSale(playerObject, holder);
             if (scenarioFinished) yield break;
 
-            var outerDistance = Mathf.Lerp(
-                safeTrigger.bounds.extents.z,
-                collectionTrigger.bounds.extents.z,
-                0.5f);
-            var outerPosition = collectionTrigger.bounds.center + Vector3.forward * outerDistance;
-            var outsidePosition = collectionTrigger.bounds.center +
-                Vector3.forward * (collectionTrigger.bounds.extents.z + 10f);
-            MovePlayerWithCharacterController(playerObject, outsidePosition);
-            yield return WaitFor(
-                () => !collectionZone.IsPlayerInside(NetworkManager.ServerClientId),
-                3f,
-                "debris_outer_exit_not_recorded");
+            yield return ValidateRemoteLocalPortal(returnPortal, "return");
             if (scenarioFinished) yield break;
-            MovePlayerWithCharacterController(playerObject, outerPosition);
-            yield return WaitFor(
-                () => lifeState.IsAlive && lifeState.DeadZoneWarningRemainingSeconds > 0f,
-                3f,
-                $"debris_warning_not_started player={playerObject.transform.position} outer={outerPosition} " +
-                $"outside={outsidePosition} inside={collectionZone.IsPlayerInside(NetworkManager.ServerClientId)} " +
-                $"warning={lifeState.DeadZoneWarningRemainingSeconds:F2}");
-            if (scenarioFinished) yield break;
-
-            MovePlayerWithCharacterController(playerObject, safeTrigger.bounds.center);
-            yield return WaitFor(
-                () => lifeState.DeadZoneWarningRemainingSeconds < 0f,
-                3f,
-                "debris_warning_not_cancelled");
-            if (scenarioFinished) yield break;
-
-            yield return new WaitForSecondsRealtime(5.5f);
-            if (!lifeState.IsAlive)
-            {
-                Fail("debris_safe_volume_did_not_prevent_death");
-                yield break;
-            }
-
-            Debug.Log("PHS_P0_DEBRIS_WARNING_CANCEL_OK", this);
-
-            MovePlayerWithCharacterController(playerObject, outsidePosition);
-            yield return WaitFor(
-                () => !collectionZone.IsPlayerInside(NetworkManager.ServerClientId),
-                3f,
-                "debris_second_outer_exit_not_recorded");
-            if (scenarioFinished) yield break;
-            MovePlayerWithCharacterController(playerObject, outerPosition);
-            yield return WaitFor(
-                () => !lifeState.IsAlive && lifeState.IsWaitingForAutomaticRespawn,
-                7f,
-                "debris_dead_zone_death_not_observed");
-            if (scenarioFinished) yield break;
-
-            yield return WaitFor(
-                () => lifeState.IsAlive,
-                7f,
-                "debris_automatic_respawn_not_observed");
-            if (scenarioFinished) yield break;
-
-            if (!context.TryGetRespawnPoint(out var respawnPoint) ||
-                Vector3.Distance(playerObject.transform.position, respawnPoint.position) > 2f ||
-                playerObject.GetComponent<CharacterController>() is not { enabled: true })
-            {
-                Fail($"debris_respawn_state_invalid position={playerObject.transform.position}");
-                yield break;
-            }
-
-            Debug.Log("PHS_P0_DEBRIS_DEATH_RESPAWN_OK", this);
-
-            var returnPortal = FindAnyObjectByType<NetworkScenePortalInteractable>(FindObjectsInactive.Include);
-            if (returnPortal == null)
-            {
-                Fail("debris_return_portal_missing");
-                yield break;
-            }
 
             SetPlayerPosition(playerObject, returnPortal.transform.position);
             yield return null;
             returnPortal.Interact(holder);
             yield return WaitFor(
-                () => SceneManager.GetActiveScene().name == MapSceneName,
-                30f,
-                "debris_return_map_not_loaded");
+                () => Vector3.Distance(playerObject.transform.position, returnPortal.Destination.position) <= 2f,
+                10f,
+                "debris_local_return_teleport_failed");
             if (scenarioFinished) yield break;
+
+            if (SceneManager.GetActiveScene().name != MapSceneName)
+            {
+                Fail($"debris_local_return_scene_changed scene={SceneManager.GetActiveScene().name}");
+                yield break;
+            }
 
             yield return ProbeScenes(MapSceneName);
             if (scenarioFinished) yield break;
 
-            Debug.Log("PHS_P0_DEBRIS_ROUNDTRIP_OK", this);
+            Debug.Log($"PHS_P0_DEBRIS_ROUNDTRIP_OK peers={expectedClientCount}", this);
         }
 
-        private IEnumerator ValidatePhysicalDebrisSale(NetworkObject playerObject, TempPlayerItemHolder holder)
+        private IEnumerator RunThrownItemNetworkValidation()
+        {
+            if (validationThrownItem == null
+                || !validationThrownItem.HasHeldPrefab
+                || !validationThrownItem.HasDroppedPrefab
+                || string.IsNullOrWhiteSpace(validationThrownItem.ItemId)
+                || !NetworkManager.ConnectedClients.TryGetValue(
+                    NetworkManager.ServerClientId,
+                    out var hostClient)
+                || hostClient.PlayerObject == null)
+            {
+                Fail("thrown_item_validation_setup_missing");
+                yield break;
+            }
+
+            var playerObject = hostClient.PlayerObject;
+            var holder = playerObject.GetComponent<TempPlayerItemHolder>();
+            if (holder == null)
+            {
+                Fail("thrown_item_holder_missing");
+                yield break;
+            }
+
+            holder.ReplaceHeldItem(validationThrownItem, playerObject.transform);
+            yield return null;
+            if (!holder.IsHoldingItem(validationThrownItem.ItemId))
+            {
+                Fail($"thrown_item_hold_failed item={validationThrownItem.ItemId}");
+                yield break;
+            }
+
+            var spawnPosition = playerObject.transform.position
+                + playerObject.transform.forward * 2f
+                + Vector3.up;
+            if (!holder.TryCreateThrownItem(
+                    spawnPosition,
+                    playerObject.transform.rotation,
+                    out var thrownItem)
+                || thrownItem == null)
+            {
+                Fail($"thrown_item_create_failed item={validationThrownItem.ItemId}");
+                yield break;
+            }
+
+            var networkObject = thrownItem.GetComponent<NetworkObject>();
+            if (networkObject == null
+                || !networkObject.IsSpawned
+                || thrownItem.GetComponent<UtilityItemObject>() == null
+                || thrownItem.GetComponent<Rigidbody>() == null
+                || thrownItem.GetComponent<Unity.Netcode.Components.NetworkTransform>() == null
+                || thrownItem.GetComponent<ThrownItemImpact>() == null)
+            {
+                Fail($"thrown_item_contract_invalid item={validationThrownItem.ItemId}");
+                yield break;
+            }
+
+            thrownItemReports.Clear();
+            var token = ++activeProbeToken;
+            ProbeThrownItemClientRpc(token, networkObject.NetworkObjectId, validationThrownItem.ItemId);
+            yield return WaitFor(
+                () => thrownItemReports.Count >= expectedClientCount,
+                10f,
+                "thrown_item_peer_probe_timeout");
+            if (scenarioFinished) yield break;
+
+            if (thrownItemReports.Values.Any(valid => !valid))
+            {
+                Fail($"thrown_item_peer_contract_invalid item={validationThrownItem.ItemId}");
+                yield break;
+            }
+
+            var networkObjectId = networkObject.NetworkObjectId;
+            networkObject.Despawn(true);
+            Debug.Log(
+                $"PHS_P0_THROW_NETWORK_OK item={validationThrownItem.ItemId} " +
+                $"networkObjectId={networkObjectId} peers={thrownItemReports.Count}",
+                this);
+
+            yield return RunRemoteOwnedThrownItemValidation();
+        }
+
+        private IEnumerator RunRemoteOwnedThrownItemValidation()
+        {
+            var remoteClientId = NetworkManager.ConnectedClientsIds.FirstOrDefault(
+                clientId => clientId != NetworkManager.ServerClientId);
+            if (remoteClientId == NetworkManager.ServerClientId
+                || !NetworkManager.ConnectedClients.TryGetValue(remoteClientId, out var remoteClient)
+                || remoteClient.PlayerObject == null)
+            {
+                Fail("remote_item_owner_missing");
+                yield break;
+            }
+
+            var remotePlayer = remoteClient.PlayerObject;
+            var remoteLifecycle = remotePlayer.GetComponent<NetworkPlayerItemLifecycle>();
+            var remoteRecord = remotePlayer.GetComponent<NetworkPlayerItemRecord>();
+            if (remoteLifecycle == null
+                || remoteRecord == null
+                || !remoteRecord.IsSpawned
+                || !string.IsNullOrEmpty(remoteRecord.HeldItemId))
+            {
+                Fail(
+                    $"remote_item_player_contract_invalid client={remoteClientId} " +
+                    $"held={remoteRecord?.HeldItemId ?? "record_missing"}");
+                yield break;
+            }
+
+            var pickupPosition = remotePlayer.transform.position + Vector3.up * 0.5f;
+            if (!remoteLifecycle.TryCreateDroppedItemServer(
+                    validationThrownItem.ItemId,
+                    pickupPosition,
+                    remotePlayer.transform.rotation,
+                    out var pickupNetworkObject)
+                || pickupNetworkObject == null
+                || !pickupNetworkObject.IsSpawned)
+            {
+                Fail($"remote_item_pickup_spawn_failed client={remoteClientId}");
+                yield break;
+            }
+
+            activeRemoteItemClientId = remoteClientId;
+            remoteItemRequestReported = false;
+            remoteItemRequestIssued = false;
+            var pickupNetworkObjectId = pickupNetworkObject.NetworkObjectId;
+            var requestToken = ++activeProbeToken;
+            RequestRemoteItemPickupClientRpc(
+                requestToken,
+                pickupNetworkObjectId,
+                new ClientRpcParams
+                {
+                    Send = new ClientRpcSendParams { TargetClientIds = new[] { remoteClientId } }
+                });
+            yield return WaitFor(
+                () => remoteItemRequestReported,
+                10f,
+                "remote_item_pickup_request_timeout");
+            if (scenarioFinished) yield break;
+
+            if (!remoteItemRequestIssued)
+            {
+                Fail($"remote_item_pickup_request_not_issued client={remoteClientId}");
+                yield break;
+            }
+
+            yield return WaitFor(
+                () => string.Equals(
+                        remoteRecord.HeldItemId,
+                        validationThrownItem.ItemId,
+                        StringComparison.Ordinal)
+                    && !NetworkManager.SpawnManager.SpawnedObjects.ContainsKey(
+                        pickupNetworkObjectId),
+                10f,
+                "remote_item_pickup_not_committed");
+            if (scenarioFinished) yield break;
+
+            remoteHeldItemReports.Clear();
+            var heldProbeToken = ++activeProbeToken;
+            ProbeRemoteHeldItemClientRpc(
+                heldProbeToken,
+                remoteClientId,
+                pickupNetworkObjectId,
+                validationThrownItem.ItemId);
+            yield return WaitFor(
+                () => remoteHeldItemReports.Count >= expectedClientCount,
+                10f,
+                "remote_item_held_peer_probe_timeout");
+            if (scenarioFinished) yield break;
+
+            if (remoteHeldItemReports.Values.Any(valid => !valid))
+            {
+                Fail($"remote_item_held_peer_contract_invalid client={remoteClientId}");
+                yield break;
+            }
+
+            var knownNetworkObjectIds = NetworkManager.SpawnManager.SpawnedObjects.Keys.ToHashSet();
+            remoteThrowRequestReported = false;
+            remoteThrowRequestIssued = false;
+            var throwRequestToken = ++activeProbeToken;
+            RequestRemoteItemThrowClientRpc(
+                throwRequestToken,
+                validationThrownItem.ItemId,
+                new ClientRpcParams
+                {
+                    Send = new ClientRpcSendParams { TargetClientIds = new[] { remoteClientId } }
+                });
+            yield return WaitFor(
+                () => remoteThrowRequestReported,
+                10f,
+                "remote_item_throw_request_timeout");
+            if (scenarioFinished) yield break;
+
+            if (!remoteThrowRequestIssued)
+            {
+                Fail($"remote_item_throw_request_not_issued client={remoteClientId}");
+                yield break;
+            }
+
+            NetworkObject remoteThrownNetworkObject = null;
+            yield return WaitFor(
+                () => string.IsNullOrEmpty(remoteRecord.HeldItemId)
+                    && TryFindNewSpawnedUtilityItem(
+                        knownNetworkObjectIds,
+                        validationThrownItem.ItemId,
+                        out remoteThrownNetworkObject),
+                10f,
+                "remote_item_throw_not_committed");
+            if (scenarioFinished) yield break;
+
+            thrownItemReports.Clear();
+            var throwProbeToken = ++activeProbeToken;
+            ProbeRemoteThrownItemClientRpc(
+                throwProbeToken,
+                remoteClientId,
+                remoteThrownNetworkObject.NetworkObjectId,
+                validationThrownItem.ItemId);
+            yield return WaitFor(
+                () => thrownItemReports.Count >= expectedClientCount,
+                10f,
+                "remote_item_throw_peer_probe_timeout");
+            if (scenarioFinished) yield break;
+
+            if (thrownItemReports.Values.Any(valid => !valid))
+            {
+                Fail($"remote_item_throw_peer_contract_invalid client={remoteClientId}");
+                yield break;
+            }
+
+            var thrownNetworkObjectId = remoteThrownNetworkObject.NetworkObjectId;
+            remoteThrownNetworkObject.Despawn(true);
+            activeRemoteItemClientId = ulong.MaxValue;
+            Debug.Log(
+                $"PHS_P0_REMOTE_ITEM_OWNERSHIP_OK client={remoteClientId} " +
+                $"item={validationThrownItem.ItemId} pickupNetworkObjectId={pickupNetworkObjectId} " +
+                $"thrownNetworkObjectId={thrownNetworkObjectId} peers={thrownItemReports.Count} " +
+                $"heldVisualNetworkObjects=0 recordRevision={remoteRecord.Revision}",
+                this);
+        }
+
+        private bool TryFindNewSpawnedUtilityItem(
+            HashSet<ulong> knownNetworkObjectIds,
+            string expectedItemId,
+            out NetworkObject foundNetworkObject)
+        {
+            foundNetworkObject = null;
+            if (NetworkManager == null || NetworkManager.SpawnManager == null)
+            {
+                return false;
+            }
+
+            foreach (var pair in NetworkManager.SpawnManager.SpawnedObjects)
+            {
+                if (knownNetworkObjectIds.Contains(pair.Key)
+                    || pair.Value == null
+                    || !pair.Value.IsSpawned
+                    || pair.Value.GetComponent<UtilityItemObject>() is not { } itemObject
+                    || itemObject.ItemPrefabData == null
+                    || !string.Equals(
+                        itemObject.ItemPrefabData.ItemId,
+                        expectedItemId,
+                        StringComparison.Ordinal))
+                {
+                    continue;
+                }
+
+                foundNetworkObject = pair.Value;
+                return true;
+            }
+
+            return false;
+        }
+
+        private static bool TryFindLocalDebrisPortals(
+            out ExteriorTestTeleportInteractable entryPortal,
+            out ExteriorTestTeleportInteractable returnPortal)
+        {
+            entryPortal = null;
+            returnPortal = null;
+            var activeScene = SceneManager.GetActiveScene();
+            var portals = FindObjectsByType<ExteriorTestTeleportInteractable>(
+                    FindObjectsInactive.Exclude,
+                    FindObjectsSortMode.None)
+                .Where(portal =>
+                    portal != null
+                    && portal.isActiveAndEnabled
+                    && portal.Destination != null
+                    && portal.gameObject.scene == activeScene)
+                .ToArray();
+            entryPortal = portals.SingleOrDefault(portal =>
+                string.Equals(portal.name, LocalDebrisEntryPortalName, StringComparison.Ordinal));
+            returnPortal = portals.SingleOrDefault(portal =>
+                string.Equals(portal.name, LocalDebrisReturnPortalName, StringComparison.Ordinal));
+            return entryPortal != null
+                && returnPortal != null
+                && entryPortal != returnPortal
+                && Vector3.Distance(entryPortal.Destination.position, returnPortal.Destination.position) > 1f;
+        }
+
+        private IEnumerator ValidateRemoteLocalPortal(
+            ExteriorTestTeleportInteractable portal,
+            string label)
+        {
+            var remoteClientId = NetworkManager.ConnectedClientsIds.FirstOrDefault(
+                clientId => clientId != NetworkManager.ServerClientId);
+            if (portal == null ||
+                remoteClientId == NetworkManager.ServerClientId ||
+                !NetworkManager.ConnectedClients.TryGetValue(remoteClientId, out var remoteClient) ||
+                remoteClient.PlayerObject == null)
+            {
+                Fail($"debris_local_{label}_remote_setup_missing");
+                yield break;
+            }
+
+            SetPlayerPosition(remoteClient.PlayerObject, portal.transform.position);
+            yield return null;
+
+            localPortalProbeReported = false;
+            localPortalRequestIssued = false;
+            var token = ++activeProbeToken;
+            ProbeLocalPortalClientRpc(
+                token,
+                portal.name,
+                new ClientRpcParams
+                {
+                    Send = new ClientRpcSendParams { TargetClientIds = new[] { remoteClientId } }
+                });
+            yield return WaitFor(
+                () => localPortalProbeReported,
+                5f,
+                $"debris_local_{label}_remote_probe_timeout");
+            if (scenarioFinished) yield break;
+
+            if (!localPortalRequestIssued)
+            {
+                Fail($"debris_local_{label}_remote_request_not_issued");
+                yield break;
+            }
+
+            yield return WaitFor(
+                () => Vector3.Distance(
+                    remoteClient.PlayerObject.transform.position,
+                    portal.Destination.position) <= 2f,
+                10f,
+                $"debris_local_{label}_remote_teleport_failed");
+            if (scenarioFinished) yield break;
+
+            Debug.Log($"PHS_P0_DEBRIS_LOCAL_{label.ToUpperInvariant()}_REMOTE_OK client={remoteClientId}", this);
+        }
+
+        private IEnumerator ValidatePhysicalDebrisSale(
+            NetworkObject playerObject,
+            TempPlayerItemHolder holder)
         {
             var sellZone = FindAnyObjectByType<DebrisSellZone>(FindObjectsInactive.Include);
             var sellTrigger = sellZone == null ? null : sellZone.GetComponent<BoxCollider>();
@@ -1913,7 +2207,10 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Validation
             var debris = FindObjectsByType<DebrisItem>(
                     FindObjectsInactive.Exclude,
                     FindObjectsSortMode.None)
-                .FirstOrDefault(candidate => candidate != null && candidate.Value > 0);
+                .FirstOrDefault(candidate =>
+                    candidate != null
+                    && candidate.Value > 0
+                    && candidate.name.StartsWith("PHS_Debris_", StringComparison.Ordinal));
             var itemObject = debris == null ? null : debris.GetComponent<LastJumpCrew.ParkHanSol.Items.UtilityItemObject>();
             var itemData = itemObject == null ? null : itemObject.ItemPrefabData;
             if (sellZone == null || sellTrigger == null || !sellTrigger.isTrigger || wallet == null ||
@@ -2491,6 +2788,336 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Validation
                     FindObjectsSortMode.None).Length,
                 _ => 0
             };
+        }
+
+        [ClientRpc]
+        private void ProbeLocalPortalClientRpc(
+            uint token,
+            string portalName,
+            ClientRpcParams clientRpcParams = default)
+        {
+            if (!IsScenarioEnabled()) return;
+
+            var portal = FindObjectsByType<ExteriorTestTeleportInteractable>(
+                    FindObjectsInactive.Exclude,
+                    FindObjectsSortMode.None)
+                .FirstOrDefault(candidate =>
+                    candidate != null
+                    && candidate.isActiveAndEnabled
+                    && string.Equals(candidate.name, portalName, StringComparison.Ordinal));
+            var localPlayer = FindObjectsByType<NetworkPlayerController>(
+                    FindObjectsInactive.Include,
+                    FindObjectsSortMode.None)
+                .FirstOrDefault(player => player.IsOwner);
+            var holder = localPlayer == null ? null : localPlayer.GetComponent<TempPlayerItemHolder>();
+            var issued = portal != null && holder != null && portal.CanInteract(holder);
+            if (issued)
+            {
+                portal.Interact(holder);
+            }
+
+            ReportLocalPortalProbeServerRpc(token, issued);
+        }
+
+        [ServerRpc(RequireOwnership = false)]
+        private void ReportLocalPortalProbeServerRpc(
+            uint token,
+            bool issued,
+            ServerRpcParams rpcParams = default)
+        {
+            if (!AcceptProbe(token)) return;
+            localPortalProbeReported = true;
+            localPortalRequestIssued = issued;
+        }
+
+        [ClientRpc]
+        private void RequestRemoteItemPickupClientRpc(
+            uint token,
+            ulong targetNetworkObjectId,
+            ClientRpcParams clientRpcParams = default)
+        {
+            if (!IsScenarioEnabled()) return;
+            StartCoroutine(RequestRemoteItemPickupWhenReady(token, targetNetworkObjectId));
+        }
+
+        private IEnumerator RequestRemoteItemPickupWhenReady(
+            uint token,
+            ulong targetNetworkObjectId)
+        {
+            var deadline = Time.realtimeSinceStartup + 5f;
+            while (Time.realtimeSinceStartup < deadline)
+            {
+                var localLifecycle = FindObjectsByType<NetworkPlayerItemLifecycle>(
+                        FindObjectsInactive.Include,
+                        FindObjectsSortMode.None)
+                    .FirstOrDefault(lifecycle => lifecycle.IsSpawned && lifecycle.IsOwner);
+                var spawnManager = NetworkManager == null ? null : NetworkManager.SpawnManager;
+                if (localLifecycle != null
+                    && spawnManager != null
+                    && spawnManager.SpawnedObjects.TryGetValue(
+                        targetNetworkObjectId,
+                        out var targetNetworkObject)
+                    && targetNetworkObject != null
+                    && targetNetworkObject.GetComponent<UtilityItemObject>() is { } itemObject
+                    && localLifecycle.CanRequestNetworkPickup(itemObject))
+                {
+                    localLifecycle.RequestNetworkPickup(itemObject);
+                    ReportRemoteItemPickupRequestServerRpc(token, true);
+                    yield break;
+                }
+
+                yield return null;
+            }
+
+            ReportRemoteItemPickupRequestServerRpc(token, false);
+        }
+
+        [ServerRpc(RequireOwnership = false)]
+        private void ReportRemoteItemPickupRequestServerRpc(
+            uint token,
+            bool issued,
+            ServerRpcParams rpcParams = default)
+        {
+            if (!AcceptProbe(token)
+                || rpcParams.Receive.SenderClientId != activeRemoteItemClientId)
+            {
+                return;
+            }
+
+            remoteItemRequestReported = true;
+            remoteItemRequestIssued = issued;
+        }
+
+        [ClientRpc]
+        private void ProbeRemoteHeldItemClientRpc(
+            uint token,
+            ulong ownerClientId,
+            ulong despawnedNetworkObjectId,
+            string expectedItemId)
+        {
+            if (!IsScenarioEnabled()) return;
+            StartCoroutine(ProbeRemoteHeldItemWhenReady(
+                token,
+                ownerClientId,
+                despawnedNetworkObjectId,
+                expectedItemId));
+        }
+
+        private IEnumerator ProbeRemoteHeldItemWhenReady(
+            uint token,
+            ulong ownerClientId,
+            ulong despawnedNetworkObjectId,
+            string expectedItemId)
+        {
+            var deadline = Time.realtimeSinceStartup + 5f;
+            while (Time.realtimeSinceStartup < deadline)
+            {
+                var itemRecord = FindObjectsByType<NetworkPlayerItemRecord>(
+                        FindObjectsInactive.Include,
+                        FindObjectsSortMode.None)
+                    .FirstOrDefault(record =>
+                        record.IsSpawned && record.OwnerClientId == ownerClientId);
+                var holder = itemRecord == null
+                    ? null
+                    : itemRecord.GetComponent<TempPlayerItemHolder>();
+                var heldVisual = holder == null
+                    ? null
+                    : holder.GetComponentsInChildren<UtilityItemObject>(true)
+                        .FirstOrDefault(itemObject =>
+                            itemObject.ItemPrefabData != null
+                            && string.Equals(
+                                itemObject.ItemPrefabData.ItemId,
+                                expectedItemId,
+                                StringComparison.Ordinal));
+                var targetDespawned = NetworkManager != null
+                    && NetworkManager.SpawnManager != null
+                    && !NetworkManager.SpawnManager.SpawnedObjects.ContainsKey(
+                        despawnedNetworkObjectId);
+                var valid = targetDespawned
+                    && itemRecord != null
+                    && string.Equals(
+                        itemRecord.HeldItemId,
+                        expectedItemId,
+                        StringComparison.Ordinal)
+                    && holder != null
+                    && holder.CurrentItemPrefabData != null
+                    && string.Equals(
+                        holder.CurrentItemPrefabData.ItemId,
+                        expectedItemId,
+                        StringComparison.Ordinal)
+                    && heldVisual != null
+                    && heldVisual.GetComponentsInChildren<NetworkObject>(true).Length == 0;
+                if (valid)
+                {
+                    ReportRemoteHeldItemProbeServerRpc(token, true);
+                    yield break;
+                }
+
+                yield return null;
+            }
+
+            ReportRemoteHeldItemProbeServerRpc(token, false);
+        }
+
+        [ServerRpc(RequireOwnership = false)]
+        private void ReportRemoteHeldItemProbeServerRpc(
+            uint token,
+            bool valid,
+            ServerRpcParams rpcParams = default)
+        {
+            if (!AcceptProbe(token)) return;
+            remoteHeldItemReports[rpcParams.Receive.SenderClientId] = valid;
+        }
+
+        [ClientRpc]
+        private void RequestRemoteItemThrowClientRpc(
+            uint token,
+            string expectedItemId,
+            ClientRpcParams clientRpcParams = default)
+        {
+            if (!IsScenarioEnabled()) return;
+
+            var localCombatController = FindObjectsByType<NetworkPlayerCombatController>(
+                    FindObjectsInactive.Include,
+                    FindObjectsSortMode.None)
+                .FirstOrDefault(controller => controller.IsSpawned && controller.IsOwner);
+            var holder = localCombatController == null
+                ? null
+                : localCombatController.GetComponent<TempPlayerItemHolder>();
+            var issued = localCombatController != null
+                && holder != null
+                && holder.IsHoldingItem(expectedItemId);
+            if (issued)
+            {
+                localCombatController.RequestThrowHeldItem(0.5f);
+            }
+
+            ReportRemoteItemThrowRequestServerRpc(token, issued);
+        }
+
+        [ServerRpc(RequireOwnership = false)]
+        private void ReportRemoteItemThrowRequestServerRpc(
+            uint token,
+            bool issued,
+            ServerRpcParams rpcParams = default)
+        {
+            if (!AcceptProbe(token)
+                || rpcParams.Receive.SenderClientId != activeRemoteItemClientId)
+            {
+                return;
+            }
+
+            remoteThrowRequestReported = true;
+            remoteThrowRequestIssued = issued;
+        }
+
+        [ClientRpc]
+        private void ProbeRemoteThrownItemClientRpc(
+            uint token,
+            ulong ownerClientId,
+            ulong networkObjectId,
+            string expectedItemId)
+        {
+            if (!IsScenarioEnabled()) return;
+            StartCoroutine(ProbeRemoteThrownItemWhenReady(
+                token,
+                ownerClientId,
+                networkObjectId,
+                expectedItemId));
+        }
+
+        private IEnumerator ProbeRemoteThrownItemWhenReady(
+            uint token,
+            ulong ownerClientId,
+            ulong networkObjectId,
+            string expectedItemId)
+        {
+            var deadline = Time.realtimeSinceStartup + 5f;
+            while (Time.realtimeSinceStartup < deadline)
+            {
+                var itemRecord = FindObjectsByType<NetworkPlayerItemRecord>(
+                        FindObjectsInactive.Include,
+                        FindObjectsSortMode.None)
+                    .FirstOrDefault(record =>
+                        record.IsSpawned && record.OwnerClientId == ownerClientId);
+                var holder = itemRecord == null
+                    ? null
+                    : itemRecord.GetComponent<TempPlayerItemHolder>();
+                var heldVisual = holder == null
+                    ? null
+                    : holder.GetComponentsInChildren<UtilityItemObject>(true)
+                        .FirstOrDefault(itemObject =>
+                            itemObject.ItemPrefabData != null
+                            && string.Equals(
+                                itemObject.ItemPrefabData.ItemId,
+                                expectedItemId,
+                                StringComparison.Ordinal));
+                var valid = NetworkManager != null
+                    && NetworkManager.SpawnManager.SpawnedObjects.TryGetValue(
+                        networkObjectId,
+                        out var networkObject)
+                    && networkObject != null
+                    && networkObject.IsSpawned
+                    && networkObject.GetComponent<UtilityItemObject>() is { } itemObject
+                    && itemObject.ItemPrefabData != null
+                    && string.Equals(
+                        itemObject.ItemPrefabData.ItemId,
+                        expectedItemId,
+                        StringComparison.Ordinal)
+                    && networkObject.GetComponent<Rigidbody>() != null
+                    && networkObject.GetComponent<Unity.Netcode.Components.NetworkTransform>() != null
+                    && networkObject.GetComponent<ThrownItemImpact>() != null
+                    && itemRecord != null
+                    && string.IsNullOrEmpty(itemRecord.HeldItemId)
+                    && holder != null
+                    && holder.CurrentItemPrefabData == null
+                    && heldVisual == null;
+                if (valid)
+                {
+                    ReportThrownItemProbeServerRpc(token, true);
+                    yield break;
+                }
+
+                yield return null;
+            }
+
+            ReportThrownItemProbeServerRpc(token, false);
+        }
+
+        [ClientRpc]
+        private void ProbeThrownItemClientRpc(
+            uint token,
+            ulong networkObjectId,
+            string expectedItemId)
+        {
+            if (!IsScenarioEnabled()) return;
+
+            var valid = NetworkManager != null
+                && NetworkManager.SpawnManager.SpawnedObjects.TryGetValue(
+                    networkObjectId,
+                    out var networkObject)
+                && networkObject != null
+                && networkObject.IsSpawned
+                && networkObject.GetComponent<UtilityItemObject>() is { } itemObject
+                && itemObject.ItemPrefabData != null
+                && string.Equals(
+                    itemObject.ItemPrefabData.ItemId,
+                    expectedItemId,
+                    StringComparison.Ordinal)
+                && networkObject.GetComponent<Rigidbody>() != null
+                && networkObject.GetComponent<Unity.Netcode.Components.NetworkTransform>() != null
+                && networkObject.GetComponent<ThrownItemImpact>() != null;
+            ReportThrownItemProbeServerRpc(token, valid);
+        }
+
+        [ServerRpc(RequireOwnership = false)]
+        private void ReportThrownItemProbeServerRpc(
+            uint token,
+            bool valid,
+            ServerRpcParams rpcParams = default)
+        {
+            if (!AcceptProbe(token)) return;
+            thrownItemReports[rpcParams.Receive.SenderClientId] = valid;
         }
 
         [ClientRpc]

@@ -126,7 +126,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Maps
 
         private void HandleActiveMapCommitted(int currentMapId)
         {
-            TryApplyMap(currentMapId);
+            initialApplyPending = true;
         }
 
         private void HandlePhaseChanged(NetworkRunPhase previousPhase, NetworkRunPhase currentPhase)

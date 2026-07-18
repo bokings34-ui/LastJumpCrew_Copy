@@ -15,6 +15,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
         private const string GameIdPropertyName = "GameId";
         private const string GameId = "LastJumpCrew";
         private const string SessionType = "LastJumpCrew.Room";
+        private static readonly TimeSpan ServiceReadyTimeout = TimeSpan.FromSeconds(10);
 
         [SerializeField] private NetworkManager networkManager;
         [SerializeField, Min(1)] private int roomQueryLimit = 100;
@@ -285,6 +286,10 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
                 {
                     await UnityServices.InitializeAsync(BuildInitializationOptions());
                 }
+                else if (UnityServices.State == ServicesInitializationState.Initializing)
+                {
+                    await WaitForServicesInitializationAsync();
+                }
 
                 if (UnityServices.State != ServicesInitializationState.Initialized)
                 {
@@ -294,7 +299,20 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
 
                 if (!AuthenticationService.Instance.IsSignedIn)
                 {
-                    await AuthenticationService.Instance.SignInAnonymouslyAsync();
+                    try
+                    {
+                        await AuthenticationService.Instance.SignInAnonymouslyAsync();
+                    }
+                    catch (AuthenticationException exception)
+                        when (exception.ErrorCode == AuthenticationErrorCodes.ClientInvalidUserState)
+                    {
+                        if (!await WaitForConcurrentAuthenticationAsync())
+                        {
+                            throw;
+                        }
+
+                        Debug.Log("PHS_ROOM_AUTH_CONCURRENT_SIGN_IN_RECOVERED");
+                    }
                 }
 
                 servicesReady = AuthenticationService.Instance.IsSignedIn;
@@ -312,6 +330,28 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
                 ReportFailure("initialize", exception);
                 return false;
             }
+        }
+
+        private static async Task WaitForServicesInitializationAsync()
+        {
+            var deadline = DateTime.UtcNow + ServiceReadyTimeout;
+            while (UnityServices.State == ServicesInitializationState.Initializing
+                   && DateTime.UtcNow < deadline)
+            {
+                await Task.Delay(100);
+            }
+        }
+
+        private static async Task<bool> WaitForConcurrentAuthenticationAsync()
+        {
+            var deadline = DateTime.UtcNow + ServiceReadyTimeout;
+            while (!AuthenticationService.Instance.IsSignedIn
+                   && DateTime.UtcNow < deadline)
+            {
+                await Task.Delay(100);
+            }
+
+            return AuthenticationService.Instance.IsSignedIn;
         }
 
         private bool ValidateCreateRequest(string roomName, int maxPlayers, string password)

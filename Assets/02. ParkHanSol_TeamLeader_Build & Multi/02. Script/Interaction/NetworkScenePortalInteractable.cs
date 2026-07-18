@@ -13,6 +13,7 @@ namespace LastJumpCrew.ParkHanSol.Interaction
         [SerializeField, Min(0.1f)] private float serverInteractionDistance = 4f;
 
         public string InteractionPrompt => interactionPrompt;
+        public string DestinationSceneName => destinationSceneName;
 
         public bool MatchesServerRequest(
             Transform playerTransform,

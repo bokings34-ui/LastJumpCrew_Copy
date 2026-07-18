@@ -3,6 +3,7 @@ using System.Collections;
 using System.Collections.Generic;
 using SM;
 using UnityEngine;
+using UnityEngine.Rendering;
 
 namespace LastJumpCrew.ParkHanSol.Multiplayer.Events.MiniGames
 {
@@ -42,7 +43,10 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Events.MiniGames
                     return false;
                 }
 
-                if (!materials[materialIndex].HasProperty(EmissionColorId))
+                // NullGfx is used by the headless network validation player.
+                // Shader property introspection is not reliable without a graphics device.
+                if (SystemInfo.graphicsDeviceType != GraphicsDeviceType.Null
+                    && !materials[materialIndex].HasProperty(EmissionColorId))
                 {
                     Debug.LogError(
                         $"PHS_MINIGAME_INDICATOR_SLOT_INVALID reason=emission_property_missing slot={slotIndex} material={materials[materialIndex].name}",

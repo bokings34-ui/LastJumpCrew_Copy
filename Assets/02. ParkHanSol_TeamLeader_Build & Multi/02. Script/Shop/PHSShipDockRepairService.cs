@@ -13,8 +13,6 @@ namespace LastJumpCrew.ParkHanSol.Shop
         IShipDockRepairService
     {
         [SerializeField] private MonoBehaviour walletSource;
-        [SerializeField] private NetworkShipSystemsState shipSystemsState;
-        [SerializeField] private NetworkRunFlowCoordinator runFlowCoordinator;
         [SerializeField] private PHSShipDockRepairOfferSO[] offers = Array.Empty<PHSShipDockRepairOfferSO>();
 
         private readonly Dictionary<string, PHSShipDockRepairOfferSO> offersById = new(StringComparer.Ordinal);
@@ -37,6 +35,17 @@ namespace LastJumpCrew.ParkHanSol.Shop
             if (!setupValid || !IsSpawned || !IsServer)
             {
                 reason = "server_service_not_ready";
+                return false;
+            }
+
+            var shipSystemsState = NetworkShipSystemsState.Instance;
+            var runFlowCoordinator = NetworkRunFlowCoordinator.Instance;
+            if (shipSystemsState == null
+                || !shipSystemsState.IsSpawned
+                || runFlowCoordinator == null
+                || !runFlowCoordinator.IsSpawned)
+            {
+                reason = "run_session_not_ready";
                 return false;
             }
 
@@ -117,18 +126,6 @@ namespace LastJumpCrew.ParkHanSol.Shop
             if (wallet == null)
             {
                 Debug.LogError("PHS_SHIP_DOCK_REPAIR_SETUP_FAILED reason=wallet_contract_missing", this);
-                return false;
-            }
-
-            if (shipSystemsState == null)
-            {
-                Debug.LogError("PHS_SHIP_DOCK_REPAIR_SETUP_FAILED reason=ship_systems_missing", this);
-                return false;
-            }
-
-            if (runFlowCoordinator == null)
-            {
-                Debug.LogError("PHS_SHIP_DOCK_REPAIR_SETUP_FAILED reason=run_flow_missing", this);
                 return false;
             }
 

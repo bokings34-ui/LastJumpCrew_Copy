@@ -180,6 +180,14 @@ namespace LastJumpCrew.ParkHanSol.Interaction
                 return false;
             }
 
+            var networkManager = NetworkManager.Singleton;
+            var networkSessionActive = networkManager != null && networkManager.IsListening;
+            if (networkSessionActive && !IsServer)
+            {
+                // Server-spawned overflow object arrives through NGO. Client only advances delivery presentation state.
+                return true;
+            }
+
             var dropPoint = overflowDropPoints[nextOverflowDropPoint % overflowDropPoints.Length];
             nextOverflowDropPoint++;
             if (dropPoint == null)
@@ -193,6 +201,19 @@ namespace LastJumpCrew.ParkHanSol.Interaction
             if (droppedItem.TryGetComponent<UtilityItemObject>(out var itemObject))
             {
                 itemObject.OnDropped(dropPoint.position);
+            }
+
+            if (networkSessionActive)
+            {
+                if (!droppedItem.TryGetComponent<NetworkObject>(out var droppedNetworkObject))
+                {
+                    Debug.LogError(
+                        $"PHS_PURCHASE_DELIVERY_OVERFLOW_FAILED reason=network_object_missing box={name} item={itemPrefabData.ItemId}");
+                    Destroy(droppedItem);
+                    return false;
+                }
+
+                droppedNetworkObject.Spawn();
             }
 
             Debug.Log(

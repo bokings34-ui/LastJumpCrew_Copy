@@ -26,9 +26,6 @@ namespace LastJumpCrew.ParkHanSol.Interaction
     [RequireComponent(typeof(NetworkObject))]
     public sealed class NetworkTravelConsoleController : NetworkBehaviour
     {
-        [Header("Destination Scenes")]
-        [SerializeField] private string debrisSceneName = "PHS_DebrisCollectionScene";
-        [SerializeField] private string shopSceneName = "PHS_ExteriorShopScene";
         [SerializeField, Min(1f)] private float serverInteractionDistance = 4f;
 
         [Header("Map Options")]
@@ -71,7 +68,6 @@ namespace LastJumpCrew.ParkHanSol.Interaction
 
         private readonly List<PHSMapProfileSO> selectableProfiles = new();
         private bool setupValid;
-        private bool sceneLoadRequested;
         private NetworkRunPhase lastServerPhase = (NetworkRunPhase)byte.MaxValue;
 
         public TravelConsoleDestination SelectedDestination => synchronizedDestination.Value;
@@ -131,9 +127,7 @@ namespace LastJumpCrew.ParkHanSol.Interaction
                 && actionReadyMaterial != null
                 && disabledButtonMaterial != null
                 && HasValidObjects(debrisChoiceObjects)
-                && TryBuildSelectableProfiles()
-                && !string.IsNullOrWhiteSpace(debrisSceneName)
-                && !string.IsNullOrWhiteSpace(shopSceneName);
+                && TryBuildSelectableProfiles();
             if (!setupValid)
             {
                 Debug.LogError($"PHS_TRAVEL_CONSOLE_SETUP_FAILED console={name}", this);
@@ -284,12 +278,6 @@ namespace LastJumpCrew.ParkHanSol.Interaction
                 return false;
             }
 
-            if (runFlow.Phase == NetworkRunPhase.Charging && side == TravelConsoleSide.Right)
-            {
-                destination = TravelConsoleDestination.DebrisCollection;
-                return true;
-            }
-
             if (runFlow.Phase == NetworkRunPhase.WarpSafe && AreMapChoicesReady())
             {
                 destination = side == TravelConsoleSide.Left
@@ -315,17 +303,12 @@ namespace LastJumpCrew.ParkHanSol.Interaction
                     && TryGetSelectedMapProfile(out _);
             }
 
-            if (runFlow.Phase == NetworkRunPhase.Charging)
-            {
-                return SelectedDestination == TravelConsoleDestination.DebrisCollection;
-            }
-
             return false;
         }
 
         private void ExecuteOnServer(ulong clientId)
         {
-            if (!IsServer || sceneLoadRequested)
+            if (!IsServer)
             {
                 return;
             }
@@ -373,36 +356,7 @@ namespace LastJumpCrew.ParkHanSol.Interaction
                 return;
             }
 
-            if (runFlow.Phase == NetworkRunPhase.Charging
-                && SelectedDestination == TravelConsoleDestination.DebrisCollection)
-            {
-                LoadNetworkScene(debrisSceneName);
-                return;
-            }
-
             Debug.LogWarning($"PHS_TRAVEL_EXECUTE_FAILED reason=phase_or_destination_invalid phase={runFlow.Phase} destination={SelectedDestination}", this);
-        }
-
-        private void LoadNetworkScene(string sceneName)
-        {
-            if (!Application.CanStreamedLevelBeLoaded(sceneName))
-            {
-                Debug.LogError($"PHS_TRAVEL_EXECUTE_FAILED reason=scene_not_in_build scene={sceneName}", this);
-                return;
-            }
-
-            sceneLoadRequested = true;
-            var status = NetworkManager.SceneManager.LoadScene(
-                sceneName,
-                UnityEngine.SceneManagement.LoadSceneMode.Single);
-            if (status != SceneEventProgressStatus.Started)
-            {
-                sceneLoadRequested = false;
-                Debug.LogError($"PHS_TRAVEL_EXECUTE_FAILED reason={status} scene={sceneName}", this);
-                return;
-            }
-
-            Debug.Log($"PHS_TRAVEL_SCENE_LOAD scene={sceneName} destination={SelectedDestination}");
         }
 
         private bool TryGetNearbyPlayer(ulong clientId, out NetworkObject playerObject)
@@ -560,7 +514,7 @@ namespace LastJumpCrew.ParkHanSol.Interaction
             {
                 shopScreenText.text = "워프 충전 중\n선택 대기";
                 debrisScreenText.text = runFlow != null && runFlow.Phase == NetworkRunPhase.Charging
-                    ? "데브리 회수존\n이동 가능"
+                    ? "데브리 회수는\n포탈 이용"
                     : "다음 워프\n준비 중";
             }
 
@@ -639,13 +593,6 @@ namespace LastJumpCrew.ParkHanSol.Interaction
             if (mapChoicesReady)
             {
                 return SelectedDestination == TravelConsoleDestination.RightMap
-                    ? debrisSelectedMaterial
-                    : idleButtonMaterial;
-            }
-
-            if (runFlow != null && runFlow.Phase == NetworkRunPhase.Charging)
-            {
-                return SelectedDestination == TravelConsoleDestination.DebrisCollection
                     ? debrisSelectedMaterial
                     : idleButtonMaterial;
             }
