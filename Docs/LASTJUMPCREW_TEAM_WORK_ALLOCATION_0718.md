@@ -3,7 +3,7 @@
 - 작성일: `2026-07-18`
 - 기준 문서: `LASTJUMPCREW_INTEGRATED_GAMEPLAY_NETWORK_SPEC_0718.md`
 - 프리팹 접수 기준: `LASTJUMPCREW_TEAM_PREFAB_INTAKE_SPEC_0718.md`
-- 상태: 팀 배포 전 검토본
+- 상태: 중간 작업 진행 / 팀 배포용 제작·납품 가이드 확정
 - 배분 원칙:
   - 기존 담당 폴더와 Notion 담당을 유지한다.
   - 팀원은 자기 담당 구역의 게임 투입 가능한 GameReady 최종 완성 Prefab을 납품한다.
@@ -19,7 +19,7 @@
 | 박한솔 | 온라인 세션, NGO 권위, Run/Ship 지속 상태, 통합 씬, Network Prefab, Validator, Build | `Assets/02. ParkHanSol_TeamLeader_Build & Multi/` |
 | 서보경 | 오브젝트 애니메이션 Prefab/Controller/Clip과 상태 표현 | `Assets/03. SeoBoGyeong_Game Economy/` |
 | 박한솔/사용자 | Network Economy 원장 통합, 가격·보상·재고·확률 최종 밸런스 승인 | `Assets/02. ParkHanSol_TeamLeader_Build & Multi/` |
-| 신규 Shop 콘텐츠 담당 | Shop/Catalog/Display 신규 제작 `[확인 필요]` | 담당 폴더 `[확인 필요]` |
+| 박한솔 | Shop/Catalog/Display 제작·통합, 가격·재고·보상 최종 승인 | `Assets/02. ParkHanSol_TeamLeader_Build & Multi/` |
 | 노석민 | 외부 사건 콘텐츠, 내부 사고 규칙, 적, 사건 SO/Pool/Outcome | `Assets/04. NohSeokMin_Game Event/` |
 | 탁현재 | 함선 공간, Room/Device 배치, Map 환경, Fire 표면, 미니게임 View, Warp 연출 | `Assets/05. TakHyunJae_Map & MiniGame/` |
 | 조한용 | 플레이어 전투/체력/넉백, 아이템 공격·사용·투척, 도구 UX | `Assets/06. JoHanYong_PlayerSystem/` |
@@ -32,7 +32,7 @@
 | 노석민 | 외부 사건·내부 사고·Fire Content·Enemy Prefab, SO/Outcome, 로컬 전체 생명주기와 Cleanup | Incident Director 명령, RNG/Budget, 서버 피해와 Network Snapshot 연결 |
 | 탁현재 | Ship Layout/Room/Device, Fire Surface Graph, Minigame View, Map Environment/Warp Prefab | Scene Parent/Anchor, Minigame Session, 서버 Seed/Result 연결 |
 | 조한용 | Player Combat/Health/Knockback Module, Held/Dropped Tool Prefab, 사용·투척·피드백·Reset | 기존 Player NetworkObject, RPC/소유권/Spawn, 서버 판정 연결 |
-| Shop 담당 `[확인 필요]` | Shop Display/Catalog Presentation Prefab, 상품 표시·선택·피드백·Reset | Economy Ledger, 승인 Catalog, 구매/배송 네트워크 연결 |
+| 박한솔 (Shop) | Shop Display/Catalog Presentation Prefab, 상품 표시·선택·피드백·Reset | Economy Ledger, 승인 Catalog, 구매/배송 네트워크 연결과 최종 Shop Scene 검증 |
 
 최종 완성품 기준:
 
@@ -273,6 +273,22 @@
 - 외부 잔류자가 Safe 인원 계산에 반영.
 - Scene Missing Reference 0.
 
+### PHS-P0-07 Shop 최종 소유
+
+담당 경계:
+
+- 박한솔이 Shop/Catalog/Display, 가격·재고·보상 승인, 구매·배송 네트워크와 최종 Shop Scene을 소유한다.
+- 서보경은 Shop 오브젝트의 Animator/Clip/상태 표현만 독립 Object Animation 번들로 납품한다.
+- 기존 `03` 경제 자산은 GUID와 이력을 보존하고, 필요한 자산은 인터페이스/어댑터로 연결한다.
+
+완성 기준:
+
+- 상품 진열 → 선택 → 구매 요청 → 성공/실패 → 품절/정리 → 다음 방문 Reset이 동작한다.
+- Catalog의 OfferId, ItemId, 가격, 재고와 Display가 일치한다.
+- ScrollRect/Dropdown은 1920×1080과 1280×720에서 끝 항목 접근, 작은 Content 고정, 닫힌 뒤 Raycast 해제를 만족한다.
+- 구매·배송·지갑 변경은 서버 권위에서만 확정한다.
+- 팀원 납품 대기 항목이 아니라 박한솔 직접 제작·통합 범위로 관리한다.
+
 ### PHS-P1-01 Validator/빌드
 
 완료:
@@ -350,7 +366,7 @@
 
 - Network Wallet/Delivery 거래 원장은 박한솔이 통합한다.
 - 가격, 보상, 재고, 확률의 최종값은 박한솔/사용자가 승인한다.
-- 신규 Shop/Catalog/Display 콘텐츠 담당은 `[확인 필요]`다.
+- 신규 Shop/Catalog/Display 콘텐츠와 최종 밸런스는 박한솔이 담당한다.
 - 기존 03 경제 자산 수정이 필요하면 변경 목록을 먼저 합의하고 별도 번들로 받는다.
 
 ### 서보경이 건드리지 않는 것
@@ -726,10 +742,11 @@ flowchart LR
 박한솔이 기다려야 하는 입력:
 
 - 서보경: Object Animation GameReady Prefab/Controller/Clip/Parameter/Reset 완성본.
-- 신규 Shop 담당 `[확인 필요]`: Shop Display/Catalog Presentation GameReady 완성본.
 - 노석민: Incident/Fire/Enemy GameReady Prefab과 Outcome/SO 완성본.
 - 탁현재: Layout/Fire Surface/MiniGame View/Map Environment GameReady 완성본.
 - 조한용: Player Combat/도구/투척 GameReady Module/Prefab 완성본.
+
+Shop Display/Catalog/Presentation은 박한솔 직접 영역이므로 팀원 납품 대기 목록에서 제외한다.
 
 즉, 각 팀원에게서는 자기 구역의 게임 투입용 GameReady 최종 완성품만 받는다. 박한솔은 완성품 내부를 고치지 않고 공용 권위, 배치, 선언 포트, Network Adapter, Registry와 검증만 맡는다.
 
@@ -753,4 +770,4 @@ flowchart LR
 
 ### 박한솔 통합
 
-`02`에서 Persistent RunSessionRoot, Run/Ship/Wallet/RNG/Incident 원장, Network 설정, Scene/Prefab 조립, Incident/MiniGame Session 권위, Registry, Validator와 2·4·8인 검증을 맡습니다. 팀원 GameReady Prefab 내부는 수정하지 않고 배치, 선언된 포트, Network Adapter와 최종 Inspector 연결만 담당합니다. 내부 미완성은 원 담당자에게 revision 반려합니다.
+`02`에서 Shop/Catalog/Display, Persistent RunSessionRoot, Run/Ship/Wallet/RNG/Incident 원장, Network 설정, Scene/Prefab 조립, Incident/MiniGame Session 권위, Registry, Validator와 2·4·8인 검증을 맡습니다. 팀원 GameReady Prefab 내부는 수정하지 않고 배치, 선언된 포트, Network Adapter와 최종 Inspector 연결만 담당합니다. 내부 미완성은 원 담당자에게 revision 반려합니다.

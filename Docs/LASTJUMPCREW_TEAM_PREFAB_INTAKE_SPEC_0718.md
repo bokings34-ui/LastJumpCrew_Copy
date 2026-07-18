@@ -43,7 +43,7 @@
 | Minigame View, 입력, 퍼즐 표현 | 탁현재 | 박한솔 | 세션 권한·결과 확정은 박한솔 |
 | Map Environment, Warp Presentation | 탁현재 | 박한솔 | Map Profile과 서버 스폰은 박한솔 |
 | Object Animation | 서보경 | 박한솔 | 최신 지시로 변경된 담당 |
-| Shop/Catalog/Display 신규 제작 | 역할 담당자 `[확인 필요]` | 박한솔 | 기존 03 경제 자산 소유와 신규 담당을 분리 |
+| Shop/Catalog/Display 신규 제작 | 박한솔 | 박한솔 | 기존 03 경제 자산은 GUID·이력을 보존하고 어댑터로 연결 |
 | 수치 밸런스 최종 승인 | 박한솔/사용자 | 박한솔 | 팀원은 제안값과 근거를 제출 |
 | 공용 UI 최종 조립 | 각 도메인 View 담당 | 박한솔 | 공용 HUD/설정 화면 직접 수정 금지 |
 | Audio/VFX | 각 도메인 표현 담당 | 박한솔 | 아래 12장 상세 배정 적용 |
@@ -53,7 +53,7 @@
 - 이 문서부터 서보경의 신규 주 담당은 `Object Animation`이다.
 - 기존 `Assets/03. SeoBoGyeong_Game Economy/` 안의 경제 자산은 소유권과 변경 이력을 보존한다.
 - 기존 경제 자산을 보유하고 있다는 이유만으로 신규 Shop/Catalog 구현까지 자동 배정하지 않는다.
-- 신규 Shop/Catalog/Display 제작 담당자는 `[확인 필요]`로 둔다.
+- 신규 Shop/Catalog/Display 제작과 최종 통합은 박한솔이 담당한다.
 - 가격, 보상, 재고, 확률 등 수치 밸런스는 담당자가 제안할 수 있으나 박한솔/사용자 승인 전에는 최종값으로 취급하지 않는다.
 
 ### 1.3 최종 완성품 납품 원칙
@@ -98,7 +98,7 @@
 | 노석민 | External/Internal Incident, Fire Content, Enemy GameReady Prefab 세트 | 사건 규칙, Outcome, 로컬 생명주기, Fire 면적/피해 규칙, 적 상태/표현, Cleanup | Incident 명령/예산/RNG, 서버 피해 확정, Network Snapshot |
 | 탁현재 | Ship Layout/Room/Device, Fire Surface Graph, Minigame View, Map Environment GameReady Prefab 세트 | 실제 공간 배치, Anchor/Socket, Collider/Layer, 퍼즐 UI·입력·Reset, Map/Warp 표현 | Scene Parent, Incident/Minigame Session Adapter, 서버 Seed/Result |
 | 조한용 | Player Combat Module과 Held/Dropped Tool GameReady Prefab 세트 | 공격/피격/넉백 감각, 도구 사용/투척, Animator/VFX/Audio, 로컬 규칙/Reset | 기존 Player NetworkObject, 소유권/Spawn/RPC, 서버 판정 Adapter |
-| Shop 담당 `[확인 필요]` | Shop Display/Catalog Presentation GameReady Prefab 세트 | 진열/선택/구매 피드백, 상품 View, Reset | Economy Ledger, Catalog 승인값, 구매/배송 Network Adapter |
+| 박한솔 (Shop) | Shop Display/Catalog Presentation GameReady Prefab 세트 | 진열/선택/구매 피드백, 상품 View, Reset | Economy Ledger, Catalog 승인값, 구매/배송 Network Adapter |
 
 ---
 
@@ -180,7 +180,7 @@ Docs/
 - `Evidence/Static`에는 Inspector, Hierarchy, Project 창, Validator 결과를 둔다.
 - `Evidence/Sandbox`에는 샌드박스 실행 캡처와 로그를 둔다.
 - `Evidence/Network`는 박한솔 통합 후 Host/Client/Late Join 검증 자료를 추가한다.
-- 대용량 동영상은 저장소 정책에 맞는 외부 링크를 Manifest에 기록한다. 저장 위치는 `[확인 필요]`다.
+- 대용량 동영상은 팀 제출 Drive에 올리고 Manifest에 링크만 기록한다.
 
 ### 3.3 실제 자산 제출 위치
 
@@ -192,6 +192,17 @@ Docs/
 | 조한용 | `Assets/06. JoHanYong_PlayerSystem/` | 기존 `01. Scene`, `02. Script`, `03. Prefab`, `04.Assets` 하위 사용 |
 
 현재 없는 신규 세부 폴더 이름은 이 문서에서 제안하되 `[확인 필요]`로 표시한다. 폴더 확정 전에는 기존 자산을 이동하지 않는다.
+
+### 3.4 Git/PR 납품 방식
+
+- 박한솔이 공지한 수신 기준 브랜치에서 담당자 작업 브랜치를 만든다.
+- 한 Bundle은 한 Draft PR로 납품한다.
+- 변경 범위는 자기 Assets 소유 폴더와 `Docs/Handoffs/<담당역할>/<BundleId>/`만 허용한다.
+- 범위 밖 Unity 자동 변경을 섞지 않으며 `git add -A`를 사용하지 않는다.
+- Sandbox 증거 완료 뒤 Manifest 상태를 `SUBMITTED`로 설정하고 리뷰를 요청한다.
+- 팀원이 Final Scene, Final Prefab, 활성 Player Prefab, Network Prefab List를 직접 병합하지 않는다.
+- PR 제목은 `[HANDOFF][담당자][BundleId] 한 줄 기능명` 형식을 사용한다.
+- `sourceCommit`에는 제출 PR의 실제 commit SHA를 기록한다.
 
 ---
 
@@ -444,7 +455,7 @@ Docs/
 | Minigame View | 탁현재 | `Assets/05. TakHyunJae_Map & MiniGame/` | 통합 Terminal/Device와 HUD |
 | Item Held/Dropped/Data | 조한용 + 박한솔 | 06 기능 제출, 02 최종 데이터 | 활성 Player, canonical Item Prefab |
 | Map Environment/Profile | 탁현재 + 박한솔 | 05 환경, 02 Profile | `PHS_Map_ver1.unity` |
-| Shop/Catalog/Display | 담당자 `[확인 필요]` | 기존 03 경제 자산 또는 확정 담당 폴더 | Exterior Shop, Shop Catalog |
+| Shop/Catalog/Display | 박한솔 | `Assets/02. ParkHanSol_TeamLeader_Build & Multi/` | Exterior Shop, Shop Catalog |
 | Object Animation | 서보경 | `Assets/03. SeoBoGyeong_Game Economy/` | 각 Device/Shop/Ship/Map 프리팹 |
 | UI | 각 도메인 View 담당 | 담당자 소유 폴더 | 공용 HUD와 통합 씬 |
 | Audio/VFX | 각 도메인 표현 담당 | 담당자 소유 폴더 | 각 로컬 Presentation Root |
@@ -972,7 +983,7 @@ View가 소비하는 값:
 
 - 사용/투척/도구 UX: 조한용
 - NGO Spawn/Ownership/Canonical Prefab: 박한솔
-- 구매 가격/재고/OfferId: Shop 담당자 `[확인 필요]`
+- 구매 가격/재고/OfferId: 박한솔
 - 지갑/보상 수치 승인: 박한솔/사용자
 
 조한용 제출:
@@ -1167,7 +1178,8 @@ View가 소비하는 값:
 
 ### 15.1 담당과 경로
 
-- 신규 Shop/Catalog/Display 담당: `[확인 필요]`
+- 신규 Shop/Catalog/Display 담당: 박한솔
+- 제작 루트: `Assets/02. ParkHanSol_TeamLeader_Build & Multi/`
 - 기존 경제 자산:
   - `Assets/03. SeoBoGyeong_Game Economy/02. Script/Economy/`
   - `Assets/03. SeoBoGyeong_Game Economy/03. Prefab/`
@@ -1179,7 +1191,7 @@ View가 소비하는 값:
   - `PHS_ShopCheckoutCounter.prefab`
   - `PHS_DebrisSellStation.prefab`
 
-담당 확정 전 기존 서보경 경제 자산을 다른 폴더로 이동하지 않는다.
+기존 서보경 경제 자산은 다른 폴더로 이동하지 않고 GUID와 이력을 보존한 채 인터페이스/어댑터로 연결한다.
 
 ### 15.2 루트 컴포넌트와 소켓
 
@@ -1368,7 +1380,7 @@ Animation Event에서 금지:
 - Incident/Fire UI 내용: 노석민
 - Minigame UI: 탁현재
 - Player/Item UI 내용: 조한용
-- Shop UI 내용: Shop 담당자 `[확인 필요]`
+- Shop UI 내용: 박한솔
 - Object Animation 연동 UI 표현: 서보경
 - 공용 HUD/설정/최종 Canvas 조립: 박한솔
 
@@ -1470,7 +1482,7 @@ Animation Event에서 금지:
 | Ship Room/Device/Map/Warp 공간 표현 | 탁현재 |
 | Player/Item/Hit/Use 표현 | 조한용 |
 | Object Animation 연동 Cue | 서보경 |
-| Shop 표현 | Shop 담당자 `[확인 필요]` |
+| Shop 표현 | 박한솔 |
 | 최종 Snapshot Binding/Pooling 정책 | 박한솔 |
 
 제출 경로:
@@ -1479,7 +1491,7 @@ Animation Event에서 금지:
 - Ship/Map/Warp: `Assets/05. TakHyunJae_Map & MiniGame/03. Prefab/`
 - Player/Item: `Assets/06. JoHanYong_PlayerSystem/03. Prefab/`
 - Object Animation Cue: `Assets/03. SeoBoGyeong_Game Economy/03. Prefab/ObjectAnimation/` `[확인 필요]`
-- Shop: 확정 담당자의 소유 Prefab 폴더 `[확인 필요]`
+- Shop: `Assets/02. ParkHanSol_TeamLeader_Build & Multi/03. Prefab/Props/Prefabs/ShopCheckoutCounter/`
 
 최종 통합:
 
@@ -1743,18 +1755,15 @@ Unity Services 프로젝트 연결이 없어 실제 Relay/Lobby 접속이 불가
 
 다음은 접수 시작 전에 박한솔/팀이 한 번 확정해야 한다.
 
-1. 신규 Shop/Catalog/Display 담당자
-2. 서보경 Object Animation의 신규 세부 폴더명
-3. 탁현재 ShipLayout/Fire/MapEnvironment/MiniGame 신규 세부 폴더명
-4. 조한용 PlayerModules/Item 신규 세부 폴더명
-5. 공용 View 인터페이스의 실제 타입명
+1. 서보경 Object Animation의 신규 세부 폴더명
+2. 탁현재 ShipLayout/Fire/MapEnvironment/MiniGame 신규 세부 폴더명
+3. 조한용 PlayerModules/Item 신규 세부 폴더명
+4. 공용 View 인터페이스의 실제 타입명
    - Incident Presentation
    - Minigame View
    - Shop Display
    - Object Animation
-6. 대용량 동영상 증거 저장 위치
-7. 팀별 Bundle 제출 브랜치/PR 방식
-8. Shop 가격·재고·보상 수치 승인 기록 형식
+5. Shop 가격·재고·보상 수치 승인 기록 형식
 
 위 항목은 폴더명과 역할의 확정 문제다. 기술 경계는 이미 다음처럼 고정한다.
 
