@@ -847,24 +847,44 @@ namespace LastJumpCrew.ParkHanSol.Editor
                     var visualSocketC = EnsureDirectChild(
                         presentationRoot,
                         "VisualSocket_03");
+                    var visualSocketD = EnsureDirectChild(
+                        presentationRoot,
+                        "VisualSocket_04");
+                    var visualSocketE = EnsureDirectChild(
+                        presentationRoot,
+                        "VisualSocket_05");
                     visualSocketA.localPosition = new Vector3(
-                        -cellSize.x * 0.2f,
+                        -cellSize.x * 0.28f,
                         0f,
-                        -cellSize.z * 0.2f);
+                        -cellSize.z * 0.28f);
                     visualSocketB.localPosition = new Vector3(
-                        cellSize.x * 0.2f,
+                        cellSize.x * 0.28f,
                         0f,
-                        cellSize.z * 0.2f);
+                        cellSize.z * 0.28f);
                     visualSocketC.localPosition = Vector3.zero;
+                    visualSocketD.localPosition = new Vector3(
+                        -cellSize.x * 0.28f,
+                        0f,
+                        cellSize.z * 0.28f);
+                    visualSocketE.localPosition = new Vector3(
+                        cellSize.x * 0.28f,
+                        0f,
+                        -cellSize.z * 0.28f);
                     visualSocketA.localRotation = Quaternion.identity;
                     visualSocketB.localRotation = Quaternion.identity;
                     visualSocketC.localRotation = Quaternion.identity;
+                    visualSocketD.localRotation = Quaternion.identity;
+                    visualSocketE.localRotation = Quaternion.identity;
                     visualSocketA.localScale = Vector3.one;
                     visualSocketB.localScale = Vector3.one;
                     visualSocketC.localScale = Vector3.one;
+                    visualSocketD.localScale = Vector3.one;
+                    visualSocketE.localScale = Vector3.one;
                     MarkAndRecord(visualSocketA);
                     MarkAndRecord(visualSocketB);
                     MarkAndRecord(visualSocketC);
+                    MarkAndRecord(visualSocketD);
+                    MarkAndRecord(visualSocketE);
 
                     var patch = EnsureSingleComponent<PHSFirePatch>(
                         patchRoot.gameObject);
@@ -890,7 +910,9 @@ namespace LastJumpCrew.ParkHanSol.Editor
                         {
                             visualSocketA,
                             visualSocketB,
-                            visualSocketC
+                            visualSocketC,
+                            visualSocketD,
+                            visualSocketE
                         });
                     SetPropertyArraySize(
                         serializedPatch,
@@ -961,23 +983,23 @@ namespace LastJumpCrew.ParkHanSol.Editor
                 serializedFireZone,
                 "maximumBurningPatches",
                 Math.Min(8, patches.Length));
-            SetInt(serializedFireZone, "initialHeat", 70);
+            SetInt(serializedFireZone, "initialHeat", 85);
             SetInt(serializedFireZone, "maximumHeat", 200);
             SetInt(
                 serializedFireZone,
                 "minimumHeatGrowthPerTick",
-                8);
+                12);
             SetInt(
                 serializedFireZone,
                 "maximumHeatGrowthPerTick",
-                18);
-            SetFloat(serializedFireZone, "spreadTickSeconds", 2.5f);
-            SetInt(serializedFireZone, "spreadAttemptsPerTick", 2);
+                22);
+            SetFloat(serializedFireZone, "spreadTickSeconds", 1.35f);
+            SetInt(serializedFireZone, "spreadAttemptsPerTick", 3);
             SetInt(
                 serializedFireZone,
                 "maximumNewIgnitionsPerTick",
-                1);
-            SetFloat(serializedFireZone, "baseSpreadChance", 0.45f);
+                2);
+            SetFloat(serializedFireZone, "baseSpreadChance", 0.52f);
             SetFloat(serializedFireZone, "damageTickSeconds", 1f);
             SetInt(serializedFireZone, "baseDamagePerTick", 2);
             SetInt(serializedFireZone, "damageableLayers", ~0);

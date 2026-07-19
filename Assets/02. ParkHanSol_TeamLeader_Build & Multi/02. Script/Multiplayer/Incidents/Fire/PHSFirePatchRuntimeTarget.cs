@@ -14,6 +14,9 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Incidents.Fire
         private const float MaximumFlicker = 1.15f;
         private const float IntensityScalePerLevel = 0.2f;
         private const float RangeScalePerLevel = 0.1f;
+        private const float PresentationGrowSeconds = 0.45f;
+        private const float MinimumCoverageScale = 1.1f;
+        private const float CoverageScalePerPatchWidth = 0.36f;
 
         [Header("Patch Contract")]
         [SerializeField] private PHSFirePatch patch;
@@ -22,6 +25,8 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Incidents.Fire
         [SerializeField] private Light fireLight;
 
         private readonly List<GameObject> presentationInstances = new();
+        private readonly Dictionary<ushort, GameObject> spreadBridgeInstances =
+            new();
         private PHSNetworkFireCoordinator owner;
         private string locationId = string.Empty;
         private GameObject presentationPrefab;
@@ -30,6 +35,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Incidents.Fire
         private float baseLightIntensity;
         private float baseLightRange;
         private float flickerOffset;
+        private float presentationActivatedAt;
         private bool lightStateCached;
 
         public PHSFirePatch Patch => patch;
@@ -79,6 +85,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Incidents.Fire
                         MinimumFlicker,
                         MaximumFlicker,
                         flicker));
+            RefreshSpreadBridges();
         }
 
         internal void Bind(
@@ -90,6 +97,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Incidents.Fire
             if (this.presentationPrefab != presentationPrefab)
             {
                 DestroyPresentationInstances();
+                DestroySpreadBridges();
             }
 
             this.owner = owner;
@@ -103,8 +111,16 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Incidents.Fire
             uint accidentInstanceId,
             PHSFireIntensity intensity)
         {
+            var wasActive = IsActive;
+            var previousAccidentInstanceId = this.accidentInstanceId;
             this.accidentInstanceId = accidentInstanceId;
             this.intensity = intensity;
+
+            if (IsActive && (!wasActive
+                || previousAccidentInstanceId != accidentInstanceId))
+            {
+                presentationActivatedAt = Time.unscaledTime;
+            }
 
             if (IsActive)
             {
@@ -118,6 +134,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Incidents.Fire
         {
             accidentInstanceId = 0U;
             intensity = PHSFireIntensity.None;
+            SetSpreadBridgesActive(false);
             ApplyPresentationState();
         }
 
@@ -190,11 +207,16 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Incidents.Fire
 
         private void ApplyPresentationState()
         {
-            var visibleCount = IsActive
-                ? Mathf.Min(
-                    (byte)intensity,
-                    presentationInstances.Count)
-                : 0;
+            var coverageScale = GetCoverageScale();
+            var intensityScale = GetIntensityPresentationScale();
+            var growScale = IsActive
+                ? Mathf.SmoothStep(
+                    0.18f,
+                    1f,
+                    Mathf.Clamp01(
+                        (Time.unscaledTime - presentationActivatedAt)
+                        / PresentationGrowSeconds))
+                : 0f;
             for (var index = 0;
                 index < presentationInstances.Count;
                 index++)
@@ -202,7 +224,16 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Incidents.Fire
                 var instance = presentationInstances[index];
                 if (instance != null)
                 {
-                    instance.SetActive(index < visibleCount);
+                    // Keep all lobes alive from Small intensity onward. Their
+                    // scale, rather than a hard 1/2/3 socket toggle, makes a
+                    // patch read as a growing flame area.
+                    instance.SetActive(IsActive);
+                    var variation = index == 1 ? 1f : 0.9f;
+                    instance.transform.localScale = Vector3.one
+                        * coverageScale
+                        * intensityScale
+                        * growScale
+                        * variation;
                 }
             }
 
@@ -217,7 +248,115 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Incidents.Fire
             {
                 fireLight.intensity = baseLightIntensity;
                 fireLight.range = baseLightRange;
+                SetSpreadBridgesActive(false);
             }
+        }
+
+        private float GetCoverageScale()
+        {
+            if (patch == null || patch.HazardBounds == null)
+            {
+                return MinimumCoverageScale;
+            }
+
+            var size = patch.HazardBounds.bounds.size;
+            return Mathf.Max(
+                MinimumCoverageScale,
+                Mathf.Max(size.x, size.z)
+                    * CoverageScalePerPatchWidth);
+        }
+
+        private float GetIntensityPresentationScale()
+        {
+            return intensity switch
+            {
+                PHSFireIntensity.Small => 0.72f,
+                PHSFireIntensity.Medium => 0.92f,
+                PHSFireIntensity.Large => 1.1f,
+                _ => 0f
+            };
+        }
+
+        private void RefreshSpreadBridges()
+        {
+            if (!IsActive
+                || owner == null
+                || patch == null
+                || presentationPrefab == null
+                || string.IsNullOrWhiteSpace(locationId))
+            {
+                SetSpreadBridgesActive(false);
+                return;
+            }
+
+            foreach (var link in patch.Neighbors)
+            {
+                var neighbor = link.Target;
+                if (neighbor == null || patch.PatchId >= neighbor.PatchId)
+                {
+                    continue;
+                }
+
+                var isNeighborBurning = owner.IsPatchBurning(
+                    locationId,
+                    neighbor.PatchId);
+                if (!spreadBridgeInstances.TryGetValue(
+                        neighbor.PatchId,
+                        out var bridge)
+                    || bridge == null)
+                {
+                    if (!isNeighborBurning)
+                    {
+                        continue;
+                    }
+
+                    bridge = Instantiate(
+                        presentationPrefab,
+                        patch.PresentationRoot,
+                        false);
+                    bridge.name =
+                        $"PHS_FireSpreadBridge_{patch.PatchId}_{neighbor.PatchId}";
+                    spreadBridgeInstances[neighbor.PatchId] = bridge;
+                }
+
+                bridge.SetActive(isNeighborBurning);
+                if (!isNeighborBurning)
+                {
+                    continue;
+                }
+
+                var start = patch.PresentationRoot.position;
+                var end = neighbor.PresentationRoot.position;
+                bridge.transform.position = Vector3.Lerp(start, end, 0.5f);
+                var bridgeScale = Mathf.Max(
+                    0.85f,
+                    Vector3.Distance(start, end) * 0.32f);
+                bridge.transform.localScale = Vector3.one * bridgeScale;
+            }
+        }
+
+        private void SetSpreadBridgesActive(bool active)
+        {
+            foreach (var bridge in spreadBridgeInstances.Values)
+            {
+                if (bridge != null)
+                {
+                    bridge.SetActive(active);
+                }
+            }
+        }
+
+        private void DestroySpreadBridges()
+        {
+            foreach (var bridge in spreadBridgeInstances.Values)
+            {
+                if (bridge != null)
+                {
+                    Destroy(bridge);
+                }
+            }
+
+            spreadBridgeInstances.Clear();
         }
 
         private void CacheLightState()

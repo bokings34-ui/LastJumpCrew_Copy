@@ -15,7 +15,9 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Incidents.Fire
     {
         private const string FireExtinguisherItemId = "fire_extinguisher";
         private const ulong FallbackScopeDomain = 0xF17E000000000000UL;
-        private const ushort NewIgnitionHeat = 25;
+        // Start new neighbors at Medium heat so a visible fire front can keep
+        // propagating instead of waiting through several Small-only ticks.
+        private const ushort NewIgnitionHeat = 60;
         private const double ContainmentRetrySeconds = 0.5d;
         private const double UnitDoubleFromUInt64 =
             1d / 9007199254740992d;
@@ -94,6 +96,32 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Incidents.Fire
         public IReadOnlyList<PHSFireZone> FireZones =>
             fireZones ?? Array.Empty<PHSFireZone>();
         public event Action ActivePatchesChanged;
+
+        public bool IsPatchBurning(
+            string locationId,
+            ushort patchId)
+        {
+            if (string.IsNullOrWhiteSpace(locationId) || patchId == 0)
+            {
+                return false;
+            }
+
+            for (var index = 0; index < activePatches.Count; index++)
+            {
+                var snapshot = activePatches[index];
+                if (snapshot.PatchId == patchId
+                    && snapshot.Intensity != PHSFireIntensity.None
+                    && string.Equals(
+                        snapshot.LocationId.ToString(),
+                        locationId,
+                        StringComparison.Ordinal))
+                {
+                    return true;
+                }
+            }
+
+            return false;
+        }
 
         private void Awake()
         {
