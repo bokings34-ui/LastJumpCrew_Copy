@@ -16,15 +16,17 @@
 
 - `Docs/LASTJUMPCREW_INTEGRATED_GAMEPLAY_NETWORK_SPEC_0718.md`
 - `Docs/PHS_SHIP_INCIDENT_SYSTEM_DETAILED_SPEC_0718.md`
+- `Docs/LASTJUMPCREW_EVENT_LOCATION_TRIGGER_HANDOFF_SPEC_0719.md`
 - `Docs/LASTJUMPCREW_TEAM_WORK_ALLOCATION_0718.md`
 
 문서 간 충돌 시 우선순위는 다음과 같다.
 
 1. 최신 사용자 지시
-2. 통합 게임플레이·네트워크 명세
-3. 함선 사고 상세 명세
-4. 본 접수 명세
-5. 기존 팀 작업 배분 문서
+2. 사건 장소·요청 트리거·콘텐츠 납품 명세 0719
+3. 통합 게임플레이·네트워크 명세
+4. 함선 사고 상세 명세
+5. 본 접수 명세
+6. 기존 팀 작업 배분 문서
 
 ---
 
@@ -37,9 +39,10 @@
 | 온라인 세션, NGO 권한, Run/Ship 영속 상태 | 박한솔 | 박한솔 | 팀원 제출 대상 아님 |
 | Player 모듈, 체력, 피격, 넉백 | 조한용 | 박한솔 | 활성 Player Prefab은 박한솔만 수정 |
 | Item 사용, 보유 표시, 드롭, 투척 UX | 조한용 | 박한솔 | 서버 소유권·스폰은 박한솔 |
-| 내부/외부 Incident 콘텐츠와 규칙 | 노석민 | 박한솔 | 스케줄러·RPC·NetworkObject 제외 |
-| Fire 규칙, 피해 계산, 표현 콘텐츠 | 노석민 | 박한솔 | 공간 배치는 탁현재와 공동 계약 |
-| 함선 Room/Device 공간, Fire Surface | 탁현재 | 박한솔 | 실제 배치는 05 담당 프리팹에서 제출 |
+| 내부/외부 Incident 콘텐츠와 요청 신호 | 노석민 | 박한솔 | Trigger는 후보 요청만. 스케줄러·RPC·NetworkObject 제외 |
+| Incident Location Foundation·최종 배치 | 박한솔 | 박한솔 | `PHSShipIncidentLayout`/Zone/Location/선택/점유/Cooldown 소유 |
+| Fire 규칙·표현 콘텐츠 | 노석민 | 박한솔 | 현재 Fire Surface/Patch는 데이터 밑작업. 로컬 생명주기는 노석민, 서버 확정·Snapshot은 박한솔 |
+| 함선 Room/Device/Anchor 공간 Prefab | 탁현재 | 박한솔 | Mesh·Collider·동선·공간 참조 완성. 최종 PHS Location Component/ID는 박한솔 |
 | Minigame View, 입력, 퍼즐 표현 | 탁현재 | 박한솔 | 세션 권한·결과 확정은 박한솔 |
 | Map Environment, Warp Presentation | 탁현재 | 박한솔 | Map Profile과 서버 스폰은 박한솔 |
 | Object Animation | 서보경 | 박한솔 | 최신 지시로 변경된 담당 |
@@ -47,6 +50,8 @@
 | 수치 밸런스 최종 승인 | 박한솔/사용자 | 박한솔 | 팀원은 제안값과 근거를 제출 |
 | 공용 UI 최종 조립 | 각 도메인 View 담당 | 박한솔 | 공용 HUD/설정 화면 직접 수정 금지 |
 | Audio/VFX | 각 도메인 표현 담당 | 박한솔 | 아래 12장 상세 배정 적용 |
+
+0719 현재 0715 Scene Foundation: Zone `4`, Location `15`, Fire Patch `22`, Request Route `10`. 수량 배치는 접수 기반 완료이며 실제 Fire 점화·확산·피해·정리 런타임 완료를 뜻하지 않는다.
 
 ### 1.2 서보경 담당 변경 처리
 
@@ -95,8 +100,8 @@
 | 담당 | 받아야 하는 최종 완성품 | 내부에서 반드시 끝낼 것 | 박한솔이 연결할 것 |
 |---|---|---|---|
 | 서보경 | Device/Object Animation GameReady Prefab 세트 | Animator, Clip, Parameter, Telegraph/Active/Resolve/Cleanup, Reset | 서버 상태 → 애니메이션 상태 Adapter와 실제 Device 배치 |
-| 노석민 | External/Internal Incident, Fire Content, Enemy GameReady Prefab 세트 | 사건 규칙, Outcome, 로컬 생명주기, Fire 면적/피해 규칙, 적 상태/표현, Cleanup | Incident 명령/예산/RNG, 서버 피해 확정, Network Snapshot |
-| 탁현재 | Ship Layout/Room/Device, Fire Surface Graph, Minigame View, Map Environment GameReady Prefab 세트 | 실제 공간 배치, Anchor/Socket, Collider/Layer, 퍼즐 UI·입력·Reset, Map/Warp 표현 | Scene Parent, Incident/Minigame Session Adapter, 서버 Seed/Result |
+| 노석민 | External/Internal Incident, Request Source, Fire Content, Enemy GameReady Prefab 세트 | 사건 규칙, 후보 요청 출력, Outcome, 로컬 생명주기, Fire/Enemy 표현, Cleanup | Location/Incident 명령/예산/RNG, 서버 피해 확정, Network Snapshot |
+| 탁현재 | Ship Room/Device/Anchor 최종 공간 Prefab, Minigame View, Map Environment GameReady Prefab 세트 | Mesh·Collider·공간 참조, Device/Surface/Ingress 위치 근거, 퍼즐 UI·입력·Reset, Map/Warp 표현 | 최종 Location Component/ID, Scene Parent, Incident/Minigame Session Adapter |
 | 조한용 | Player Combat Module과 Held/Dropped Tool GameReady Prefab 세트 | 공격/피격/넉백 감각, 도구 사용/투척, Animator/VFX/Audio, 로컬 규칙/Reset | 기존 Player NetworkObject, 소유권/Spawn/RPC, 서버 판정 Adapter |
 | 박한솔 (Shop) | Shop Display/Catalog Presentation GameReady Prefab 세트 | 진열/선택/구매 피드백, 상품 View, Reset | Economy Ledger, Catalog 승인값, 구매/배송 Network Adapter |
 
@@ -283,18 +288,18 @@ Docs/
   },
   "status": "SUBMITTED",
   "sourceCommit": "REPLACE_WITH_COMMIT_SHA",
-  "summary": "CommandRoom 화재 패치 정의와 로컬 표현 프리팹",
+  "summary": "배치된 Fire Patch 그래프를 사용하는 화재 로컬 생명주기·후보 출력 프리팹",
   "assets": [
     {
       "role": "entryPrefab",
-      "path": "Assets/04. NohSeokMin_Game Event/03_Prefab/Fire/NSM_CommandRoomFireZone.prefab",
+      "path": "Assets/04. NohSeokMin_Game Event/03_Prefab/Fire/NSM_FireContent.prefab",
       "guid": "REPLACE_WITH_META_GUID",
       "isNew": true,
       "replacesGuid": null
     },
     {
       "role": "definition",
-      "path": "Assets/04. NohSeokMin_Game Event/04_SO/Event_Internal/NSM_Fire_CommandRoom.asset",
+      "path": "Assets/04. NohSeokMin_Game Event/04_SO/Event_Internal/NSM_FireContentProfile.asset",
       "guid": "REPLACE_WITH_META_GUID",
       "isNew": true,
       "replacesGuid": null
@@ -302,25 +307,28 @@ Docs/
   ],
   "rootContract": {
     "requiredComponents": [
-      "PHSFireZone"
+      "REPLACE_WITH_ACTUAL_FIRE_CONTENT_VIEW_TYPE"
     ],
     "requiredChildren": [
-      "Patch_000",
-      "PresentationRoot"
+      "TelegraphRoot",
+      "IntensityRoots",
+      "ExtinguishRoot",
+      "CleanupRoot"
     ]
   },
   "colliderLayerContract": {
-    "hazardCollidersAreTriggers": true,
+    "usesExternalFirePatchBounds": true,
     "damageableLayersAreSerialized": true,
     "createsNewProjectLayer": false
   },
   "ids": {
-    "accidentWireId": 1,
-    "zoneId": "command_room",
-    "patchIds": [
-      0,
-      1,
-      2
+    "shipAccidentWireContentId": 1,
+    "requiredLocationKinds": [
+      "FireSurface"
+    ],
+    "requiredCapabilities": [
+      "HazardArea",
+      "FirePropagation"
     ]
   },
   "networkContract": {
@@ -330,16 +338,16 @@ Docs/
     "serverAuthorityAssumed": true
   },
   "inspectorBindings": [
-    "PHSFireZone.incidentZone",
-    "PHSFireZone.fireAccidentAnchor",
-    "PHSFireZone.patches",
-    "PHSFirePatch.neighbors"
+    "PatchGraphInput",
+    "IncidentStateInput",
+    "DamageCandidateOutput",
+    "RepairCandidateOutput"
   ],
   "tests": [
     {
       "type": "STATIC",
       "result": "PASS",
-      "evidence": "Evidence/Static/fire_zone_inspector.png"
+      "evidence": "Evidence/Static/fire_content_inspector.png"
     },
     {
       "type": "SANDBOX",
@@ -359,6 +367,8 @@ Docs/
   "knownAmbiguities": []
 }
 ```
+
+`REPLACE_WITH_ACTUAL_FIRE_CONTENT_VIEW_TYPE`과 논리 포트 이름은 제출 시 실제 컴포넌트·직렬화 필드명으로 교체한다. 팀 Fire Bundle은 박한솔 소유 `PHSFireZone/PHSFirePatch`를 복제하거나 수정하지 않는다.
 
 ---
 
@@ -411,13 +421,20 @@ Docs/
 ### 6.4 ID 원칙
 
 - `ItemId`: `lower_snake_case`, UTF-8 64 bytes 이하
-- `MapId`: 8000–8999, 현재 기준 8001–8004
-- 내부 사고 Wire ID: 1–7
-- 외부 사건 기존 범위: 720x
+- ScriptableObject ID는 4자리 숫자:
+  - 내부 Legacy `7101~7106`
+  - 외부 Scheduler `7201~7203`
+  - 환경 `7301~7304`
+  - Map `8001~8004`
+- 신규 ShipAccident 원장 `ContentId`: Wire `1~7`
 - Fire Patch ID: Zone 안에서 유일한 `ushort`
-- Zone/Anchor/Device ID: 안정적인 `lower_snake_case`
+- Zone/Location/Source/Anchor/Device ID: 안정적인 `lower_snake_case`
 - 표시 이름과 네트워크/저장 ID를 분리한다.
+- Legacy Fire SO `7101`과 ShipAccident 원장 Fire `ContentId=1`을 같은 ID로 취급하지 않는다.
+- 팀원은 새 71xx/72xx/73xx/80xx를 임의 발급하지 않고 Manifest의 `knownAmbiguities`에 요청한다.
 - ID 변경은 신규 콘텐츠 추가가 아니라 마이그레이션으로 취급하며 박한솔 승인이 필요하다.
+
+권위 기준: [Unity ScriptableObject ID 규칙](https://app.notion.com/p/391b951310868071b661d252dd0bf43f)
 
 ### 6.5 네트워크 공통 금지
 
@@ -449,9 +466,10 @@ Docs/
 | 카테고리 | 제작 담당 | 제출 루트 | 박한솔 최종 목적지 |
 |---|---|---|---|
 | Player Module | 조한용 | `Assets/06. JoHanYong_PlayerSystem/` | 활성 `PHS_CuteWhiteGhost_Player.prefab` |
-| Ship/Room/Device | 탁현재 | `Assets/05. TakHyunJae_Map & MiniGame/` | `PHS_ShipRuntime.prefab`, 통합 Map Scene |
-| Incident | 노석민 | `Assets/04. NohSeokMin_Game Event/` | `PHS_EventRuntimeSystem.prefab`, `PHS_ShipRuntime.prefab` |
-| Fire | 노석민 + 탁현재 | 04 규칙/표현, 05 공간/표면 | `PHS_ShipRuntime.prefab` |
+| Ship Room/Device/Anchor 최종 공간 Prefab | 탁현재 | `Assets/05. TakHyunJae_Map & MiniGame/` | `PHS_ShipRuntime.prefab`, 통합 Map Scene |
+| Incident Location Foundation | 박한솔 | `Assets/02. ParkHanSol_TeamLeader_Build & Multi/` | `PHSShipIncidentLayout`, 통합 Map Scene |
+| Incident/Request Source | 노석민 | `Assets/04. NohSeokMin_Game Event/` | `PHS_EventRuntimeSystem.prefab`, `PHS_ShipRuntime.prefab` |
+| Fire | 노석민 콘텐츠 + 박한솔 Location/권한 | 04 규칙/표현, 02 공간/서버 | `PHS_ShipRuntime.prefab` |
 | Minigame View | 탁현재 | `Assets/05. TakHyunJae_Map & MiniGame/` | 통합 Terminal/Device와 HUD |
 | Item Held/Dropped/Data | 조한용 + 박한솔 | 06 기능 제출, 02 최종 데이터 | 활성 Player, canonical Item Prefab |
 | Map Environment/Profile | 탁현재 + 박한솔 | 05 환경, 02 Profile | `PHS_Map_ver1.unity` |
@@ -546,53 +564,65 @@ Docs/
 
 ---
 
-## 9. Ship/Room/Device 접수 규격
+## 9. Ship/Room/Device/Anchor 공간 Prefab 접수 규격
+
+> 0719 변경: 탁현재는 Room/Device/Anchor가 실제 Mesh·Collider와 결합된 최종 공간 Prefab을 납품한다. 공용 장소 타입은 `PHSShipIncidentLayout`, `PHSShipIncidentZone`, `PHSIncidentLocationAnchor`이며 최종 Component 배치·ID·Layout 등록은 박한솔 소유다. 상세 계약은 `LASTJUMPCREW_EVENT_LOCATION_TRIGGER_HANDOFF_SPEC_0719.md`를 우선한다.
 
 ### 9.1 담당과 경로
 
-- 공간/배치: 탁현재
+- 최종 공간 Prefab: 탁현재
 - 사고 규칙 입력: 노석민
 - 오브젝트 애니메이션: 서보경
 - 제출 프리팹 제안: `Assets/05. TakHyunJae_Map & MiniGame/03. Prefab/ShipLayout/` `[확인 필요]`
 - 최종 통합: `PHS_ShipRuntime.prefab`, `PHS_Map_ver1.unity`
 
-### 9.2 루트 컴포넌트
+### 9.2 팀 제출 루트와 박한솔 통합 컴포넌트
 
-함선 사고 배치 루트:
+탁현재 팀 제출 루트:
+
+- Ship/Room 공간 View 또는 기존 Ship Layout 컴포넌트
+- 실제 Mesh, Material, 물리 Collider
+- 실제 Device Root와 Inspector 참조
+- 명시적 Anchor 후보 Transform
+- Repair/Presentation/Ingress/Surface Socket
+
+박한솔 최종 통합:
 
 - `PHSShipIncidentLayout`
-
-Zone 루트:
-
 - `PHSShipIncidentZone`
-- Zone Bounds용 `Collider`
+- `PHSIncidentLocationAnchor`
+- Zone Bounds와 최종 ID
 
-사고 발생점:
-
-- `PHSShipAccidentAnchor`
-
-실제 타입이 아직 공용 스켈레톤에 없으면 팀원이 동명 임시 타입을 만들지 않는다. 공용 타입 생성 완료를 기다리거나 순수 Transform 배치 프리팹으로 제출하고 Manifest에 예정 컴포넌트를 기록한다.
+탁현재는 PHS 공용 타입의 동명 임시 타입, 별도 Layout Registry, 사고 Scheduler를 만들지 않는다.
 
 ### 9.3 권장 계층
 
 ```text
-PHS_IncidentLayout
-  Zone_CommandRoom
-  Zone_Bridge
-  Zone_MainHall
-  Zone_AftCorridor
-  Zone_EntryWingA
-  Zone_EntryWingB
+THJ_ShipSpatialRoot
+  Room_Command
+    RoomGeometry
+    RoomPhysics
+    Devices
+      Device_Generator
+      Device_Console
+    AnchorCandidates
+      FireSurfaceCandidates
+      EnemyIngressCandidates
+      RepairAnchorCandidates
+  Room_Engine
+  Room_LifeSupport
+  Corridor_Main
 ```
 
-각 Zone에는 다음 자식 또는 참조가 필요하다.
+각 Room에는 다음 자식 또는 참조가 필요하다.
 
-- `AccidentAnchors`
-- `FireZone`
-- `RepairAnchors`
-- `AlarmPresentationRoot`
+- `AnchorCandidates`
+- `FireSurfaceCandidates`
+- `EnemyIngressCandidates`
+- `RepairAnchorCandidates`
+- `AlarmPresentationSocket`
 - 실제 Device Root
-- 인접 Zone 참조
+- 인접 Room/통로 근거
 
 Anchor는 빈 좌표가 아니라 실제 장치, 벽 패널, 파이프, 가연성 표면의 자식이어야 한다.
 
@@ -603,17 +633,17 @@ Anchor는 빈 좌표가 아니라 실제 장치, 벽 패널, 파이프, 가연�
 - Repair Interactable: `Interactable`
 - 표현/판정 보조 Trigger: `NoPlayerInteract`
 - Device 물리 Collider와 Repair Trigger를 한 Collider로 겸용하지 않는다.
-- Anchor는 Zone Bounds 안에 있어야 하며 예외는 Manifest에 사유 기록
+- Anchor 후보는 Room Bounds 안에 있어야 하며 예외는 Manifest에 사유 기록
 
 ### 9.5 ID
 
-필수:
+팀 Manifest 필수:
 
-- 고유 `zoneId`
-- 고유 `anchorId`
-- `primaryModule`
-- 지원 `accidentWireId`
-- `adjacentZones`
+- 고유 `roomSpatialId`
+- 고유 `deviceSpatialId` 또는 `anchorCandidateId`
+- 권장 `primaryModule`
+- 지원 사고/Location Kind 제안
+- 인접 Room/통로 근거
 
 권장 안정 ID:
 
@@ -622,6 +652,8 @@ Anchor는 빈 좌표가 아니라 실제 장치, 벽 패널, 파이프, 가연�
 - `oxygen_generator`
 - `gravity_generator`
 - 신규 Hull/Steam/Fire ID는 `lower_snake_case`
+
+최종 `zoneId`, `locationId`, `PHSShipIncidentLayout` 등록은 박한솔이 확정한다.
 
 ### 9.6 네트워크
 
@@ -633,8 +665,8 @@ Anchor는 빈 좌표가 아니라 실제 장치, 벽 패널, 파이프, 가연�
 
 금지:
 
-- Zone/Anchor별 `NetworkObject`
-- Zone 자체 사고 스케줄러
+- Room/Device/Anchor별 `NetworkObject`
+- Room 자체 사고 스케줄러
 - 클라이언트 사고 확정
 - NetworkVariable로 장치 상태 중복 소유
 - 런타임 `Find`로 누락 Device 연결
@@ -642,16 +674,18 @@ Anchor는 빈 좌표가 아니라 실제 장치, 벽 패널, 파이프, 가연�
 ### 9.7 필수 증거
 
 - 전체 Hierarchy
-- 각 Zone Bounds와 Anchor 위치 Gizmo
-- Zone ID, Anchor ID 중복 검사
+- 각 Room Bounds와 Anchor 후보 위치 Gizmo
+- Room/Device/Anchor 후보 ID 중복 검사
 - Anchor가 실제 Device/Wall/Pipe/Surface 아래에 있는 캡처
-- 인접 Zone의 null/self/duplicate 없음
-- 모든 Presentation Root가 Anchor 5m 이내
+- 인접 Room/통로의 null/self/duplicate 없음
+- 모든 Presentation Root가 Anchor 후보 5m 이내
 - 샌드박스에서 Activate → Repair → Deactivate가 원위치로 복귀
 
 ---
 
 ## 10. Incident 접수 규격
+
+> 0719 변경: Incident 제출물은 외부 사건, 내부 사고 표현, Fire, Enemy, Request Source 번들로 분리한다. Request Source는 `IncidentSourceId`와 `IncidentTargetId` 후보만 출력하며 직접 Spawn하지 않는다. 상세 계약은 `LASTJUMPCREW_EVENT_LOCATION_TRIGGER_HANDOFF_SPEC_0719.md`를 우선한다.
 
 ### 10.1 담당과 경로
 
@@ -680,11 +714,13 @@ Anchor는 빈 좌표가 아니라 실제 장치, 벽 패널, 파이프, 가연�
 | 6 | OxygenFailure |
 | 7 | GravityGeneratorFailure |
 
-외부 사건은 기존 720x 계약을 사용한다.
+외부 사건은 승인된 기존 `7201~7203` SO 계약만 사용한다.
 
 - 7201: EnemyScout → PowerSync → EnemySpawn
 - 7202: Meteor → Cannon → HullBreach
 - 7203: EMP → WireFix → PowerFailure
+
+내부 Legacy SO `7101~7106`은 신규 ShipAccident 원장 Wire `ContentId 1~7`과 다른 ID 공간이다. 팀 Manifest에는 사용 계층을 `legacyScriptableObjectId` 또는 `shipAccidentWireContentId`로 명시한다.
 
 ### 10.3 루트 컴포넌트와 소켓
 
@@ -755,27 +791,31 @@ Presentation Prefab 루트:
 
 ## 11. Fire 접수 규격
 
+> 0719 변경: 0715 Scene에 Fire Zone `4`, Patch `22` 데이터 그래프가 배치됐다. 이는 위치·면적·인접 관계 밑작업이며 점화·확산·피해·정리 런타임 완료가 아니다. 노석민은 그래프를 사용하는 GameReady 로컬 Fire Content와 후보 출력을 제출하고, 박한솔은 서버 검증·확정·Snapshot Network Adapter를 후속 연결한다.
+
 ### 11.1 공동 담당 분리
 
 노석민 제출:
 
-- 화재 Definition
-- 확산 확률과 순수 계산
-- 피해 규칙
-- Fire Presentation 콘텐츠
+- 화재 Definition과 수치 제안
+- 전달받은 Patch 그래프 기반 점화·인접 확산 후보 계산
+- 범위 피해·소화 후보 요청 계약
+- Telegraph/Active/Extinguish/Cleanup/Reset Fire Presentation 콘텐츠
+- Local Test Driver
 - 관련 SO
 
 탁현재 제출:
 
-- 실제 가연성 Surface
-- Zone/Anchor/Patch 공간 배치
-- Patch 인접 연결
-- Doorway를 통한 Zone 간 연결
+- Room/Device/Anchor가 실제 Mesh·Collider와 결합된 최종 함선 공간 Prefab
+- 실제 가연성 Surface와 수리 접근 동선 근거
+- Fire Surface/인접/Doorway 후보 위치표
+- PHS Location/Patch 컴포넌트나 최종 ID는 만들지 않음
 
 박한솔 통합:
 
+- `PHSShipIncidentLayout`과 4 Zone/22 Patch 데이터 소유
 - 서버 Tick
-- 화재 시작/종료 권한
+- 화재 시작/확산/피해/소화/종료 확정
 - Snapshot 복제
 - 피해 적용
 - Late Join 재구성
@@ -791,7 +831,7 @@ Presentation Prefab 루트:
 - 최종 통합:
   - `Assets/01. MainGame/02. Final_Prefab/PHS_ShipRuntime.prefab`
 
-### 11.3 루트 컴포넌트
+### 11.3 박한솔 통합 데이터 구조
 
 Zone:
 
@@ -823,6 +863,8 @@ Patch:
 - `neighbors`
 - `visualSockets`
 
+위 컴포넌트와 참조는 박한솔 소유 통합 Scene 데이터다. 노석민 Fire Content Bundle의 루트 계약은 0719 명세 8장의 `NSM_FireContent` 구조를 따르며 `PHSFireZone/PHSFirePatch/PHSFirePatchLink`를 포함하지 않는다.
+
 ### 11.4 자식 소켓
 
 ```text
@@ -839,13 +881,14 @@ Patch_<id>
 
 ### 11.5 확산·피해 제한
 
-- 한 Zone의 활성 Patch 최대 8
-- 확산 Tick 기본 2.5초
-- Tick당 최대 2개 인접 후보 시도
-- Tick당 최대 1개 신규 점화
+- 아래 수치는 팀 제안 기본값이며 박한솔/사용자 승인 전 canonical 값이 아니다.
+- 한 Zone의 활성 Patch 최대 8 제안
+- 확산 Tick 2.5초 제안
+- Tick당 최대 2개 인접 후보 시도 제안
+- Tick당 최대 1개 신규 점화 제안
 - 이웃 Link로만 확산
 - Zone 간 연결은 명시적 Doorway Link만 허용
-- 피해 Tick 1초
+- 피해 Tick 1초 제안
 - 같은 Tick에서 같은 대상 중복 피해 금지
 - Patch별 독립 NetworkObject 금지
 - VFX/Audio는 미리 배치하고 로컬로 켜고 끈다.
@@ -877,20 +920,31 @@ Patch_<id>
 
 ### 11.8 필수 증거
 
+노석민 Sandbox:
+
 - Patch 면적 Collider Gizmo
 - Patch ID와 Link 검증표
 - null/self/duplicate Link 없음
 - Cross-Zone Link는 Doorway 근거 캡처
 - 3회 실행에서 확산 경로가 완전히 동일하지 않되 최대 제한 준수
-- 범위 안 대상만 1초 주기로 피해
-- 같은 대상 중복 Collider가 있어도 Tick당 한 번만 피해
+- 범위 안 대상만 DamageCandidate 출력
+- 같은 대상 중복 Collider가 있어도 Tick당 후보 한 번
 - 강도별 Visual Socket 변화
 - 점화 → 확산 → 진압 → 연기/조명/오디오 정리
 - 8 Patch 상한과 성능 증거
 
+박한솔 통합 후 Network:
+
+- 서버 승인 확산과 피해 Tick.
+- Host/Client 활성 Patch·강도·피해 결과 일치.
+- Late Join 현재 상태 복구.
+- Patch별 NetworkObject 0.
+
 ---
 
 ## 12. Minigame View 접수 규격
+
+> 0719 확인: 미니게임 접수 방식은 변경하지 않는다. `Cannon`, `PowerSync`, `WireFix` View와 기존 Session/Reset 계약을 그대로 사용한다.
 
 ### 12.1 담당과 경로
 
@@ -1144,8 +1198,8 @@ View가 소비하는 값:
 
 ### 14.4 ID와 네트워크
 
-- Map ID 범위: 8000–8999
-- 현재 목표: 8001–8004
+- 현재 승인 Map SO ID: `8001~8004`
+- 그 밖의 80xx는 추가 승인 전 사용 금지
 - 하나의 공유 `PHS_Map_ver1`에서 Profile로 환경을 교체한다.
 
 허용:

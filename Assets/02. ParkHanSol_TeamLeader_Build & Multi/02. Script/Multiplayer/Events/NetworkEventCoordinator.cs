@@ -55,6 +55,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Events
         private readonly List<uint> effectRemovalBuffer = new();
 
         private bool setupValid;
+        private bool suppressTerminalShipImpact;
         private ulong nextEventInstanceId;
         private uint nextEffectInstanceId;
 
@@ -478,7 +479,16 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Events
             }
 
             eventScheduler?.ResetScheduler();
-            eventManager.ForceClearAll();
+            var previousSuppression = suppressTerminalShipImpact;
+            suppressTerminalShipImpact = true;
+            try
+            {
+                eventManager.ForceClearAll();
+            }
+            finally
+            {
+                suppressTerminalShipImpact = previousSuppression;
+            }
 
             Debug.Log("PHS_EVENT_TERMINATE_ALL_SERVER_COMPLETED", this);
             return true;
@@ -784,7 +794,19 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Events
                 return;
             }
 
-            ApplyTerminalShipImpact(instanceId, eventId, success);
+            if (!suppressTerminalShipImpact)
+            {
+                ApplyTerminalShipImpact(instanceId, eventId, success);
+            }
+            else
+            {
+                Debug.Log(
+                    $"PHS_EVENT_TERMINAL_IMPACT_SUPPRESSED " +
+                    $"reason=forced_termination instance={instanceId} " +
+                    $"event={eventId}",
+                    this);
+            }
+
             RemoveActiveEffectsForEvent(instanceId);
 
             var terminalState = state == EventState.Resolve || state == EventState.Fail

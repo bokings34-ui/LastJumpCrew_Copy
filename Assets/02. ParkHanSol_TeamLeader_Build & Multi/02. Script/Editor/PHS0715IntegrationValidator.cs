@@ -676,6 +676,12 @@ namespace LastJumpCrew.ParkHanSol.Editor
         private static void ValidateMapScene(ICollection<string> errors)
         {
             OpenAndValidateScene(MapScenePath, errors);
+            Require(
+                PHS0719IncidentLocationAuthoring.ValidateAuthoredScene(
+                    out var incidentLocationReason),
+                $"map_incident_location_authoring_invalid " +
+                $"reason={incidentLocationReason}",
+                errors);
             ValidateNoSceneOwnedStageClock("map", errors);
             ValidateNoSceneOwnedEconomyLedger("map", errors);
             ValidateNoSceneOwnedRandomLedger("map", errors);
@@ -1418,6 +1424,14 @@ namespace LastJumpCrew.ParkHanSol.Editor
             Require(
                 consumer.enabled,
                 "map_incident_consumer_disabled",
+                errors);
+            Require(
+                consumer.IncidentLayout != null,
+                "map_incident_layout_reference_missing",
+                errors);
+            Require(
+                !consumer.AllowLegacyLocationFallback,
+                "map_incident_legacy_location_fallback_must_be_false",
                 errors);
 
             var accidentCoordinators =

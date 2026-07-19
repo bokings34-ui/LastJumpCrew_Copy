@@ -3,7 +3,8 @@
 - 작성일: `2026-07-18`
 - 기준 문서: `LASTJUMPCREW_INTEGRATED_GAMEPLAY_NETWORK_SPEC_0718.md`
 - 프리팹 접수 기준: `LASTJUMPCREW_TEAM_PREFAB_INTAKE_SPEC_0718.md`
-- 상태: 중간 작업 진행 / 팀 배포용 제작·납품 가이드 확정
+- 사건 장소·트리거 기준: `LASTJUMPCREW_EVENT_LOCATION_TRIGGER_HANDOFF_SPEC_0719.md`
+- 상태: 중간 작업 진행 / 0715 Scene 사건 Zone `4`·Location `15`·Fire Patch `22`·Request Route `10`·내부 사고 Anchor `7` 전부 등록, 팀 런타임 납품 대기
 - 배분 원칙:
   - 기존 담당 폴더와 Notion 담당을 유지한다.
   - 팀원은 자기 담당 구역의 게임 투입 가능한 GameReady 최종 완성 Prefab을 납품한다.
@@ -16,12 +17,12 @@
 
 | 담당 | 최종 소유 | 폴더 |
 |---|---|---|
-| 박한솔 | 온라인 세션, NGO 권위, Run/Ship 지속 상태, 통합 씬, Network Prefab, Validator, Build | `Assets/02. ParkHanSol_TeamLeader_Build & Multi/` |
+| 박한솔 | 온라인 세션, NGO 권위, Run/Ship 지속 상태, Incident Location/Request Gateway, 통합 씬, Network Prefab, Validator, Build | `Assets/02. ParkHanSol_TeamLeader_Build & Multi/` |
 | 서보경 | 오브젝트 애니메이션 Prefab/Controller/Clip과 상태 표현 | `Assets/03. SeoBoGyeong_Game Economy/` |
 | 박한솔/사용자 | Network Economy 원장 통합, 가격·보상·재고·확률 최종 밸런스 승인 | `Assets/02. ParkHanSol_TeamLeader_Build & Multi/` |
 | 박한솔 | Shop/Catalog/Display 제작·통합, 가격·재고·보상 최종 승인 | `Assets/02. ParkHanSol_TeamLeader_Build & Multi/` |
-| 노석민 | 외부 사건 콘텐츠, 내부 사고 규칙, 적, 사건 SO/Pool/Outcome | `Assets/04. NohSeokMin_Game Event/` |
-| 탁현재 | 함선 공간, Room/Device 배치, Map 환경, Fire 표면, 미니게임 View, Warp 연출 | `Assets/05. TakHyunJae_Map & MiniGame/` |
+| 노석민 | 외부 사건 콘텐츠, 내부 사고 표현, Request Source 신호, Fire/Enemy 콘텐츠, 사건 SO/Pool/Outcome | `Assets/04. NohSeokMin_Game Event/` |
+| 탁현재 | 함선 Room/Device/Anchor 최종 공간 Prefab과 장소 후보 근거, Map 환경, 미니게임 View, Warp 연출 | `Assets/05. TakHyunJae_Map & MiniGame/` |
 | 조한용 | 플레이어 전투/체력/넉백, 아이템 공격·사용·투척, 도구 UX | `Assets/06. JoHanYong_PlayerSystem/` |
 
 ### 1.1 한 사람 한 구역·완성품 경계
@@ -29,8 +30,8 @@
 | 담당 | 자기 구역에서 끝내서 줄 최종 완성품 | 박한솔이 마지막에 할 일 |
 |---|---|---|
 | 서보경 | Door/Console/Generator/Repair/Shop Object Animation Prefab, Animator/Clip/Parameter, 상태 전환과 Reset | 서버 Snapshot을 상태 입력 포트에 연결하고 실제 Device 아래 배치 |
-| 노석민 | 외부 사건·내부 사고·Fire Content·Enemy Prefab, SO/Outcome, 로컬 전체 생명주기와 Cleanup | Incident Director 명령, RNG/Budget, 서버 피해와 Network Snapshot 연결 |
-| 탁현재 | Ship Layout/Room/Device, Fire Surface Graph, Minigame View, Map Environment/Warp Prefab | Scene Parent/Anchor, Minigame Session, 서버 Seed/Result 연결 |
+| 노석민 | 외부 사건·내부 사고 표현·Request Source·Fire Content·Enemy Prefab, SO/Outcome, 로컬 전체 생명주기와 Cleanup | Location Target, Incident Director 명령, RNG/Budget, 서버 피해와 Network Snapshot 연결 |
+| 탁현재 | Ship Room/Device/Anchor 최종 공간 Prefab, Minigame View, Map Environment/Warp Prefab | 최종 Location Component/ID, Scene Parent, Minigame Session, 서버 Seed/Result 연결 |
 | 조한용 | Player Combat/Health/Knockback Module, Held/Dropped Tool Prefab, 사용·투척·피드백·Reset | 기존 Player NetworkObject, RPC/소유권/Spawn, 서버 판정 연결 |
 | 박한솔 (Shop) | Shop Display/Catalog Presentation Prefab, 상품 표시·선택·피드백·Reset | Economy Ledger, 승인 Catalog, 구매/배송 네트워크 연결과 최종 Shop Scene 검증 |
 
@@ -76,16 +77,35 @@
 - 활성 Network Prefab List 하나.
 - ItemId `lower_snake_case`.
 - MapId `8000~8999`.
-- EventId:
-  - 내부 Legacy `710x`
-  - 외부 `720x`
-  - 환경 `730x`
-- Ship Accident Wire Id `1~7`.
+- ScriptableObject ID:
+  - 내부 Legacy `7101~7106`
+  - 외부 Scheduler `7201~7203`
+  - 환경 `7301~7304`
+  - Map `8001~8004`
+- 신규 Ship Accident 원장 Wire `ContentId` `1~7`.
+- Zone/Location/Source ID는 `lower_snake_case`.
 - InstanceId와 Revision 사용 규칙.
 - 9구역 / 3구역마다 Shop.
 - 제품 4인 / 기술 상한 8인.
 - Run 중 신규 참가 금지.
 - Shop Phase Gate.
+
+### 3.1 사건 ID 권위 경계
+
+권위 기준: [Unity ScriptableObject ID 규칙](https://app.notion.com/p/391b951310868071b661d252dd0bf43f)
+
+| 분류 | 승인 값 |
+|---|---|
+| 내부 Legacy SO | `7101 Fire`, `7102 EnemySpawn`, `7103 PowerOff`, `7104 OxygenLeak`, `7105 EngineBreak`, `7106 MicDestroy` |
+| 외부 Scheduler SO | `7201 EnemyScout`, `7202 MeteorAttack`, `7203 EmpAttack` |
+| 환경 SO | `7301~7304` |
+| Map SO | `8001~8004` |
+| 신규 ShipAccident 원장 | Wire `ContentId 1~7` |
+| Scene/Runtime 키 | Zone/Location/Source `lower_snake_case` |
+
+Legacy Fire SO `7101`과 신규 ShipAccident Fire `ContentId=1`은 Adapter에서 매핑한다. 같은 ID 공간으로 취급하지 않는다. 팀원은 새 숫자 ID를 임의 발급하지 않고 Manifest에 요청한다.
+
+승인된 Room/Device Anchor 후보는 사고 타입별로 여러 개 납품할 수 있다. 박한솔 Authoring/Validator가 기존 canonical ID를 보존하고 추가 AnchorId 기반 Location을 등록한다.
 
 ### 공유 인터페이스 담당
 
@@ -98,6 +118,9 @@
 | `IExternalIncidentRuntime` | 박한솔 |
 | `IExternalIncidentContent` | 노석민 |
 | `IShipAccidentRuntime` | 박한솔, 노석민 |
+| `IIncidentLocation` / `IncidentLocationQuery` | 박한솔 |
+| `IIncidentRequestSource` | 박한솔 골격, 노석민 신호 계약 검토 |
+| `IIncidentRequestGateway` | 박한솔 |
 | `IMiniGameSessionService` | 박한솔 |
 | `IMiniGameView` | 탁현재 |
 | `IIncidentConsequencePolicy` | 노석민 |
@@ -257,6 +280,34 @@
 - Legacy/New Fire 이중 발생 없음.
 - MiniGame Replay/원거리/동시 점유 거절.
 
+### PHS-P0-05A Incident Location Foundation·Request Gateway
+
+기준: `LASTJUMPCREW_EVENT_LOCATION_TRIGGER_HANDOFF_SPEC_0719.md`
+
+박한솔 소유:
+
+- `PHSShipIncidentLayout`
+- `PHSShipIncidentZone`
+- `PHSIncidentLocationAnchor`
+- `IIncidentLocation`, `IncidentLocationQuery`
+- `PHSIncidentRequestGateway`
+- `PHSIncidentRequestSourceAdapter`
+- Location ID/호환성/선택/점유/Cooldown
+- 팀 UnityEvent → 요청 Adapter 최종 연결
+
+팀 Trigger는 `IncidentSourceId`, `IncidentTargetId` 후보만 출력한다. Channel, PayloadKind, Family, ContentId, Pressure, Warp Multiplier와 서버 원장 등록은 박한솔 Route가 소유한다.
+
+0719 현재 Scene 배치:
+
+- `PHSShipIncidentLayout` 1.
+- `PHSShipIncidentZone` 4.
+- `PHSIncidentLocationAnchor` 15.
+- `PHSFireZone` 4, `PHSFirePatch` 22.
+- `PHSIncidentRequestRoute` 10.
+- 0715 통합 Scene의 Legacy Location Fallback 비활성.
+
+Fire Zone/Patch는 현재 위치·면적·인접 Link 데이터 밑작업이다. 실제 점화·확산·피해 후보·소화·Cleanup은 노석민 GameReady Fire Content, 서버 검증·확정·Snapshot은 박한솔 Network Adapter 후속이다.
+
 ### PHS-P0-06 Scene 통합
 
 작업:
@@ -384,6 +435,13 @@
 
 ### NSM-P0-01 사건 Source of Truth 정리
 
+0719 추가 계약:
+
+- 사건별 지원 `IncidentLocationKind`와 `IncidentLocationCapability` 표 제출.
+- 물리·장치 원인이 필요한 사건만 Request Source 제출.
+- Request Source는 후보 신호만 출력. 직접 Spawn/Reserve/Damage 금지.
+- Scheduled 사건용 Trigger는 만들지 않음.
+
 작업:
 
 - 7201 EnemyScout.
@@ -423,17 +481,15 @@
 
 작업:
 
-- `PHSFireZone`.
-- `PHSFirePatch`.
-- `PHSFirePatchLink`.
-- Heat/Intensity 전이.
-- 인접 확산 후보 계산.
-- 범위 피해 대상 수집 규칙.
-- 산소/문/풍향은 P1 Hook만 제공.
+- Fire Content View와 강도별 VFX/Audio.
+- 전달받은 4 Zone/22 Patch 그래프를 사용하는 점화·Telegraph/Active/Extinguish/Cleanup/Reset 로컬 생명주기.
+- Heat/Intensity, 인접 Patch 확산 후보, 범위 피해 후보, 소화 수치 제안.
+- `DamageCandidate`/`RepairCandidate` 출력과 Local Test Driver.
+- 산소/문/풍향은 P1 제안만 제공.
 
 권위 제한:
 
-- 순수 계산과 Scene Authoring Component를 제공.
+- Location Foundation, `PHSFireZone/Patch/Link`, 최종 Surface 배치, 서버 확산·피해 확정과 Snapshot은 박한솔 소유.
 - NetworkBehaviour, NetworkList, RPC, NetworkObject Spawn은 소유하지 않는다.
 
 완료 기준:
@@ -472,27 +528,29 @@
 
 작업:
 
-- 실제 Room/Device 기준 Incident Zone 제작.
-- 실제 Generator/Battery/Engine/Panel 위치에 Anchor.
-- Fire 표면 Patch와 Neighbor Link 배치.
-- Presentation Root와 Collider 연결.
+- 실제 Room/Device/Anchor가 Mesh·Collider와 결합된 최종 공간 Prefab 제공.
+- 실제 Generator/Battery/Engine/Panel 위치와 Socket 제안.
+- Fire Surface/Enemy Ingress 후보 Mesh와 동선 근거 제공.
 - Repair 접근 동선 검토.
 
 납품:
 
-- GameReady 함선 Layout Prefab.
-- Anchor ID 표.
+- GameReady 함선 Geometry Prefab.
+- Device/Surface/Ingress 후보 위치표.
 - Room ID 표.
-- Fire Patch Link 표.
+- Fire Surface 인접 근거표.
 
 완료 기준:
 
 - Generic 빈 Box Anchor 없음.
 - 실제 설비 또는 표면에 사고 발생.
 - Presentation Root 위치 오류 없음.
-- 박한솔이 Anchor/Collider/표현 자식을 추가하지 않아도 됨.
+- Room/Device/Anchor 공간 Prefab 내부 참조 null 0.
+- 최종 `PHSShipIncidentZone`, `PHSIncidentLocationAnchor`, Location ID와 `PHSShipIncidentLayout` 등록은 박한솔이 배치·확정.
 
 ### THJ-P0-02 MiniGame View
+
+0719 확인: 미니게임 접수 방식 변경 없음.
 
 작업:
 
@@ -734,7 +792,7 @@ flowchart LR
 2. Compatibility와 Session Approval 계약.
 3. Run 규칙/Active Map Commit의 남은 통합 검증.
 4. 외부 수집 Safe/Danger의 남은 통합.
-5. 팀 GameReady Incident/Fire/Enemy Prefab의 Director → Consumer 실제 실행 연결.
+5. 배치된 Incident Location Foundation·Request Gateway에 팀 GameReady Incident/Fire/Enemy Prefab을 연결하고 Fire 점화·확산·피해 Network Adapter 구현.
 6. Legacy Scheduler 차단과 MiniGame Session Authority.
 7. 팀 납품 Prefab의 최종 Scene/Inspector 조립.
 8. 4/8인과 Late Join 검증.
@@ -742,9 +800,9 @@ flowchart LR
 박한솔이 기다려야 하는 입력:
 
 - 서보경: Object Animation GameReady Prefab/Controller/Clip/Parameter/Reset 완성본.
-- 노석민: Incident/Fire/Enemy GameReady Prefab과 Outcome/SO 완성본.
-- 탁현재: Layout/Fire Surface/MiniGame View/Map Environment GameReady 완성본.
-- 조한용: Player Combat/도구/투척 GameReady Module/Prefab 완성본.
+- 노석민: Incident/Request Source/Fire/Enemy GameReady Prefab과 Outcome/SO·Location Compatibility 완성본.
+- 탁현재: Room/Device/Anchor 최종 공간 Prefab, 장소 후보 근거, 기존 방식 MiniGame View, Map Environment GameReady 완성본.
+- 조한용: Player Combat/도구/투척 GameReady Module/Prefab과 Damage/Repair 요청 계약 완성본.
 
 Shop Display/Catalog/Presentation은 박한솔 직접 영역이므로 팀원 납품 대기 목록에서 제외한다.
 
@@ -758,16 +816,16 @@ Shop Display/Catalog/Presentation은 박한솔 직접 영역이므로 팀원 납
 
 ### 노석민 전달
 
-`04`에서 외부 사건, 내부 사고 규칙, Fire, Enemy 콘텐츠를 GameReady Prefab으로 완성합니다. 720x Outcome/SO, Telegraph→Active→Resolve/Fail/Expire→Cleanup, Fire 면적·피해·소화·Reset, Enemy 상태/표현까지 Sandbox에서 완결해야 합니다. NetworkObject/NetworkBehaviour/RPC, 자동 Spawn 권위, 직접 Network Ship Damage는 넣지 않습니다. 박한솔은 Incident 명령·Budget·RNG·서버 피해와 Snapshot만 연결합니다.
+`04`에서 외부 사건, 내부 사고 표현, Fire, Enemy와 필요한 Request Source를 GameReady Prefab으로 완성합니다. Location Kind/Capability 호환표와 7201~7203 Outcome/SO, Telegraph→Active→Resolve/Fail/Cancel→Cleanup을 Sandbox에서 완결합니다. Fire는 이미 배치된 4 Zone/22 Patch 데이터 그래프를 사용해 점화·인접 확산 후보·범위 피해 후보·소화·Cleanup까지 로컬 완성합니다. Request Source는 `IncidentSourceId`와 `IncidentTargetId` 후보만 출력하며 직접 Spawn하지 않습니다. NetworkObject/NetworkBehaviour/RPC, Scheduler, 직접 피해·후속 사고는 넣지 않습니다. 상세 기준은 `LASTJUMPCREW_EVENT_LOCATION_TRIGGER_HANDOFF_SPEC_0719.md`입니다.
 
 ### 탁현재 전달
 
-`05`에서 함선 공간, 실제 사고 위치, Fire 표면, 미니게임 View, Warp/Map 연출을 GameReady Prefab으로 완성합니다. 실제 Device/Room Anchor, Fire Patch 링크, Collider/Layer, Cannon/PowerSync/WireFix 전체 UI·입력·성공/실패/취소·Reset까지 내부 연결해서 납품해주세요. NetworkObject/NetworkBehaviour/RPC, Run Phase·Scene Load·결과 확정은 넣지 않습니다. 박한솔은 Scene Parent와 Incident/Minigame Session 포트만 연결합니다.
+미니게임 접수 방식은 변경하지 않습니다. `05`에서 `Cannon/PowerSync/WireFix` 전체 UI·입력·성공/실패/취소·Reset과 Warp/Map 연출을 GameReady Prefab으로 완성합니다. 함선은 Room/Device/Anchor가 실제 Mesh·Collider와 결합된 최종 공간 Prefab으로 내고, Device/Fire Surface/Enemy Ingress 위치와 동선 근거를 함께 냅니다. 최종 `PHSShipIncidentZone`, `PHSIncidentLocationAnchor`, Location ID와 `PHSShipIncidentLayout` 등록은 박한솔이 배치합니다. NetworkObject/NetworkBehaviour/RPC, Run Phase·Scene Load·결과 확정은 넣지 않습니다.
 
 ### 조한용 전달
 
-`06`에서 Player Combat/Health/Knockback Module과 Wrench/Extinguisher/Battery Held/Dropped Tool을 GameReady Prefab으로 완성합니다. 공격·피격·넉백·사용·투척·VFX/Audio·실패·Cleanup/Reset과 ItemId/Range/Cooldown 순수 규칙까지 Sandbox에서 끝내주세요. NetworkObject/NetworkBehaviour/NetworkVariable/RPC는 넣지 않고 06 Player 복사본을 활성본으로 만들지 않습니다. 박한솔은 기존 Player NetworkObject, 소유권/Spawn/RPC와 서버 판정만 연결합니다.
+`06`에서 Player Combat/Health/Knockback Module과 Wrench/Extinguisher/Battery Held/Dropped Tool을 GameReady Prefab으로 완성합니다. 공격·피격·넉백·사용·투척·VFX/Audio·실패·Cleanup/Reset, ItemId/Range/Cooldown 순수 규칙, Damage/Repair 요청 계약까지 Sandbox에서 끝내주세요. NetworkObject/NetworkBehaviour/NetworkVariable/RPC는 넣지 않고 06 Player 복사본을 활성본으로 만들지 않습니다. 박한솔은 기존 Player NetworkObject, 소유권/Spawn/RPC와 서버 판정만 연결합니다.
 
 ### 박한솔 통합
 
-`02`에서 Shop/Catalog/Display, Persistent RunSessionRoot, Run/Ship/Wallet/RNG/Incident 원장, Network 설정, Scene/Prefab 조립, Incident/MiniGame Session 권위, Registry, Validator와 2·4·8인 검증을 맡습니다. 팀원 GameReady Prefab 내부는 수정하지 않고 배치, 선언된 포트, Network Adapter와 최종 Inspector 연결만 담당합니다. 내부 미완성은 원 담당자에게 revision 반려합니다.
+`02`에서 Shop/Catalog/Display, Persistent RunSessionRoot, Run/Ship/Wallet/RNG/Incident 원장, Incident Location Foundation, Request Gateway, Network 설정, Scene/Prefab 조립, Incident/MiniGame Session 권위, Registry, Validator와 2·4·8인 검증을 맡습니다. 팀원 GameReady Prefab 내부는 수정하지 않고 배치, 선언된 포트, Network Adapter와 최종 Inspector 연결만 담당합니다. 내부 미완성은 원 담당자에게 revision 반려합니다.
