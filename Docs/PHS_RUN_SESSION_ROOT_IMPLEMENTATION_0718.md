@@ -1,7 +1,7 @@
 # PHS Network RunSessionRoot 설계·제작 명세
 
 - 작성일: `2026-07-18`
-- 구현 단계: `Stage Clock·Economy·RNG·Incident 원장 통합 및 2 Peer P0 검증 완료 / 4·8인·Late Join 검증 대기`
+- 구현 단계: `Stage Clock·Economy·RNG·Incident 원장 2 Peer P0 검증 완료 / Scene Local Fire Runtime Compile·0719 Migration·전체 0715 Validator·Direct local Host Fire flow smoke 통과 / 원격 Client·Late Join 검증 대기 / 전체 Host clean 미주장`
 - 담당: 박한솔 / `Assets/02. ParkHanSol_TeamLeader_Build & Multi/`
 
 ## 1. 목적
@@ -35,6 +35,9 @@ flowchart TB
     I["Map PHS_ShipRuntime"] --> J["PHSNetworkShipAccidentCoordinator"]
     P["Map PHSMapIncidentCommandConsumer"] --> N
     P --> J
+    P --> Q["PHSNetworkFireCoordinator"]
+    M -->|"IncidentSpread=600 / commandId"| Q
+    Q --> R["NetworkList Fire Patch Snapshot"]
     J -->|"NetworkShipSystemsState.Instance 재바인딩"| G
     K["Map/Shop HUD·Device·Service"] -->|"Instance/Snapshot"| D
 ```
@@ -86,6 +89,7 @@ Bootstrap:
 | Run Seed/Algorithm Version | `NetworkRunRandomLedger` |
 | Incident Stage/Pressure/Command State | `NetworkRunIncidentLedger` |
 | Incident Schedule/Channel Slot | `PHSNetworkIncidentDirector` |
+| Fire Patch/Heat/Containment | Scene Local `PHSNetworkFireCoordinator` |
 
 ### 후속 구현
 
@@ -137,6 +141,8 @@ Bootstrap:
 - 첫 소비자는 `NetworkTravelConsoleController`다. 다음 구역 번호(`ClearedZoneCount + 1`)를 Scope Key로 사용한다.
 - 선택 가능 Map Profile은 `MapId` 오름차순으로 정렬한 뒤 좌/우 두 값을 뽑는다.
 - 실패 시 예전 선택값이나 로컬 Random으로 fallback하지 않고 선택값 `0/0`으로 닫는다.
+- Fire Coordinator는 `IncidentSpread=600`을 사용한다. 정상 Consumer 경로는 해당 Incident `commandId`, Consumer 없이 발견된 Fire Accident fallback은 `0xF17E000000000000 | accidentInstanceId`를 Scope Key로 사용한다.
+- Fire 성장량과 인접 Patch 선택은 이 Scope 안에서만 결정하며 `UnityEngine.Random`을 사용하지 않는다.
 
 ### Incident 계약
 
@@ -149,8 +155,16 @@ Bootstrap:
 - 점프가 승인된 `WarpArrival`, Shop, FinalShop, Clear, GameOver 전환에서는 Scene Runtime을 종료한 뒤 `TryCancelStageServer`로 남은 Pending/Claimed/Active 명령을 취소한다.
 - `PHSMapIncidentCommandConsumer`가 Map Scene의 Event Coordinator, Ship Accident Coordinator, 정렬된 `ShipRoom[]`를 사용해 명령을 실행한다.
 - 기존 자율 Scheduler는 중지하고 `NetworkEventCoordinator.startSchedulerOnServerSpawn=false`를 강제한다.
-- Fire Patch 확산과 범위 피해는 이 원장 구현에 포함되지 않은 후속 작업이다.
-- Unity Migration·Compile·Validator·Build와 Host+Client 2 Peer P0 검증을 완료했다.
+- Fire 명령은 Consumer가 Scene Local `PHSNetworkFireCoordinator`에 같은 Accident Instance와 Location을 전달한다.
+- Fire Coordinator는 `NetworkList<NetworkFirePatchSnapshot>`으로 `AccidentInstanceId, LocationId, PatchId, PHSFireIntensity, Heat, Revision, ChangedAtServerTime`을 복제한다.
+- Fire Patch 상태는 Root에 넣지 않는다. Root는 Incident 명령과 결정론 RNG만 제공하고, Scene Local Coordinator가 점화·확산·피해·소화·Containment를 소유한다.
+- Fire 구현값은 Heat `0~200`, 최초 `70`, 성장 `8~18/2.5초`, 신규 인접 Patch `25`, 최대 Patch `8`이다.
+- 피해는 서버 `1초` Tick에서 `2 × intensity × multiplier`를 Patch별 합산하고 대상별 최대 `12`로 제한하며 NonAlloc 조회를 사용한다.
+- 소화는 유효 hit당 Heat `35`, 마지막 Patch 제거 뒤 Containment `2.5초`다.
+- VFX는 Client 전용이며 산소 `0` 자동 진화는 P1 후속이다.
+- 2026-07-18 Incident 원장 기준으로 Unity Migration·Compile·Validator·Build와 Host+Client 2 Peer P0 검증을 완료했다.
+
+마지막 문장의 검증 완료 범위는 2026-07-18 Incident 원장 기준선이다. 이후 추가한 Fire Runtime은 Unity `6000.5.2f1` Compile Error `0`, 0719 Migration, 전체 0715 Validator와 Direct local Host Fire flow smoke를 통과했다. 원격 Client와 Late Join은 아직 미검증이다. 같은 Host run의 Fire 외 오류 때문에 전체 Host clean은 주장하지 않는다.
 
 ## 4. Scene 책임
 
@@ -164,6 +178,7 @@ Scene Local:
 
 - 함선 Room/Device/Accident Anchor.
 - `PHSNetworkShipAccidentCoordinator`.
+- `PHSNetworkFireCoordinator`와 Fire Patch Snapshot.
 - `PHSMapIncidentCommandConsumer`.
 - Fire/Steam/Oxygen Presentation.
 - HUD와 실제 Device View.
@@ -180,6 +195,7 @@ Scene Local:
 - Ship/Module 피해·수리.
 - 사건 결과 적용.
 - Incident Stage/Pressure/Command 예약·취소·완료.
+- Fire 점화·Heat 성장·인접 확산·범위 피해·소화·Containment.
 - 파티 크레딧·구매 Delivery 거래 커밋.
 
 클라이언트 처리:
@@ -187,8 +203,9 @@ Scene Local:
 - NetworkVariable/NetworkList Snapshot 읽기.
 - 동기화된 Server Deadline으로 Stage Remaining 표시.
 - Economy Snapshot과 Delivery 상태 표시.
+- Fire Patch Snapshot 기반 VFX/Audio 표시.
 - HUD, VFX, Audio, Device 표시.
-- Root 생성 또는 상태 직접 변경 금지.
+- Root, Fire Heat, 피해 또는 사고 상태 직접 변경 금지.
 
 Local 전용:
 
@@ -207,6 +224,8 @@ Local 전용:
 - `PHSShipDockRepairService`는 Root Singleton을 실행 시점에 조회하도록 변경.
 - Root Prefab의 기존 Behaviour 순서를 보존하고 `NetworkRunIncidentLedger`를 마지막 `NetworkBehaviour`로 추가한다.
 - Root에 `PHSNetworkIncidentDirector`를 추가하고 Map Runtime Context에 `PHSMapIncidentCommandConsumer`를 Inspector 연결한다.
+- Map Ship Runtime에 `PHSNetworkFireCoordinator`와 Fire Damage Gateway를 두고 Consumer·Ship Accident Coordinator·Fire Zone을 Inspector로 연결한다.
+- Fire Presentation Prefab은 `PHSFireZone.patchPresentationPrefab`에 연결한다. `PHSFirePatchRuntimeTarget`이 활성화 시 각 Visual Socket 아래에 지연 생성하며 Network Prefab List에는 등록하지 않는다.
 - Map Profile `8001~8004`는 Pressure `3`, External `1`, Internal `2`로 고정한다.
 - 활성 Map/Shop의 `PHS_PurchaseSessionState`에서 `SessionPurchaseStateRoot`만 제거하고 Delivery Adapter는 유지.
 - Shop 구매의 결제 차감과 Delivery Queue 등록을 단일 원장 API로 교체.
@@ -222,6 +241,23 @@ Local 전용:
 - 2 Peer에서 Incident Command `4`개, 최종 revision `14`, issued/resolved `4/4`를 검증했다.
 - Host/Client Command signature는 `6ED83C1DA5F496F4`로 일치했다.
 - `PHS_MAP_INCIDENT_SCHEDULE_PENDING_FAILED`를 포함한 Runner 금지 로그는 `0`이다.
+
+### Fire 신규 경로
+
+- `PHSNetworkFireCoordinator`와 `NetworkFirePatchSnapshot` 기반 서버 권위 구현을 추가했다.
+- 계약은 Heat `0~200`, 최초 `70`, 성장 `8~18/2.5초`, 인접 신규 Patch `25`, 최대 `8`, 피해 `1초`, 대상별 상한 `12`, 소화 hit당 `35`, Containment `2.5초`다.
+- 확산 RNG는 `IncidentSpread=600`을 사용한다. 정상 Consumer 경로는 `commandId`, fallback 경로는 `0xF17E000000000000 | accidentInstanceId` Scope를 사용한다.
+- Client는 Snapshot 기반 Presentation만 실행한다.
+- 임시 Presentation Asset과 0715 Scene Inspector 참조를 Authoring/Migration으로 적용했고 0719 `ValidateAuthoredScene ok=True reason=none`을 확인했다.
+- Unity `6000.5.2f1` Compile Error `0`을 확인했다.
+- Migration은 `PHS_0719_INCIDENT_LOCATION_MIGRATION_OK zones=4 locations=15 fireZones=4 firePatches=22 routes=10`으로 통과했다.
+- 전체 Validator는 `PHS_0715_VALIDATE_OK errors=0 scenes=3 prefabs=11`로 통과했다.
+- Direct local Host 0715 smoke에서 점화 `instance=2`, Location `fire_surface_room_a`, Patch `103`, Heat `70/Medium`, Target/Light 활성화를 확인했다.
+- 자연 확산은 Patch `4`, Heat `176/122/68/39`, 활성 Target/Light `4`, 재생 Particle `28`이었다.
+- 범위 피해는 Host Health `100 -> 0`이었다.
+- 소화/Containment는 Hit `24`, Patch `0`, failure 없음, 최종 Fire `0`, Accident `2=false`였다.
+- 원격 Client Snapshot 동기화와 Late Join 현재 화재 복구는 아직 미검증이다.
+- 같은 Host run에서 Fire 외 `ParkHanSolGameSettingsController MissingReference` 1건과 EMP terminal impact `power_already_off` 2건이 관찰됐으므로 전체 Host clean은 주장하지 않는다.
 
 ### 기존 검증 기준선
 
@@ -281,7 +317,8 @@ Host Runtime:
 - 실제 원격 Client Late Join.
 - 4/8인.
 - Debris/Shop RNG 소비자와 Compatibility.
-- Fire Patch 확산·범위 피해.
+- 새 Fire Runtime의 원격 Client Snapshot 동기화와 Late Join 복구.
+- Fire smoke와 같은 Host run에서 관찰된 Fire 외 Settings `MissingReference` 1건과 EMP `power_already_off` 2건의 원인 분리.
 - Late Join Stage Clock/Economy 복원과 짧은 Timeout 단발 시나리오.
 - 미수령 배송품의 Map → Shop → Map 재구축과 실제 수령 확정.
 
@@ -313,6 +350,6 @@ Host Runtime:
 
 1. Debris/Shop RNG 소비자 연결.
 2. Compatibility Gate/Protocol/Catalog Hash 연결.
-3. Fire Patch 확산·범위 피해 구현.
+3. Fire Runtime 원격 Client Snapshot 동기화와 Late Join 복구 검증.
 4. 팀 GameReady Incident/Fire/Enemy Prefab 수령 후 실제 콘텐츠 자동 실행 검증.
 5. 4/8인과 Late Join 검증.

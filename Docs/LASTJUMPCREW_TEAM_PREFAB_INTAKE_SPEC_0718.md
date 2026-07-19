@@ -41,7 +41,7 @@
 | Item 사용, 보유 표시, 드롭, 투척 UX | 조한용 | 박한솔 | 서버 소유권·스폰은 박한솔 |
 | 내부/외부 Incident 콘텐츠와 요청 신호 | 노석민 | 박한솔 | Trigger는 후보 요청만. 스케줄러·RPC·NetworkObject 제외 |
 | Incident Location Foundation·최종 배치 | 박한솔 | 박한솔 | `PHSShipIncidentLayout`/Zone/Location/선택/점유/Cooldown 소유 |
-| Fire 규칙·표현 콘텐츠 | 노석민 | 박한솔 | 현재 Fire Surface/Patch는 데이터 밑작업. 로컬 생명주기는 노석민, 서버 확정·Snapshot은 박한솔 |
+| Fire Presentation 콘텐츠 | 노석민 | 박한솔 | 노석민은 VFX/Audio/Telegraph/Cleanup/Reset만 납품. 점화·확산·피해·소화 상태와 Snapshot은 박한솔 |
 | 함선 Room/Device/Anchor 공간 Prefab | 탁현재 | 박한솔 | Mesh·Collider·동선·공간 참조 완성. 최종 PHS Location Component/ID는 박한솔 |
 | Minigame View, 입력, 퍼즐 표현 | 탁현재 | 박한솔 | 세션 권한·결과 확정은 박한솔 |
 | Map Environment, Warp Presentation | 탁현재 | 박한솔 | Map Profile과 서버 스폰은 박한솔 |
@@ -51,7 +51,9 @@
 | 공용 UI 최종 조립 | 각 도메인 View 담당 | 박한솔 | 공용 HUD/설정 화면 직접 수정 금지 |
 | Audio/VFX | 각 도메인 표현 담당 | 박한솔 | 아래 12장 상세 배정 적용 |
 
-0719 현재 0715 Scene Foundation: Zone `4`, Location `15`, Fire Patch `22`, Request Route `10`. 수량 배치는 접수 기반 완료이며 실제 Fire 점화·확산·피해·정리 런타임 완료를 뜻하지 않는다.
+0719 현재 0715 Scene Foundation: Zone `4`, Location `15`, Fire Patch `22`, Request Route `10`. 수량 배치는 접수 기반 완료다.
+
+0720 PR #52 중간 작업에서는 Fire 서버 Coordinator와 Patch Runtime Target을 연결했다. Unity `6000.5.2f1` Compile Error `0`, 0719 Migration, 전체 0715 Validator와 Direct local Host 0715 Fire flow smoke를 통과했다. 원격 Client와 Late Join은 아직 미검증이며, 같은 Host run의 Fire 외 오류 때문에 전체 Host clean은 주장하지 않는다.
 
 ### 1.2 서보경 담당 변경 처리
 
@@ -75,6 +77,8 @@
 - 재사용과 Pool 복귀 동작
 - 실제 완성품을 그대로 실행하는 Sandbox Scene 또는 Test Driver
 - `.meta`, Manifest, README, 변경 내역, 정적/실행 증거
+
+Fire는 11장의 Presentation-only 특수 계약을 우선한다. Fire의 “전체 로컬 동작”은 표현 재생과 Cleanup/Reset을 뜻하며 점화·확산·피해·소화 상태 판정을 뜻하지 않는다.
 
 팀원이 비워둘 수 있는 것은 Manifest에 선언된 외부 통합 포트뿐이다.
 
@@ -100,7 +104,7 @@
 | 담당 | 받아야 하는 최종 완성품 | 내부에서 반드시 끝낼 것 | 박한솔이 연결할 것 |
 |---|---|---|---|
 | 서보경 | Device/Object Animation GameReady Prefab 세트 | Animator, Clip, Parameter, Telegraph/Active/Resolve/Cleanup, Reset | 서버 상태 → 애니메이션 상태 Adapter와 실제 Device 배치 |
-| 노석민 | External/Internal Incident, Request Source, Fire Content, Enemy GameReady Prefab 세트 | 사건 규칙, 후보 요청 출력, Outcome, 로컬 생명주기, Fire/Enemy 표현, Cleanup | Location/Incident 명령/예산/RNG, 서버 피해 확정, Network Snapshot |
+| 노석민 | External/Internal Incident, Request Source, Fire Presentation, Enemy GameReady Prefab 세트 | 사건 규칙, 후보 요청 출력, Outcome, Enemy 로컬 생명주기, Fire VFX/Audio/Telegraph/Cleanup/Reset | Location/Incident 명령/예산/RNG, Fire 점화·확산·피해·소화 상태, Network Snapshot |
 | 탁현재 | Ship Room/Device/Anchor 최종 공간 Prefab, Minigame View, Map Environment GameReady Prefab 세트 | Mesh·Collider·공간 참조, Device/Surface/Ingress 위치 근거, 퍼즐 UI·입력·Reset, Map/Warp 표현 | 최종 Location Component/ID, Scene Parent, Incident/Minigame Session Adapter |
 | 조한용 | Player Combat Module과 Held/Dropped Tool GameReady Prefab 세트 | 공격/피격/넉백 감각, 도구 사용/투척, Animator/VFX/Audio, 로컬 규칙/Reset | 기존 Player NetworkObject, 소유권/Spawn/RPC, 서버 판정 Adapter |
 | 박한솔 (Shop) | Shop Display/Catalog Presentation GameReady Prefab 세트 | 진열/선택/구매 피드백, 상품 View, Reset | Economy Ledger, Catalog 승인값, 구매/배송 Network Adapter |
@@ -288,18 +292,11 @@ Docs/
   },
   "status": "SUBMITTED",
   "sourceCommit": "REPLACE_WITH_COMMIT_SHA",
-  "summary": "배치된 Fire Patch 그래프를 사용하는 화재 로컬 생명주기·후보 출력 프리팹",
+  "summary": "PHSFireZone.patchPresentationPrefab에 연결하는 Presentation-only 프리팹",
   "assets": [
     {
-      "role": "entryPrefab",
-      "path": "Assets/04. NohSeokMin_Game Event/03_Prefab/Fire/NSM_FireContent.prefab",
-      "guid": "REPLACE_WITH_META_GUID",
-      "isNew": true,
-      "replacesGuid": null
-    },
-    {
-      "role": "definition",
-      "path": "Assets/04. NohSeokMin_Game Event/04_SO/Event_Internal/NSM_FireContentProfile.asset",
+      "role": "presentationPrefab",
+      "path": "Assets/04. NohSeokMin_Game Event/03_Prefab/Fire/NSM_FirePatchPresentation.prefab",
       "guid": "REPLACE_WITH_META_GUID",
       "isNew": true,
       "replacesGuid": null
@@ -312,13 +309,14 @@ Docs/
     "requiredChildren": [
       "TelegraphRoot",
       "IntensityRoots",
+      "AudioRoot",
       "ExtinguishRoot",
       "CleanupRoot"
     ]
   },
   "colliderLayerContract": {
-    "usesExternalFirePatchBounds": true,
-    "damageableLayersAreSerialized": true,
+    "containsCollider": false,
+    "usesExternalFirePatchRuntimeTarget": true,
     "createsNewProjectLayer": false
   },
   "ids": {
@@ -333,15 +331,14 @@ Docs/
   },
   "networkContract": {
     "containsNetworkObject": false,
+    "containsNetworkBehaviour": false,
     "containsRpc": false,
     "containsNetworkVariable": false,
-    "serverAuthorityAssumed": true
+    "containsIgnitionSpreadDamageSuppressionState": false,
+    "serverAuthorityProvidedByParkHanSol": true
   },
   "inspectorBindings": [
-    "PatchGraphInput",
-    "IncidentStateInput",
-    "DamageCandidateOutput",
-    "RepairCandidateOutput"
+    "PHSFireZone.patchPresentationPrefab"
   ],
   "tests": [
     {
@@ -352,7 +349,7 @@ Docs/
     {
       "type": "SANDBOX",
       "result": "PASS",
-      "evidence": "Evidence/Sandbox/fire_spread_sequence.md"
+      "evidence": "Evidence/Sandbox/fire_presentation_lifecycle.md"
     },
     {
       "type": "NETWORK",
@@ -361,14 +358,16 @@ Docs/
     }
   ],
   "integrationTargets": [
-    "Assets/01. MainGame/02. Final_Prefab/PHS_ShipRuntime.prefab",
-    "Assets/01. MainGame/02. Final_Prefab/Integration0716/PHS_EventRuntimeSystem.prefab"
+    "Assets/02. ParkHanSol_TeamLeader_Build & Multi/01. Scene/0715/PHS_Map_ver1.unity",
+    "Assets/01. MainGame/02. Final_Prefab/PHS_ShipRuntime.prefab"
   ],
-  "knownAmbiguities": []
+  "knownAmbiguities": [
+    "PHSFirePatchRuntimeTarget currently controls whole-instance active state and active socket count only; explicit Intensity/Lifecycle component adapter is pending integration"
+  ]
 }
 ```
 
-`REPLACE_WITH_ACTUAL_FIRE_CONTENT_VIEW_TYPE`과 논리 포트 이름은 제출 시 실제 컴포넌트·직렬화 필드명으로 교체한다. 팀 Fire Bundle은 박한솔 소유 `PHSFireZone/PHSFirePatch`를 복제하거나 수정하지 않는다.
+`REPLACE_WITH_ACTUAL_FIRE_CONTENT_VIEW_TYPE`은 제출 시 실제 Presentation-only 컴포넌트명으로 교체한다. 현재 박한솔 Runtime과 직접 연결되는 Inspector 참조는 `PHSFireZone.patchPresentationPrefab` 하나다. 숫자 강도/Lifecycle 컴포넌트 포트는 아직 연결되지 않았으므로 Manifest의 `knownAmbiguities`에 유지한다. 팀 Fire Bundle은 박한솔 소유 `PHSFireZone/PHSFirePatch/PHSFirePatchRuntimeTarget`을 복제하거나 수정하지 않는다. Fire Prefab에는 점화·확산·피해·소화 판정이나 상태 저장 로직을 넣지 않는다.
 
 ---
 
@@ -469,7 +468,7 @@ Docs/
 | Ship Room/Device/Anchor 최종 공간 Prefab | 탁현재 | `Assets/05. TakHyunJae_Map & MiniGame/` | `PHS_ShipRuntime.prefab`, 통합 Map Scene |
 | Incident Location Foundation | 박한솔 | `Assets/02. ParkHanSol_TeamLeader_Build & Multi/` | `PHSShipIncidentLayout`, 통합 Map Scene |
 | Incident/Request Source | 노석민 | `Assets/04. NohSeokMin_Game Event/` | `PHS_EventRuntimeSystem.prefab`, `PHS_ShipRuntime.prefab` |
-| Fire | 노석민 콘텐츠 + 박한솔 Location/권한 | 04 규칙/표현, 02 공간/서버 | `PHS_ShipRuntime.prefab` |
+| Fire | 노석민 Presentation + 박한솔 Location/권한 | 04 VFX/Audio/표현, 02 공간/서버 | Scene Patch Socket, `PHS_ShipRuntime.prefab` |
 | Minigame View | 탁현재 | `Assets/05. TakHyunJae_Map & MiniGame/` | 통합 Terminal/Device와 HUD |
 | Item Held/Dropped/Data | 조한용 + 박한솔 | 06 기능 제출, 02 최종 데이터 | 활성 Player, canonical Item Prefab |
 | Map Environment/Profile | 탁현재 + 박한솔 | 05 환경, 02 Profile | `PHS_Map_ver1.unity` |
@@ -791,18 +790,27 @@ Presentation Prefab 루트:
 
 ## 11. Fire 접수 규격
 
-> 0719 변경: 0715 Scene에 Fire Zone `4`, Patch `22` 데이터 그래프가 배치됐다. 이는 위치·면적·인접 관계 밑작업이며 점화·확산·피해·정리 런타임 완료가 아니다. 노석민은 그래프를 사용하는 GameReady 로컬 Fire Content와 후보 출력을 제출하고, 박한솔은 서버 검증·확정·Snapshot Network Adapter를 후속 연결한다.
+> 0720 변경: 0715 Scene에 Fire Zone `4`, Patch `22` 그래프가 배치됐고 서버 Coordinator/Runtime Target 밑작업을 진행 중이다. 노석민의 최종 Fire 납품 범위는 Presentation-only VFX/Audio/Telegraph/Cleanup/Reset Bundle이다. 박한솔이 Scene Patch Socket에 교체 조립하고 모든 점화·확산·피해·소화 상태와 Snapshot을 소유한다.
 
 ### 11.1 공동 담당 분리
 
 노석민 제출:
 
-- 화재 Definition과 수치 제안
-- 전달받은 Patch 그래프 기반 점화·인접 확산 후보 계산
-- 범위 피해·소화 후보 요청 계약
-- Telegraph/Active/Extinguish/Cleanup/Reset Fire Presentation 콘텐츠
+- Telegraph/Active/Extinguish/Cleanup/Reset Fire VFX
+- 강도별 Flame/Smoke/Ember 표현
+- 시작·확산·진압·종료 Audio
+- 재생 종료 후 모든 Particle/Audio/Light가 초기 상태로 돌아가는 Reset
 - Local Test Driver
-- 관련 SO
+- 사용 Material/Texture/AudioClip과 `.meta`
+
+노석민 Fire Prefab 금지:
+
+- `NetworkObject`, `NetworkBehaviour`, RPC, `NetworkVariable`
+- 점화 위치 선택과 랜덤 확산
+- 피해 Tick, 피해 대상 검색과 Damage 적용
+- 소화 거리·도구·명중 검증
+- 활성 Patch, 강도, 사고 종료 상태 저장
+- `PHSFireZone`, `PHSFirePatch`, `PHSFirePatchRuntimeTarget` 복제
 
 탁현재 제출:
 
@@ -814,22 +822,28 @@ Presentation Prefab 루트:
 박한솔 통합:
 
 - `PHSShipIncidentLayout`과 4 Zone/22 Patch 데이터 소유
+- Scene Patch의 `Interactable` Layer와 `PHSFirePatchRuntimeTarget`
+- Patch별 면적 Collider, Visual Socket, Light 연결
+- Presentation Prefab 교체 조립
 - 서버 Tick
 - 화재 시작/확산/피해/소화/종료 확정
 - Snapshot 복제
 - 피해 적용
 - Late Join 재구성
 
-### 11.2 제출 경로
+### 11.2 제출 경로와 조립 경계
 
-- 규칙/표현:
-  - `Assets/04. NohSeokMin_Game Event/02_Script/Fire/`
+- Presentation:
   - `Assets/04. NohSeokMin_Game Event/03_Prefab/Fire/`
   - `Assets/04. NohSeokMin_Game Event/07_UseAssets/FireEffect/`
+  - 무상태 로컬 View Script가 필요할 때만 `Assets/04. NohSeokMin_Game Event/02_Script/Fire/Presentation/`
 - 공간/표면 제안:
   - `Assets/05. TakHyunJae_Map & MiniGame/03. Prefab/ShipLayout/Fire/` `[확인 필요]`
 - 최종 통합:
+  - `Assets/02. ParkHanSol_TeamLeader_Build & Multi/01. Scene/0715/PHS_Map_ver1.unity`
   - `Assets/01. MainGame/02. Final_Prefab/PHS_ShipRuntime.prefab`
+
+박한솔은 노석민 최종 Presentation Prefab을 `PHSFireZone.patchPresentationPrefab` 참조로 교체한다. `PHSFirePatchRuntimeTarget`은 Patch가 처음 활성화될 때 이 Prefab을 각 `visualSockets` 아래에 동적으로 생성하고, 강도 `1~3`을 활성 인스턴스 수 `1~3`으로 표현한다. 현재 Runtime Target은 Prefab 내부 컴포넌트에 숫자 강도나 Telegraph/Extinguish 상태를 직접 전달하지 않는다.
 
 ### 11.3 박한솔 통합 데이터 구조
 
@@ -841,6 +855,9 @@ Patch:
 
 - `PHSFirePatch`
 - 면적을 가진 `Collider`
+- `PHSFirePatchRuntimeTarget`
+- `Interactable` Layer
+- Patch Light
 
 연결:
 
@@ -863,35 +880,49 @@ Patch:
 - `neighbors`
 - `visualSockets`
 
-위 컴포넌트와 참조는 박한솔 소유 통합 Scene 데이터다. 노석민 Fire Content Bundle의 루트 계약은 0719 명세 8장의 `NSM_FireContent` 구조를 따르며 `PHSFireZone/PHSFirePatch/PHSFirePatchLink`를 포함하지 않는다.
+서버:
+
+- `PHSNetworkFireCoordinator`
+- `PHSFireAreaDamageGateway`
+- `NetworkFirePatchSnapshot`
+
+Authoring 출력 Presentation:
+
+- 경로: `Assets/02. ParkHanSol_TeamLeader_Build & Multi/03. Prefab/Props/Prefabs/IncidentFire/PHS_FirePatchPresentation.prefab`
+- Root: `PHS_FirePatchPresentation`
+- Particle 자식 `FlameCore`
+- Particle 자식 `FlameOuter`
+- Particle 자식 `Smoke`
+- Particle 자식 `Embers`
+
+이 임시 Prefab은 `PHS0720FirePresentationAuthoring` 실행 시 생성되는 서버/Socket 연결 확인용 출력물이다. Authoring 실행 전에는 Asset과 Scene 참조가 존재한다고 간주하지 않는다. 위 RuntimeTarget, Light, Layer, Coordinator와 Scene 참조는 박한솔 소유 통합 데이터다. 노석민 Bundle은 이를 포함하지 않는다.
 
 ### 11.4 자식 소켓
 
 ```text
-Patch_<id>
-  HazardBounds
+Patch_<id> [HazardBounds BoxCollider / PHSFirePatch / PHSFirePatchRuntimeTarget]
   PresentationRoot
-    FlameSockets
-    SmokeSockets
-    LightRoot
-    AudioRoot
+    VisualSocket_01
+    VisualSocket_02
+    VisualSocket_03
+    FireLight
 ```
 
-불꽃은 한 점에만 붙이지 않는다. 하나의 Patch는 실제 면적 Collider와 여러 Visual Socket을 가진다. 강도에 따라 켜지는 Socket 조합을 달리하여 같은 점에서만 반복 재생되는 모습을 피한다.
+불꽃은 한 점에만 붙이지 않는다. 하나의 Patch는 실제 면적 Collider와 Visual Socket 3개를 가진다. 현재 Runtime Target은 강도 `1~3`에 따라 앞쪽 Socket의 활성 Prefab 인스턴스 수를 `1~3`으로 바꾼다.
 
 ### 11.5 확산·피해 제한
 
-- 아래 수치는 팀 제안 기본값이며 박한솔/사용자 승인 전 canonical 값이 아니다.
-- 한 Zone의 활성 Patch 최대 8 제안
-- 확산 Tick 2.5초 제안
-- Tick당 최대 2개 인접 후보 시도 제안
-- Tick당 최대 1개 신규 점화 제안
+- 아래 수치는 현재 Authoring/Runtime에 직렬화된 P0 기준값이다. 밸런스 변경은 박한솔/사용자 승인 대상이며 노석민 Presentation Prefab은 이 제한을 계산하거나 저장하지 않는다.
+- 한 Zone의 활성 Patch 최대 8
+- 확산 Tick 2.5초
+- Tick당 최대 2개 인접 후보 시도
+- Tick당 최대 1개 신규 점화
 - 이웃 Link로만 확산
-- Zone 간 연결은 명시적 Doorway Link만 허용
-- 피해 Tick 1초 제안
+- 현재 `PHSFireZone`은 같은 Zone Patch Link만 허용하며 Cross-Zone/Doorway Link는 미구현
+- 피해 Tick 1초
 - 같은 Tick에서 같은 대상 중복 피해 금지
 - Patch별 독립 NetworkObject 금지
-- VFX/Audio는 미리 배치하고 로컬로 켜고 끈다.
+- VFX/Audio Prefab은 `PHSFirePatchRuntimeTarget`이 Visual Socket 아래에 지연 생성하고 로컬로 켜고 끈다.
 
 ### 11.6 Collider/Layer
 
@@ -906,32 +937,31 @@ Patch_<id>
 
 허용:
 
-- Zone/Patch ID와 인접 그래프
-- 순수 확산 가중치 계산
-- Snapshot 기반 로컬 강도 표현
+- 서버 Snapshot/강도 입력을 받아 로컬 표현 갱신
+- VFX/Audio/Light의 로컬 재생과 Cleanup/Reset
+- 입력 상태를 서버로 되돌려 보내지 않는 무상태 View
 
 금지:
 
 - Patch `NetworkObject`
+- 팀 Fire Prefab의 `NetworkBehaviour`
 - Patch별 RPC
 - 클라이언트 랜덤 확산
 - 클라이언트 피해 적용
+- 팀 Fire Prefab의 점화·확산·피해·소화 상태 로직
 - VFX 시작 시 서버 상태 변경
 
 ### 11.8 필수 증거
 
 노석민 Sandbox:
 
-- Patch 면적 Collider Gizmo
-- Patch ID와 Link 검증표
-- null/self/duplicate Link 없음
-- Cross-Zone Link는 Doorway 근거 캡처
-- 3회 실행에서 확산 경로가 완전히 동일하지 않되 최대 제한 준수
-- 범위 안 대상만 DamageCandidate 출력
-- 같은 대상 중복 Collider가 있어도 Tick당 후보 한 번
-- 강도별 Visual Socket 변화
-- 점화 → 확산 → 진압 → 연기/조명/오디오 정리
-- 8 Patch 상한과 성능 증거
+- Presentation Prefab에 `NetworkObject`/`NetworkBehaviour`/Collider 없음
+- Local Test Driver에서 Telegraph → Active → Extinguish → Cleanup → Reset 표현 재생
+- 외부 강도 `1~3` 입력에 대응하는 표현 차이
+- 실제 점화·확산·진압 상태를 만들지 않고 외부 상태 입력으로 연기/조명/오디오 정리
+- 같은 Prefab을 연속 3회 재생해 Particle/Audio/Light 누적 없음
+
+현재 Runtime Target은 Prefab 전체 활성/비활성과 Socket 인스턴스 수만 제어한다. Telegraph/Extinguish/Cleanup을 명시적으로 호출하는 Presentation 포트는 미구현이므로 최종 접수 전 Adapter 계약을 추가 검증한다.
 
 박한솔 통합 후 Network:
 
@@ -939,6 +969,24 @@ Patch_<id>
 - Host/Client 활성 Patch·강도·피해 결과 일치.
 - Late Join 현재 상태 복구.
 - Patch별 NetworkObject 0.
+
+### 11.9 PR #52 0720 중간 검증 상태
+
+구현, 부분 정적 검증, 전체 통합/런타임 검증을 구분한다.
+
+| 검증 | 상태 |
+|---|---|
+| Unity Compile Error 0 | 확인 |
+| 0719 `ValidateAuthoredScene` | 통과: `ok=True reason=none` |
+| 0719 Migration | 통과: `zones=4 locations=15 fireZones=4 firePatches=22 routes=10` |
+| 전체 `PHS0715IntegrationValidator` | 통과: `errors=0 scenes=3 prefabs=11` |
+| Direct local Host 점화·확산·피해·소화·Containment | 통과 |
+| 원격 Client Snapshot 동기화 | 미검증 |
+| Late Join 현재 화재 복원 | 미검증 |
+
+Direct local Host 증거는 점화 `instance=2`, `fire_surface_room_a`, Patch `103`, Heat `70/Medium`, Target/Light 활성화다. 자연 확산은 Patch `4`, Heat `176/122/68/39`, 활성 Target/Light `4`, 재생 Particle `28`이었다. 범위 피해는 Host Health `100 -> 0`, 소화/Containment는 Hit `24`, Patch `0`, failure 없음, 최종 Fire `0`, Accident `2=false`였다.
+
+이 결과는 Fire flow 통과 증거다. 같은 run에서 Fire 외 `ParkHanSolGameSettingsController MissingReference` 1건과 EMP terminal impact `power_already_off` 2건이 관찰됐으므로 전체 Host clean으로 읽지 않는다.
 
 ---
 
@@ -1705,8 +1753,12 @@ Unity Services 프로젝트 연결이 없어 실제 Relay/Lobby 접속이 불가
 - [ ] Zone/Anchor/Patch ID 유일
 - [ ] Anchor와 실제 Device/Surface 연결
 - [ ] Fire Patch 면적 Collider
+- [ ] Fire Patch Root가 `Interactable` Layer
+- [ ] `PHSFirePatchRuntimeTarget`, Light, Presentation Socket 연결
+- [ ] 팀 Fire Prefab은 Presentation-only이며 상태/판정 로직 없음
+- [ ] 팀 Fire Prefab에 `NetworkObject`/`NetworkBehaviour` 없음
 - [ ] Link null/self/duplicate 없음
-- [ ] Cross-Zone Link는 Doorway만
+- [ ] 현재 Cross-Zone Link 없음. Doorway 확산은 별도 P1 계약 후 추가
 - [ ] Legacy Fire Spawn이 최종 권한으로 활성화되지 않음
 - [ ] Patch별 NetworkObject 없음
 
@@ -1795,6 +1847,7 @@ Unity Services 프로젝트 연결이 없어 실제 Relay/Lobby 접속이 불가
 | Incident Definition | 통합 Event/Incident Registry |
 | Incident Presentation | `PHS_EventRuntimeSystem.prefab` 또는 실제 Ship Anchor |
 | Fire Zone/Patch | `PHS_ShipRuntime.prefab`의 실제 Zone/Surface |
+| Fire Presentation | `PHSFireZone.patchPresentationPrefab` 참조 교체. Runtime Target이 각 Patch `visualSockets` 아래에 지연 생성 |
 | Minigame View | 실제 Device/Terminal과 공용 HUD |
 | Map Environment | 공유 `PHS_Map_ver1`의 Profile 선택 Root |
 | Shop Display | `PHS_ExteriorShopScene.unity`의 Display Slot |

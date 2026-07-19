@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using LastJumpCrew.ParkHanSol.Multiplayer.Events;
+using LastJumpCrew.ParkHanSol.Multiplayer.Incidents.Fire;
 using LastJumpCrew.ParkHanSol.Multiplayer.Incidents.Locations;
 using LastJumpCrew.ParkHanSol.Multiplayer.ShipAccidents;
 using SM;
@@ -22,6 +23,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
         [Header("Inspector References")]
         [SerializeField] private NetworkEventCoordinator eventCoordinator;
         [SerializeField] private PHSNetworkShipAccidentCoordinator accidentCoordinator;
+        [SerializeField] private PHSNetworkFireCoordinator fireCoordinator;
         [SerializeField] private PHSShipIncidentLayout incidentLayout;
         [Tooltip("Migration only. Disable after the authored Incident Layout is wired.")]
         [SerializeField] private bool allowLegacyLocationFallback = true;
@@ -91,6 +93,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
 
         public NetworkEventCoordinator EventCoordinator => eventCoordinator;
         public PHSNetworkShipAccidentCoordinator AccidentCoordinator => accidentCoordinator;
+        public PHSNetworkFireCoordinator FireCoordinator => fireCoordinator;
         public PHSShipIncidentLayout IncidentLayout => incidentLayout;
         public bool AllowLegacyLocationFallback => allowLegacyLocationFallback;
         public int ConfiguredRoomCount => configuredRooms.Length;
@@ -637,15 +640,35 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
                     $"PHS_INCIDENT_CONSUME_FAILED command={claimed.CommandId} " +
                     $"reason=activate_failed detail={activateReason}",
                     this);
-                CancelClaimedCommand(claimed.CommandId, "activate_failed");
-                if (pendingAccidentCompletions.TryGetValue(
-                        runtimeInstanceId,
-                        out var failedActivationCompletion))
-                {
-                    ProcessAccidentCompletion(
-                        runtimeInstanceId,
-                        failedActivationCompletion);
-                }
+                RollbackSpawnedAccident(
+                    runtimeInstanceId,
+                    accidentId,
+                    claimed.CommandId,
+                    "activate_failed",
+                    "incident_activate_failed");
+
+                return;
+            }
+
+            if (accidentId == PHSShipAccidentId.Fire
+                && !fireCoordinator.TryStartFireServer(
+                    runtimeInstanceId,
+                    managedLocationId,
+                    claimed.CommandId,
+                    out var fireStartReason))
+            {
+                Debug.LogError(
+                    $"PHS_INCIDENT_CONSUME_FAILED " +
+                    $"command={claimed.CommandId} " +
+                    $"reason=fire_runtime_start_failed " +
+                    $"detail={fireStartReason}",
+                    this);
+                RollbackSpawnedAccident(
+                    runtimeInstanceId,
+                    accidentId,
+                    claimed.CommandId,
+                    "fire_runtime_start_failed",
+                    "fire_runtime_start_failed");
 
                 return;
             }
@@ -768,6 +791,17 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
 
             if (completion.IsCancellation)
             {
+                if (incidentLedger.TryGetCommand(
+                        commandId,
+                        out var command)
+                    && command.IsTerminal)
+                {
+                    TryFinalizeEventRuntimeTracking(
+                        runtimeInstanceId,
+                        commandId);
+                    return;
+                }
+
                 if (!incidentLedger.TryCancelCommandServer(
                         commandId,
                         completion.CancellationCause,
@@ -833,6 +867,55 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
                 new AccidentCompletion(accidentId, false, cause));
         }
 
+        private void RollbackSpawnedAccident(
+            uint runtimeInstanceId,
+            PHSShipAccidentId accidentId,
+            ulong commandId,
+            string cancellationCause,
+            string runtimeCause)
+        {
+            var previousTerminationCause =
+                accidentTerminationCause;
+            var terminated = false;
+            string terminateReason = null;
+            accidentTerminationCause = cancellationCause;
+            try
+            {
+                terminated =
+                    accidentCoordinator.TryTerminateAccidentServer(
+                        runtimeInstanceId,
+                        runtimeCause,
+                        out terminateReason);
+            }
+            catch (Exception exception)
+            {
+                terminateReason =
+                    $"exception:{exception.GetType().Name}";
+                Debug.LogException(exception, this);
+            }
+            finally
+            {
+                accidentTerminationCause =
+                    previousTerminationCause;
+            }
+
+            if (terminated)
+            {
+                return;
+            }
+
+            Debug.LogError(
+                $"PHS_INCIDENT_RUNTIME_ROLLBACK_FAILED " +
+                $"command={commandId} " +
+                $"runtime={runtimeInstanceId} " +
+                $"reason={terminateReason ?? "unknown"}",
+                this);
+            CancelAccidentCommand(
+                runtimeInstanceId,
+                accidentId,
+                cancellationCause);
+        }
+
         private void ProcessAccidentCompletion(
             uint runtimeInstanceId,
             AccidentCompletion completion)
@@ -848,6 +931,17 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
 
             if (completion.IsCancellation)
             {
+                if (incidentLedger.TryGetCommand(
+                        commandId,
+                        out var command)
+                    && command.IsTerminal)
+                {
+                    TryFinalizeAccidentRuntimeTracking(
+                        runtimeInstanceId,
+                        commandId);
+                    return;
+                }
+
                 if (!incidentLedger.TryCancelCommandServer(
                         commandId,
                         completion.CancellationCause,
@@ -1476,6 +1570,25 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
             {
                 Debug.LogError(
                     "PHS_INCIDENT_CONSUMER_SETUP_FAILED reason=accident_coordinator_missing",
+                    this);
+                return false;
+            }
+
+            if (fireCoordinator == null)
+            {
+                Debug.LogError(
+                    "PHS_INCIDENT_CONSUMER_SETUP_FAILED " +
+                    "reason=fire_coordinator_missing",
+                    this);
+                return false;
+            }
+
+            if (accidentCoordinator.FireCoordinator
+                != fireCoordinator)
+            {
+                Debug.LogError(
+                    "PHS_INCIDENT_CONSUMER_SETUP_FAILED " +
+                    "reason=fire_coordinator_mismatch",
                     this);
                 return false;
             }

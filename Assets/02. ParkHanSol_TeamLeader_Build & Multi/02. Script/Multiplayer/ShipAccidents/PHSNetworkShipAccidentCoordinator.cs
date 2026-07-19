@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using Unity.Collections;
 using Unity.Netcode;
 using UnityEngine;
+using LastJumpCrew.ParkHanSol.Multiplayer.Incidents.Fire;
 
 namespace LastJumpCrew.ParkHanSol.Multiplayer.ShipAccidents
 {
@@ -15,6 +16,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.ShipAccidents
         [Header("Inspector References")]
         [SerializeField] private PHSShipAccidentCatalogSO accidentCatalog;
         [SerializeField] private PHSShipAccidentAnchor[] anchors = Array.Empty<PHSShipAccidentAnchor>();
+        [SerializeField] private PHSNetworkFireCoordinator fireCoordinator;
 
         [Header("Server Validation")]
         [SerializeField, Min(0.1f)] private float maximumRepairDistance = 3f;
@@ -42,6 +44,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.ShipAccidents
         private NetworkShipSystemsState shipSystemsState;
 
         public int ActiveAccidentCount => activeAccidents.Count;
+        public PHSNetworkFireCoordinator FireCoordinator => fireCoordinator;
         public static PHSNetworkShipAccidentCoordinator Instance { get; private set; }
         public event Action ActiveAccidentsChanged;
         public event Action<uint, PHSShipAccidentId, bool> ServerAccidentFinished;
@@ -335,6 +338,121 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.ShipAccidents
             return true;
         }
 
+        public bool TryResolveAccidentServer(
+            uint accidentInstanceId,
+            string cause,
+            out string reason)
+        {
+            if (!CanExecuteServerCommand(out reason))
+            {
+                return false;
+            }
+
+            if (string.IsNullOrWhiteSpace(cause))
+            {
+                reason = "resolve_cause_required";
+                return false;
+            }
+
+            var index = FindSnapshotIndex(accidentInstanceId);
+            if (index < 0)
+            {
+                reason =
+                    $"accident_missing:{accidentInstanceId}";
+                return false;
+            }
+
+            var snapshot = activeAccidents[index];
+            if (!accidentCatalog.TryResolve(
+                    snapshot.AccidentId,
+                    out var definition))
+            {
+                reason =
+                    $"definition_missing:{snapshot.AccidentId}";
+                return false;
+            }
+
+            if (!TryApplyModuleRepairOnResolve(
+                    definition,
+                    out var repairReason))
+            {
+                reason =
+                    $"module_repair_failed:{repairReason}";
+                return false;
+            }
+
+            activeAccidents.RemoveAt(index);
+            nextDamageTimes.Remove(accidentInstanceId);
+            Debug.Log(
+                $"PHS_SHIP_ACCIDENT_RESOLVED " +
+                $"instance={accidentInstanceId} " +
+                $"accident={definition.Id} cause={cause} " +
+                $"shipHp={shipSystemsState.CurrentShipHp}",
+                this);
+            NotifyServerAccidentFinished(
+                accidentInstanceId,
+                definition.Id,
+                true);
+            reason = null;
+            return true;
+        }
+
+        public bool TryTerminateAccidentServer(
+            uint accidentInstanceId,
+            string cause,
+            out string reason)
+        {
+            if (!CanExecuteServerCommand(out reason))
+            {
+                return false;
+            }
+
+            if (string.IsNullOrWhiteSpace(cause))
+            {
+                reason = "termination_cause_required";
+                return false;
+            }
+
+            var index = FindSnapshotIndex(accidentInstanceId);
+            if (index < 0)
+            {
+                reason =
+                    $"accident_missing:{accidentInstanceId}";
+                return false;
+            }
+
+            var snapshot = activeAccidents[index];
+            activeAccidents.RemoveAt(index);
+            nextDamageTimes.Remove(accidentInstanceId);
+            Debug.Log(
+                $"PHS_SHIP_ACCIDENT_TERMINATED " +
+                $"instance={accidentInstanceId} " +
+                $"accident={snapshot.AccidentId} cause={cause}",
+                this);
+            NotifyServerAccidentFinished(
+                accidentInstanceId,
+                snapshot.AccidentId,
+                false);
+            reason = null;
+            return true;
+        }
+
+        public bool IsDirectRepairAllowed(uint accidentInstanceId)
+        {
+            if (accidentInstanceId == 0U)
+            {
+                return false;
+            }
+
+            var index = FindSnapshotIndex(accidentInstanceId);
+            return index >= 0
+                && (activeAccidents[index].AccidentId
+                        != PHSShipAccidentId.Fire
+                    || fireCoordinator == null
+                    || !fireCoordinator.IsManagingAccident(
+                        accidentInstanceId));
+        }
+
         public bool TrySetMaintenancePausedServer(bool paused, out string reason)
         {
             if (!CanExecuteServerCommand(out reason))
@@ -487,6 +605,16 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.ShipAccidents
                 return false;
             }
 
+            if (!IsDirectRepairAllowed(accidentInstanceId))
+            {
+                Debug.LogWarning(
+                    $"PHS_SHIP_ACCIDENT_REPAIR_REJECTED " +
+                    $"reason=specialized_fire_suppression_required " +
+                    $"instance={accidentInstanceId}",
+                    this);
+                return false;
+            }
+
             var index = FindSnapshotIndex(accidentInstanceId);
             if (index < 0)
             {
@@ -588,6 +716,14 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.ShipAccidents
                 }
 
                 nextDamageTimes[snapshot.InstanceId] = currentTime + definition.DamageIntervalSeconds;
+                if (snapshot.AccidentId == PHSShipAccidentId.Fire
+                    && fireCoordinator != null
+                    && fireCoordinator.IsManagingAccident(snapshot.InstanceId)
+                    && !fireCoordinator.HasBurningPatch(snapshot.InstanceId))
+                {
+                    continue;
+                }
+
                 if (!TryApplyPeriodicImpact(definition, out var reason))
                 {
                     Debug.LogError($"PHS_SHIP_ACCIDENT_TICK_FAILED reason={reason} instance={snapshot.InstanceId}", this);

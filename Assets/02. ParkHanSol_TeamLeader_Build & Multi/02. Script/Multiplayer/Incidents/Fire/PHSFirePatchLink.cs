@@ -16,9 +16,9 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Incidents.Fire
         public byte MinimumSourceIntensity => minimumSourceIntensity;
         public bool OneWay => oneWay;
 
-        public bool IsEligible(byte sourceIntensity)
+        public bool IsEligible(PHSFireIntensity sourceIntensity)
         {
-            return sourceIntensity >= minimumSourceIntensity;
+            return (byte)sourceIntensity >= minimumSourceIntensity;
         }
 
         public bool TryValidate(
@@ -51,9 +51,13 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Incidents.Fire
                 return false;
             }
 
-            if (minimumSourceIntensity == 0)
+            if (minimumSourceIntensity == 0
+                || minimumSourceIntensity
+                    > (byte)PHSFireIntensity.Large)
             {
-                reason = "minimum_source_intensity_invalid:0";
+                reason =
+                    $"minimum_source_intensity_invalid:" +
+                    $"{minimumSourceIntensity}";
                 return false;
             }
 

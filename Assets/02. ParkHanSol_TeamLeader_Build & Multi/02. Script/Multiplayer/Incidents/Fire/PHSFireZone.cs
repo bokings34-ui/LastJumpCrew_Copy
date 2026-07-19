@@ -9,6 +9,8 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Incidents.Fire
     [DisallowMultipleComponent]
     public sealed class PHSFireZone : MonoBehaviour, IFireSpreadSurface
     {
+        private const float BoundsContainmentEpsilon = 0.01f;
+
         [Header("Incident References")]
         [SerializeField] private PHSShipIncidentZone incidentZone;
         [SerializeField] private PHSShipAccidentAnchor fireAccidentAnchor;
@@ -17,13 +19,26 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Incidents.Fire
 
         [Header("Spread Limits")]
         [SerializeField] private byte maximumBurningPatches = 8;
+        [SerializeField] private ushort initialHeat = 70;
+        [SerializeField] private ushort maximumHeat =
+            PHSFireIntensityUtility.MaximumHeat;
+        [SerializeField] private ushort minimumHeatGrowthPerTick = 8;
+        [SerializeField] private ushort maximumHeatGrowthPerTick = 18;
         [SerializeField, Min(0.01f)] private float spreadTickSeconds = 2.5f;
         [SerializeField] private byte spreadAttemptsPerTick = 2;
         [SerializeField] private byte maximumNewIgnitionsPerTick = 1;
         [SerializeField, Range(0f, 1f)] private float baseSpreadChance = 0.45f;
 
         [Header("Damage Collection")]
+        [SerializeField, Min(0.05f)] private float damageTickSeconds = 1f;
+        [SerializeField, Min(1)] private int baseDamagePerTick = 2;
         [SerializeField] private LayerMask damageableLayers = ~0;
+
+        [Header("Suppression And Presentation")]
+        [SerializeField] private ushort suppressionHeatPerHit = 35;
+        [SerializeField, Min(0.1f)]
+        private float containmentGraceSeconds = 2.5f;
+        [SerializeField] private GameObject patchPresentationPrefab;
 
         private readonly Dictionary<ushort, PHSFirePatch> patchesById = new();
         private readonly List<PHSFirePatch> orderedPatches = new();
@@ -34,11 +49,23 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Incidents.Fire
         public IReadOnlyList<PHSFirePatch> Patches =>
             patches ?? Array.Empty<PHSFirePatch>();
         public byte MaximumBurningPatches => maximumBurningPatches;
+        public ushort InitialHeat => initialHeat;
+        public ushort MaximumHeat => maximumHeat;
+        public ushort MinimumHeatGrowthPerTick =>
+            minimumHeatGrowthPerTick;
+        public ushort MaximumHeatGrowthPerTick =>
+            maximumHeatGrowthPerTick;
         public float SpreadTickSeconds => spreadTickSeconds;
         public byte SpreadAttemptsPerTick => spreadAttemptsPerTick;
         public byte MaximumNewIgnitionsPerTick => maximumNewIgnitionsPerTick;
         public float BaseSpreadChance => baseSpreadChance;
+        public float DamageTickSeconds => damageTickSeconds;
+        public int BaseDamagePerTick => baseDamagePerTick;
+        public ushort SuppressionHeatPerHit => suppressionHeatPerHit;
+        public float ContainmentGraceSeconds =>
+            containmentGraceSeconds;
         public LayerMask DamageableLayers => damageableLayers;
+        public GameObject PatchPresentationPrefab => patchPresentationPrefab;
         public bool IsReady => setupValid;
 
         private void OnValidate()
@@ -83,7 +110,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Incidents.Fire
 
         public bool TryCopySpreadCandidates(
             ushort sourcePatchId,
-            byte sourceIntensity,
+            PHSFireIntensity sourceIntensity,
             List<PHSFirePatchLink> destination,
             out string reason)
         {
@@ -180,6 +207,31 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Incidents.Fire
                 return false;
             }
 
+            if (initialHeat == 0
+                || maximumHeat == 0
+                || initialHeat > maximumHeat
+                || maximumHeat
+                    > PHSFireIntensityUtility.MaximumHeat)
+            {
+                reason =
+                    $"fire_heat_invalid:{initialHeat}:{maximumHeat}";
+                return false;
+            }
+
+            if (minimumHeatGrowthPerTick == 0
+                || maximumHeatGrowthPerTick == 0
+                || minimumHeatGrowthPerTick
+                    > maximumHeatGrowthPerTick
+                || maximumHeatGrowthPerTick > maximumHeat)
+            {
+                reason =
+                    $"fire_heat_growth_invalid:" +
+                    $"{minimumHeatGrowthPerTick}:" +
+                    $"{maximumHeatGrowthPerTick}:" +
+                    $"{maximumHeat}";
+                return false;
+            }
+
             if (spreadTickSeconds <= 0f
                 || float.IsNaN(spreadTickSeconds)
                 || float.IsInfinity(spreadTickSeconds))
@@ -212,9 +264,48 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Incidents.Fire
                 return false;
             }
 
+            if (damageTickSeconds <= 0f
+                || float.IsNaN(damageTickSeconds)
+                || float.IsInfinity(damageTickSeconds))
+            {
+                reason = $"damage_tick_seconds_invalid:{damageTickSeconds}";
+                return false;
+            }
+
+            if (baseDamagePerTick <= 0)
+            {
+                reason = $"base_damage_per_tick_invalid:{baseDamagePerTick}";
+                return false;
+            }
+
             if (damageableLayers.value == 0)
             {
                 reason = "damageable_layers_empty";
+                return false;
+            }
+
+            if (suppressionHeatPerHit == 0
+                || suppressionHeatPerHit > maximumHeat)
+            {
+                reason =
+                    $"suppression_heat_per_hit_invalid:" +
+                    $"{suppressionHeatPerHit}";
+                return false;
+            }
+
+            if (containmentGraceSeconds <= 0f
+                || float.IsNaN(containmentGraceSeconds)
+                || float.IsInfinity(containmentGraceSeconds))
+            {
+                reason =
+                    $"containment_grace_seconds_invalid:" +
+                    $"{containmentGraceSeconds}";
+                return false;
+            }
+
+            if (patchPresentationPrefab == null)
+            {
+                reason = "patch_presentation_prefab_missing";
                 return false;
             }
 
@@ -232,7 +323,49 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Incidents.Fire
                     return false;
                 }
 
-                if (!incidentZone.Contains(patch.HazardBounds.bounds.center))
+                var runtimeTargets =
+                    patch.GetComponents<PHSFirePatchRuntimeTarget>();
+                if (runtimeTargets.Length != 1)
+                {
+                    reason =
+                        $"patch_runtime_target_invalid:{patch.PatchId}:" +
+                        $"count={runtimeTargets.Length}";
+                    return false;
+                }
+
+                var runtimeTarget = runtimeTargets[0];
+                if (runtimeTarget.Patch != patch)
+                {
+                    reason =
+                        $"patch_runtime_target_invalid:{patch.PatchId}:" +
+                        "patch_mismatch";
+                    return false;
+                }
+
+                if (runtimeTarget.FireLight == null
+                    || (runtimeTarget.FireLight.transform
+                            != patch.PresentationRoot
+                        && !runtimeTarget.FireLight.transform.IsChildOf(
+                            patch.PresentationRoot)))
+                {
+                    reason =
+                        $"patch_runtime_target_invalid:{patch.PatchId}:" +
+                        "light_outside_presentation_root";
+                    return false;
+                }
+
+                if (!runtimeTarget.TryValidate(out var targetReason))
+                {
+                    reason =
+                        $"patch_runtime_target_invalid:{patch.PatchId}:" +
+                        $"{targetReason}";
+                    return false;
+                }
+
+                if (!ContainsWorldBounds(
+                        incidentZone.ZoneBounds.bounds,
+                        patch.HazardBounds.bounds,
+                        BoundsContainmentEpsilon))
                 {
                     reason =
                         $"patch_outside_incident_zone:{patch.PatchId}:{incidentZone.ZoneId}";
@@ -289,6 +422,45 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Incidents.Fire
             }
 
             return false;
+        }
+
+        private static bool ContainsWorldBounds(
+            Bounds container,
+            Bounds candidate,
+            float epsilon)
+        {
+            var allowedMinimum =
+                container.min - (Vector3.one * epsilon);
+            var allowedMaximum =
+                container.max + (Vector3.one * epsilon);
+            var candidateMinimum = candidate.min;
+            var candidateMaximum = candidate.max;
+            for (var cornerIndex = 0;
+                 cornerIndex < 8;
+                 cornerIndex++)
+            {
+                var corner = new Vector3(
+                    (cornerIndex & 1) == 0
+                        ? candidateMinimum.x
+                        : candidateMaximum.x,
+                    (cornerIndex & 2) == 0
+                        ? candidateMinimum.y
+                        : candidateMaximum.y,
+                    (cornerIndex & 4) == 0
+                        ? candidateMinimum.z
+                        : candidateMaximum.z);
+                if (corner.x < allowedMinimum.x
+                    || corner.x > allowedMaximum.x
+                    || corner.y < allowedMinimum.y
+                    || corner.y > allowedMaximum.y
+                    || corner.z < allowedMinimum.z
+                    || corner.z > allowedMaximum.z)
+                {
+                    return false;
+                }
+            }
+
+            return true;
         }
     }
 }

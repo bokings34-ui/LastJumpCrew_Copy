@@ -2,7 +2,7 @@
 
 - 문서 버전: `0.1`
 - 작성일: `2026-07-18`
-- 상태: 설계 동결 / Incident 원장·Director·Map Consumer 포함 P0 핵심 생명주기 2인 검증 완료
+- 상태: 설계 동결 / Incident 원장 P0 2인 검증 완료 / 신형 Fire Runtime Compile·0719 Migration·전체 0715 Validator·Direct local Host Fire flow smoke 통과 / 원격 Client·Late Join 검증 대기 / 같은 Host run의 Fire 외 오류로 전체 Host clean 미주장
 - 제품 기준: 4인 협동 밸런스, 기술 상한 8인
 - 활성 통합 기준 씬:
   - `0715/ParkHanSol_LobbyScene`
@@ -327,7 +327,11 @@ flowchart TB
     H --> I["External Event Coordinator"]
     H --> J["Ship Accident Coordinator"]
     I --> K["Scene Event Content Adapter"]
-    J --> L["Scene Accident Anchors / Fire Zones"]
+    J --> L["Scene Accident Anchors"]
+    J --> O["PHSNetworkFireCoordinator"]
+    O --> P["NetworkList Fire Patch Snapshot"]
+    O --> Q["Client-only Fire Presentation"]
+    G -->|"IncidentSpread=600 / commandId"| O
     D --> M["PHSMapRuntimeContext"]
     M --> N["Environment / Debris / Portals / HUD"]
     E --> N
@@ -355,6 +359,8 @@ Lobby에서 Server가 Spawn하고 Run 종료까지 유지한다.
 - 첫 RNG 소비자인 Map Choice는 다른 사건 Stream 소비와 분리했다.
 - `NetworkRunIncidentLedger`와 `PHSNetworkIncidentDirector`를 Persistent Root에 구현했다.
 - Map Scene의 `PHSMapIncidentCommandConsumer`가 원장 명령을 외부 Event Coordinator와 내부 Ship Accident Coordinator에 연결한다.
+- Fire 명령은 같은 Consumer가 Scene Local `PHSNetworkFireCoordinator`에 Accident Instance와 Location을 전달한다.
+- Fire Coordinator는 Root의 결정론 RNG를 `IncidentSpread=600`으로 소비한다. 정상 Consumer 경로는 `commandId` Scope를 사용하고, Consumer 없이 발견된 Fire Accident fallback은 `0xF17E000000000000 | accidentInstanceId` Scope를 사용한다. Patch 상태 자체는 Scene Local에서 소유한다.
 - Incident Pressure `3`, 외부 활성 `1`, 내부 활성 `2`를 기본 계약으로 고정했다.
 - Incident와 Compatibility 중 Compatibility만 후속 범위다. Incident 신규 경로는 Unity Migration·Compile·Validator·Build와 2 Peer P0 검증을 완료했다.
 - 상세 구현·검증: `Docs/PHS_RUN_SESSION_ROOT_IMPLEMENTATION_0718.md`.
@@ -447,7 +453,10 @@ P0 기본 한도:
 - 점프가 승인된 `WarpArrival`, Shop, FinalShop, Clear, GameOver 전환에서는 Scene Runtime을 종료한 뒤 남은 Stage 명령과 Pressure를 명시 취소한다.
 - Scene의 `PHSMapIncidentCommandConsumer`가 외부 사건과 내부 사고를 실행하고 Runtime 종료를 원장에 완료 보고한다.
 - Unity Migration·Compile·Validator·Build를 통과했고 2 Peer에서 Command `4`, revision `14`, issued/resolved `4/4`, exact signature 복제를 확인했다.
-- Fire Patch 면적 확산·범위 피해는 이 원장 작업에 포함되지 않았으며 P1 후속이다.
+- 위 검증 기록은 2026-07-18 Incident 원장 기준선이다.
+- 이후 `PHSNetworkFireCoordinator`와 `NetworkList<NetworkFirePatchSnapshot>` 기반 면적 확산·범위 피해·소화를 구현했다.
+- 새 Fire 변경분은 Unity `6000.5.2f1` Compile Error `0`, 0719 Migration, 전체 0715 Validator와 Direct local Host 0715 점화→확산→범위 피해→소화→Containment smoke까지 통과했다. 원격 Client와 Late Join은 아직 미검증이다.
+- 같은 Host run에서 Fire 외 `ParkHanSolGameSettingsController MissingReference` 1건과 EMP terminal impact `power_already_off` 2건이 관찰됐으므로 전체 Host clean은 주장하지 않는다.
 
 ## 6. 도메인별 상세 계약
 
@@ -607,18 +616,28 @@ External Event는 경고와 대응 미니게임을 가진다.
 
 P0 고정:
 
-- Fire Incident 최대 `1`.
+- Fire Incident 동시 `1`은 밸런스 목표다. 현재 원장/Coordinator는 ContentId별 동시 `1`을 별도 강제하지 않으므로 정책 Gate와 검증이 남아 있다.
 - Zone당 활성 Patch 최대 `8`.
 - Patch는 점이 아니라 면적 Collider.
 - 인접 링크로만 확산.
 - Spread Tick `2.5초`.
-- Tick당 확산 시도 `2`.
 - Tick당 신규 점화 최대 `1`.
+- 최초 Patch Heat `70`.
+- 활성 Patch Heat 성장 `8~18 / 2.5초`.
+- 신규 인접 Patch Heat `25`.
+- Heat 범위 `0~200`.
 - Damage Tick `1초`.
+- Patch 피해 `2 × intensity × damageMultiplier`.
+- 겹친 Patch 피해는 대상별 합산하되 Tick당 최대 `12`.
+- Physics 대상 조회는 NonAlloc.
+- 소화 hit당 Heat `35`.
+- 마지막 Patch 제거 뒤 Containment `2.5초`.
 - 동일 대상 Collider 중복 피해 제거.
 - Patch마다 NetworkObject를 만들지 않는다.
-- Server는 Patch State/Heat만 복제.
-- Client는 미리 배치된 VFX/Audio를 Reconcile.
+- Server는 `AccidentInstanceId, LocationId, PatchId, PHSFireIntensity, Heat, Revision, ChangedAtServerTime`만 `NetworkList<NetworkFirePatchSnapshot>`로 복제.
+- Client는 Runtime Target이 Visual Socket 아래에 지연 생성한 VFX/Audio를 Reconcile하며 피해·확산·소화를 결정하지 않는다.
+- 확산 RNG는 `IncidentSpread=600`이다. 정상 Consumer 경로는 사건 `commandId`, fallback 경로는 `0xF17E000000000000 | accidentInstanceId`를 Scope로 사용한다.
+- 산소 농도 `0` 자동 진화는 P1 후속이다.
 
 ### 6.8 미니게임
 
@@ -853,7 +872,7 @@ P0는 Run 중 참가 금지지만 Snapshot은 복원 가능해야 한다.
 
 ### P1 플레이 품질
 
-1. Fire Patch 확산·범위 피해.
+1. Fire Patch 확산·범위 피해·소화 Runtime 검증. — 코드 구현, Compile·0719 Migration·전체 0715 Validator·Direct local Host Fire flow smoke 통과, 원격 Client·Late Join 대기
 2. 8001~8004 실제 Environment 차별화.
 3. Debris 결정론적 분산.
 4. Enemy Health/State/Target/Death 복제.
@@ -866,7 +885,7 @@ P0는 Run 중 참가 금지지만 Snapshot은 복원 가능해야 한다.
 
 1. Run 중 재접속.
 2. 통신 장비 고장과 Vivox Gate.
-3. 산소 농도·문 상태·풍향 기반 Fire.
+3. 산소 농도·문 상태·풍향 기반 Fire와 산소 `0` 자동 진화.
 4. Map별 환경 Hazard 730x 정식 이관.
 5. 전용 서버 대응.
 
@@ -894,6 +913,23 @@ P0는 Run 중 참가 금지지만 Snapshot은 복원 가능해야 한다.
 - `PHS_MINIGAME_INDICATOR_SLOT_INVALID`와 `PHS_MINIGAME_INDICATOR_SETUP_INVALID`도 Host/Client 모두 `0`.
 - 4/8인, Late Join Stage Clock/Economy/RNG 복원, 짧은 Timeout 단발 시나리오는 아직 미검증.
 - 배송 상자에 배치했지만 플레이어가 수령하지 않은 Item의 Map → Shop → Map 복원은 `Boxed/Collected` 상태 분리 전까지 P1 미검증이다.
+
+### 2026-07-19 Fire 구현 상태
+
+- `PHSNetworkFireCoordinator`가 서버에서 점화, Heat 성장, 인접 Patch 확산, 범위 피해, 소화, Containment를 소유하도록 구현했다.
+- `NetworkList<NetworkFirePatchSnapshot>`은 `AccidentInstanceId, LocationId, PatchId, PHSFireIntensity, Heat, Revision, ChangedAtServerTime`을 복제한다.
+- Patch VFX는 Client Presentation이며 별도 NetworkObject가 아니다.
+- 임시 Presentation Asset 생성과 0715 Scene Fire Runtime 참조 적용 뒤 0719 `ValidateAuthoredScene ok=True reason=none`을 확인했다.
+- Unity `6000.5.2f1` Compile Error `0`을 확인했다.
+- Migration은 `PHS_0719_INCIDENT_LOCATION_MIGRATION_OK zones=4 locations=15 fireZones=4 firePatches=22 routes=10`으로 통과했다.
+- 전체 Validator는 `PHS_0715_VALIDATE_OK errors=0 scenes=3 prefabs=11`로 통과했다.
+- Direct local Host 0715 Fire smoke에서 점화 `instance=2`, Location `fire_surface_room_a`, Patch `103`, Heat `70/Medium`, Target/Light 활성화를 확인했다.
+- 자연 확산은 Patch `4`, Heat `176/122/68/39`, 활성 Target/Light `4`, 재생 Particle `28`이었다.
+- 범위 피해는 Host Health `100 -> 0`이었다.
+- 소화/Containment는 Hit `24`, Patch `0`, failure 없음, 최종 Fire `0`, Accident `2=false`였다.
+- 원격 Client Snapshot 동기화와 Late Join 현재 화재 복구는 아직 미검증이다.
+- 같은 Host run에서 Fire 외 Settings `MissingReference` 1건과 EMP `power_already_off` 2건이 관찰됐으므로 전체 Host clean은 주장하지 않는다.
+- 2026-07-18의 기존 Compile/Build/2 Peer 완료 기록을 새 Fire 변경분의 검증 결과로 재사용하지 않는다.
 
 ### Editor
 

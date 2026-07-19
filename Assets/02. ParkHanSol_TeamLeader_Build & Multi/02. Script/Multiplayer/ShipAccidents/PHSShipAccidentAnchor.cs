@@ -63,6 +63,9 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.ShipAccidents
             return snapshot.InstanceId != 0U
                 && activeDefinition != null
                 && !snapshot.IsRepairComplete
+                && (coordinator == null
+                    || coordinator.IsDirectRepairAllowed(
+                        snapshot.InstanceId))
                 && itemHolder != null
                 && itemHolder.HasItem
                 && itemHolder.CurrentItem != null

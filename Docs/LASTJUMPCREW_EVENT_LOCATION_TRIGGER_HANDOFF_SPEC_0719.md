@@ -1,7 +1,7 @@
 # LastJumpCrew 사건 장소·요청 트리거·콘텐츠 납품 명세 0719
 
 - 작성일: `2026-07-19`
-- 상태: `FOUNDATION_AUTHORED / RUNTIME_INTEGRATION_PENDING`
+- 상태: `FIRE_RUNTIME_IMPLEMENTED / UNITY_RUNTIME_VALIDATION_PENDING`
 - 적용 범위: 함선 내부 사고, 외부 사건, 화재, 적 침투, 환경 사건
 - 통합 담당: 박한솔
 - Shop/Catalog/Display 담당: 박한솔
@@ -9,6 +9,9 @@
 - 오브젝트 애니메이션 담당: 서보경
 - 함선 Room/Device/Anchor 공간 Prefab·미니게임 담당: 탁현재
 - 플레이어·도구·Damage/Repair 요청 계약 담당: 조한용
+- Fire 런타임 담당: 박한솔
+- Fire 최종 Presentation Prefab 담당: 노석민
+- 변경 이력: 기존 0719 Location/Foundation 수량·배치 이력은 보존하고 Fire 구현 상태와 납품 책임만 현재 코드 기준으로 정정.
 
 ## 0. 목적과 우선순위
 
@@ -48,6 +51,17 @@
 - Fire Surface는 승인된 Fire Anchor가 여러 개면 Zone에 가장 가까운 Anchor를 Bridge로 선택한다.
 - Legacy Location Fallback은 0715 통합 Scene에서 사용하지 않는다.
 
+0719 Fire 런타임 추가 구현:
+
+- `PHSNetworkFireCoordinator`가 서버 점화, Heat/Intensity, 인접 Patch 확산, Tick과 종료를 소유한다.
+- `PHSFireAreaDamageGateway`가 Hazard Bounds 안의 `IDamageable`을 서버에서 검증하고 같은 Tick 중복 대상을 제거한다.
+- `PHSFirePatchRuntimeTarget`이 소화기 Hit를 받아 서버 검증 경계로 전달한다.
+- `UtilityAttackHit`는 `ItemId`, `Attacker`, `RequestSequence`만 전달한다.
+- 서버는 Attacker의 `NetworkPlayerItemRecord`, 현재 Held `ItemId`, 거리와 Patch 상태를 검증한 뒤 Heat 감소를 확정한다. 현재 서버 Item Revision은 Replay Scope Key에만 사용한다.
+- Client expected Item Revision 전달과 Revision mismatch 비교는 현재 Fire 계약에 없으며 P1 후속이다.
+- `NetworkFirePatchSnapshot`과 `NetworkList`가 활성 Patch, 강도, Revision, 서버 변경 시간을 복제한다.
+- Fire 권위는 ShipAccident 원장 Wire `ContentId=1`과 연결한다.
+
 현재 수량 기준:
 
 | 항목 | 현재 값 |
@@ -58,16 +72,18 @@
 | `PHSFirePatch` | 22 |
 | `PHSIncidentRequestRoute` | 10 |
 
-아직 후속 구현·실행 증거가 필요한 것:
+아직 후속 납품·실행 증거가 필요한 것:
 
 - 팀 Content Adapter와 실제 GameReady Prefab.
-- Fire 점화·확산·피해 후보·소화·Cleanup 로컬 생명주기.
-- Fire 후보를 검증·확정·복제하는 박한솔 Network Adapter.
-- Host/Client/Late Join 실행 증거.
+- 노석민 최종 Fire VFX/Audio/Telegraph/Cleanup/Reset Presentation Prefab.
+- 원격 Client 복제와 Late Join 복구 실행 증거.
+- Direct local Host smoke에서 함께 관찰된 Fire 외 오류 3건의 원인 분리.
+- Legacy/New Fire 이중 발생 `0` 실행 증거.
+- 산소 `0`일 때 자동 진화 정책과 연결. P1 후속.
 
-현재 Fire Patch 그래프는 위치·면적·인접 관계를 제공하는 데이터 밑작업이다. 그래프가 Scene에 존재한다는 사실을 실제 점화·확산·범위 피해 구현 완료로 읽으면 안 된다.
+기존 Fire Patch 그래프 밑작업 이력은 유지한다. 그 위에 서버 점화·Heat·확산·범위 피해·소화 검증·Snapshot 코드가 구현됐다.
 
-따라서 이 문서는 팀 제작 계약과 Location 접수 기준으로 사용할 수 있지만, 현재 상태를 사건 콘텐츠·Fire 런타임 완료 판정으로 읽으면 안 된다.
+현재 Fire 변경분은 Unity `6000.5.2f1` Compile Error `0`, 0719 Migration, 전체 0715 Validator, Direct local Host Fire flow smoke까지 통과했다. 원격 Client와 Late Join은 아직 미검증이다. 같은 Host run에서 Fire 외 `ParkHanSolGameSettingsController MissingReference` 1건과 EMP terminal impact `power_already_off` 2건을 관찰했으므로 전체 Host clean으로 읽으면 안 된다.
 
 ### 0.2 권위 ID 분류
 
@@ -136,9 +152,10 @@ flowchart LR
 | Location Foundation | 박한솔 | Zone/Location 등록, ID, 호환성, 점유, Cooldown, 선택 |
 | Request Gateway | 박한솔 | 요청 검증, 중복 방지, 원장 등록 |
 | Incident Authority | 박한솔 | Schedule, Pressure, RNG, Command, Snapshot, 결과 확정 |
-| Incident Content | 노석민 | 사건 규칙, 로컬 생명주기, VFX/Audio, 요청 출력 |
+| Fire Runtime Authority | 박한솔 | 점화, Heat/Intensity, 인접 확산, 범위 피해, 소화 검증, Cleanup 명령, Snapshot |
+| Incident Content | 노석민 | 일반 사건 규칙·표현. Fire는 최종 VFX/Audio/Telegraph/Cleanup/Reset Presentation Prefab만 납품 |
 | Object Animation | 서보경 | Telegraph/Active/Resolve/Fail/Cleanup 상태 표현 |
-| Player/Tool | 조한용 | 피해 대상·수리 도구의 로컬 입력과 피드백 |
+| Player/Tool | 조한용 | 피해 대상·도구 입력·피드백. Extinguisher Hit의 `ItemId`, `Attacker`, `RequestSequence` 경계 유지 |
 | MiniGame View | 탁현재 | 기존 View/입력/Reset 납품 방식 유지 |
 
 `Trigger` 용어는 이 문서에서 두 가지로 분리한다.
@@ -184,11 +201,14 @@ PHS_IncidentLocationRoot                     # PHSShipIncidentLayout
       InteractionSocket
       PresentationRoot
       HudMarkerSocket
-    Location_CommandFireSurface_A            # PHSIncidentLocationAnchor
-      HazardBounds
-      PresentationRoot
-        FlameSockets
-        SmokeSockets
+    Location_CommandFireSurface_A            # PHSIncidentLocationAnchor + PHSFireZone
+      Patches
+        Patch_01                             # HazardBounds Collider + PHSFirePatch + RuntimeTarget
+          PresentationRoot
+            VisualSocket_01
+            VisualSocket_02
+            VisualSocket_03
+            FireLight
     Location_CommandEnemyIngress             # PHSIncidentLocationAnchor
       SpawnSockets
       PresentationRoot
@@ -314,7 +334,7 @@ Location은 실제 사건이 붙는 최소 단위다.
 | Device | `InteractionSocket`, 실제 Device 참조 |
 | Pipe | `LeakSocket`, `RepairSocket` |
 | HullSurface | `ImpactSocket`, `RepairSocket`, `HazardBounds` |
-| FireSurface | `HazardBounds`, `FlameSockets`, `SmokeSockets` |
+| FireSurface | Patch별 `HazardBounds`, `PresentationRoot`, `VisualSocket_01~03`, `FireLight` |
 | EnemyIngress | `SpawnSockets`, `EntryDirection` |
 | Terminal | Terminal 참조, `InteractionSocket` |
 | Room | Bounds |
@@ -756,7 +776,7 @@ NSM_InternalAccident_<WireId>_<Name>
 
 ### 8.1 역할 분리
 
-현재 박한솔 Location Foundation 밑작업:
+기존 박한솔 Location Foundation 밑작업:
 
 - FireSurface Location
 - Zone/Location ID
@@ -764,25 +784,34 @@ NSM_InternalAccident_<WireId>_<Name>
 - Surface 인접 그래프 데이터
 - 4개 Fire Zone, 22개 Patch와 Patch별 Visual Socket
 
-위 항목은 점화·확산·피해 런타임이 아니다. 현재 `PHSFireZone/PHSFirePatch/Link`는 팀 Fire 콘텐츠가 사용할 면적과 인접 관계를 제공한다.
+위 기반 이력은 유지한다. 현재는 다음 Fire 런타임까지 `02`에 구현됐다.
 
-노석민 Fire Content:
+박한솔 Fire Runtime:
 
-- 전달받은 Fire Zone/Patch 그래프를 사용하는 GameReady 로컬 생명주기
-- 점화 예고와 활성 표현
-- 강도별 Flame/Smoke/Light/Audio 표현
-- Telegraph/Active/Extinguish/Cleanup
-- 인접 Patch 확산 후보와 범위 피해 후보 산출
-- 확산·피해·소화 수치 제안과 Local Test Driver
-- `DamageCandidate`, `RepairCandidate` 출력
-- Pool/Reset
+- 서버 점화 대상과 초기 Patch 결정.
+- Heat/Intensity 증가와 인접 Link 기반 확산 확정.
+- Hazard Bounds 기반 범위 피해, Tick, 동일 대상 중복 제거.
+- Extinguisher Hit의 `ItemId`, `Attacker`, `RequestSequence`와 서버 Held Item Record, 거리, Patch 상태 검증 및 Heat 감소 확정.
+- Patch 활성·강도·Revision·변경 서버 시간 Snapshot 복제.
+- ShipAccident 원장 Wire `ContentId=1` 시작·진압 완료·종료 연결.
+- Presentation Prefab 생성·활성 수·Light·Cleanup 구동.
 
-박한솔 후속 Network Adapter:
+노석민 Fire Presentation 납품:
 
-- 서버 점화 대상과 확산 후보 검증·확정
-- Patch 점유, Tick, 중복 대상, 피해량과 소화 결과 확정
-- Command/Snapshot 복제와 Late Join 복구
-- 노석민 출력과 ShipAccident 원장 Wire `ContentId=1` 연결
+- `PHSFireZone.PatchPresentationPrefab`에 연결할 최종 Prefab 1개.
+- 강도별 Flame/Smoke/Light와 Loop/One-shot Audio.
+- Telegraph/Active/Extinguish/Cleanup 표현.
+- 비활성화·취소·재사용 시 Particle/Light/Audio 잔류 `0`.
+- Reset 가능한 Presentation 전용 구성과 자산/GUID/Manifest.
+- 점화, Heat 계산, 확산, 피해, 소화 판정, Snapshot 로직은 만들지 않음.
+
+조한용 Extinguisher 경계:
+
+- 기존 Utility Attack/SphereCast에서 `IUtilityAttackTarget` Hit를 제공.
+- `UtilityAttackHit`에 `ItemId`, `Attacker`, `RequestSequence`를 보존해 전달.
+- Heat를 직접 감소시키거나 Fire 상태를 직접 변경하지 않음.
+- 거리, ItemId, Replay, Patch 상태 최종 검증은 박한솔 Fire Runtime이 담당.
+- 서버 현재 Item Revision은 Replay Scope Key에 사용한다. Client expected Revision 비교는 P1 후속.
 
 탁현재:
 
@@ -790,12 +819,12 @@ NSM_InternalAccident_<WireId>_<Name>
 - 최종 함선 Room/Device/Anchor 공간 Prefab에 Fire Surface 후보와 실제 Mesh·동선 근거 제공
 - `PHSShipIncidentLayout`, 확산 권한, 피해 권한은 만들지 않음
 
-### 8.2 Fire Content Hierarchy
+### 8.2 Fire Presentation Hierarchy
 
 ```text
-NSM_FireContent
-  FireContentView
+NSM_FirePatchPresentation
   TelegraphRoot
+  ActiveRoot
   IntensityRoots
     Intensity_1
     Intensity_2
@@ -809,49 +838,68 @@ NSM_FireContent
   LightRoot
 ```
 
+이 Hierarchy는 노석민 최종 납품 목표다. 현재 `PHSFirePatchRuntimeTarget`은 Prefab 전체를 Patch Visual Socket에 지연 생성하고 활성 인스턴스 수만 `1~3`으로 바꾼다. Prefab 내부 `TelegraphRoot`, `ExtinguishRoot`, `CleanupRoot`를 직접 찾거나 상태를 전달하는 연결 포트는 아직 없다. 명시적 상태 연출을 통합하려면 Presentation-only 인터페이스/Adapter를 추가 검증해야 한다.
+
 FireSurface는 한 점 Transform이 아니다.
 
 ```text
-Location_<FireSurfaceId>
-  HazardBounds
-  PresentationRoot
-    FlameSockets
-      FlameSocket_00
-      FlameSocket_01
-      FlameSocket_02
-    SmokeSockets
-      SmokeSocket_00
-      SmokeSocket_01
+FireZone
+  Patches
+    Patch_<id> [HazardBounds BoxCollider / PHSFirePatch / PHSFirePatchRuntimeTarget]
+      PresentationRoot
+        VisualSocket_01
+        VisualSocket_02
+        VisualSocket_03
+        FireLight
 ```
 
 규칙:
 
 - 실제 면적 Trigger 사용.
-- 강도에 따라 여러 Socket 조합 사용.
-- 인접 Surface Link로만 확산.
-- 같은 Tick에서 같은 피해 대상 한 번만 후보 제출.
+- 강도 `1~3`에 따라 앞쪽 Visual Socket의 활성 Prefab 인스턴스 수를 `1~3`으로 변경. 선택은 박한솔 런타임이 수행.
+- 인접 Surface Link로만 확산. 판정은 박한솔 서버가 수행.
+- 같은 Tick에서 같은 피해 대상 한 번만 적용. 판정은 박한솔 Damage Gateway가 수행.
 - 불꽃 Particle Collider로 피해를 확정하지 않음.
 - 각 Patch/불꽃에 NetworkObject를 붙이지 않음.
-- 소화 후 Particle, Light, Loop Audio, Collider 상태 모두 정리.
+- 소화 후 Presentation Particle, Light, Loop Audio 상태를 정리. `HazardBounds` Collider는 Scene 계약이므로 Presentation Cleanup 대상이 아니다.
+- 팀 Presentation Prefab에 `NetworkObject`, `NetworkBehaviour`, `NetworkVariable`, RPC를 넣지 않음.
+- 팀 Presentation Prefab에 점화, Heat, 확산, 피해, 소화 성공, 원장 변경 등 게임플레이 상태 로직을 넣지 않음.
 
 ### 8.3 Fire 증거
 
 노석민 Sandbox 증거:
 
-- Bounds와 실제 표면 일치 Gizmo.
 - 최소 3개 Visual Socket 사용.
-- 점화 → 강도 증가 → 인접 확산 → 진압 → Cleanup.
-- 비인접 Surface로 확산하지 않음.
-- Bounds 밖 대상 DamageCandidate 0.
-- Collider가 여러 개인 같은 대상은 Tick당 후보 1회.
+- 외부 상태 입력으로 Telegraph → Active/강도 1~3 → Extinguish → Cleanup/Reset 표현.
+- Cancel/비활성화 뒤 Particle, Light, Loop Audio 잔류 `0`.
+- 같은 Presentation Prefab 3회 재사용.
 - 8개 활성 Surface 조건의 프레임·메모리 기록.
+- Network/게임플레이 상태 Component 검색 `0`.
 
 박한솔 통합 후 Network 증거:
 
-- 같은 Seed 재실행 시 같은 서버 선택, 다른 Seed에서 Variant 변화.
+- 같은 Seed/Stream/Scope 재실행 시 같은 서버 초기 Patch·성장·확산 선택.
+- 다른 Seed는 서버 선택을 바꿀 수 있다. 현재 Presentation Variant Seed 전달은 미구현.
 - Host/Client Patch·강도·피해 결과 일치.
 - Late Join이 현재 강도와 활성 Patch부터 복구.
 - Patch별 `NetworkObject` 0.
+- Extinguisher Wrong Item/원거리/Replay 거절.
+- Client expected Item Revision mismatch 거절은 요청 필드가 추가된 뒤 P1에서 검증.
+- 산소 `0` 자동 진화는 P1 후속. 구현·검증 전 현재 완료 증거에 포함하지 않음.
+
+현재 증거 상태:
+
+- 서버 Fire 런타임 코드: 구현됨.
+- Unity `6000.5.2f1` Compile Error `0`: 확인.
+- Migration: `PHS_0719_INCIDENT_LOCATION_MIGRATION_OK zones=4 locations=15 fireZones=4 firePatches=22 routes=10`.
+- 전체 Validator: `PHS_0715_VALIDATE_OK errors=0 scenes=3 prefabs=11`.
+- Direct local Host 0715 Fire smoke: 점화 `instance=2`, `fire_surface_room_a`, Patch `103`, Heat `70/Medium`, Target/Light 활성 확인.
+- 자연 확산: Patch `4`, Heat `176/122/68/39`, 활성 Target/Light `4`, 재생 Particle `28`.
+- 범위 피해: Host Health `100 -> 0`.
+- 소화/Containment: Hit `24`, Patch `0`, failure 없음, 최종 Fire `0`, Accident `2=false`.
+- 원격 Client: 미검증.
+- Late Join: 미검증.
+- 전체 Host clean: 미주장. 같은 run에서 Fire 외 Settings `MissingReference` 1건, EMP `power_already_off` 2건 관찰.
 
 ---
 
@@ -937,7 +985,7 @@ P0 완료 전에는 720x/내부 1–7/Fire/Enemy를 우선한다.
 
 1. 외부 사건별 `External Event Bundle`.
 2. 내부 사고별 `Internal Accident Presentation Bundle`.
-3. Fire Content Bundle.
+3. Fire VFX/Audio/Telegraph/Cleanup/Reset Presentation Prefab Bundle.
 4. Enemy Content Bundle.
 5. 물리·장치 원인이 필요한 사건의 Request Source Bundle.
 6. Definition 제안표와 Location Compatibility 표.
@@ -946,7 +994,9 @@ P0 완료 전에는 720x/내부 1–7/Fire/Enemy를 우선한다.
 
 - 장소 Registry와 최종 Location ID 제작
 - Scheduled 사건 Trigger 제작
-- NetworkObject/RPC/Scheduler
+- NetworkObject/NetworkBehaviour/NetworkVariable/RPC/Scheduler
+- Fire 점화/Heat/확산/피해/소화 판정/Snapshot 로직
+- 게임플레이 상태를 소유하거나 변경하는 로직
 - 직접 Ship/Player Damage
 - 후속 사고 직접 Spawn
 - 기존 EventManager/Factory를 새 최종 권한으로 확장
@@ -977,8 +1027,10 @@ P0 완료 전에는 720x/내부 1–7/Fire/Enemy를 우선한다.
 
 - 플레이어와 도구가 `DamageCandidate`/`RepairCandidate`를 만들 때 필요한 요청 계약, 로컬 입력·피드백 제공.
 - Extinguisher, Wrench, Battery 등 ItemId 계약 유지.
+- Extinguisher Hit의 `ItemId`, `Attacker`, `RequestSequence` 요청 경계를 유지.
 - 도구가 사고 상태를 직접 변경하지 않음.
-- 서버 Adapter가 거리, 아이템, Revision을 검증할 수 있는 대상 참조 제공.
+- 서버 Adapter가 거리, ItemId, Replay와 Patch 상태를 검증할 수 있는 대상 참조 제공.
+- 현재 서버 Item Revision은 Replay Scope Key에만 사용하며 Client expected Revision 비교는 P1 후속.
 
 ### 11.5 박한솔
 
@@ -989,6 +1041,7 @@ P0 완료 전에는 720x/내부 1–7/Fire/Enemy를 우선한다.
 - Incident 원장/Director/Consumer 연결.
 - Event/Accident Content Adapter와 Registry.
 - 서버 피해·수리·Consequence.
+- Fire 점화, Heat/Intensity, 인접 확산, 범위 피해, 소화 검증, Snapshot/Network.
 - Host/Client/Late Join 검증.
 - Shop/Catalog/Display 제작·통합과 최종 수치 승인.
 
@@ -1001,7 +1054,7 @@ P0 완료 전에는 720x/내부 1–7/Fire/Enemy를 우선한다.
 ```json
 {
   "incidentContract": {
-    "bundleType": "ExternalEvent|InternalAccident|FireContent|EnemyContent|RequestSource",
+    "bundleType": "ExternalEvent|InternalAccident|FirePresentation|EnemyContent|RequestSource",
     "contentId": 7202,
     "incidentFamily": "Meteor",
     "channel": "External",
@@ -1272,7 +1325,7 @@ Legacy 자산은 즉시 삭제하지 않는다. 최종 권한에서 분리하고
 
 ### 노석민 전달
 
-`04`에서는 사건이 실제로 붙는 장소를 새로 만들거나 최종 씬을 수정하지 않습니다. 박한솔이 제공한 LocationId/Kind/Capability/Socket을 사용해 외부 사건, 내부 사고 표현, Fire, Enemy와 필요한 Request Source를 GameReady Bundle로 완성합니다. Request Source는 사건을 직접 Spawn하지 않고 후보 요청만 출력합니다. Content는 Telegraph → Active → Resolve/Fail/Cancel → Cleanup/Reset을 완결하고 Damage/Repair/Consequence 후보만 출력합니다. NetworkObject/RPC/Scheduler, 직접 피해, 직접 후속 사고는 금지합니다.
+`04`에서는 사건이 실제로 붙는 장소를 새로 만들거나 최종 씬을 수정하지 않습니다. 일반 외부 사건·내부 사고·Enemy·Request Source는 기존 계약을 유지합니다. Fire는 최종 VFX/Audio/Telegraph/Active/Extinguish/Cleanup/Reset Presentation Prefab만 납품합니다. 점화, Heat/Intensity, 인접 확산, 범위 피해, 소화 판정, Snapshot/Network는 박한솔 범위입니다. 팀 Prefab에는 NetworkObject/NetworkBehaviour/NetworkVariable/RPC와 게임플레이 상태 로직을 넣지 않습니다.
 
 ### 탁현재 전달
 
@@ -1284,11 +1337,11 @@ Legacy 자산은 즉시 삭제하지 않는다. 최종 권한에서 분리하고
 
 ### 조한용 전달
 
-도구와 플레이어 쪽에서는 사고 대응 입력·피드백, 대상 참조, Damage/Repair 요청 계약을 제공합니다. Extinguisher/Wrench/Battery가 사고 상태를 직접 변경하지 않고 Repair/Damage 후보를 통합 Adapter가 검증할 수 있게 전달합니다.
+도구와 플레이어 쪽에서는 사고 대응 입력·피드백, 대상 참조, Damage/Repair 요청 계약을 제공합니다. Extinguisher는 기존 `UtilityAttackHit`의 `ItemId`, `Attacker`, `RequestSequence` 경계를 유지합니다. Heat를 직접 줄이지 않고 거리, ItemId, Replay, Patch 상태를 박한솔 Fire Runtime이 검증할 수 있게 전달합니다. 현재 서버 Item Revision은 Replay Scope Key에만 사용하며 Client expected Revision 전달·비교는 P1 후속입니다.
 
 ### 박한솔 통합
 
-`02`에서 Location Foundation, Request Gateway, Incident 원장/Director/Consumer, Target 선택, 서버 피해·수리·Consequence, Registry, Final Scene 배치와 네트워크 검증을 담당합니다. Shop/Catalog/Display도 박한솔 직접 범위입니다. 팀 Bundle 내부를 대신 완성하지 않습니다.
+`02`에서 Location Foundation, Request Gateway, Incident 원장/Director/Consumer, Target 선택, 서버 피해·수리·Consequence, Registry, Final Scene 배치와 네트워크 검증을 담당합니다. Fire 점화, Heat/Intensity, 인접 확산, 범위 피해, 소화 검증, Snapshot/Network도 박한솔 범위입니다. Shop/Catalog/Display도 박한솔 직접 범위입니다. 팀 Presentation 자산 내부를 대신 완성하지 않습니다.
 
 ---
 
@@ -1315,7 +1368,15 @@ Legacy 자산은 즉시 삭제하지 않는다. 최종 권한에서 분리하고
 - Legacy Scheduler active 0.
 - Fire/Enemy/Oxygen 전역 Spawn 위치 의존 제거 계획과 Validator 존재.
 
-현재 Fire는 첫 다섯 항목 중 Location/Patch 데이터만 충족한다. 점화·확산·범위 피해·소화·Cleanup GameReady 콘텐츠와 Network Adapter 증거가 없으면 Fire 밑작업을 런타임 완료로 승격하지 않는다.
+현재 Fire는 Location/Patch 데이터와 서버 점화·Heat/Intensity·인접 확산·범위 피해·소화 검증·Snapshot 코드까지 구현됐다. Compile Error `0`, 0719 Migration, 전체 0715 Validator, Direct local Host 점화→확산→범위 피해→소화→Containment smoke를 통과했다. 노석민 최종 Presentation Prefab은 미수령이며 원격 Client/Late Join 증거는 아직 없다. 같은 Host run의 Fire 외 오류 3건 때문에 전체 Host clean은 주장하지 않는다.
+
+Fire 후속:
+
+- Client Snapshot/표현 일치.
+- Late Join 현재 Patch/강도 복구.
+- Fire 외 Settings `MissingReference` 1건과 EMP `power_already_off` 2건 원인 분리.
+- Legacy/New Fire 이중 발생 `0`.
+- 산소 `0` 자동 진화. P1.
 
 팀 접수 시작 가능:
 

@@ -243,6 +243,9 @@ namespace LastJumpCrew.ParkHanSol.Editor
 
         private static AuthoringResult AuthorMapScene(Scene mapScene)
         {
+            var firePresentationPrefab =
+                PHS0720FirePresentationAuthoring
+                    .EnsurePresentationPrefab();
             var runtimeRoot = FindUniqueNamedTransform(
                 mapScene,
                 RuntimeRootName);
@@ -315,6 +318,7 @@ namespace LastJumpCrew.ParkHanSol.Editor
                         zone,
                         fireAccidentAnchors),
                     authoredRoom,
+                    firePresentationPrefab,
                     out var fireLocation);
                 fireZones.Add(fireZone);
                 locations.Add(fireLocation);
@@ -347,7 +351,7 @@ namespace LastJumpCrew.ParkHanSol.Editor
                         location => location.LocationId,
                         StringComparer.Ordinal)
                     .ToArray());
-            ConfigureAccidentCoordinator(
+            var accidentCoordinator = ConfigureAccidentCoordinator(
                 mapScene,
                 accidentAnchors
                     .OrderBy(pair => (ushort)pair.Value)
@@ -356,7 +360,13 @@ namespace LastJumpCrew.ParkHanSol.Editor
                         StringComparer.Ordinal)
                     .Select(pair => pair.Key)
                     .ToArray());
-            ConfigureConsumer(mapScene, layout);
+            var fireCoordinator = ConfigureFireCoordinator(
+                accidentCoordinator,
+                fireZones.ToArray());
+            ConfigureConsumer(
+                mapScene,
+                layout,
+                fireCoordinator);
             ConfigureRequestGateway(mapScene, runtimeRoot);
 
             return new AuthoringResult(
@@ -763,6 +773,7 @@ namespace LastJumpCrew.ParkHanSol.Editor
             BoxCollider zoneCollider,
             PHSShipAccidentAnchor fireAccidentAnchor,
             AuthoredRoom authoredRoom,
+            GameObject firePresentationPrefab,
             out PHSIncidentLocationAnchor fireLocation)
         {
             var fireZoneRoot = EnsureDirectChild(
@@ -799,6 +810,9 @@ namespace LastJumpCrew.ParkHanSol.Editor
                     var patchRoot = EnsureDirectChild(
                         patchesRoot,
                         $"Patch_{index + 1:00}");
+                    patchRoot.gameObject.layer =
+                        RequireLayer("Interactable");
+                    MarkAndRecord(patchRoot.gameObject);
                     var patchPosition = new Vector3(
                         authoredRoom.WorldBounds.min.x
                             + ((column + 0.5f) * cellSize.x),
@@ -883,6 +897,48 @@ namespace LastJumpCrew.ParkHanSol.Editor
                         "neighbors",
                         0);
                     ApplyAndRecord(serializedPatch, patch);
+
+                    var fireLightRoot = EnsureDirectChild(
+                        presentationRoot,
+                        "FireLight");
+                    fireLightRoot.localPosition =
+                        new Vector3(0f, 0.45f, 0f);
+                    fireLightRoot.localRotation =
+                        Quaternion.identity;
+                    fireLightRoot.localScale = Vector3.one;
+                    var fireLight =
+                        EnsureSingleComponent<Light>(
+                            fireLightRoot.gameObject);
+                    fireLight.type = LightType.Point;
+                    fireLight.color =
+                        new Color(1f, 0.31f, 0.035f, 1f);
+                    fireLight.intensity = 1.65f;
+                    fireLight.range = Mathf.Max(
+                        3.5f,
+                        Mathf.Max(cellSize.x, cellSize.z)
+                            * 1.35f);
+                    fireLight.shadows = LightShadows.None;
+                    fireLight.enabled = false;
+                    MarkAndRecord(fireLightRoot);
+                    MarkAndRecord(fireLight);
+
+                    var runtimeTarget =
+                        EnsureSingleComponent<
+                            PHSFirePatchRuntimeTarget>(
+                            patchRoot.gameObject);
+                    var serializedRuntimeTarget =
+                        new SerializedObject(runtimeTarget);
+                    SetObject(
+                        serializedRuntimeTarget,
+                        "patch",
+                        patch);
+                    SetObject(
+                        serializedRuntimeTarget,
+                        "fireLight",
+                        fireLight);
+                    ApplyAndRecord(
+                        serializedRuntimeTarget,
+                        runtimeTarget);
                     patches[index] = patch;
                 }
             }
@@ -905,6 +961,16 @@ namespace LastJumpCrew.ParkHanSol.Editor
                 serializedFireZone,
                 "maximumBurningPatches",
                 Math.Min(8, patches.Length));
+            SetInt(serializedFireZone, "initialHeat", 70);
+            SetInt(serializedFireZone, "maximumHeat", 200);
+            SetInt(
+                serializedFireZone,
+                "minimumHeatGrowthPerTick",
+                8);
+            SetInt(
+                serializedFireZone,
+                "maximumHeatGrowthPerTick",
+                18);
             SetFloat(serializedFireZone, "spreadTickSeconds", 2.5f);
             SetInt(serializedFireZone, "spreadAttemptsPerTick", 2);
             SetInt(
@@ -912,7 +978,21 @@ namespace LastJumpCrew.ParkHanSol.Editor
                 "maximumNewIgnitionsPerTick",
                 1);
             SetFloat(serializedFireZone, "baseSpreadChance", 0.45f);
+            SetFloat(serializedFireZone, "damageTickSeconds", 1f);
+            SetInt(serializedFireZone, "baseDamagePerTick", 2);
             SetInt(serializedFireZone, "damageableLayers", ~0);
+            SetInt(
+                serializedFireZone,
+                "suppressionHeatPerHit",
+                35);
+            SetFloat(
+                serializedFireZone,
+                "containmentGraceSeconds",
+                2.5f);
+            SetObject(
+                serializedFireZone,
+                "patchPresentationPrefab",
+                firePresentationPrefab);
             ApplyAndRecord(serializedFireZone, fireZone);
 
             fireLocation =
@@ -1120,7 +1200,8 @@ namespace LastJumpCrew.ParkHanSol.Editor
 
         private static void ConfigureConsumer(
             Scene mapScene,
-            PHSShipIncidentLayout layout)
+            PHSShipIncidentLayout layout,
+            PHSNetworkFireCoordinator fireCoordinator)
         {
             var consumers =
                 FindSceneComponents<PHSMapIncidentCommandConsumer>(mapScene);
@@ -1135,6 +1216,10 @@ namespace LastJumpCrew.ParkHanSol.Editor
             var consumer = consumers[0];
             var serializedConsumer = new SerializedObject(consumer);
             SetObject(serializedConsumer, "incidentLayout", layout);
+            SetObject(
+                serializedConsumer,
+                "fireCoordinator",
+                fireCoordinator);
             SetBool(
                 serializedConsumer,
                 "allowLegacyLocationFallback",
@@ -1142,7 +1227,8 @@ namespace LastJumpCrew.ParkHanSol.Editor
             ApplyAndRecord(serializedConsumer, consumer);
         }
 
-        private static void ConfigureAccidentCoordinator(
+        private static PHSNetworkShipAccidentCoordinator
+            ConfigureAccidentCoordinator(
             Scene mapScene,
             PHSShipAccidentAnchor[] anchors)
         {
@@ -1170,6 +1256,76 @@ namespace LastJumpCrew.ParkHanSol.Editor
             var serializedCoordinator = new SerializedObject(coordinator);
             SetObjectArray(serializedCoordinator, "anchors", anchors);
             ApplyAndRecord(serializedCoordinator, coordinator);
+            return coordinator;
+        }
+
+        private static PHSNetworkFireCoordinator
+            ConfigureFireCoordinator(
+                PHSNetworkShipAccidentCoordinator accidentCoordinator,
+                PHSFireZone[] fireZones)
+        {
+            if (accidentCoordinator == null)
+            {
+                throw new InvalidOperationException(
+                    "PHS_0719_INCIDENT_LOCATION_MIGRATION_FAILED " +
+                    "reason=ship_accident_coordinator_missing");
+            }
+
+            if (fireZones == null || fireZones.Length == 0)
+            {
+                throw new InvalidOperationException(
+                    "PHS_0719_INCIDENT_LOCATION_MIGRATION_FAILED " +
+                    "reason=fire_zones_missing");
+            }
+
+            var owner = accidentCoordinator.gameObject;
+            var damageGateway =
+                EnsureSingleComponent<PHSFireAreaDamageGateway>(
+                    owner);
+            var serializedDamageGateway =
+                new SerializedObject(damageGateway);
+            SetInt(
+                serializedDamageGateway,
+                "maximumDamagePerTargetPerTick",
+                12);
+            ApplyAndRecord(
+                serializedDamageGateway,
+                damageGateway);
+            var fireCoordinator =
+                EnsureSingleComponent<PHSNetworkFireCoordinator>(
+                    owner);
+            var serializedFireCoordinator =
+                new SerializedObject(fireCoordinator);
+            SetObject(
+                serializedFireCoordinator,
+                "accidentCoordinator",
+                accidentCoordinator);
+            SetObject(
+                serializedFireCoordinator,
+                "areaDamageGateway",
+                damageGateway);
+            SetObjectArray(
+                serializedFireCoordinator,
+                "fireZones",
+                fireZones);
+            SetFloat(
+                serializedFireCoordinator,
+                "maximumSuppressionDistance",
+                7f);
+            ApplyAndRecord(
+                serializedFireCoordinator,
+                fireCoordinator);
+
+            var serializedAccidentCoordinator =
+                new SerializedObject(accidentCoordinator);
+            SetObject(
+                serializedAccidentCoordinator,
+                "fireCoordinator",
+                fireCoordinator);
+            ApplyAndRecord(
+                serializedAccidentCoordinator,
+                accidentCoordinator);
+            return fireCoordinator;
         }
 
         private static void ConfigureRequestGateway(
@@ -1521,6 +1677,163 @@ namespace LastJumpCrew.ParkHanSol.Editor
                 return false;
             }
 
+            var fireCoordinators =
+                FindSceneComponents<PHSNetworkFireCoordinator>(mapScene);
+            if (fireCoordinators.Length != 1)
+            {
+                reason =
+                    $"fire_coordinator_count_invalid:" +
+                    $"{fireCoordinators.Length}";
+                return false;
+            }
+
+            var fireCoordinator = fireCoordinators[0];
+            var damageGateways =
+                FindSceneComponents<PHSFireAreaDamageGateway>(mapScene);
+            if (damageGateways.Length != 1
+                || damageGateways[0].gameObject
+                    != accidentCoordinators[0].gameObject
+                || fireCoordinator.gameObject
+                    != accidentCoordinators[0].gameObject)
+            {
+                reason =
+                    $"fire_runtime_owner_invalid:" +
+                    $"coordinators={fireCoordinators.Length}:" +
+                    $"gateways={damageGateways.Length}";
+                return false;
+            }
+
+            if (!damageGateways[0].TryValidate(
+                    out var damageGatewayReason))
+            {
+                reason =
+                    $"fire_damage_gateway_invalid:" +
+                    $"{damageGatewayReason}";
+                return false;
+            }
+
+            var serializedFireCoordinator =
+                new SerializedObject(fireCoordinator);
+            if (RequireProperty(
+                    serializedFireCoordinator,
+                    "accidentCoordinator").objectReferenceValue
+                    != accidentCoordinators[0]
+                || RequireProperty(
+                    serializedFireCoordinator,
+                    "areaDamageGateway").objectReferenceValue
+                    != damageGateways[0])
+            {
+                reason = "fire_runtime_reference_invalid";
+                return false;
+            }
+
+            var registeredFireZones = RequireProperty(
+                serializedFireCoordinator,
+                "fireZones");
+            if (registeredFireZones.arraySize != fireZones.Length)
+            {
+                reason =
+                    $"fire_registered_zone_count_invalid:" +
+                    $"{registeredFireZones.arraySize}:" +
+                    $"{fireZones.Length}";
+                return false;
+            }
+
+            var registeredFireZoneSet = new HashSet<PHSFireZone>();
+            for (var index = 0;
+                 index < registeredFireZones.arraySize;
+                 index++)
+            {
+                var registeredFireZone = registeredFireZones
+                    .GetArrayElementAtIndex(index)
+                    .objectReferenceValue as PHSFireZone;
+                if (registeredFireZone == null
+                    || !registeredFireZoneSet.Add(
+                        registeredFireZone))
+                {
+                    reason =
+                        $"fire_registered_zone_invalid_or_duplicate:" +
+                        $"{index}";
+                    return false;
+                }
+            }
+
+            if (!registeredFireZoneSet.SetEquals(fireZones))
+            {
+                reason = "fire_registered_zone_set_mismatch";
+                return false;
+            }
+
+            if (RequireProperty(
+                    serializedAccidentCoordinator,
+                    "fireCoordinator").objectReferenceValue
+                    != fireCoordinator)
+            {
+                reason =
+                    "ship_accident_fire_coordinator_reference_invalid";
+                return false;
+            }
+
+            if (!fireCoordinator.TryValidate(
+                    out var fireCoordinatorReason))
+            {
+                reason =
+                    $"fire_coordinator_invalid:" +
+                    $"{fireCoordinatorReason}";
+                return false;
+            }
+
+            var interactableLayer = RequireLayer("Interactable");
+            foreach (var fireZone in fireZones)
+            {
+                if (!PHS0720FirePresentationAuthoring
+                        .ValidatePresentationPrefab(
+                            fireZone.PatchPresentationPrefab,
+                            out var presentationReason))
+                {
+                    reason =
+                        $"fire_presentation_invalid:" +
+                        $"{fireZone.IncidentZone.ZoneId}:" +
+                        $"{presentationReason}";
+                    return false;
+                }
+
+                foreach (var patch in fireZone.Patches)
+                {
+                    if (patch.gameObject.layer != interactableLayer)
+                    {
+                        reason =
+                            $"fire_patch_layer_invalid:" +
+                            $"{fireZone.IncidentZone.ZoneId}:" +
+                            $"{patch.PatchId}:" +
+                            $"{patch.gameObject.layer}:" +
+                            $"{interactableLayer}";
+                        return false;
+                    }
+
+                    var runtimeTargets =
+                        patch.GetComponents<
+                            PHSFirePatchRuntimeTarget>();
+                    var fireLights =
+                        patch.PresentationRoot
+                            .GetComponentsInChildren<Light>(true);
+                    if (runtimeTargets.Length != 1
+                        || fireLights.Length != 1
+                        || runtimeTargets[0].FireLight
+                            != fireLights[0]
+                        || fireLights[0].enabled)
+                    {
+                        reason =
+                            $"fire_patch_presentation_contract_invalid:" +
+                            $"{fireZone.IncidentZone.ZoneId}:" +
+                            $"{patch.PatchId}:" +
+                            $"targets={runtimeTargets.Length}:" +
+                            $"lights={fireLights.Length}";
+                        return false;
+                    }
+                }
+            }
+
             var zonesById = layout.Zones.ToDictionary(
                 zone => zone.ZoneId,
                 zone => zone,
@@ -1572,10 +1885,13 @@ namespace LastJumpCrew.ParkHanSol.Editor
             var consumers =
                 FindSceneComponents<PHSMapIncidentCommandConsumer>(mapScene);
             if (consumers.Length != 1
-                || consumers[0].IncidentLayout != layout)
+                || consumers[0].IncidentLayout != layout
+                || consumers[0].FireCoordinator != fireCoordinator
+                || consumers[0].AccidentCoordinator
+                    != accidentCoordinators[0])
             {
                 reason =
-                    $"consumer_layout_reference_invalid:" +
+                    $"consumer_runtime_reference_invalid:" +
                     $"{consumers.Length}";
                 return false;
             }
@@ -2558,6 +2874,18 @@ namespace LastJumpCrew.ParkHanSol.Editor
                 PrefabUtility.RecordPrefabInstancePropertyModifications(
                     target);
             }
+        }
+
+        private static int RequireLayer(string layerName)
+        {
+            var layer = LayerMask.NameToLayer(layerName);
+            if (layer < 0)
+            {
+                throw new InvalidOperationException(
+                    $"required_layer_missing:{layerName}");
+            }
+
+            return layer;
         }
 
         private static void ApplyAndRecord(

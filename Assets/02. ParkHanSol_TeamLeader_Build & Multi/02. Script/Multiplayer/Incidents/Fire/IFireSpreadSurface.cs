@@ -11,11 +11,20 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Incidents.Fire
         PHSShipAccidentAnchor FireAccidentAnchor { get; }
         IReadOnlyList<PHSFirePatch> Patches { get; }
         byte MaximumBurningPatches { get; }
+        ushort InitialHeat { get; }
+        ushort MaximumHeat { get; }
+        ushort MinimumHeatGrowthPerTick { get; }
+        ushort MaximumHeatGrowthPerTick { get; }
         float SpreadTickSeconds { get; }
         byte SpreadAttemptsPerTick { get; }
         byte MaximumNewIgnitionsPerTick { get; }
         float BaseSpreadChance { get; }
+        float DamageTickSeconds { get; }
+        int BaseDamagePerTick { get; }
+        ushort SuppressionHeatPerHit { get; }
+        float ContainmentGraceSeconds { get; }
         LayerMask DamageableLayers { get; }
+        GameObject PatchPresentationPrefab { get; }
         bool IsReady { get; }
 
         bool TryResolvePatch(
@@ -26,7 +35,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Incidents.Fire
             out string reason);
         bool TryCopySpreadCandidates(
             ushort sourcePatchId,
-            byte sourceIntensity,
+            PHSFireIntensity sourceIntensity,
             List<PHSFirePatchLink> destination,
             out string reason);
         bool TryValidate(out string reason);

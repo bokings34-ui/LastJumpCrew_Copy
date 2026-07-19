@@ -1,11 +1,11 @@
 # PHS 함선 사고 통합 시스템 상세설계 및 기능 명세
 
-- 문서 버전: `0.2`
+- 문서 버전: `0.3`
 - 작성일: `2026-07-18`
 - 대상 프로젝트: `LastJumpCrew`
 - 대상 씬: `Assets/02. ParkHanSol_TeamLeader_Build & Multi/01. Scene/0715/PHS_Map_ver1.unity`
 - 구현 담당 기본 경로: `Assets/02. ParkHanSol_TeamLeader_Build & Multi/`
-- 상태: 통합 마스터 설계 반영. 구현 전 계약 검토 필요.
+- 상태: 통합 마스터 설계와 신형 Fire Runtime 구현 계약 반영. Compile·0719 Migration·전체 0715 Validator·Direct local Host Fire flow smoke 통과, 원격 Client·Late Join 검증 대기. 같은 Host run의 Fire 외 오류로 전체 Host clean 미주장.
 - 상위 문서: `Docs/LASTJUMPCREW_INTEGRATED_GAMEPLAY_NETWORK_SPEC_0718.md`
 
 ## 1. 목적
@@ -644,6 +644,14 @@ public interface IShipRepairableDevice
 
 화재 사고 1건이 여러 Patch를 소유한다.
 
+구현 권위:
+
+- `PHSNetworkFireCoordinator`가 Scene Local 서버 권위로 점화, 성장, 인접 확산, 범위 피해, 소화, 사고 해결을 결정한다.
+- 사고 명령은 `PHSMapIncidentCommandConsumer`가 `PHSNetworkShipAccidentCoordinator`와 Fire Coordinator에 같은 Accident Instance를 전달한다.
+- Patch 상태는 `NetworkList<NetworkFirePatchSnapshot>` 하나로 복제한다.
+- 불꽃, 연기, 조명 등 Presentation은 Snapshot을 읽는 Client 전용이다.
+- Fire Patch마다 `NetworkObject`를 생성하지 않는다.
+
 금지:
 
 - Patch마다 별도 사고 Instance 생성.
@@ -660,20 +668,37 @@ public interface IShipRepairableDevice
 - `PHSShipAccidentAnchor fireAccidentAnchor`
 - `PHSFirePatch[] patches`
 - `byte maximumBurningPatches`
+- `ushort initialHeat`
+- `ushort maximumHeat`
+- `ushort minimumHeatGrowthPerTick`
+- `ushort maximumHeatGrowthPerTick`
 - `float spreadTickSeconds`
 - `byte spreadAttemptsPerTick`
 - `byte maximumNewIgnitionsPerTick`
 - `float baseSpreadChance`
+- `float damageTickSeconds`
+- `int baseDamagePerTick`
 - `LayerMask damageableLayers`
+- `ushort suppressionHeatPerHit`
+- `float containmentGraceSeconds`
+- `GameObject patchPresentationPrefab`
 
 P0 권장 초기값:
 
 - 최대 활성 Patch: `8`
 - 확산 Tick: `2.5초`
-- Tick당 확산 시도: `2`
+- Tick당 인접 후보 시도: `2`
 - Tick당 신규 점화: 최대 `1`
 - 기본 확산 확률: `0.45`
+- 최초 Patch Heat: `70`
+- 기존 Patch Heat 성장: Tick당 `8~18`
+- 신규 Patch Heat: `25`
 - 피해 Tick: `1초`
+- Patch 기본 피해: `2 × intensity × damageMultiplier`
+- 대상별 Tick 피해 상한: `12`
+- 소화 감소: hit당 Heat `35`
+- 소화 최대 거리: `7m`
+- 마지막 Patch 제거 뒤 Containment: `2.5초`
 
 ### 13.3 `PHSFirePatch`
 
@@ -711,7 +736,8 @@ P0 권장 초기값:
 - self link 금지.
 - duplicate link 금지.
 - target null 금지.
-- 다른 Zone 링크는 명시적 방화문/통로 link만 허용.
+- 현재 다른 Zone 링크는 `cross_zone_link_not_supported`로 거절.
+- 방화문/통로 Cross-Zone Link는 별도 P1 계약 후 추가.
 
 ### 13.5 화재 상태
 
@@ -733,6 +759,7 @@ public enum PHSFireIntensity : byte
 public struct NetworkFirePatchSnapshot : INetworkSerializable
 {
     public uint AccidentInstanceId;
+    public FixedString64Bytes LocationId;
     public ushort PatchId;
     public PHSFireIntensity Intensity;
     public ushort Heat;
@@ -742,6 +769,16 @@ public struct NetworkFirePatchSnapshot : INetworkSerializable
 ```
 
 `NetworkList<NetworkFirePatchSnapshot>` 사용.
+
+필드 계약:
+
+- `AccidentInstanceId`: Ship Accident와 Fire Runtime을 묶는 단일 Instance ID.
+- `LocationId`: `PHSFireZone`과 사건 위치 원장의 연결 키.
+- `PatchId`: Location 안에서 유일한 표면 Patch ID.
+- `Intensity`: Heat에서 계산한 `None/Small/Medium/Large`.
+- `Heat`: 서버가 소유하는 `0~200` 정수 상태.
+- `Revision`: 해당 Patch 변경 순서.
+- `ChangedAtServerTime`: NGO Server Time 기준 마지막 변경 시각.
 
 장점:
 
@@ -755,29 +792,34 @@ public struct NetworkFirePatchSnapshot : INetworkSerializable
 
 확산 Tick마다:
 
-1. `Medium` 이상이거나 확산 Heat 임계값을 넘은 활성 Patch 수집.
-2. 각 Patch의 비활성 Neighbor 수집.
-3. 이미 최대 Patch 수면 종료.
-4. 후보 가중치 계산.
-5. Server Seeded random으로 중복 없는 후보를 최대 2개 선택.
-6. 후보별 확산 확률을 roll한다.
-7. Tick 전체에서 최초 성공 후보 1개만 `Small`로 활성화한다.
-8. 실패 시 무한 retry 없이 다음 spread tick까지 대기.
+1. 활성 Patch Heat를 각각 `8~18` 증가시키고 `200`에서 제한한다.
+2. 활성 Patch의 `PHSFirePatchLink`가 가리키는 비활성 Neighbor만 후보로 수집한다.
+3. 이미 최대 활성 Patch `8`개면 신규 점화를 중지한다.
+4. 후보 가중치를 계산한다.
+5. `NetworkRunRandomStream.IncidentSpread=600`으로 서버 결정론 RNG를 만든다. 정상 Consumer 경로는 사건 `commandId`, fallback 경로는 `0xF17E000000000000 | accidentInstanceId` Scope를 사용한다.
+6. 결정론 RNG로 후보와 성장량을 선택한다.
+7. Tick 전체에서 성공 후보 최대 `1`개를 Heat `25`로 점화한다.
+8. 후보가 없거나 실패하면 무한 retry 없이 다음 `2.5초` Tick까지 대기한다.
 
 가중치:
 
 ```text
-candidateWeight =
-    link.spreadWeight
-    × target.flammability
-    × sourceIntensityFactor
-    × severityFactor
+candidateSelectionWeight = link.spreadWeight
+
+spreadSuccessChance =
+    clamp01(
+        zone.baseSpreadChance
+        × target.flammability
+        × sourceIntensity / LargeIntensity)
 ```
+
+`link.minimumSourceIntensity` 미만인 Source는 후보 Link에서 제외한다. 현재 Severity Factor는 확산 계산에 사용하지 않는다.
 
 P0:
 
 - 산소 농도·문 개폐·풍향은 계산하지 않는다.
 - 필드는 P1 확장 가능하도록 분리한다.
+- 산소 농도 `0`에서 자동 진화하는 규칙은 P1 후속이다.
 
 ### 13.7 화재 강도
 
@@ -787,36 +829,40 @@ P0:
 - `Small`: `1~69`.
 - `Medium`: `70~139`.
 - `Large`: `140~200`.
-- 서버 Spread Tick마다 미진압 Patch Heat를 증가시킨다.
-- 소화 입력은 해당 Patch Heat를 낮춘다.
+- 최초 Patch Heat는 `70`.
+- 서버 Spread Tick `2.5초`마다 미진압 Patch Heat를 `8~18` 증가시킨다.
+- 신규 인접 Patch는 Heat `25`로 시작한다.
+- 소화 입력 1회는 해당 Patch Heat를 `35` 낮춘다.
 - Heat가 0이 되면 Patch Snapshot을 제거한다.
-- 마지막 Patch가 꺼지면 `2.5초` Containment Grace 후 다시 확인한다.
-- Grace 동안 재점화가 없을 때 화재 사고를 해결한다.
+- 마지막 Patch가 꺼지면 `2.5초` 뒤 활성 Patch 수가 여전히 `0`인지 확인하고 화재 사고를 해결한다.
+- 현재는 활성 Patch가 `0`인 Containment 중 재점화시키는 경로가 없다. 재점화 가능한 Grace 정책은 P1 후속이다.
 
 ### 13.8 범위 피해
 
-`PHSNetworkFireIncidentController`가 서버에서 1초마다 실행한다.
+`PHSNetworkFireCoordinator`가 서버에서 `1초`마다 실행한다.
 
 절차:
 
-1. 활성 Patch의 `hazardBounds`로 대상 수집.
+1. 활성 Patch의 `hazardBounds`를 `Physics.Overlap*NonAlloc`로 조회한다.
 2. `IDamageable` 기준으로 중복 제거.
-3. 겹친 Patch 피해를 대상별로 합산한다.
-4. 대상별 최대 피해 상한을 적용한다.
+3. Patch별 피해 `2 × intensity × patch.damageMultiplier`를 대상별로 합산한다.
+4. 대상별 한 Tick 피해를 최대 `12`로 제한한다.
 5. 서버에서 `ApplyDamage` 호출.
 
-권장 시작값:
+기본 배율 `1.0` 기준:
 
-| 강도 | 플레이어/일반 대상 피해 | 설비 피해 |
-|---|---:|---:|
-| Small | 2/초 | 0~1/초 |
-| Medium | 4/초 | 1/초 |
-| Large | 6/초 | 2/초 |
+| 강도 | Patch 기본 피해/초 |
+|---|---:|
+| Small | 2 |
+| Medium | 4 |
+| Large | 6 |
 
 필수:
 
 - Client가 피해를 직접 적용하지 않는다.
 - 한 Tick에 같은 대상이 여러 Collider로 중복 피해받지 않는다.
+- 여러 Patch가 겹치면 Patch 피해는 합산하되 대상별 최대 `12`를 넘지 않는다.
+- Physics 조회는 NonAlloc Buffer를 재사용하며 정상 Tick에서 GC allocation을 만들지 않는다.
 - Fire가 `EnemyDeviceTarget`을 파괴하면 장치 사고 요청을 만들 수 있다.
 
 ### 13.9 소화
@@ -825,13 +871,18 @@ P0:
 
 서버 검증:
 
-- 아이템이 `fire_extinguisher`.
-- Player owner와 item revision 일치.
-- hit 위치가 Patch bounds 안.
-- 거리와 사용 간격 유효.
+- `UtilityAttackHit.ItemId`가 `fire_extinguisher`.
+- `UtilityAttackHit.Attacker`에서 서버 `NetworkPlayerItemRecord`를 찾고 현재 Held Item이 `fire_extinguisher`.
+- `UtilityAttackHit.RequestSequence`가 같은 서버 Item Revision Replay Scope 안에서 증가.
+- Attacker에서 Patch bounds 최근접점까지 거리가 허용 범위 안.
+- 분사 사용 간격과 SphereCast 대상 선택은 서버 `NetworkPlayerCombatController`가 담당.
 - Patch가 현재 활성 상태.
+- 유효 hit 1회당 Heat `35` 감소.
+
+`UtilityAttackHit`에는 Client expected Item Revision과 hit point가 없다. Revision mismatch 비교와 hit point 재검증은 현재 구현이 아니며 P1 후속이다.
 
 소화는 클릭 상호작용보다 분사 공격 hit 누적을 기본으로 한다.
+마지막 Patch가 0이 되어도 즉시 해결하지 않고 서버가 `2.5초` Containment를 확인한다.
 
 ### 13.10 화재 연출
 
@@ -847,10 +898,11 @@ Client 책임:
 
 규칙:
 
-- Patch Presentation은 씬/프리팹에 비활성 상태로 미리 배치한다.
+- Patch Presentation Prefab은 `PHSFireZone.patchPresentationPrefab`에 연결하고 `PHSFirePatchRuntimeTarget`이 첫 활성화 때 Visual Socket 아래에 지연 생성한다.
 - Snapshot Add/Value/Remove를 증분 적용한다.
 - 수리 progress 변경으로 다른 Patch VFX를 재시작하지 않는다.
-- Seed는 불꽃 변형 선택에만 사용한다.
+- 결정론 Seed는 서버 초기 Patch·Heat 성장·확산 선택에 사용한다. 현재 Snapshot/Runtime Target은 Presentation Seed를 전달하지 않으며 Light flicker offset은 `PatchId`에서 만든다.
+- Client Presentation은 피해, Heat, 확산, 사고 해결을 직접 변경하지 않는다.
 
 ## 14. 나머지 6종 기능 명세
 
@@ -1206,7 +1258,10 @@ Damage cause 문자열을 14자로 잘라 모든 사고가 `ship_accident:`로 �
 - `Fire/PHSFirePatchLink.cs`
 - `Fire/PHSFireZone.cs`
 - `Fire/NetworkFirePatchSnapshot.cs`
-- `Fire/PHSNetworkFireIncidentController.cs`
+- `Fire/PHSNetworkFireCoordinator.cs`
+- `Fire/PHSFirePatchRuntimeTarget.cs`
+- `Fire/IFireAreaDamageGateway.cs`
+- `Fire/PHSFireAreaDamageGateway.cs`
 
 ### 21.2 수정 Runtime
 
@@ -1357,11 +1412,26 @@ Editor 검사:
 ### P0-C: 기본 화재
 
 - FireZone/Patch/Link.
-- 서버 확산.
-- 범위 피해.
-- 소화.
-- Network Fire Snapshot.
-- Local Presentation.
+- `PHSNetworkFireCoordinator` 서버 확산.
+- NonAlloc 범위 피해와 대상별 `12` 상한.
+- hit당 Heat `35` 소화와 `2.5초` Containment.
+- Location/Heat/Revision을 포함한 Network Fire Snapshot.
+- Client 전용 Local Presentation.
+
+2026-07-19 현재 상태:
+
+- 위 Runtime 코드와 Scene Authoring/Inspector 연결용 Editor 코드를 구현하고 Scene Asset에 적용했다.
+- Unity `6000.5.2f1` Compile Error `0`을 확인했다.
+- Migration은 `PHS_0719_INCIDENT_LOCATION_MIGRATION_OK zones=4 locations=15 fireZones=4 firePatches=22 routes=10`으로 통과했다.
+- 전체 Validator는 `PHS_0715_VALIDATE_OK errors=0 scenes=3 prefabs=11`로 통과했다.
+- Direct local Host 0715 smoke에서 점화 `instance=2`, `fire_surface_room_a`, Patch `103`, Heat `70/Medium`, Target/Light 활성화를 확인했다.
+- 자연 확산은 Patch `4`, Heat `176/122/68/39`, 활성 Target/Light `4`, 재생 Particle `28`이었다.
+- 범위 피해는 Host Health `100 -> 0`이었다.
+- 소화/Containment는 Hit `24`, Patch `0`, failure 없음, 최종 Fire `0`, Accident `2=false`였다.
+- 기존 2026-07-18 Incident 원장 완료 기록은 그대로 유효하다.
+- 원격 Client Snapshot 동기화와 Late Join 현재 화재 복구는 아직 미검증이다.
+- 같은 Host run에서 Fire 외 `ParkHanSolGameSettingsController MissingReference` 1건과 EMP terminal impact `power_already_off` 2건이 관찰됐으므로 전체 Host clean은 주장하지 않는다.
+- 따라서 아래 완료 조건은 구현 목표이며 현재 완료 판정이 아니다.
 
 완료 조건:
 
@@ -1384,6 +1454,7 @@ Editor 검사:
 - 화재 열 누적 기반 설비 파괴.
 - Smoke 시야 저하.
 - 문/방화벽/산소 상태 확산 보정.
+- 산소 농도 0일 때 Patch 자동 진화.
 - 플레이어 산소 시스템 연동.
 - Map별 FireZone 차이.
 - Debug overlay와 사고 재현 명령.
@@ -1444,13 +1515,21 @@ UnifiedInternalAccidentsEnabled
 - HUD가 실제 Zone을 표시한다.
 - 최대 사고 상태에서 Warp 배율 하한을 지킨다.
 
-검증 완료:
+최종 검증 완료 목표:
 
 - Unity compile error 0.
 - Incident Validator error 0.
 - EditMode/PlayMode 관련 테스트 통과.
 - Development Build Host + Client 통과.
 - 8명 목표 부하 조건 프로파일 확인.
+
+현재 Fire 검증 상태:
+
+- 2026-07-18 기존 Incident 원장 기준선은 Unity Compile, 0715 Validator, Windows Build, Host+Client 2 Peer만 통과 기록이 있다.
+- 8명 목표 부하 프로파일과 새 Fire EditMode/PlayMode 검증은 통과 기록이 없다.
+- `PHSNetworkFireCoordinator`가 추가된 현재 변경분은 Compile Error `0`, 0719 Migration, 전체 0715 Validator와 Direct local Host 점화→확산→범위 피해→소화→Containment smoke를 통과했다.
+- 원격 Client와 Late Join 증거는 아직 없다. 같은 Host run의 Fire 외 오류 3건 때문에 전체 Host clean은 주장하지 않는다.
+- Fire 런타임의 로컬 Host flow 통과 상태는 갱신했지만 네트워크 완료 표시는 원격 Client와 Late Join 검증 뒤에만 갱신한다.
 
 ## 27. 구현 전 확인이 필요한 결정
 
