@@ -1,7 +1,7 @@
 using UnityEngine;
-using UnityEngine.InputSystem;
 using Unity.Netcode;
 using LastJumpCrew.ParkHanSol.Multiplayer;
+using LastJumpCrew.ParkHanSol.Multiplayer.Input;
 using CommonInteraction = LastJumpCrew.Common;
 
 namespace LastJumpCrew.ParkHanSol.Interaction
@@ -20,6 +20,7 @@ namespace LastJumpCrew.ParkHanSol.Interaction
         // 상호작용 대상 레이어 필터다. Trigger도 감지한다.
         [SerializeField] private LayerMask interactableLayers = ~0;
         [SerializeField] private ParkHanSolPlayHudMockPresenter playHudPresenter;
+        [SerializeField] private PlayerControlInput playerControlInput;
 
         // 같은 오브젝트에 붙은 아이템 보유 컴포넌트다.
         private IItemHolder itemHolder;
@@ -53,6 +54,10 @@ namespace LastJumpCrew.ParkHanSol.Interaction
             networkObject = GetComponent<NetworkObject>();
             playerController = GetComponent<NetworkPlayerController>();
             combatController ??= GetComponent<NetworkPlayerCombatController>();
+            if (playerControlInput == null)
+            {
+                Debug.LogError($"PHS_PLAYER_INPUT_SETUP_FAILED reason=control_input_reference_missing player={name}", this);
+            }
         }
 
         private void Update()
@@ -78,15 +83,16 @@ namespace LastJumpCrew.ParkHanSol.Interaction
             RefreshToolBoxSlotFocus();
             RefreshInteractableFocusGlow();
 
-            if (Keyboard.current != null && Keyboard.current.fKey.wasPressedThisFrame)
+            if (playerControlInput == null)
+            {
+                return;
+            }
+
+            if (playerControlInput.InteractPressedThisFrame)
             {
                 TryInteract();
             }
 
-            if (Mouse.current == null)
-            {
-                return;
-            }
             ProcessHeldItemUseInput();
             ProcessDropOrThrowInput();
         }
@@ -355,12 +361,12 @@ namespace LastJumpCrew.ParkHanSol.Interaction
 
         private void ProcessHeldItemUseInput()
         {
-            if (Mouse.current == null)
+            if (playerControlInput == null)
             {
                 return;
             }
 
-            if (Mouse.current.leftButton.wasPressedThisFrame && TryInteractWithFocusedToolBoxSlot())
+            if (playerControlInput.UsePressedThisFrame && TryInteractWithFocusedToolBoxSlot())
             {
                 return;
             }
@@ -373,7 +379,7 @@ namespace LastJumpCrew.ParkHanSol.Interaction
 
             if (usableItem is CommonInteraction.IContinuousUsableItem)
             {
-                if (Mouse.current.leftButton.isPressed)
+                if (playerControlInput.UsePressed)
                 {
                     TryUseHeldItem();
                 }
@@ -381,7 +387,7 @@ namespace LastJumpCrew.ParkHanSol.Interaction
                 return;
             }
 
-            if (Mouse.current.leftButton.wasPressedThisFrame)
+            if (playerControlInput.UsePressedThisFrame)
             {
                 TryUseHeldItem();
             }
@@ -389,19 +395,19 @@ namespace LastJumpCrew.ParkHanSol.Interaction
 
         private void ProcessDropOrThrowInput()
         {
-            if (Mouse.current == null)
+            if (playerControlInput == null)
             {
                 return;
             }
 
-            if (Mouse.current.rightButton.wasPressedThisFrame)
+            if (playerControlInput.DropPressedThisFrame)
             {
                 rightButtonPressedTime = Time.time;
                 isHoldingRightButton = true;
                 return;
             }
 
-            if (!Mouse.current.rightButton.wasReleasedThisFrame || !isHoldingRightButton)
+            if (!playerControlInput.DropReleasedThisFrame || !isHoldingRightButton)
             {
                 return;
             }

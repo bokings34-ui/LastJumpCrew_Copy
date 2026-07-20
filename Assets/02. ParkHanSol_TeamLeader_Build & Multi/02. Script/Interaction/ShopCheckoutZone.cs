@@ -2,12 +2,14 @@ using System.Collections.Generic;
 using LastJumpCrew.ParkHanSol.Items;
 using LastJumpCrew.ParkHanSol.Shop;
 using TMPro;
+using Unity.Netcode;
 using UnityEngine;
 
 namespace LastJumpCrew.ParkHanSol.Interaction
 {
     /// <summary>Calculates physical shop items from ShopProductData and queues paid items for ship delivery.</summary>
-    public sealed class ShopCheckoutZone : MonoBehaviour
+    [RequireComponent(typeof(NetworkObject))]
+    public sealed class ShopCheckoutZone : NetworkBehaviour
     {
         private readonly struct CheckoutEntry
         {
@@ -27,6 +29,10 @@ namespace LastJumpCrew.ParkHanSol.Interaction
         [SerializeField] private ShopCatalogSO catalog;
         [SerializeField] private MonoBehaviour purchaseServiceSource;
         [SerializeField, Min(0.1f)] private float statusDuration = 2f;
+        [SerializeField] private GameObject teleportEffectPrefab;
+        [SerializeField] private Transform teleportEffectAnchor;
+        [SerializeField, Min(0.01f)] private float teleportEffectScale = 0.1f;
+        [SerializeField, Min(0.1f)] private float teleportEffectDuration = 3.2f;
 
         private readonly HashSet<UtilityItemObject> checkoutItems = new();
         private IShopPurchaseService purchaseService;
@@ -164,14 +170,141 @@ namespace LastJumpCrew.ParkHanSol.Interaction
             foreach (var entry in entries)
             {
                 checkoutItems.Remove(entry.ItemObject);
-                if (entry.ItemObject != null)
-                {
-                    Destroy(entry.ItemObject.gameObject);
-                }
             }
+
+            CompletePurchasedItems(entries);
 
             Debug.Log($"PHS_SHOP_CHECKOUT_COMPLETED zone={name} totalPrice={result.TotalPrice} itemCount={result.PurchasedCount}");
             ShowTemporaryStatus($"PAID {result.TotalPrice} CR\nSHIP DELIVERY");
+        }
+
+        private void CompletePurchasedItems(IReadOnlyList<CheckoutEntry> entries)
+        {
+            if (entries == null || entries.Count == 0)
+            {
+                return;
+            }
+
+            if (NetworkManager.Singleton == null || !NetworkManager.Singleton.IsListening)
+            {
+                PlayCheckoutTeleportEffect();
+                foreach (var entry in entries)
+                {
+                    if (entry.ItemObject == null)
+                    {
+                        continue;
+                    }
+
+                    Destroy(entry.ItemObject.gameObject);
+                }
+
+                return;
+            }
+
+            var itemReferences = new NetworkObjectReference[entries.Count];
+            for (var index = 0; index < entries.Count; index++)
+            {
+                var itemObject = entries[index].ItemObject;
+                if (itemObject == null ||
+                    !itemObject.TryGetComponent<NetworkObject>(out var itemNetworkObject) ||
+                    !itemNetworkObject.IsSpawned)
+                {
+                    Debug.LogError(
+                        $"PHS_SHOP_CHECKOUT_NETWORK_FAILED reason=item_network_object_missing zone={name} item={itemObject?.name}",
+                        this);
+                    return;
+                }
+
+                itemReferences[index] = new NetworkObjectReference(itemNetworkObject);
+            }
+
+            if (!IsSpawned)
+            {
+                Debug.LogError($"PHS_SHOP_CHECKOUT_NETWORK_FAILED reason=checkout_zone_not_spawned zone={name}", this);
+                return;
+            }
+
+            if (IsServer)
+            {
+                CompletePurchasedItemsServer(itemReferences);
+                return;
+            }
+
+            CompletePurchasedItemsServerRpc(itemReferences);
+        }
+
+        [ServerRpc(RequireOwnership = false)]
+        private void CompletePurchasedItemsServerRpc(NetworkObjectReference[] itemReferences)
+        {
+            CompletePurchasedItemsServer(itemReferences);
+        }
+
+        private void CompletePurchasedItemsServer(NetworkObjectReference[] itemReferences)
+        {
+            if (itemReferences == null || itemReferences.Length == 0)
+            {
+                Debug.LogError($"PHS_SHOP_CHECKOUT_NETWORK_FAILED reason=item_references_missing zone={name}", this);
+                return;
+            }
+
+            for (var index = 0; index < itemReferences.Length; index++)
+            {
+                if (!itemReferences[index].TryGet(out var itemNetworkObject) ||
+                    itemNetworkObject == null ||
+                    !itemNetworkObject.IsSpawned ||
+                    itemNetworkObject.GetComponent<UtilityItemObject>() == null)
+                {
+                    Debug.LogError($"PHS_SHOP_CHECKOUT_NETWORK_FAILED reason=item_reference_invalid zone={name} index={index}", this);
+                    return;
+                }
+
+            }
+
+            PlayCheckoutTeleportEffectClientRpc();
+            foreach (var itemReference in itemReferences)
+            {
+                if (itemReference.TryGet(out var itemNetworkObject) && itemNetworkObject != null && itemNetworkObject.IsSpawned)
+                {
+                    itemNetworkObject.Despawn(true);
+                }
+            }
+        }
+
+        [ClientRpc]
+        private void PlayCheckoutTeleportEffectClientRpc()
+        {
+            PlayCheckoutTeleportEffect();
+        }
+
+        private void PlayCheckoutTeleportEffect()
+        {
+            if (teleportEffectAnchor == null)
+            {
+                Debug.LogError($"PHS_SHOP_CHECKOUT_EFFECT_FAILED reason=teleport_effect_anchor_missing zone={name}", this);
+                return;
+            }
+
+            PlayTeleportEffect(teleportEffectAnchor.position);
+        }
+
+        private void PlayTeleportEffect(Vector3 position)
+        {
+            if (teleportEffectPrefab == null)
+            {
+                Debug.LogError($"PHS_SHOP_CHECKOUT_EFFECT_FAILED reason=teleport_effect_missing zone={name}", this);
+                return;
+            }
+
+            var effectInstance = Instantiate(teleportEffectPrefab, position, Quaternion.identity);
+            effectInstance.transform.localScale = Vector3.one * teleportEffectScale;
+            foreach (var particleSystem in effectInstance.GetComponentsInChildren<ParticleSystem>(true))
+            {
+                var main = particleSystem.main;
+                main.scalingMode = ParticleSystemScalingMode.Hierarchy;
+                particleSystem.Play(true);
+            }
+
+            Destroy(effectInstance, teleportEffectDuration);
         }
 
         private bool BuildCheckoutSnapshot(List<CheckoutEntry> entries, out int totalPrice, bool shouldLog)

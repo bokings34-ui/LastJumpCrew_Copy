@@ -11,9 +11,11 @@ namespace LastJumpCrew.ParkHanSol.Interaction
         [SerializeField] private ShopSceneTransitionMode shopTransitionMode;
         [SerializeField] private string interactionPrompt = "Travel To Exterior Shop";
         [SerializeField, Min(0.1f)] private float serverInteractionDistance = 4f;
+        [SerializeField] private bool requiresPartyVote = true;
 
         public string InteractionPrompt => interactionPrompt;
         public string DestinationSceneName => destinationSceneName;
+        public bool RequiresPartyVote => requiresPartyVote;
 
         public bool MatchesServerRequest(
             Transform playerTransform,

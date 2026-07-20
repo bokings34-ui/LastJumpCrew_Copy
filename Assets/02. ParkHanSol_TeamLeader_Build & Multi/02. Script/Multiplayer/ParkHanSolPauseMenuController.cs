@@ -32,6 +32,8 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
         private Vector2 menuCardShownPosition;
         private Sequence openSequence;
 
+        public bool IsOpen => isOpen;
+
         private void Awake()
         {
             Bind(resumeButton, CloseMenu);
@@ -117,8 +119,10 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
             SetPanels(false, false);
             SetPlayerInputBlocked(false);
             PlayerPrefs.Save();
-            Cursor.lockState = CursorLockMode.Locked;
-            Cursor.visible = false;
+            var voteActive = NetworkShopTransitionVoteCoordinator.Instance != null
+                && NetworkShopTransitionVoteCoordinator.Instance.IsVoteActive;
+            Cursor.lockState = voteActive ? CursorLockMode.None : CursorLockMode.Locked;
+            Cursor.visible = voteActive;
         }
 
         public void OpenOptions()
@@ -303,6 +307,13 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
 
         private static void SetPlayerInputBlocked(bool blocked)
         {
+            if (!blocked
+                && NetworkShopTransitionVoteCoordinator.Instance != null
+                && NetworkShopTransitionVoteCoordinator.Instance.IsVoteActive)
+            {
+                blocked = true;
+            }
+
             foreach (var player in FindObjectsByType<NetworkPlayerController>(FindObjectsSortMode.None))
             {
                 player.SetPauseInputBlocked(blocked);

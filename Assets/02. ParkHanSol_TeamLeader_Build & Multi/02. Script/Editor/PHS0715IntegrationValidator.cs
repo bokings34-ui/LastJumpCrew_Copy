@@ -1021,8 +1021,8 @@ namespace LastJumpCrew.ParkHanSol.Editor
                 var serializedDisplay = new SerializedObject(displayController);
                 RequireArray(serializedDisplay, "displaySlots", 8, "shop_display_slots_insufficient", errors);
                 Require(
-                    serializedDisplay.FindProperty("displaySlots")?.arraySize == 10,
-                    "shop_display_slots_invalid expected=10",
+                    serializedDisplay.FindProperty("displaySlots")?.arraySize == 12,
+                    "shop_display_slots_invalid expected=12",
                     errors);
                 Require(
                     serializedDisplay.FindProperty("minimumDisplayCount")?.intValue == 8,
@@ -1031,6 +1031,10 @@ namespace LastJumpCrew.ParkHanSol.Editor
                 Require(
                     serializedDisplay.FindProperty("maximumDisplayCount")?.intValue == 10,
                     "shop_maximum_display_count_invalid expected=10",
+                    errors);
+                Require(
+                    serializedDisplay.FindProperty("allowDuplicateProducts")?.boolValue == false,
+                    "shop_duplicate_products_must_be_disabled",
                     errors);
             }
 
@@ -2111,7 +2115,8 @@ namespace LastJumpCrew.ParkHanSol.Editor
                     typeof(NetworkRunStageClock),
                     typeof(NetworkRunEconomyLedger),
                     typeof(NetworkRunRandomLedger),
-                    typeof(NetworkRunIncidentLedger)
+                    typeof(NetworkRunIncidentLedger),
+                    typeof(NetworkShopTransitionVoteCoordinator)
                 };
                 Require(
                     networkBehaviours.Length == expectedBehaviourTypes.Length,
@@ -2541,7 +2546,7 @@ namespace LastJumpCrew.ParkHanSol.Editor
                 return;
             }
 
-            Require(catalog.Products.Count == 8, $"shop_catalog_count_invalid actual={catalog.Products.Count}", errors);
+            Require(catalog.Products.Count == 12, $"shop_catalog_count_invalid actual={catalog.Products.Count}", errors);
             var networkPrefabHashes = new HashSet<long>();
             foreach (var product in catalog.Products)
             {
@@ -2677,7 +2682,7 @@ namespace LastJumpCrew.ParkHanSol.Editor
             }
 
             Require(
-                catalog.Items.Count == 13,
+                catalog.Items.Count == 17,
                 $"utility_item_catalog_count_invalid actual={catalog.Items.Count}",
                 errors);
 
