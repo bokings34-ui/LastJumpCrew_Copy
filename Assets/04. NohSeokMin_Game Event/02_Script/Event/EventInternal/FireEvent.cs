@@ -11,8 +11,8 @@ namespace SM
         public int FireLevel { get { return _activeEffects.Count; } }
 
         private readonly List<FireEffectInstance> _activeEffects = new List<FireEffectInstance>();
-        private readonly Dictionary<Transform, FireEffectInstance> _occupiedPoints = new Dictionary<Transform, FireEffectInstance>();
-        private readonly Dictionary<FireEffectInstance, Transform> _effectToPoint = new Dictionary<FireEffectInstance, Transform>();
+        private readonly Dictionary<ShipSpawnPoint, FireEffectInstance> _occupiedPoints = new Dictionary<ShipSpawnPoint, FireEffectInstance>();
+        private readonly Dictionary<FireEffectInstance, ShipSpawnPoint> _effectToPoint = new Dictionary<FireEffectInstance, ShipSpawnPoint>();
 
         public override void OnTrigger()
         {
@@ -36,39 +36,46 @@ namespace SM
             {
                 _timer = 0f;
                 SpawnNextFire();
-                Debug.Log($"<color=lime>[{FireData.EventName}]</color> 현재 레벨: {FireLevel}");
             }
         }
 
-        private Transform GetFreeSpawnPoint()
+        private ShipSpawnPoint PickNextSpawnPoint()
         {
-            var spawnPoints = Context?.Room?.FireSpawnPoints;
-            if (spawnPoints == null || spawnPoints.Count == 0) return null;
-
-            var freePoints = new List<Transform>();
-            foreach (var point in spawnPoints)
+            if (_occupiedPoints.Count == 0)
             {
-                if (!_occupiedPoints.ContainsKey(point))
-                    freePoints.Add(point);
+                return ShipSpawnPointConfig.Instance.GetRandomPoint();
             }
 
-            if (freePoints.Count == 0) return null;
-            return freePoints[Random.Range(0, freePoints.Count)];
+            var candidates = new List<ShipSpawnPoint>();
+
+            foreach (var occupied in _occupiedPoints.Keys)
+            {
+                foreach (var neighbor in occupied.Neighbors)
+                {
+                    if (!_occupiedPoints.ContainsKey(neighbor) && !candidates.Contains(neighbor))
+                    {
+                        candidates.Add(neighbor);
+                    }
+                }
+            }
+
+            if (candidates.Count == 0) return null;
+            return candidates[Random.Range(0, candidates.Count)];
         }
 
         private void SpawnNextFire()
         {
-            var point = GetFreeSpawnPoint();
+            var point = PickNextSpawnPoint();
             if (point == null) return;
 
-            var effect = FireEffectPool.Instance.Get
-                (point.position, FireData.damagePerSecond, FireData.maxRepairProgress);
-            
+            var effect = FireEffectPool.Instance.Get(point.transform.position, FireData.damagePerSecond, FireData.maxRepairProgress);
             effect.OnRemove += HandleRemoveFire;
 
             _occupiedPoints[point] = effect;
             _effectToPoint[effect] = point;
             _activeEffects.Add(effect);
+
+            Debug.Log($"<color=lime>[{FireData.EventName}]</color> 현재 레벨: {FireLevel}");
         }
 
         private void HandleRemoveFire(FireEffectInstance effect)
@@ -112,6 +119,7 @@ namespace SM
                 effect.OnRemove -= HandleRemoveFire;
                 FireEffectPool.Instance.Return(effect);
             }
+
             _activeEffects.Clear();
             _occupiedPoints.Clear();
             _effectToPoint.Clear();

@@ -12,7 +12,7 @@ namespace SM
         {
             ChangeState(EventState.InProgress);
 
-            var point = OxygenLeakSpawnSetting.Instance.GetRandomPoint();
+            var point = ShipSpawnPointConfig.Instance.GetRandomPoint();
 
             if (point == null)
             {
@@ -21,7 +21,7 @@ namespace SM
                 return;
             }
 
-            _effect = OxygenLeakEffectPool.Instance.Get(point.position, LeakData);
+            _effect = OxygenLeakEffectPool.Instance.Get(point.transform.position, LeakData);
             _effect.OnSealed += HandleSealed;
         }
 

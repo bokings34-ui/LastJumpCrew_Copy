@@ -17,21 +17,21 @@ namespace SM
         {
             ChangeState(EventState.InProgress);
 
-            var group = EnemySpawnSetting.Instance.GetRandomPoint();
+            var point = ShipSpawnPointConfig.Instance.GetRandomPoint();
 
-            if (group == null || group.spawnPoint == null)
+            if (point == null)
             {
-                Debug.Log($"<color=lime>[{SpawnData.EventName}]</color> 사용 가능한 스폰 그룹 없음");
+                Debug.LogWarning($"<color=lime>[{SpawnData.EventName}]</color> 사용 가능한 스폰 포인트가 없어 발생 취소.");
                 OnFail();
                 return;
             }
 
-            _spawnPoint = group.spawnPoint;
+            _spawnPoint = point.transform;
             _chosenPrefab = PickRandomPrefab();
 
             if (_chosenPrefab == null)
             {
-                Debug.LogError($"[{SpawnData.EventName}] 선택된 프리팹이 없습니다.");
+                Debug.LogError($"<color=lime>[{SpawnData.EventName}]</color> 선택된 프리팹이 없습니다.");
                 OnFail();
                 return;
             }
