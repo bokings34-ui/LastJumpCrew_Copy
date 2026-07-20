@@ -32,5 +32,7 @@ namespace LastJumpCrew.SeoBoGyeong
 
         /// <summary>전체 목록(읽기 전용).</summary>
         public IReadOnlyDictionary<int, T> All => table;
+
+        public int Count => table.Count;
     }
 }

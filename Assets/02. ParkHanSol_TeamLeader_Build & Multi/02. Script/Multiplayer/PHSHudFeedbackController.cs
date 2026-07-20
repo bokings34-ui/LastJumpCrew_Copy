@@ -10,7 +10,6 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
         [Header("Value Motion")]
         [SerializeField] private ParkHanSolHudTextMotion healthMotion;
         [SerializeField] private ParkHanSolHudTextMotion boostMotion;
-        [SerializeField] private ParkHanSolHudTextMotion moneyMotion;
         [SerializeField] private ParkHanSolHudTextMotion bankMotion;
         [FormerlySerializedAs("quotaMotion")]
         [SerializeField] private ParkHanSolHudTextMotion warpMotion;
@@ -30,6 +29,11 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
         [Header("Ship Alert")]
         [SerializeField] private RectTransform gravityWarningRoot;
         [SerializeField] private CanvasGroup gravityWarningGroup;
+        [SerializeField] private TMP_Text gravityWarningText;
+
+        [Header("Respawn Status")]
+        [SerializeField] private GameObject respawnStatusPanel;
+        [SerializeField] private TMP_Text respawnStatusText;
 
         [Header("Timing")]
         [SerializeField, Min(0.01f)] private float showDuration = 0.16f;
@@ -38,7 +42,6 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
 
         private int previousHealth;
         private int previousBoost;
-        private int previousMoney;
         private int previousBank;
         private int previousWarpPercent;
         private int previousShipHp;
@@ -51,6 +54,9 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
         private bool previousHeldItemState;
         private string previousInteractionPrompt;
         private bool isGravityWarningVisible;
+        private bool isHazardWarningVisible;
+        private bool isWarningPanelVisible;
+        private string defaultGravityWarningText;
         private Vector2 interactionPromptShownPosition;
         private Vector2 gravityWarningShownPosition;
 
@@ -66,8 +72,18 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
                 gravityWarningShownPosition = gravityWarningRoot.anchoredPosition;
             }
 
+            if (gravityWarningText == null)
+            {
+                Debug.LogError($"PHS_HUD_SETUP_FAILED reason=gravity_warning_text_missing hud={name}", this);
+            }
+            else
+            {
+                defaultGravityWarningText = gravityWarningText.text;
+            }
+
             SetPanelImmediate(interactionPromptRoot, interactionPromptGroup, false, interactionPromptShownPosition);
             SetPanelImmediate(gravityWarningRoot, gravityWarningGroup, false, gravityWarningShownPosition);
+            ClearRespawnStatus();
         }
 
         public void SetVitals(int health, int maxHealth, int stamina, int maxStamina)
@@ -95,14 +111,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
 
         public void SetEconomy(int money, int bank)
         {
-            moneyMotion?.SetValue($"${money:N0}", 1f);
             bankMotion?.SetValue($"${bank:N0}", 1f);
-
-            if (hasEconomy && money != previousMoney)
-            {
-                if (money > previousMoney) moneyMotion?.PlayIncreaseFeedback();
-                else moneyMotion?.PlayDecreaseFeedback();
-            }
 
             if (hasEconomy && bank != previousBank)
             {
@@ -110,7 +119,6 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
                 else bankMotion?.PlayDecreaseFeedback();
             }
 
-            previousMoney = money;
             previousBank = bank;
             hasEconomy = true;
         }
@@ -198,8 +206,96 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
             }
 
             isGravityWarningVisible = isVisible;
-            AnimatePanel(gravityWarningRoot, gravityWarningGroup, isVisible, gravityWarningShownPosition);
-            if (isVisible && gravityWarningRoot != null)
+            RefreshWarningPanel();
+        }
+
+        public void SetHazardWarning(string message)
+        {
+            if (gravityWarningText == null)
+            {
+                Debug.LogError($"PHS_HUD_HAZARD_WARNING_FAILED reason=text_missing hud={name}", this);
+                return;
+            }
+
+            isHazardWarningVisible = !string.IsNullOrWhiteSpace(message);
+            gravityWarningText.text = isHazardWarningVisible ? message.Trim() : defaultGravityWarningText;
+            RefreshWarningPanel();
+        }
+
+        public void ClearHazardWarning()
+        {
+            isHazardWarningVisible = false;
+            if (gravityWarningText != null)
+            {
+                gravityWarningText.text = defaultGravityWarningText;
+            }
+
+            RefreshWarningPanel();
+        }
+
+        public void SetRespawnCountdown(float seconds)
+        {
+            if (!RequireRespawnUi(nameof(SetRespawnCountdown)))
+            {
+                return;
+            }
+
+            var remainingSeconds = Mathf.Max(0, Mathf.CeilToInt(seconds));
+            respawnStatusText.text = $"부활까지 {remainingSeconds}초";
+            respawnStatusPanel.SetActive(true);
+        }
+
+        public void SetWarpRespawnPending()
+        {
+            if (!RequireRespawnUi(nameof(SetWarpRespawnPending)))
+            {
+                return;
+            }
+
+            respawnStatusText.text = "워프 완료 후 자동 부활";
+            respawnStatusPanel.SetActive(true);
+        }
+
+        public void ClearRespawnStatus()
+        {
+            if (!RequireRespawnUi(nameof(ClearRespawnStatus)))
+            {
+                return;
+            }
+
+            respawnStatusText.text = string.Empty;
+            respawnStatusPanel.SetActive(false);
+        }
+
+        private bool RequireRespawnUi(string operation)
+        {
+            var isReady = true;
+            if (respawnStatusPanel == null)
+            {
+                Debug.LogError($"PHS_HUD_RESPAWN_SETUP_FAILED reason=respawn_status_panel_missing operation={operation} hud={name}", this);
+                isReady = false;
+            }
+
+            if (respawnStatusText == null)
+            {
+                Debug.LogError($"PHS_HUD_RESPAWN_SETUP_FAILED reason=respawn_status_text_missing operation={operation} hud={name}", this);
+                isReady = false;
+            }
+
+            return isReady;
+        }
+
+        private void RefreshWarningPanel()
+        {
+            var shouldShow = isGravityWarningVisible || isHazardWarningVisible;
+            if (isWarningPanelVisible == shouldShow)
+            {
+                return;
+            }
+
+            isWarningPanelVisible = shouldShow;
+            AnimatePanel(gravityWarningRoot, gravityWarningGroup, shouldShow, gravityWarningShownPosition);
+            if (shouldShow && gravityWarningRoot != null)
             {
                 gravityWarningRoot.DOPunchScale(new Vector3(0.06f, 0.06f, 0f), 0.22f, 5, 0.55f)
                     .SetUpdate(true)

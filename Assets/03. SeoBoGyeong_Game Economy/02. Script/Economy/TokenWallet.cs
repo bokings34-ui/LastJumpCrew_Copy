@@ -1,43 +1,46 @@
+using System;
 using UnityEngine;
-namespace LastJumpCrew.SeBoGyeong.Economy
+
+namespace LastJumpCrew.SeoBoGyeong.Economy
 {
     /// <summary>
-    /// ÇÃ·¹ÀÌ¾î °³ÀÎÀÌ ¼ÒÀ¯ÇÏ´Â È­Æó
-    /// Ä¡Àå ¾ÆÀÌÅÛ ±¸¸Å¿ëµµ?
+    /// ì§€ì† ì¬í™”(Token) ì§€ê°‘. í”Œë ˆì´ì–´ ê°œì¸ ì†Œì§€ â€” ë¡œë¹„ì—ì„œ ì¹˜ì¥ ì•„ì´í…œ êµ¬ë§¤ì— ì‚¬ìš©í•˜ê³ 
+    /// íŒ ì‚¬ì´ì— ì˜êµ¬ ì €ì¥ëœë‹¤(PlayerProfile ì´ ì†Œìœ , ì„¸ì´ë¸Œ ëŒ€ìƒ).
+    /// ì¸ê²Œì„ ë„¤íŠ¸ì›Œí¬ ìƒíƒœê°€ ì•„ë‹ˆë‹¤(NetworkVariable ì•„ë‹˜).
     /// </summary>
-    public class TokenWallet
+    public class TokenWallet : IWallet
     {
-        private int tokens; // Æ¯¼ö È­Æó . Ä¡Àå ¾ÆÀÌÅÛ¿ë(?). °³º°
+        private int balance;
 
-        public TokenWallet(int initialTokens = 0)
+        public int Balance => balance;
+
+        /// <summary>ì”ì•¡ ë³€ê²½ ì‹œ ë°œí–‰(UI ê°±ì‹ ìš©).</summary>
+        public event Action<int> BalanceChanged;
+
+        public TokenWallet(int initialBalance = 0)
         {
-            Tokens = initialTokens;
+            balance = Mathf.Max(0, initialBalance);
         }
 
-        public int Tokens
-        {
-            get => tokens;
-            set => tokens = Mathf.Max(0, value);
-        }
-
-        public void AddTokens(int amount)
+        public void Add(int amount)
         {
             if (amount < 0)
             {
-                Debug.LogWarning("[Token] Add¿¡ À½¼ö´ÜÀ§¸¦ Áö¿øÇÏÁö ¾ÊÀ½.");
+                Debug.LogWarning("[Token] Add ì— ìŒìˆ˜ëŠ” ì‚¬ìš©í•  ìˆ˜ ì—†ë‹¤.");
                 return;
             }
-            Tokens += amount;
+            balance += amount;
+            BalanceChanged?.Invoke(balance);
         }
 
-        public bool SpendTokens(int amount)
+        public bool TrySpend(int amount)
         {
-            if (Tokens >= amount)
-            {
-                Tokens -= amount;
-                return true;
-            }
-            return false;
+            if (amount < 0) return false;
+            if (balance < amount) return false;
+
+            balance -= amount;
+            BalanceChanged?.Invoke(balance);
+            return true;
         }
     }
 }

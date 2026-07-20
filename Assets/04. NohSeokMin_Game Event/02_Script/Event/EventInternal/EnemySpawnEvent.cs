@@ -40,16 +40,16 @@ namespace SM
             _spawnTimer = 0f;
 
             SpawnOneEnemy();
-            Debug.Log($"<color=lime>[{SpawnData.EventName}]</color> 발생!");
+            //Debug.Log($"<color=lime>[{SpawnData.EventName}]</color> 발생!");
         }
 
         public override void OnTick(float deltaTime)
         {
             if (State != EventState.InProgress) return;
 
-            foreach (var enemy in _activeEnemies)
+            for (int i = _activeEnemies.Count - 1; i >= 0; i--)
             {
-                enemy.Tick(deltaTime);
+                _activeEnemies[i].Tick(deltaTime);
             }
 
             if (_spawnedCount >= SpawnData.enemyCount) return;
@@ -96,6 +96,20 @@ namespace SM
         public override void OnResolve()
         {
             ChangeState(EventState.Resolve);
+        }
+
+        public override void ForceTerminate()
+        {
+            foreach (var enemy in _activeEnemies)
+            {
+                enemy.OnDeath -= HandleEnemyDeath;
+                enemy.ForceReturnToPool();
+            }
+
+            _activeEnemies.Clear();
+            _spawnedCount = SpawnData.enemyCount;
+
+            base.ForceTerminate();
         }
     }
 }

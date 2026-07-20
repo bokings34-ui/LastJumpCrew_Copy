@@ -7,6 +7,7 @@ using UnityEngine.InputSystem;
 using System;
 using System.Collections;
 using System.Threading.Tasks;
+using LastJumpCrew.SeoBoGyeong;
 
 namespace LastJumpCrew.ParkHanSol.Multiplayer
 {
@@ -25,21 +26,20 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
         [SerializeField] private GameObject settingsPanel;
         [SerializeField] private GameObject settingsLeftMenu;
         [SerializeField] private GameObject settingsApplyButton;
-        [SerializeField] private GameObject shopPanel;
         [SerializeField] private GameObject sessionPanel;
-        [SerializeField] private NetworkSessionPanel sessionPanelController;
+        [SerializeField] private MultiplayerRoomService roomService;
+        [SerializeField] private MultiplayerRoomBrowser roomBrowser;
+        [SerializeField] private ProximityVoiceChatSession voiceChatSession;
 
         [Header("Main Buttons")]
         [SerializeField] private Button startButton;
         [SerializeField] private Button settingsButton;
-        [SerializeField] private Button shopButton;
         [SerializeField] private Button quitButton;
 
         [Header("Lobby Buttons")]
         [SerializeField] private Button createRoomButton;
         [SerializeField] private Button joinRoomButton;
         [SerializeField] private Button lobbyBackButton;
-        [SerializeField] private TMP_InputField lobbyJoinCodeInput;
         [SerializeField] private TMP_Text lobbyStatusText;
 
         [Header("Room Buttons")]
@@ -53,16 +53,12 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
         [SerializeField] private Button settingsBackButton;
         [SerializeField] private ParkHanSolGameSettingsController gameSettingsController;
 
-        [Header("Shop")]
-        [SerializeField] private Button shopBackButton;
-
         private SettingsReturnTarget settingsReturnTarget = SettingsReturnTarget.Start;
 
         private void Awake()
         {
             Bind(startButton, ShowLobbySelection);
             Bind(settingsButton, ShowSettingsFromStart);
-            Bind(shopButton, ShowShop);
             Bind(quitButton, QuitGame);
             Bind(createRoomButton, ShowCreateRoom);
             Bind(joinRoomButton, ShowJoinRoom);
@@ -71,7 +67,6 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
             Bind(roomSettingsButton, ShowSettingsFromRoom);
             Bind(roomStartGameButton, StartGame);
             Bind(settingsBackButton, CloseSettingsWithoutSave);
-            Bind(shopBackButton, ShowStart);
 
             if (masterVolumeSlider != null)
             {
@@ -79,7 +74,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
                 masterVolumeSlider.value = AudioListener.volume;
             }
 
-            ShowStart();
+            ShowStartImmediate();
         }
 
         private void Start()
@@ -105,7 +100,6 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
         {
             Unbind(startButton, ShowLobbySelection);
             Unbind(settingsButton, ShowSettingsFromStart);
-            Unbind(shopButton, ShowShop);
             Unbind(quitButton, QuitGame);
             Unbind(createRoomButton, ShowCreateRoom);
             Unbind(joinRoomButton, ShowJoinRoom);
@@ -114,7 +108,6 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
             Unbind(roomSettingsButton, ShowSettingsFromRoom);
             Unbind(roomStartGameButton, StartGame);
             Unbind(settingsBackButton, CloseSettingsWithoutSave);
-            Unbind(shopBackButton, ShowStart);
 
             if (masterVolumeSlider != null)
             {
@@ -124,15 +117,24 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
 
         private void ShowStart()
         {
+            SetStartPanels(false);
+        }
+
+        private void ShowStartImmediate()
+        {
+            SetStartPanels(true);
+        }
+
+        private void SetStartPanels(bool immediate)
+        {
             settingsReturnTarget = SettingsReturnTarget.Start;
-            SetPanel(startPanel, true);
-            SetPanel(lobbyPanel, false);
-            SetPanel(roomPanel, false);
-            SetPanel(settingsPanel, false);
-            SetPanel(settingsLeftMenu, false);
-            SetPanel(settingsApplyButton, false);
-            SetPanel(shopPanel, false);
-            SetPanel(sessionPanel, false);
+            SetPanel(startPanel, true, immediate);
+            SetPanel(lobbyPanel, false, immediate);
+            SetPanel(roomPanel, false, immediate);
+            SetPanel(settingsPanel, false, immediate);
+            SetPanel(settingsLeftMenu, false, immediate);
+            SetPanel(settingsApplyButton, false, immediate);
+            SetPanel(sessionPanel, false, immediate);
         }
 
         private void ShowSettingsFromStart()
@@ -155,21 +157,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
             SetPanel(settingsPanel, true);
             SetPanel(settingsLeftMenu, true);
             SetPanel(settingsApplyButton, true);
-            SetPanel(shopPanel, false);
             SetPanel(sessionPanel, false);
-        }
-
-        private void ShowShop()
-        {
-            SetPanel(startPanel, false);
-            SetPanel(lobbyPanel, false);
-            SetPanel(roomPanel, false);
-            SetPanel(settingsPanel, true);
-            SetPanel(settingsLeftMenu, false);
-            SetPanel(settingsApplyButton, false);
-            SetPanel(shopPanel, true);
-            SetPanel(sessionPanel, false);
-            ShowOnlySettingsChild(shopPanel);
         }
 
         private void CloseSettingsWithoutSave()
@@ -215,25 +203,33 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
             SetPanel(settingsPanel, false);
             SetPanel(settingsLeftMenu, false);
             SetPanel(settingsApplyButton, false);
-            SetPanel(shopPanel, false);
             SetPanel(sessionPanel, false);
+            roomBrowser?.ShowActionPanel();
         }
 
-        private async void ShowCreateRoom()
+        private void ShowCreateRoom()
         {
-            await CreateRoomAsync();
+            if (roomBrowser == null)
+            {
+                Debug.LogError("PHS_ROOM_UI_MISSING roomBrowser");
+                SetLobbyStatus("ROOM UI NOT READY");
+                return;
+            }
+
+            roomBrowser.ShowCreateRoomPanel();
         }
 
-        private async Task<bool> CreateRoomAsync()
+        private async Task<bool> CreateRoomAsync(string roomName = "Last Jump Crew Room", int maxPlayers = 8)
         {
-            if (sessionPanelController == null)
+            if (roomService == null)
             {
                 SetLobbyStatus("SESSION NOT READY");
+                Debug.LogError("PHS_ROOM_SERVICE_MISSING create");
                 return false;
             }
 
             SetLobbyStatus("CREATING ROOM");
-            if (!await sessionPanelController.StartRelayHostSessionAsync())
+            if (!await roomService.CreateRoomAsync(roomName, maxPlayers, string.Empty))
             {
                 SetLobbyStatus("CREATE FAILED");
                 return false;
@@ -245,24 +241,14 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
 
         private async void ShowJoinRoom()
         {
-            if (sessionPanelController == null)
+            if (roomBrowser == null)
             {
-                SetLobbyStatus("SESSION NOT READY");
+                SetLobbyStatus("ROOM UI NOT READY");
+                Debug.LogError("PHS_ROOM_UI_MISSING roomBrowser");
                 return;
             }
 
-            var joinCode = lobbyJoinCodeInput == null ? string.Empty : lobbyJoinCodeInput.text;
-            if (string.IsNullOrWhiteSpace(joinCode))
-            {
-                SetLobbyStatus("ENTER ROOM CODE");
-                return;
-            }
-
-            SetLobbyStatus("JOINING ROOM");
-            if (!await sessionPanelController.StartRelayClientSessionAsync(joinCode))
-            {
-                SetLobbyStatus("JOIN FAILED");
-            }
+            await roomBrowser.ShowRoomListAsync();
         }
 
         public void ShowRoom()
@@ -273,17 +259,44 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
             SetPanel(settingsPanel, false);
             SetPanel(settingsLeftMenu, false);
             SetPanel(settingsApplyButton, false);
-            SetPanel(shopPanel, false);
             SetPanel(sessionPanel, false);
             SetLocalGameplayInput(false);
+            ConfigureVoiceChannel();
             Debug.Log($"PHS_ONLINE_ROOM scene={SceneManager.GetActiveScene().name} clients={GetConnectedClientCount()}");
         }
 
-        private void LeaveRoom()
+        private async void LeaveRoom()
         {
-            sessionPanelController?.ShutdownSession();
+            if (voiceChatSession != null)
+            {
+                await voiceChatSession.LeaveAsync();
+            }
+
+            if (roomService == null)
+            {
+                Debug.LogError("PHS_ROOM_SERVICE_MISSING leave");
+                return;
+            }
+
+            if (!await roomService.LeaveRoomAsync())
+            {
+                SetLobbyStatus("LEAVE FAILED");
+                return;
+            }
+
             SetLocalGameplayInput(false);
             ShowLobbySelection();
+        }
+
+        private void ConfigureVoiceChannel()
+        {
+            if (voiceChatSession == null || roomService == null || string.IsNullOrWhiteSpace(roomService.SessionCode))
+            {
+                Debug.LogError("PHS_ROOM_VOICE_CHANNEL_FAILED missing_reference_or_session_code");
+                return;
+            }
+
+            voiceChatSession.SetVoiceChannel(roomService.SessionCode);
         }
 
         private void StartGame()
@@ -293,13 +306,51 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
             {
                 if (networkManager.IsServer)
                 {
+                    if (!TryBeginGameRun())
+                    {
+                        return;
+                    }
+
                     networkManager.SceneManager.LoadScene(playSceneName, LoadSceneMode.Single);
                 }
 
                 return;
             }
 
+            if (!TryBeginGameRun())
+            {
+                return;
+            }
+
             SceneManager.LoadScene(playSceneName);
+        }
+
+        private static bool TryBeginGameRun()
+        {
+            var gameCore = GameCore.Instance;
+            if (gameCore == null || gameCore.Services == null)
+            {
+                Debug.LogError("PHS_GAME_START_FAILED reason=game_core_missing");
+                return false;
+            }
+
+            var commands = gameCore.Services.Get<IGameCommands>();
+            var state = gameCore.Services.Get<IGameStateProvider>();
+            if (commands == null || state == null)
+            {
+                Debug.LogError("PHS_GAME_START_FAILED reason=economy_services_missing");
+                return false;
+            }
+
+            commands.StartGame();
+            if (state.Phase != GamePhase.ZoneSelect)
+            {
+                Debug.LogError($"PHS_GAME_START_FAILED reason=phase_{state.Phase}");
+                return false;
+            }
+
+            Debug.Log($"PHS_GAME_RUN_STARTED phase={state.Phase} clearedZones={state.ClearedZoneCount}");
+            return true;
         }
 
         private static void SetMasterVolume(float value)
@@ -324,33 +375,18 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
 #endif
         }
 
-        private static void SetPanel(GameObject panel, bool active)
+        private static void SetPanel(GameObject panel, bool active, bool immediate = false)
         {
+            if (panel != null && panel.TryGetComponent<ParkHanSolLobbyPanelTransition>(out var transition))
+            {
+                transition.SetVisible(active, immediate);
+                return;
+            }
+
             if (panel != null)
             {
                 panel.SetActive(active);
             }
-        }
-
-        private void ShowOnlySettingsChild(GameObject targetPanel)
-        {
-            if (settingsPanel == null || targetPanel == null)
-            {
-                return;
-            }
-
-            for (var i = 0; i < settingsPanel.transform.childCount; i++)
-            {
-                var child = settingsPanel.transform.GetChild(i).gameObject;
-                if (child == targetPanel || child.transform.IsChildOf(targetPanel.transform))
-                {
-                    continue;
-                }
-
-                child.SetActive(false);
-            }
-
-            targetPanel.SetActive(true);
         }
 
         private static void SetLocalGameplayInput(bool active)
@@ -388,20 +424,14 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
             yield return null;
             ShowLobbySelection();
 
-            if (lobbyJoinCodeInput != null)
-            {
-                lobbyJoinCodeInput.text = joinCode;
-            }
-
             Debug.Log($"PHS_AUTO_JOIN_BEGIN code={joinCode}");
-            ShowJoinRoom();
+            _ = JoinRoomFromCommandLineAsync(joinCode);
         }
 
         private async Task CreateRoomFromCommandLineAsync()
         {
             var created = await CreateRoomAsync();
-            var relayConnector = FindObjectOfType<RelaySessionConnector>();
-            var joinCode = relayConnector == null ? string.Empty : relayConnector.JoinCode;
+            var joinCode = roomService == null ? string.Empty : roomService.SessionCode;
             Debug.Log(created
                 ? $"PHS_AUTO_HOST_READY code={joinCode}"
                 : "PHS_AUTO_HOST_FAILED");
@@ -409,6 +439,20 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
             if (created && HasCommandLineFlag(Environment.GetCommandLineArgs(), "-phsAutoStartGame"))
             {
                 StartCoroutine(StartGameFromCommandLineWhenReady());
+            }
+        }
+
+        private async Task JoinRoomFromCommandLineAsync(string joinCode)
+        {
+            if (roomService == null)
+            {
+                Debug.LogError("PHS_AUTO_JOIN_FAILED room_service_missing");
+                return;
+            }
+
+            if (!await roomService.JoinRoomByCodeAsync(joinCode, string.Empty))
+            {
+                Debug.LogError($"PHS_AUTO_JOIN_FAILED code={joinCode}");
             }
         }
 

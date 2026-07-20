@@ -16,6 +16,6 @@ namespace LastJumpCrew.SeoBoGyeong
 
         int IGameData.Id => id;
 
-        // �߰��Ǿ��� ���� : �̺�Ʈ Ȯ�� ����ġ, ����, ���̵� ��
+        // 추가되어야 할 것들 : 이벤트 확률 가중치, 보상, 난이도 등
     }
 }

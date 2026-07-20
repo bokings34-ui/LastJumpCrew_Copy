@@ -1,38 +1,54 @@
+using LastJumpCrew.Common;
 using System;
 using System.Collections.Generic;
 using UnityEngine;
-using LastJumpCrew.Common;
+using UnityEngine.AI;
 
 namespace SM
 {
-    public class OxygenLeakEffectInstance : MonoBehaviour, IInteractable
+    public class OxygenLeakEffectInstance : MonoBehaviour, IInteractable, IRequireHeldItem
     {
+        [Header("벽 무시 레이어 설정")]
+        [SerializeField] private LayerMask _wallLayerMask;
+
+        [Header("흡입력 감소 설정")]
+        [SerializeField] private float pullActiveDuration = 5f;
+
         private float _outerPullRadius;
         private float _innerDamageRadius;
-        private float _pullSpeed;
+        private float _initialPullSpeed;
         private int _centerDamage;
         private float _damageTickInterval;
         private float _maxRepairProgress;
 
         private float _repairProgress;
         private float _damageTimer;
+        private float _elapsedSinceSpawn;
 
         public bool IsSealed { get; private set; }
         public event Action<OxygenLeakEffectInstance> OnSealed;
 
-        private readonly HashSet<Transform> _playersInRange = new HashSet<Transform>();
+        private struct PullTarget
+        {
+            public CharacterController Controller;
+            public NavMeshAgent Agent;
+        }
+
+        private readonly Dictionary<Transform, PullTarget> _targetsInRange
+            = new Dictionary<Transform, PullTarget>();
 
         public void Activate(OxygenLeakEventDataSO data)
         {
             _outerPullRadius = data.outerPullRadius;
             _innerDamageRadius = data.innerDamageRadius;
-            _pullSpeed = data.pullSpeed;
+            _initialPullSpeed = data.pullSpeed;
             _centerDamage = data.centerDamage;
             _damageTickInterval = data.damageTickInterval;
             _maxRepairProgress = data.maxRepairProgress;
 
             _repairProgress = 0f;
             _damageTimer = 0f;
+            _elapsedSinceSpawn = 0f;
             IsSealed = false;
 
             gameObject.SetActive(true);
@@ -40,7 +56,7 @@ namespace SM
 
         public void Deactivate()
         {
-            _playersInRange.Clear();
+            _targetsInRange.Clear();
             gameObject.SetActive(false);
         }
 
@@ -48,53 +64,87 @@ namespace SM
         {
             if (IsSealed) return;
 
-            FindPlayersInRange();
-            PullPlayers();
+            _elapsedSinceSpawn += Time.deltaTime;
+
+            FindTargetsInRange();
+            PullTargets();
             ApplyCenterDamage();
         }
 
-        private void FindPlayersInRange()
+        private float GetCurrentPullSpeed()
         {
-            _playersInRange.Clear();
+            if (_elapsedSinceSpawn >= pullActiveDuration) return 0f;
+
+            float t = _elapsedSinceSpawn / pullActiveDuration;
+            return Mathf.Lerp(_initialPullSpeed, 0f, t);
+        }
+
+        private void FindTargetsInRange()
+        {
+            _targetsInRange.Clear();
 
             var hits = Physics.OverlapSphere(transform.position, _outerPullRadius);
 
             foreach (var hit in hits)
             {
                 var damageable = hit.GetComponentInParent<IDamageable>();
+                if (damageable == null || !damageable.IsAlive) continue;
 
-                if (damageable != null && damageable.IsAlive)
-                {
-                    _playersInRange.Add(hit.transform);
-                }
+                var controller = hit.GetComponentInParent<CharacterController>();
+                var agent = hit.GetComponentInParent<NavMeshAgent>();
+
+                if (controller == null && agent == null) continue;
+
+                if (Physics.Linecast(transform.position, hit.transform.position, _wallLayerMask)) continue;
+
+                _targetsInRange[hit.transform] = new PullTarget { Controller = controller, Agent = agent };
             }
         }
 
-        private void PullPlayers()
+        private void PullTargets()
         {
-            // TODO :: Player 이동 방식(CharacterController)에 따라 바뀔 수 있음
-            foreach (var player in _playersInRange)
+            float currentPullSpeed = GetCurrentPullSpeed();
+            if (currentPullSpeed <= 0f) return;
+
+            foreach (var kvp in _targetsInRange)
             {
-                player.position = Vector3.MoveTowards(
-                    player.position,
-                    transform.position,
-                    _pullSpeed * Time.deltaTime);
+                var targetTransform = kvp.Key;
+                var pullTarget = kvp.Value;
+
+                Vector3 direction = (transform.position - targetTransform.position);
+
+                if (direction.sqrMagnitude < 0.01f) continue;
+
+                Vector3 pullMotion = direction.normalized * currentPullSpeed * Time.deltaTime;
+
+                if (pullTarget.Controller != null)
+                {
+                    pullTarget.Controller.Move(pullMotion);
+                }
+                else if (pullTarget.Agent != null && pullTarget.Agent.enabled)
+                {
+                    pullTarget.Agent.nextPosition += pullMotion;
+                }
             }
         }
 
         private void ApplyCenterDamage()
         {
             _damageTimer += Time.deltaTime;
+
             if (_damageTimer < _damageTickInterval) return;
+
             _damageTimer = 0f;
 
-            foreach (var player in _playersInRange)
+            foreach (var kvp in _targetsInRange)
             {
-                float dist = Vector3.Distance(transform.position, player.position);
+                var playerTransform = kvp.Key;
+
+                float dist = Vector3.Distance(transform.position, playerTransform.position);
 
                 if (dist <= _innerDamageRadius)
                 {
-                    var damageable = player.GetComponentInParent<IDamageable>();
+                    var damageable = playerTransform.GetComponentInParent<IDamageable>();
 
                     if (damageable != null && damageable.IsAlive)
                     {
@@ -104,17 +154,29 @@ namespace SM
             }
         }
 
+        // ___________ IRequireHeldItem ___________
+
+        public string RequiredItemId { get { return ItemType.Wrench.ToString(); } }
+
+        public bool IsRequirementMet(IItemHolder itemHolder)
+        {
+            return itemHolder.HasItem && itemHolder.CurrentItem.ItemId == RequiredItemId;
+        }
+
+        // ___________  IInteractable ______________
+
         public string InteractionPrompt { get { return "렌치 필요"; } }
 
         public bool CanInteract(IItemHolder itemHolder)
         {
-            return false;
+            return !IsSealed && IsRequirementMet(itemHolder);
         }
 
         public void Interact(IItemHolder itemHolder)
         {
         }
 
+        // __________ 플레이어가 수리할 때 호출하는 함수 ____________
         public void ApplyRepair(float amount)
         {
             if (IsSealed) return;
@@ -127,9 +189,10 @@ namespace SM
                 OnSealed?.Invoke(this);
             }
         }
+
         private void OnDrawGizmosSelected()
         {
-            Gizmos.color = new Color(0.6f, 0.1f, 0.9f); // 선명한 보라색
+            Gizmos.color = new Color(0.6f, 0.1f, 0.9f);
             Gizmos.DrawWireSphere(transform.position, _outerPullRadius);
 
             Gizmos.color = Color.red;

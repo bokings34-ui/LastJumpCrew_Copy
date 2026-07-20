@@ -5,7 +5,7 @@ using UnityEngine;
 public class TestDevice : MonoBehaviour, IDevice, IDamageable
 {
     [Header("체력 설정")]
-    [SerializeField] private int maxHealth = 10;
+    [SerializeField] private int maxHealth = 99999;
     private int _currentHealth;
     public bool IsAlive => _currentHealth > 0;
 
@@ -25,7 +25,7 @@ public class TestDevice : MonoBehaviour, IDevice, IDamageable
 
         _currentHealth = Mathf.Max(0, _currentHealth - amount);
 
-        Debug.Log($"<color=orange>[TestDummy]</color> {name}이(가) {attacker.name}에게 {amount} 데미지를 받음! (현재 체력: {_currentHealth}/{maxHealth})");
+        //Debug.Log($"<color=orange>[TestDummy]</color> {name}이(가) {attacker.name}에게 {amount} 데미지를 받음! (현재 체력: {_currentHealth}/{maxHealth})");
 
         if (_currentHealth <= 0)
         {

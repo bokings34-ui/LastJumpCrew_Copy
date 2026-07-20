@@ -11,7 +11,7 @@ namespace SM
 
             if (target == null)
             {
-                Debug.LogWarning($"[<color=lime>[{name}]</color> PlayerRegistry에 등록된 Player가 없습니다.");
+                Debug.LogWarning($"<color=lime>[{name}]</color> PlayerRegistry에 등록된 Player가 없습니다.");
             }
 
             return target;

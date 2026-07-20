@@ -17,5 +17,11 @@ namespace LastJumpCrew.SeoBoGyeong
 
         /// <summary>상태가 바뀔 때마다 발행(UI 갱신용).</summary>
         event Action StateChanged;
+
+        /// <summary>
+        /// 구매 요청(RequestPurchase)의 결과 통지 — (itemId, 성공 여부).
+        /// 로컬에선 동기 발행, 나중 NGO 연결 시 ClientRpc 수신으로 매핑한다.
+        /// </summary>
+        event Action<int, bool> PurchaseResolved;
     }
 }

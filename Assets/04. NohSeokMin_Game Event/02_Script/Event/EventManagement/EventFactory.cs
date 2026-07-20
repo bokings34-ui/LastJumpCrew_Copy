@@ -15,7 +15,7 @@ namespace SM
                 case EventId.OxygenLeak:
                     return new OxygenLeakEvent();
 
-                // TODO :: PowerOff, OxygenLeak, EngineBreak, MicDestroy, EnemySpawn 구현 후 추가
+                // TODO :: PowerOff, EngineBreak, MicDestroy 구현 후 추가
 
                 case EventId.MeteorAttack:
                     return new MeteorAttackEvent();

@@ -2550,7 +2550,7 @@
     "m_StageCapability": 3,
     "m_BareResource": false,
     "m_Texture": {
-        "m_SerializedTexture": "{\"texture\":{\"fileID\":2800000,\"guid\":\"74b3a66ff0be1524eb779a546a5e1fec\",\"type\":3}}",
+        "m_SerializedTexture": "{\"texture\":{\"fileID\":2800000,\"guid\":\"5837d5496b727d04985b92a98fa621b7\",\"type\":3}}",
         "m_Guid": ""
     },
     "m_DefaultType": 0
@@ -3694,7 +3694,7 @@
     "m_CustomColors": {
         "m_SerializableColors": []
     },
-    "m_SerializedSubGraph": "{\n    \"subGraph\": {\n        \"fileID\": -5475051401550479605,\n        \"guid\": \"e06c038270a570e47b82330cc5c2c2c6\",\n        \"type\": 3\n    }\n}",
+    "m_SerializedSubGraph": "{\n    \"subGraph\": {\n        \"fileID\": -5475051401550479605,\n        \"guid\": \"9fd6a810711371f4aa81ce4f5d026b3e\",\n        \"type\": 3\n    }\n}",
     "m_PropertyGuids": [
         "a6f1bd12-7994-4588-b9cd-70e2cc0bc5fa",
         "3d36da55-a430-436f-9dfc-0df54e5d5954",
@@ -5178,7 +5178,7 @@
     "m_CustomColors": {
         "m_SerializableColors": []
     },
-    "m_SerializedSubGraph": "{\n    \"subGraph\": {\n        \"fileID\": -5475051401550479605,\n        \"guid\": \"e06c038270a570e47b82330cc5c2c2c6\",\n        \"type\": 3\n    }\n}",
+    "m_SerializedSubGraph": "{\n    \"subGraph\": {\n        \"fileID\": -5475051401550479605,\n        \"guid\": \"9fd6a810711371f4aa81ce4f5d026b3e\",\n        \"type\": 3\n    }\n}",
     "m_PropertyGuids": [
         "a6f1bd12-7994-4588-b9cd-70e2cc0bc5fa",
         "3d36da55-a430-436f-9dfc-0df54e5d5954",
@@ -9722,7 +9722,7 @@
     "hlslDeclarationOverride": 0,
     "m_Hidden": false,
     "m_Value": {
-        "m_SerializedTexture": "{\"texture\":{\"fileID\":2800000,\"guid\":\"1a6ce7a0887e67045be0dabf3a8d2f35\",\"type\":3}}",
+        "m_SerializedTexture": "{\"texture\":{\"fileID\":2800000,\"guid\":\"ca1c3aadb7af3344faa89d27e0258167\",\"type\":3}}",
         "m_Guid": ""
     },
     "isMainTexture": false,
@@ -11054,7 +11054,7 @@
     "hlslDeclarationOverride": 0,
     "m_Hidden": false,
     "m_Value": {
-        "m_SerializedTexture": "{\"texture\":{\"fileID\":2800000,\"guid\":\"372ea6ecce8ef4b4eb2aa5596d551297\",\"type\":3}}",
+        "m_SerializedTexture": "{\"texture\":{\"fileID\":2800000,\"guid\":\"39efe14379ba4ba46bcd842eccc4a611\",\"type\":3}}",
         "m_Guid": ""
     },
     "isMainTexture": false,
@@ -12926,3 +12926,4 @@
         "y": -960.0
     }
 }
+
