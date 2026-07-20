@@ -6,6 +6,8 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Events
     {
         bool IsConfigured { get; }
         void Apply(PHSNetworkEventHudViewModel viewModel);
+        void ShowCurrentMap(string displayName, float visibleSeconds);
+        void ClearCurrentMap();
         void SetShipMapVisible(bool isVisible);
         void HideOffline();
     }

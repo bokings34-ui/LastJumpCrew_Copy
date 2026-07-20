@@ -6,6 +6,51 @@ namespace LastJumpCrew.ParkHanSol.Combat
 {
     public static class CombatHitResolver
     {
+        public static GameObject ResolveTargetObject(GameObject hitObject)
+        {
+            if (hitObject == null)
+            {
+                return null;
+            }
+
+            var utilityTarget = hitObject.GetComponentInParent<IUtilityAttackTarget>();
+            if (utilityTarget is Component utilityTargetComponent)
+            {
+                return utilityTargetComponent.gameObject;
+            }
+
+            var damageable = hitObject.GetComponentInParent<IDamageable>();
+            if (damageable is Component damageableComponent)
+            {
+                return damageableComponent.gameObject;
+            }
+
+            var knockbackable = hitObject.GetComponentInParent<IKnockbackable>();
+            if (knockbackable is Component knockbackableComponent)
+            {
+                return knockbackableComponent.gameObject;
+            }
+
+            return hitObject.transform.root.gameObject;
+        }
+
+        public static bool TryResolveUtilityAttack(
+            GameObject target,
+            GameObject attacker,
+            string itemId,
+            uint requestSequence)
+        {
+            if (target == null)
+            {
+                return false;
+            }
+
+            var utilityTarget = target.GetComponentInParent<IUtilityAttackTarget>();
+            return utilityTarget != null
+                && utilityTarget.TryResolveUtilityAttack(
+                    new UtilityAttackHit(itemId, attacker, requestSequence));
+        }
+
         public static void ResolveDamageAndKnockback(GameObject target, GameObject attacker, int damage, Vector3 knockbackDirection, float knockbackForce)
         {
             if(target == null)
@@ -14,7 +59,7 @@ namespace LastJumpCrew.ParkHanSol.Combat
             }
             if(damage > 0)
             {
-                var damageable = target.GetComponentInParent<IDamageable>();//µ¥¹ÌÁö Ã³¸®
+                var damageable = target.GetComponentInParent<IDamageable>();//ë°ë¯¸ì§€ ì²˜ë¦¬
 
                 if (damageable != null && damageable.IsAlive)
                 {
@@ -57,7 +102,7 @@ namespace LastJumpCrew.ParkHanSol.Combat
             {
                 return;
             }
-            if (!statusReceiver.CanReceiveStatusEffect(effectType)) //´ë»óÀÌ ÇöÀç ÇØ´ç È¿°ú¸¦ ¹ŞÀ» ¼ö ¾øÀ¸¸é Àû¿ëX
+            if (!statusReceiver.CanReceiveStatusEffect(effectType)) //ëŒ€ìƒì´ í˜„ì¬ í•´ë‹¹ íš¨ê³¼ë¥¼ ë°›ì„ ìˆ˜ ì—†ìœ¼ë©´ ì ìš©X
             {
                 return;
             }

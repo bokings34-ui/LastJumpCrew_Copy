@@ -89,6 +89,13 @@ namespace LastJumpCrew.SeoBoGyeong
             else Debug.Log("[GameLoop] 점프 거부: 제한시간 초과 또는 함선 파괴 상태");
         }
 
+        public void SetStageTimerPaused(bool paused)
+        {
+            if (!authority.IsServer) return;
+            rules.SetStageTimerPaused(paused);
+            Raise();
+        }
+
         public void CloseShop()
         {
             if (!authority.IsServer) return;

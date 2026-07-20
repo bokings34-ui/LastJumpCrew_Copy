@@ -41,6 +41,7 @@ namespace LastJumpCrew.ParkHanSol.Shop
 
         private IShopWallet wallet;
         private IShopDeliveryService deliveryService;
+        private IShopPurchaseTransactionService purchaseTransactionService;
         private uint nextClientRequestSequence;
 
         public int AvailableCredits => wallet != null && wallet.IsReady ? wallet.Credits : 0;
@@ -51,6 +52,7 @@ namespace LastJumpCrew.ParkHanSol.Shop
         {
             wallet = walletSource as IShopWallet;
             deliveryService = deliverySource as IShopDeliveryService;
+            purchaseTransactionService = deliverySource as IShopPurchaseTransactionService;
             ValidateSetup();
         }
 
@@ -123,6 +125,17 @@ namespace LastJumpCrew.ParkHanSol.Shop
 
         public bool TryPurchase(IReadOnlyList<ShopPurchaseRequest> requests, out ShopPurchaseResult result)
         {
+            return TryPurchaseForClient(
+                requests,
+                NetworkManager.ServerClientId,
+                out result);
+        }
+
+        private bool TryPurchaseForClient(
+            IReadOnlyList<ShopPurchaseRequest> requests,
+            ulong purchaserClientId,
+            out ShopPurchaseResult result)
+        {
             result = default;
             if (!ValidateSetup())
             {
@@ -148,6 +161,8 @@ namespace LastJumpCrew.ParkHanSol.Shop
             var requestIds = new HashSet<string>(StringComparer.Ordinal);
             var onePerVisitOfferIds = new HashSet<string>(StringComparer.Ordinal);
             var deliveryItems = new List<UtilityItemPrefabData>(requests.Count);
+            var transactionDeliveries =
+                new List<ShopPurchaseDeliveryRequest>(requests.Count);
             var totalPrice = 0;
             foreach (var request in requests)
             {
@@ -184,6 +199,10 @@ namespace LastJumpCrew.ParkHanSol.Shop
                 }
 
                 deliveryItems.Add(request.Product.ItemPrefabData);
+                transactionDeliveries.Add(
+                    new ShopPurchaseDeliveryRequest(
+                        request.PurchaseId,
+                        request.Product.ItemPrefabData));
             }
 
             if (!deliveryService.CanQueueDeliveries(deliveryItems))
@@ -191,21 +210,40 @@ namespace LastJumpCrew.ParkHanSol.Shop
                 return Fail("delivery_rejected", totalPrice, out result);
             }
 
-            if (!wallet.TrySpendCredits(totalPrice))
+            if (IsNetworkSessionActive())
             {
-                return Fail("insufficient_credits", totalPrice, out result);
-            }
-
-            if (!deliveryService.TryQueueDeliveries(deliveryItems))
-            {
-                if (!wallet.TryAddCredits(totalPrice))
+                var transactionId = requests[0].PurchaseId;
+                if (!purchaseTransactionService.TryCommitPurchase(
+                        transactionId,
+                        totalPrice,
+                        transactionDeliveries,
+                        purchaserClientId,
+                        out var transactionReason))
                 {
-                    Debug.LogError(
-                        $"PHS_SHOP_PURCHASE_INVARIANT_FAILED reason=payment_rollback_failed service={name} totalPrice={totalPrice}",
-                        this);
+                    return Fail(
+                        NormalizeTransactionFailure(transactionReason),
+                        totalPrice,
+                        out result);
+                }
+            }
+            else
+            {
+                if (!wallet.TrySpendCredits(totalPrice))
+                {
+                    return Fail("insufficient_credits", totalPrice, out result);
                 }
 
-                return Fail("delivery_rejected_after_payment", totalPrice, out result);
+                if (!deliveryService.TryQueueDeliveries(deliveryItems))
+                {
+                    if (!wallet.TryAddCredits(totalPrice))
+                    {
+                        Debug.LogError(
+                            $"PHS_SHOP_PURCHASE_INVARIANT_FAILED reason=payment_rollback_failed service={name} totalPrice={totalPrice}",
+                            this);
+                    }
+
+                    return Fail("delivery_rejected_after_payment", totalPrice, out result);
+                }
             }
 
             foreach (var request in requests)
@@ -216,7 +254,7 @@ namespace LastJumpCrew.ParkHanSol.Shop
                     soldOnePerVisitOfferIds.Add(request.Product.OfferId);
                 }
 
-                ProductPurchased?.Invoke(request.Product);
+                NotifyProductPurchased(request.Product);
             }
 
             result = new ShopPurchaseResult(true, null, totalPrice, requests.Count);
@@ -259,7 +297,7 @@ namespace LastJumpCrew.ParkHanSol.Shop
                     requests.Add(new ShopPurchaseRequest(purchaseId, product));
                 }
 
-                TryPurchase(requests, out result);
+                TryPurchaseForClient(requests, senderClientId, out result);
             }
 
             SendPurchaseResult(senderClientId, requestToken, result);
@@ -334,7 +372,54 @@ namespace LastJumpCrew.ParkHanSol.Shop
                 valid = false;
             }
 
+            if (purchaseTransactionService == null)
+            {
+                Debug.LogError(
+                    $"PHS_SHOP_PURCHASE_SETUP_FAILED reason=purchase_transaction_service_missing service={name}",
+                    this);
+                valid = false;
+            }
+
             return valid;
+        }
+
+        private static string NormalizeTransactionFailure(string reason)
+        {
+            return reason == "transaction_already_committed"
+                || reason == "purchase_already_committed"
+                ? "purchase_duplicate"
+                : string.IsNullOrWhiteSpace(reason)
+                    ? "purchase_transaction_rejected"
+                    : reason;
+        }
+
+        private static bool IsNetworkSessionActive()
+        {
+            var networkManager = NetworkManager.Singleton;
+            return networkManager != null && networkManager.IsListening;
+        }
+
+        private void NotifyProductPurchased(ShopProductData product)
+        {
+            var handlers = ProductPurchased;
+            if (handlers == null)
+            {
+                return;
+            }
+
+            foreach (Action<ShopProductData> handler in handlers.GetInvocationList())
+            {
+                try
+                {
+                    handler(product);
+                }
+                catch (Exception exception)
+                {
+                    Debug.LogError(
+                        $"PHS_SHOP_PURCHASE_OBSERVER_FAILED observer={handler.Method.Name} exception={exception.GetType().Name} offer={product?.OfferId ?? "none"}",
+                        this);
+                }
+            }
         }
 
         private bool Fail(string reason, int totalPrice, out ShopPurchaseResult result)
