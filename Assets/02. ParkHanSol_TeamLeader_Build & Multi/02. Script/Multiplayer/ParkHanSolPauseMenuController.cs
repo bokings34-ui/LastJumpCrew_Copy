@@ -18,6 +18,8 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
         [SerializeField] private Button exitGameButton;
         [SerializeField] private Slider mouseSensitivitySlider;
         [SerializeField] private TMP_Text mouseSensitivityValueText;
+        [SerializeField] private Slider fieldOfViewSlider;
+        [SerializeField] private TMP_Text fieldOfViewValueText;
         [Header("Pause Presentation")]
         [SerializeField] private Image dimBackgroundImage;
         [SerializeField] private CanvasGroup menuCanvasGroup;
@@ -43,6 +45,14 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
                 mouseSensitivitySlider.onValueChanged.AddListener(SetMouseSensitivity);
             }
 
+            if (fieldOfViewSlider != null)
+            {
+                fieldOfViewSlider.minValue = ParkHanSolPlayerCameraSettings.MinimumFieldOfView;
+                fieldOfViewSlider.maxValue = ParkHanSolPlayerCameraSettings.MaximumFieldOfView;
+                fieldOfViewSlider.wholeNumbers = true;
+                fieldOfViewSlider.onValueChanged.AddListener(SetFieldOfView);
+            }
+
             SetPanels(false, false);
         }
 
@@ -55,6 +65,11 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
             if (mouseSensitivitySlider != null)
             {
                 mouseSensitivitySlider.onValueChanged.RemoveListener(SetMouseSensitivity);
+            }
+
+            if (fieldOfViewSlider != null)
+            {
+                fieldOfViewSlider.onValueChanged.RemoveListener(SetFieldOfView);
             }
         }
 
@@ -118,8 +133,14 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
                 mouseSensitivitySlider.SetValueWithoutNotify(NetworkPlayerController.GetSavedMouseSensitivity());
             }
 
+            if (fieldOfViewSlider != null)
+            {
+                fieldOfViewSlider.SetValueWithoutNotify(ParkHanSolPlayerCameraSettings.GetSavedFieldOfView());
+            }
+
             RefreshMouseSensitivityLabel();
-            SetPanels(true, true);
+            RefreshFieldOfViewLabel();
+            SetPanels(false, true);
         }
 
         public void CloseOptions()
@@ -133,6 +154,12 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
             RefreshMouseSensitivityLabel();
         }
 
+        public void SetFieldOfView(float value)
+        {
+            ParkHanSolPlayerCameraSettings.SaveFieldOfView(value);
+            RefreshFieldOfViewLabel();
+        }
+
         private void RefreshMouseSensitivityLabel()
         {
             if (mouseSensitivityValueText != null)
@@ -141,10 +168,34 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
             }
         }
 
+        private void RefreshFieldOfViewLabel()
+        {
+            if (fieldOfViewValueText != null)
+            {
+                fieldOfViewValueText.text = $"{ParkHanSolPlayerCameraSettings.GetSavedFieldOfView():0}";
+            }
+        }
+
         private void SetPanels(bool pauseActive, bool optionsActive)
         {
-            if (pausePanel != null) pausePanel.SetActive(pauseActive);
-            if (optionsPanel != null) optionsPanel.SetActive(optionsActive);
+            SetPanelVisible(pausePanel, pauseActive);
+            SetPanelVisible(optionsPanel, optionsActive);
+        }
+
+        private static void SetPanelVisible(GameObject panel, bool visible)
+        {
+            if (panel == null)
+            {
+                return;
+            }
+
+            if (panel.TryGetComponent<ParkHanSolLobbyPanelTransition>(out var transition))
+            {
+                transition.SetVisible(visible);
+                return;
+            }
+
+            panel.SetActive(visible);
         }
 
         private async void ExitToLobby()
@@ -207,25 +258,12 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
         private void PlayOpenAnimation()
         {
             KillOpenSequence();
-            if (menuCard != null)
-            {
-                menuCardShownPosition = menuCard.anchoredPosition;
-                menuCard.anchoredPosition = menuCardShownPosition + new Vector2(0f, -28f);
-                menuCard.localScale = Vector3.one * 0.92f;
-            }
 
             if (dimBackgroundImage != null)
             {
                 var dimColor = dimBackgroundImage.color;
                 dimColor.a = 0f;
                 dimBackgroundImage.color = dimColor;
-            }
-
-            if (menuCanvasGroup != null)
-            {
-                menuCanvasGroup.alpha = 0f;
-                menuCanvasGroup.interactable = false;
-                menuCanvasGroup.blocksRaycasts = false;
             }
 
             openSequence = DOTween.Sequence()
@@ -236,25 +274,6 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
                 openSequence.Join(dimBackgroundImage.DOFade(0.82f, dimFadeDuration).SetEase(Ease.OutQuad));
             }
 
-            if (menuCanvasGroup != null)
-            {
-                openSequence.Join(menuCanvasGroup.DOFade(1f, menuShowDuration).SetEase(Ease.OutQuad));
-            }
-
-            if (menuCard != null)
-            {
-                openSequence.Join(menuCard.DOAnchorPos(menuCardShownPosition, menuShowDuration).SetEase(Ease.OutCubic));
-                openSequence.Join(menuCard.DOScale(Vector3.one, menuShowDuration).SetEase(Ease.OutBack));
-            }
-
-            openSequence.OnComplete(() =>
-            {
-                if (menuCanvasGroup != null)
-                {
-                    menuCanvasGroup.interactable = true;
-                    menuCanvasGroup.blocksRaycasts = true;
-                }
-            });
         }
 
         private void KillOpenSequence()
@@ -262,8 +281,6 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
             openSequence?.Kill();
             openSequence = null;
             dimBackgroundImage?.DOKill();
-            menuCanvasGroup?.DOKill();
-            menuCard?.DOKill();
         }
 
         private void SetExitButtonInteractable(bool interactable)

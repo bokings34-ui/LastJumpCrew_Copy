@@ -5,18 +5,36 @@ using UnityEngine;
 
 namespace SM
 {
-    public class EventManager : MonoSingleton<EventManager>, IEventSpawner
+    public class EventManager : MonoSingleton<EventManager>
     {
         [Header("이벤트 데이터 레지스트리")]
         [SerializeField] private EventRegistrySO registry;
 
         private readonly Dictionary<EventId, EventBase> _activeEvents = new Dictionary<EventId, EventBase>();
+        private readonly List<EventBase> _eventsToTickCache = new List<EventBase>();
 
         private void Update()
         {
+            //foreach (var evt in _activeEvents.Values)
+            //{
+            //    evt.OnTick(Time.deltaTime);
+            //}
+
+            _eventsToTickCache.Clear();
+
             foreach (var evt in _activeEvents.Values)
             {
-                evt.OnTick(Time.deltaTime);
+                _eventsToTickCache.Add(evt);
+            }
+
+            for (int i = 0; i < _eventsToTickCache.Count; i++)
+            {
+                var evt = _eventsToTickCache[i];
+
+                if (_activeEvents.ContainsKey(evt.Id))
+                {
+                    evt.OnTick(Time.deltaTime);
+                }
             }
         }
 
@@ -42,7 +60,7 @@ namespace SM
             }
 
             var evt = EventFactory.Create(id);
-            var context = new EventContext(targetRoom, this);
+            var context = new EventContext(targetRoom, EventScheduler.Instance);
 
             evt.OnFinished += HandleEventFinished;
             if (onFinished != null) evt.OnFinished += onFinished;

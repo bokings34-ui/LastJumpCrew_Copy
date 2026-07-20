@@ -1,7 +1,8 @@
+using LastJumpCrew.Common;
 using System;
 using System.Collections.Generic;
 using UnityEngine;
-using LastJumpCrew.Common;
+using UnityEngine.AI;
 
 namespace SM
 {
@@ -10,33 +11,44 @@ namespace SM
         [Header("벽 무시 레이어 설정")]
         [SerializeField] private LayerMask _wallLayerMask;
 
+        [Header("흡입력 감소 설정")]
+        [SerializeField] private float pullActiveDuration = 5f;
+
         private float _outerPullRadius;
         private float _innerDamageRadius;
-        private float _pullSpeed;
+        private float _initialPullSpeed;
         private int _centerDamage;
         private float _damageTickInterval;
         private float _maxRepairProgress;
 
         private float _repairProgress;
         private float _damageTimer;
+        private float _elapsedSinceSpawn;
 
         public bool IsSealed { get; private set; }
         public event Action<OxygenLeakEffectInstance> OnSealed;
 
-        private readonly Dictionary<Transform, CharacterController> _playersInRange 
-            = new Dictionary<Transform, CharacterController>();
+        private struct PullTarget
+        {
+            public CharacterController Controller;
+            public NavMeshAgent Agent;
+        }
+
+        private readonly Dictionary<Transform, PullTarget> _targetsInRange
+            = new Dictionary<Transform, PullTarget>();
 
         public void Activate(OxygenLeakEventDataSO data)
         {
             _outerPullRadius = data.outerPullRadius;
             _innerDamageRadius = data.innerDamageRadius;
-            _pullSpeed = data.pullSpeed;
+            _initialPullSpeed = data.pullSpeed;
             _centerDamage = data.centerDamage;
             _damageTickInterval = data.damageTickInterval;
             _maxRepairProgress = data.maxRepairProgress;
 
             _repairProgress = 0f;
             _damageTimer = 0f;
+            _elapsedSinceSpawn = 0f;
             IsSealed = false;
 
             gameObject.SetActive(true);
@@ -44,7 +56,7 @@ namespace SM
 
         public void Deactivate()
         {
-            _playersInRange.Clear();
+            _targetsInRange.Clear();
             gameObject.SetActive(false);
         }
 
@@ -52,14 +64,24 @@ namespace SM
         {
             if (IsSealed) return;
 
-            FindPlayersInRange();
-            PullPlayers();
+            _elapsedSinceSpawn += Time.deltaTime;
+
+            FindTargetsInRange();
+            PullTargets();
             ApplyCenterDamage();
         }
 
-        private void FindPlayersInRange()
+        private float GetCurrentPullSpeed()
         {
-            _playersInRange.Clear();
+            if (_elapsedSinceSpawn >= pullActiveDuration) return 0f;
+
+            float t = _elapsedSinceSpawn / pullActiveDuration;
+            return Mathf.Lerp(_initialPullSpeed, 0f, t);
+        }
+
+        private void FindTargetsInRange()
+        {
+            _targetsInRange.Clear();
 
             var hits = Physics.OverlapSphere(transform.position, _outerPullRadius);
 
@@ -69,31 +91,40 @@ namespace SM
                 if (damageable == null || !damageable.IsAlive) continue;
 
                 var controller = hit.GetComponentInParent<CharacterController>();
-                if (controller == null) continue;
+                var agent = hit.GetComponentInParent<NavMeshAgent>();
 
-                if (Physics.Linecast(transform.position, hit.transform.position, _wallLayerMask))
-                {
-                    continue;
-                }
+                if (controller == null && agent == null) continue;
 
-                _playersInRange[hit.transform] = controller;
+                if (Physics.Linecast(transform.position, hit.transform.position, _wallLayerMask)) continue;
+
+                _targetsInRange[hit.transform] = new PullTarget { Controller = controller, Agent = agent };
             }
         }
 
-        private void PullPlayers()
+        private void PullTargets()
         {
-            foreach (var kvp in _playersInRange)
-            {
-                var playerTransform = kvp.Key;
-                var controller = kvp.Value;
+            float currentPullSpeed = GetCurrentPullSpeed();
+            if (currentPullSpeed <= 0f) return;
 
-                Vector3 direction = (transform.position - playerTransform.position);
-                //direction.y = 0f;
+            foreach (var kvp in _targetsInRange)
+            {
+                var targetTransform = kvp.Key;
+                var pullTarget = kvp.Value;
+
+                Vector3 direction = (transform.position - targetTransform.position);
 
                 if (direction.sqrMagnitude < 0.01f) continue;
 
-                Vector3 pullMotion = direction.normalized * _pullSpeed * Time.deltaTime;
-                controller.Move(pullMotion);
+                Vector3 pullMotion = direction.normalized * currentPullSpeed * Time.deltaTime;
+
+                if (pullTarget.Controller != null)
+                {
+                    pullTarget.Controller.Move(pullMotion);
+                }
+                else if (pullTarget.Agent != null && pullTarget.Agent.enabled)
+                {
+                    pullTarget.Agent.nextPosition += pullMotion;
+                }
             }
         }
 
@@ -105,7 +136,7 @@ namespace SM
 
             _damageTimer = 0f;
 
-            foreach (var kvp in _playersInRange)
+            foreach (var kvp in _targetsInRange)
             {
                 var playerTransform = kvp.Key;
 

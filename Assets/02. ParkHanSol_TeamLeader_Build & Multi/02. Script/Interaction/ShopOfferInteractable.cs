@@ -8,7 +8,7 @@ namespace LastJumpCrew.ParkHanSol.Interaction
     public sealed class ShopOfferInteractable : MonoBehaviour, IInteractable
     {
         [SerializeField] private ShopPurchaseTerminalInteractable purchaseTerminal;
-        [SerializeField] private UtilityItemPrefabData itemPrefabData;
+        [SerializeField] private ShopProductData productData;
         [SerializeField] private TMP_Text priceLabel;
         [SerializeField] private string interactionPrompt = "Select Item";
 
@@ -21,7 +21,7 @@ namespace LastJumpCrew.ParkHanSol.Interaction
 
         public bool CanInteract(IItemHolder itemHolder)
         {
-            return purchaseTerminal != null && itemPrefabData != null && itemPrefabData.Price > 0;
+            return purchaseTerminal != null && productData != null && productData.IsConfigured;
         }
 
         public void Interact(IItemHolder itemHolder)
@@ -32,14 +32,14 @@ namespace LastJumpCrew.ParkHanSol.Interaction
                 return;
             }
 
-            purchaseTerminal.Select(itemPrefabData);
+            purchaseTerminal.Select(productData);
         }
 
         private void RefreshLabel()
         {
-            if (priceLabel != null && itemPrefabData != null)
+            if (priceLabel != null && productData != null)
             {
-                priceLabel.text = $"{itemPrefabData.ItemId}\n{itemPrefabData.Price} CR\n[F] SELECT";
+                priceLabel.text = $"{productData.ItemPrefabData.DisplayName}\n{productData.PurchasePrice} CR\n[F] SELECT";
             }
         }
     }

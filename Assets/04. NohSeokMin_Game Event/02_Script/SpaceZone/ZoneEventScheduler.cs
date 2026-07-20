@@ -70,7 +70,24 @@ namespace SM
                 Debug.Log("<color=lime>[ZoneEventScheduler]</color> 성운지대 : 미니맵 끄기 신호 발행.");
                 return;
             }
-            EventScheduler.Instance.TrySpawnEvent(_currentEntry.eventId);
+
+            TriggerExternalWarning(_currentEntry.eventId);
+        }
+
+        private void TriggerExternalWarning(EventId eventId)
+        {
+            if (EventManager.Instance.IsActive(eventId))
+            {
+                Debug.Log($"<color=lime>[ZoneEventScheduler]</color> {eventId} 이미 진행 중, 이번 주기 건너뜀.");
+                return;
+            }
+
+            var room = RoomRegistry.Instance.GetRandomRoom();
+            if (room == null) return;
+
+            EventManager.Instance.SpawnEvent(eventId, room);
+
+            Debug.Log($"<color=lime>[ZoneEventScheduler]</color> {eventId} 경고 발생!");
         }
     }
 }

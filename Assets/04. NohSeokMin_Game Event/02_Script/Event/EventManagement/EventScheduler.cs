@@ -1,13 +1,15 @@
+using System;
 using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
 
 namespace SM
 {
-    public class EventScheduler : MonoSingleton<EventScheduler>
+    public class EventScheduler : MonoSingleton<EventScheduler>, IEventSpawner
     {
         [Header("내부 사고 이벤트 발생 풀")]
-        [SerializeField] private List<EventId> eventPool = new List<EventId>
+        [SerializeField]
+        private List<EventId> eventPool = new List<EventId>
         {
             EventId.Fire,
             EventId.EnemySpawn,
@@ -26,8 +28,15 @@ namespace SM
         private float _spawnTimer;
         private bool _isRunning;
         private int _activeEventCount;
+        private bool _isProcessingQueue;
 
-        private readonly Queue<EventId> _waitQueue = new Queue<EventId>();
+        private struct WaitEvent
+        {
+            public EventId EventId;
+            public IRoom Room;
+        }
+
+        private readonly Queue<WaitEvent> _waitQueue = new Queue<WaitEvent>();
 
         public void StartScheduler()
         {
@@ -53,7 +62,7 @@ namespace SM
 
             EventManager.Instance.ForceClearAll();
 
-            Debug.Log("[IncidentScheduler] 스테이지 종료 - 강제 클리어 완료.");
+            Debug.Log("<color=lime>[EventScheduler]</color> 스테이지 종료 - 강제 클리어 완료.");
         }
 
         private void Update()
@@ -98,38 +107,66 @@ namespace SM
             var eventId = GetRandomEventId();
             if (eventId == null) return;
 
-            TrySpawnEvent(eventId.Value);
+            TrySpawnEvent(eventId.Value, null);
         }
 
-        public void TrySpawnEvent(EventId eventId)
+        public void TrySpawnEvent(EventId eventId, IRoom room)
         {
-            if (EventManager.Instance.IsActive(eventId) || _waitQueue.Contains(eventId))
+            if (IsWaiting(eventId))
             {
-                Debug.Log($"<color=lime>[EventScheduler]</color> {eventId}는 이미 진행 중이거나 대기 중, 요청 무시.");
+                Debug.Log($"<color=lime>[EventScheduler]</color> {eventId}는 이미 대기열에 있음, 중복 요청 무시.");
                 return;
             }
 
-            if (_activeEventCount >= MaxActiveEvents)
+            bool alreadyActive = EventManager.Instance.IsActive(eventId);
+            bool slotsFull = _activeEventCount >= MaxActiveEvents;
+
+            if (alreadyActive || slotsFull)
             {
-                _waitQueue.Enqueue(eventId);
-                Debug.Log($"<color=lime>[EventScheduler]</color> 활성 사고 최대치 / 대기열 등록: {eventId}");
+                _waitQueue.Enqueue(new WaitEvent { EventId = eventId, Room = room });
+
+                string reason = alreadyActive ? "이미 진행 중" : "활성 슬롯 최대치";
+                Debug.Log($"<color=lime>[EventScheduler]</color> {eventId} 대기열 등록 (사유: {reason})");
+                LogWaitQueue();
                 return;
             }
 
-            SpawnEvent(eventId);
+            SpawnEvent(eventId, room);
         }
 
-        private void SpawnEvent(EventId eventId)
+        private void LogWaitQueue()
         {
-            var room = RoomRegistry.Instance.GetRandomRoom();
+            if (_waitQueue.Count == 0)
+            {
+                Debug.Log("<color=lime>[EventScheduler]</color> 현재 대기열: 비어있음");
+                return;
+            }
 
-            if (room == null)
+            var sb = new System.Text.StringBuilder();
+            sb.Append("<color=lime>[EventScheduler]</color> 현재 대기열: ");
+
+            int index = 1;
+
+            foreach (var item in _waitQueue)
+            {
+                sb.Append($"({index}) {item.EventId}  ");
+                index++;
+            }
+
+            Debug.Log(sb.ToString());
+        }
+
+        private void SpawnEvent(EventId eventId, IRoom room)
+        {
+            var targetRoom = room ?? RoomRegistry.Instance.GetRandomRoom();
+
+            if (targetRoom == null)
             {
                 Debug.Log($"<color=lime>[EventScheduler]</color> 등록된 Room이 없어 사고를 발생시킬 수 없습니다.");
                 return;
             }
 
-            EventManager.Instance.SpawnEvent(eventId, room, HandleEventFinished);
+            EventManager.Instance.SpawnEvent(eventId, targetRoom, HandleEventFinished);
             _activeEventCount++;
 
             Debug.Log($"<color=lime>[EventScheduler]</color> {eventId} 발생!");
@@ -138,18 +175,48 @@ namespace SM
         private void HandleEventFinished(EventBase evt, bool success)
         {
             _activeEventCount--;
-            StartCoroutine(SpawnWaitingEvent());
+            TryProcessQueue();
         }
 
-        private IEnumerator SpawnWaitingEvent()
+        private void TryProcessQueue()
         {
-            yield return new WaitForSeconds(RequeueDelay);
+            if (_isProcessingQueue) return;
+            if (_waitQueue.Count == 0) return;
 
-            if (_waitQueue.Count > 0 && _activeEventCount < MaxActiveEvents)
+            StartCoroutine(ProcessQueueRoutine());
+        }
+
+        private IEnumerator ProcessQueueRoutine()
+        {
+            _isProcessingQueue = true;
+
+            while (_waitQueue.Count > 0)
             {
-                var nextId = _waitQueue.Dequeue();
-                SpawnEvent(nextId);
+                yield return new WaitForSeconds(RequeueDelay);
+
+                if (_activeEventCount >= MaxActiveEvents) continue;
+
+                var next = _waitQueue.Peek();
+                if (EventManager.Instance.IsActive(next.EventId))
+                {
+                    continue;
+                }
+
+                _waitQueue.Dequeue();
+                SpawnEvent(next.EventId, next.Room);
+                LogWaitQueue();
             }
+
+            _isProcessingQueue = false;
+        }
+
+        private bool IsWaiting(EventId id)
+        {
+            foreach (var item in _waitQueue)
+            {
+                if (item.EventId == id) return true;
+            }
+            return false;
         }
 
         private EventId? GetRandomEventId()
@@ -158,12 +225,17 @@ namespace SM
 
             foreach (var id in eventPool)
             {
-                if (!EventManager.Instance.IsActive(id) && !_waitQueue.Contains(id))
+                if (!EventManager.Instance.IsActive(id) && !IsWaiting(id))
                     pool.Add(id);
             }
 
             if (pool.Count == 0) return null;
-            return pool[Random.Range(0, pool.Count)];
+            return pool[UnityEngine.Random.Range(0, pool.Count)];
+        }
+
+        void IEventSpawner.SpawnEvent(EventId id, IRoom targetRoom, Action<EventBase, bool> onFinished)
+        {
+            TrySpawnEvent(id, targetRoom);
         }
     }
 }
