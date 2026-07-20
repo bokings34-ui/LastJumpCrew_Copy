@@ -1,5 +1,6 @@
 using LastJumpCrew.Common;
 using ParkInteraction = LastJumpCrew.ParkHanSol.Interaction;
+using Unity.Netcode;
 using UnityEngine;
 
 namespace LastJumpCrew.ParkHanSol.Items
@@ -54,6 +55,17 @@ namespace LastJumpCrew.ParkHanSol.Items
                 return false;
             }
 
+            if (TryGetSpawnedNetworkObject(out _))
+            {
+                if (itemHolder is not ParkInteraction.INetworkItemPickupRequester pickupRequester)
+                {
+                    Debug.LogError($"PHS_ITEM_PICKUP_FAILED reason=network_requester_missing item={name}");
+                    return false;
+                }
+
+                return pickupRequester.CanRequestNetworkPickup(this);
+            }
+
             if (TryGetComponent<ParkInteraction.DebrisItem>(out var debrisItem))
             {
                 if (itemHolder is not ParkInteraction.IDebrisHolder debrisHolder)
@@ -72,6 +84,12 @@ namespace LastJumpCrew.ParkHanSol.Items
         {
             if (!CanInteract(itemHolder))
             {
+                return;
+            }
+
+            if (TryGetSpawnedNetworkObject(out _))
+            {
+                ((ParkInteraction.INetworkItemPickupRequester)itemHolder).RequestNetworkPickup(this);
                 return;
             }
 
@@ -94,6 +112,12 @@ namespace LastJumpCrew.ParkHanSol.Items
             itemHolder.ReplaceHeldItem(itemPrefabData, transform);
             Destroy(gameObject);
             Debug.Log($"PHS_ITEM_PICKED_UP item={itemPrefabData.ItemId}");
+        }
+
+        private bool TryGetSpawnedNetworkObject(out NetworkObject itemNetworkObject)
+        {
+            itemNetworkObject = GetComponent<NetworkObject>();
+            return itemNetworkObject != null && itemNetworkObject.IsSpawned;
         }
 
         // 플레이어가 아이템을 획득해서 손에 붙였을 때 호출된다.

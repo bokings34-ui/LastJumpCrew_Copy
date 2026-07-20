@@ -45,10 +45,29 @@ namespace SM
 
         public void SpawnEvent(EventId id, IRoom targetRoom, Action<EventBase, bool> onFinished = null)
         {
+            SpawnEventWithContext(
+                id,
+                targetRoom,
+                new EventContext(targetRoom, EventScheduler.Instance),
+                onFinished);
+        }
+
+        public bool SpawnEventWithContext(
+            EventId id,
+            IRoom targetRoom,
+            EventContext context,
+            Action<EventBase, bool> onFinished = null)
+        {
             if (_activeEvents.ContainsKey(id))
             {
                 Debug.Log($"<color=lime>[EventManager]</color> {id}는 이미 진행 중입니다.");
-                return;
+                return false;
+            }
+
+            if (registry == null || targetRoom == null || context == null)
+            {
+                Debug.LogError($"PHS_EVENT_SPAWN_FAILED reason=missing_reference event={id}", this);
+                return false;
             }
 
             var data = registry.GetData(id);
@@ -56,19 +75,34 @@ namespace SM
             if (data == null)
             {
                 Debug.Log($"<color=lime>[EventManager]</color> {id}에 대한 EventDataSO가 Registry에 없습니다.");
-                return;
+                return false;
             }
 
             var evt = EventFactory.Create(id);
-            var context = new EventContext(targetRoom, EventScheduler.Instance);
+            if (evt == null)
+            {
+                Debug.LogError($"PHS_EVENT_SPAWN_FAILED reason=factory event={id}", this);
+                return false;
+            }
 
             evt.OnFinished += HandleEventFinished;
             if (onFinished != null) evt.OnFinished += onFinished;
 
             evt.Initialize(data, context);
-            evt.OnTrigger();
-
             _activeEvents[id] = evt;
+            try
+            {
+                evt.OnTrigger();
+                return true;
+            }
+            catch (Exception exception)
+            {
+                evt.OnFinished -= HandleEventFinished;
+                if (onFinished != null) evt.OnFinished -= onFinished;
+                _activeEvents.Remove(id);
+                Debug.LogException(exception, this);
+                return false;
+            }
         }
 
         private void HandleEventFinished(EventBase evt, bool success)
@@ -101,9 +135,18 @@ namespace SM
 
         public void ForceClearAll()
         {
+            _eventsToTickCache.Clear();
             foreach (var evt in _activeEvents.Values)
             {
-                evt.ForceTerminate();
+                _eventsToTickCache.Add(evt);
+            }
+
+            foreach (var evt in _eventsToTickCache)
+            {
+                if (_activeEvents.ContainsKey(evt.Id))
+                {
+                    evt.ForceTerminate();
+                }
             }
 
             _activeEvents.Clear();

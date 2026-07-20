@@ -1,29 +1,31 @@
 using System;
+using LastJumpCrew.ParkHanSol.Multiplayer;
 using LastJumpCrew.SeoBoGyeong;
 using Unity.Netcode;
 using UnityEngine;
 
 namespace LastJumpCrew.ParkHanSol.Shop
 {
+    /// <summary>
+    /// Scene-facing wallet adapter. Network sessions read and mutate only the
+    /// persistent run economy ledger; standalone scenes retain the local wallet.
+    /// </summary>
     [RequireComponent(typeof(NetworkObject))]
     public sealed class ShopEconomyWalletAdapter : NetworkBehaviour, IShopWallet
     {
-        private readonly NetworkVariable<int> synchronizedBalance = new(
-            -1,
-            NetworkVariableReadPermission.Everyone,
-            NetworkVariableWritePermission.Server);
-
-        private IWallet wallet;
-        private bool isWalletBalanceSubscribed;
-        private bool isSynchronizedBalanceSubscribed;
+        private IWallet offlineWallet;
+        private NetworkRunEconomyLedger networkLedger;
+        private bool isOfflineWalletSubscribed;
+        private bool isNetworkLedgerSubscribed;
+        private bool isRootAvailabilitySubscribed;
 
         public bool IsReady => IsNetworkSessionActive()
-            ? IsSpawned && synchronizedBalance.Value >= 0 && (!IsServer || wallet != null)
-            : wallet != null;
+            ? IsSpawned && networkLedger != null && networkLedger.Revision > 0U
+            : offlineWallet != null;
 
         public int Credits => IsNetworkSessionActive()
-            ? Mathf.Max(0, synchronizedBalance.Value)
-            : wallet?.Balance ?? 0;
+            ? networkLedger?.Credits ?? 0
+            : offlineWallet?.Balance ?? 0;
 
         public event Action<int> CreditsChanged;
 
@@ -34,43 +36,39 @@ namespace LastJumpCrew.ParkHanSol.Shop
                 return;
             }
 
-            if (BindWallet())
+            if (BindOfflineWallet())
             {
-                CreditsChanged?.Invoke(wallet.Balance);
+                CreditsChanged?.Invoke(offlineWallet.Balance);
             }
         }
 
         public override void OnNetworkSpawn()
         {
-            if (IsServer)
+            base.OnNetworkSpawn();
+            UnbindOfflineWallet();
+            SubscribeRootAvailability();
+            if (BindNetworkLedger())
             {
-                if (!BindWallet())
-                {
-                    return;
-                }
-
-                synchronizedBalance.Value = wallet.Balance;
+                SubscribeNetworkLedger();
+                CreditsChanged?.Invoke(networkLedger.Credits);
             }
-            else
-            {
-                UnbindWallet();
-            }
-
-            SubscribeSynchronizedBalance();
-            CreditsChanged?.Invoke(synchronizedBalance.Value);
         }
 
         public override void OnNetworkDespawn()
         {
-            UnsubscribeSynchronizedBalance();
-            UnbindWallet();
+            UnsubscribeRootAvailability();
+            UnsubscribeNetworkLedger();
+            UnbindOfflineWallet();
+            networkLedger = null;
             base.OnNetworkDespawn();
         }
 
         public override void OnDestroy()
         {
-            UnsubscribeSynchronizedBalance();
-            UnbindWallet();
+            UnsubscribeRootAvailability();
+            UnsubscribeNetworkLedger();
+            UnbindOfflineWallet();
+            networkLedger = null;
             base.OnDestroy();
         }
 
@@ -81,8 +79,27 @@ namespace LastJumpCrew.ParkHanSol.Shop
                 return false;
             }
 
-            wallet.Add(amount);
-            return true;
+            if (!IsNetworkSessionActive())
+            {
+                offlineWallet.Add(amount);
+                return true;
+            }
+
+            var transactionId = CreateLedgerTransactionId("add");
+            if (networkLedger.TryAddCreditsServer(
+                    transactionId,
+                    amount,
+                    NetworkRunEconomyTransactionKind.RewardCredit,
+                    NetworkManager.ServerClientId,
+                    out var reason))
+            {
+                return true;
+            }
+
+            Debug.LogError(
+                $"PHS_SHOP_WALLET_ADD_FAILED reason={reason} adapter={name} transaction={transactionId}",
+                this);
+            return false;
         }
 
         public bool TrySpendCredits(int amount)
@@ -92,122 +109,214 @@ namespace LastJumpCrew.ParkHanSol.Shop
                 return false;
             }
 
-            return wallet.TrySpend(amount);
+            if (!IsNetworkSessionActive())
+            {
+                return offlineWallet.TrySpend(amount);
+            }
+
+            var transactionId = CreateLedgerTransactionId("spend");
+            if (networkLedger.TrySpendCreditsServer(
+                    transactionId,
+                    amount,
+                    NetworkRunEconomyTransactionKind.PenaltyDebit,
+                    NetworkManager.ServerClientId,
+                    out var reason))
+            {
+                return true;
+            }
+
+            Debug.LogWarning(
+                $"PHS_SHOP_WALLET_SPEND_FAILED reason={reason} adapter={name} transaction={transactionId}",
+                this);
+            return false;
         }
 
-        private bool BindWallet()
+        private bool BindNetworkLedger()
         {
-            if (wallet != null)
+            var runSessionRoot = NetworkRunSessionRoot.Instance;
+            if (runSessionRoot == null
+                || !runSessionRoot.IsSpawned
+                || runSessionRoot.Economy == null)
             {
-                SubscribeWalletBalance();
+                return false;
+            }
+
+            if (networkLedger == runSessionRoot.Economy)
+            {
+                return true;
+            }
+
+            UnsubscribeNetworkLedger();
+            networkLedger = runSessionRoot.Economy;
+            return true;
+        }
+
+        private void SubscribeRootAvailability()
+        {
+            if (isRootAvailabilitySubscribed)
+            {
+                return;
+            }
+
+            NetworkRunSessionRoot.InstanceAvailable += HandleRunSessionRootAvailable;
+            isRootAvailabilitySubscribed = true;
+        }
+
+        private void UnsubscribeRootAvailability()
+        {
+            if (!isRootAvailabilitySubscribed)
+            {
+                return;
+            }
+
+            NetworkRunSessionRoot.InstanceAvailable -= HandleRunSessionRootAvailable;
+            isRootAvailabilitySubscribed = false;
+        }
+
+        private bool BindOfflineWallet()
+        {
+            if (offlineWallet != null)
+            {
+                SubscribeOfflineWallet();
                 return true;
             }
 
             var gameCore = GameCore.Instance;
             if (gameCore == null || gameCore.Services == null)
             {
-                Debug.LogError($"PHS_SHOP_WALLET_BIND_FAILED reason=game_core_missing adapter={name}", this);
+                Debug.LogError(
+                    $"PHS_SHOP_WALLET_BIND_FAILED reason=game_core_missing adapter={name}",
+                    this);
                 return false;
             }
 
-            wallet = gameCore.Services.Get<IWallet>();
-            if (wallet == null)
+            offlineWallet = gameCore.Services.Get<IWallet>();
+            if (offlineWallet == null)
             {
-                Debug.LogError($"PHS_SHOP_WALLET_BIND_FAILED reason=economy_wallet_missing adapter={name}", this);
+                Debug.LogError(
+                    $"PHS_SHOP_WALLET_BIND_FAILED reason=economy_wallet_missing adapter={name}",
+                    this);
                 return false;
             }
 
-            SubscribeWalletBalance();
+            SubscribeOfflineWallet();
             return true;
         }
 
-        private void SubscribeWalletBalance()
+        private void SubscribeOfflineWallet()
         {
-            if (wallet == null || isWalletBalanceSubscribed)
+            if (offlineWallet == null || isOfflineWalletSubscribed)
             {
                 return;
             }
 
-            wallet.BalanceChanged += HandleWalletBalanceChanged;
-            isWalletBalanceSubscribed = true;
+            offlineWallet.BalanceChanged += HandleOfflineBalanceChanged;
+            isOfflineWalletSubscribed = true;
         }
 
-        private void UnbindWallet()
+        private void UnbindOfflineWallet()
         {
-            if (wallet != null && isWalletBalanceSubscribed)
+            if (offlineWallet != null && isOfflineWalletSubscribed)
             {
-                wallet.BalanceChanged -= HandleWalletBalanceChanged;
+                offlineWallet.BalanceChanged -= HandleOfflineBalanceChanged;
             }
 
-            isWalletBalanceSubscribed = false;
-            wallet = null;
+            isOfflineWalletSubscribed = false;
+            offlineWallet = null;
         }
 
-        private void SubscribeSynchronizedBalance()
+        private void SubscribeNetworkLedger()
         {
-            if (isSynchronizedBalanceSubscribed)
-            {
-                return;
-            }
-
-            synchronizedBalance.OnValueChanged += HandleSynchronizedBalanceChanged;
-            isSynchronizedBalanceSubscribed = true;
-        }
-
-        private void UnsubscribeSynchronizedBalance()
-        {
-            if (!isSynchronizedBalanceSubscribed)
+            if (networkLedger == null || isNetworkLedgerSubscribed)
             {
                 return;
             }
 
-            synchronizedBalance.OnValueChanged -= HandleSynchronizedBalanceChanged;
-            isSynchronizedBalanceSubscribed = false;
+            networkLedger.SnapshotChanged += HandleNetworkSnapshotChanged;
+            isNetworkLedgerSubscribed = true;
+        }
+
+        private void UnsubscribeNetworkLedger()
+        {
+            if (networkLedger != null && isNetworkLedgerSubscribed)
+            {
+                networkLedger.SnapshotChanged -= HandleNetworkSnapshotChanged;
+            }
+
+            isNetworkLedgerSubscribed = false;
         }
 
         private bool ValidateMutation(int amount, string operation)
         {
-            if (IsNetworkSessionActive() && !IsServer)
-            {
-                Debug.LogError($"PHS_SHOP_WALLET_{operation.ToUpperInvariant()}_FAILED reason=server_required adapter={name}", this);
-                return false;
-            }
-
-            if (wallet == null)
-            {
-                Debug.LogError($"PHS_SHOP_WALLET_{operation.ToUpperInvariant()}_FAILED reason=wallet_unbound adapter={name}", this);
-                return false;
-            }
-
             if (amount <= 0)
             {
-                Debug.LogError($"PHS_SHOP_WALLET_{operation.ToUpperInvariant()}_FAILED reason=invalid_amount adapter={name} amount={amount}", this);
+                Debug.LogError(
+                    $"PHS_SHOP_WALLET_{operation.ToUpperInvariant()}_FAILED reason=invalid_amount adapter={name} amount={amount}",
+                    this);
+                return false;
+            }
+
+            if (IsNetworkSessionActive())
+            {
+                if (!IsSpawned || !IsServer)
+                {
+                    Debug.LogError(
+                        $"PHS_SHOP_WALLET_{operation.ToUpperInvariant()}_FAILED reason=server_required adapter={name}",
+                        this);
+                    return false;
+                }
+
+                if (networkLedger == null || networkLedger.Revision == 0U)
+                {
+                    Debug.LogError(
+                        $"PHS_SHOP_WALLET_{operation.ToUpperInvariant()}_FAILED reason=ledger_unbound adapter={name}",
+                        this);
+                    return false;
+                }
+
+                return true;
+            }
+
+            if (offlineWallet == null)
+            {
+                Debug.LogError(
+                    $"PHS_SHOP_WALLET_{operation.ToUpperInvariant()}_FAILED reason=wallet_unbound adapter={name}",
+                    this);
                 return false;
             }
 
             return true;
         }
 
-        private void HandleWalletBalanceChanged(int balance)
+        private string CreateLedgerTransactionId(string operation)
         {
-            if (IsNetworkSessionActive())
-            {
-                if (!IsServer)
-                {
-                    Debug.LogError($"PHS_SHOP_WALLET_SYNC_FAILED reason=server_required adapter={name}", this);
-                    return;
-                }
+            return $"wallet:{operation}:{NetworkObjectId}:{networkLedger.Revision + 1U}";
+        }
 
-                synchronizedBalance.Value = balance;
-                return;
-            }
-
+        private void HandleOfflineBalanceChanged(int balance)
+        {
             CreditsChanged?.Invoke(balance);
         }
 
-        private void HandleSynchronizedBalanceChanged(int previousBalance, int currentBalance)
+        private void HandleNetworkSnapshotChanged(
+            NetworkRunEconomySnapshot previous,
+            NetworkRunEconomySnapshot current)
         {
-            CreditsChanged?.Invoke(currentBalance);
+            if (previous.Credits != current.Credits)
+            {
+                CreditsChanged?.Invoke(current.Credits);
+            }
+        }
+
+        private void HandleRunSessionRootAvailable(NetworkRunSessionRoot runSessionRoot)
+        {
+            if (!IsSpawned || runSessionRoot == null || !BindNetworkLedger())
+            {
+                return;
+            }
+
+            SubscribeNetworkLedger();
+            CreditsChanged?.Invoke(networkLedger.Credits);
         }
 
         private static bool IsNetworkSessionActive()
