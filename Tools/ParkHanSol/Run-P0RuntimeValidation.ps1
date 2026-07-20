@@ -1,5 +1,5 @@
 param(
-    [string]$ExecutablePath = "Builds/PHS0715Validation/LastJumpCrew.exe",
+    [string]$ExecutablePath = "Builds/PHS0717Validation/LastJumpCrew.exe",
     [int]$HostReadyTimeoutSeconds = 90,
     [int]$ScenarioTimeoutSeconds = 720
 )
@@ -7,7 +7,7 @@ param(
 $ErrorActionPreference = "Stop"
 $workspace = (Resolve-Path (Join-Path $PSScriptRoot "..\..")).Path
 $executable = (Resolve-Path (Join-Path $workspace $ExecutablePath)).Path
-$logDirectory = Join-Path $workspace "Builds\PHS0715Validation"
+$logDirectory = Split-Path -Parent $executable
 $hostLog = Join-Path $logDirectory "p0-host.log"
 $clientLog = Join-Path $logDirectory "p0-client.log"
 $hostProcess = $null
@@ -71,12 +71,59 @@ try {
     $resultLine = Wait-ForLogPattern -Path $hostLog -Pattern "PHS_P0_RESULT (PASS|FAIL)" -TimeoutSeconds $ScenarioTimeoutSeconds
     Write-Output $resultLine
 
+    $runtimeHealthPatterns = @(
+        @{ Name = "NetworkPrefabHashMissing"; Pattern = "NetworkPrefab hash was not found" },
+        @{ Name = "DuplicateSpawn"; Pattern = "Cannot process spawn.*already spawned" },
+        @{ Name = "NullReferenceException"; Pattern = "NullReferenceException" },
+        @{ Name = "MissingReferenceException"; Pattern = "MissingReferenceException" },
+        @{ Name = "DebrisStreamSetupFailed"; Pattern = "PHS_DEBRIS_STREAM_SETUP_FAILED" },
+        @{ Name = "DebrisPhysicsAuthorityFailed"; Pattern = "PHS_NETWORK_ITEM_PHYSICS_FAILED" },
+        @{ Name = "ScenePlacedObjectDuplicate"; Pattern = "ScenePlacedObjects which already contains" },
+        @{ Name = "GlobalObjectIdHashDuplicate"; Pattern = "same GlobalObjectIdHash" },
+        @{ Name = "SceneEventStillInProgress"; Pattern = "SceneEventInProgress" },
+        @{ Name = "MiniGameIndicatorSlotInvalid"; Pattern = "PHS_MINIGAME_INDICATOR_SLOT_INVALID" },
+        @{ Name = "MiniGameIndicatorSetupInvalid"; Pattern = "PHS_MINIGAME_INDICATOR_SETUP_INVALID" },
+        @{ Name = "IncidentSchedulePendingFailed"; Pattern = "PHS_MAP_INCIDENT_SCHEDULE_PENDING_FAILED" }
+    )
+    $runtimeHealthFailures = @()
+
+    foreach ($log in @(
+        @{ Name = "host"; Path = $hostLog },
+        @{ Name = "client"; Path = $clientLog }
+    )) {
+        if (!(Test-Path -LiteralPath $log.Path)) {
+            continue
+        }
+
+        foreach ($healthPattern in $runtimeHealthPatterns) {
+            $match = Select-String -LiteralPath $log.Path -Pattern $healthPattern.Pattern |
+                Select-Object -First 1
+            if ($null -ne $match) {
+                $runtimeHealthFailures += [PSCustomObject]@{
+                    Log = $log.Name
+                    Pattern = $healthPattern.Name
+                    LineNumber = $match.LineNumber
+                    Evidence = $match.Line.Trim()
+                }
+            }
+        }
+    }
+
+    if ($runtimeHealthFailures.Count -gt 0) {
+        foreach ($failure in $runtimeHealthFailures) {
+            Write-Output "PHS_P0_LOG_HEALTH_FAIL log=$($failure.Log) pattern=$($failure.Pattern) line=$($failure.LineNumber) evidence=$($failure.Evidence)"
+        }
+
+        exit 1
+    }
+
     if ($resultLine -notmatch "PHS_P0_RESULT PASS") {
         Write-Output "Host log: $hostLog"
         Write-Output "Client log: $clientLog"
         exit 1
     }
 
+    Write-Output "PHS_P0_LOG_HEALTH_OK"
     exit 0
 }
 finally {
