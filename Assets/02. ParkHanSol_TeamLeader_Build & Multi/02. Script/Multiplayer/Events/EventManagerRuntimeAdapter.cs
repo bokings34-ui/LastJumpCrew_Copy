@@ -14,6 +14,29 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Events
             public readonly Dictionary<EventId, ulong> InstanceIdsByEvent = new();
         }
 
+        private sealed class RuntimeSpawner : IEventSpawner
+        {
+            private readonly EventManager manager;
+
+            public RuntimeSpawner(EventManager manager)
+            {
+                this.manager = manager;
+            }
+
+            public void SpawnEvent(
+                EventId id,
+                IRoom targetRoom,
+                Action<EventBase, bool> onFinished = null)
+            {
+                EventManagerRuntimeAdapter.TrySpawnEvent(
+                    manager,
+                    id,
+                    targetRoom,
+                    onFinished,
+                    out _);
+            }
+        }
+
         private static readonly Dictionary<EventManager, RuntimeState> States = new();
         private static ulong nextOfflineInstanceId;
 
@@ -148,8 +171,38 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Events
                 PublishFinished(state, allocatedInstanceId, room.RoomId, finishedEvent, success);
             }
 
-            manager.SpawnEvent(eventId, room, HandleFinished);
+            bridge?.PublishEventStarted(
+                allocatedInstanceId,
+                eventId,
+                room.RoomId,
+                EventState.Ready);
+
+            var eventContext = new EventContext(
+                allocatedInstanceId,
+                room,
+                new RuntimeSpawner(manager),
+                bridge);
+            var spawnAccepted = manager.SpawnEventWithContext(
+                eventId,
+                room,
+                eventContext,
+                HandleFinished);
             spawnCallCompleted = true;
+
+            if (!spawnAccepted)
+            {
+                bridge?.PublishEventFinished(
+                    allocatedInstanceId,
+                    eventId,
+                    room.RoomId,
+                    EventState.Fail,
+                    false);
+                RemoveInstance(state, allocatedInstanceId, eventId);
+                Debug.LogError(
+                    $"PHS_EVENT_ADAPTER_SPAWN_FAILED reason=manager_rejected event={eventId}",
+                    manager);
+                return false;
+            }
 
             if (finishedDuringSpawn)
             {
@@ -169,7 +222,6 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Events
                 return false;
             }
 
-            bridge?.PublishEventStarted(allocatedInstanceId, eventId, room.RoomId, EventState.InProgress);
             return true;
         }
 

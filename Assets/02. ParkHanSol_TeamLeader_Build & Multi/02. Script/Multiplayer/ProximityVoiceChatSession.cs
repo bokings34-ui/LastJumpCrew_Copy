@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Threading;
 using System.Threading.Tasks;
 using Unity.Netcode;
 using Unity.Services.Authentication;
@@ -32,6 +33,9 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
         private bool warnedMissingActiveChannel;
         private bool warnedMissingSelfParticipant;
         private float nextAllowedPositionUpdateTime;
+        private Task<bool> servicesReadyTask;
+        private readonly SemaphoreSlim inputDeviceChangeLock = new(1, 1);
+        private readonly SemaphoreSlim outputDeviceChangeLock = new(1, 1);
         private readonly List<VivoxParticipant> trackedParticipants = new();
 
         public bool IsInChannel { get; private set; }
@@ -299,31 +303,149 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
             return 0;
         }
 
-        public async void SetInputDeviceByIndex(int index)
+        public async Task SetInputDeviceByIndexAsync(int index)
         {
-            if (!await EnsureServicesReadyAsync())
+            await inputDeviceChangeLock.WaitAsync();
+            try
             {
-                return;
-            }
+                if (!await EnsureServicesReadyAsync())
+                {
+                    return;
+                }
 
-            var devices = VivoxService.Instance.AvailableInputDevices;
-            if (index >= 0 && index < devices.Count)
+                var devices = VivoxService.Instance.AvailableInputDevices;
+                if (index >= 0 && index < devices.Count)
+                {
+                    await VivoxService.Instance.SetActiveInputDeviceAsync(devices[index]);
+                }
+            }
+            catch (Exception exception)
             {
-                await VivoxService.Instance.SetActiveInputDeviceAsync(devices[index]);
+                Debug.LogWarning($"Vivox input device change failed: {exception.Message}");
+            }
+            finally
+            {
+                inputDeviceChangeLock.Release();
             }
         }
 
-        public async void SetOutputDeviceByIndex(int index)
+        public async Task SetOutputDeviceByIndexAsync(int index)
         {
-            if (!await EnsureServicesReadyAsync())
+            await outputDeviceChangeLock.WaitAsync();
+            try
             {
-                return;
+                if (!await EnsureServicesReadyAsync())
+                {
+                    return;
+                }
+
+                var devices = VivoxService.Instance.AvailableOutputDevices;
+                if (index >= 0 && index < devices.Count)
+                {
+                    await VivoxService.Instance.SetActiveOutputDeviceAsync(devices[index]);
+                }
+            }
+            catch (Exception exception)
+            {
+                Debug.LogWarning($"Vivox output device change failed: {exception.Message}");
+            }
+            finally
+            {
+                outputDeviceChangeLock.Release();
+            }
+        }
+
+        public string GetInputDeviceIdByIndex(int index)
+        {
+            if (!servicesReady)
+            {
+                return string.Empty;
+            }
+
+            var devices = VivoxService.Instance.AvailableInputDevices;
+            return index >= 0 && index < devices.Count ? devices[index].DeviceID : string.Empty;
+        }
+
+        public string GetOutputDeviceIdByIndex(int index)
+        {
+            if (!servicesReady)
+            {
+                return string.Empty;
             }
 
             var devices = VivoxService.Instance.AvailableOutputDevices;
-            if (index >= 0 && index < devices.Count)
+            return index >= 0 && index < devices.Count ? devices[index].DeviceID : string.Empty;
+        }
+
+        public async Task<bool> SetInputDeviceByIdAsync(string deviceId)
+        {
+            if (string.IsNullOrWhiteSpace(deviceId))
             {
-                await VivoxService.Instance.SetActiveOutputDeviceAsync(devices[index]);
+                return false;
+            }
+
+            await inputDeviceChangeLock.WaitAsync();
+            try
+            {
+                if (!await EnsureServicesReadyAsync())
+                {
+                    return false;
+                }
+
+                var device = VivoxService.Instance.AvailableInputDevices
+                    .FirstOrDefault(value => string.Equals(value.DeviceID, deviceId, StringComparison.Ordinal));
+                if (device == null)
+                {
+                    return false;
+                }
+
+                await VivoxService.Instance.SetActiveInputDeviceAsync(device);
+                return true;
+            }
+            catch (Exception exception)
+            {
+                Debug.LogWarning($"Vivox saved input device restore failed: {exception.Message}");
+                return false;
+            }
+            finally
+            {
+                inputDeviceChangeLock.Release();
+            }
+        }
+
+        public async Task<bool> SetOutputDeviceByIdAsync(string deviceId)
+        {
+            if (string.IsNullOrWhiteSpace(deviceId))
+            {
+                return false;
+            }
+
+            await outputDeviceChangeLock.WaitAsync();
+            try
+            {
+                if (!await EnsureServicesReadyAsync())
+                {
+                    return false;
+                }
+
+                var device = VivoxService.Instance.AvailableOutputDevices
+                    .FirstOrDefault(value => string.Equals(value.DeviceID, deviceId, StringComparison.Ordinal));
+                if (device == null)
+                {
+                    return false;
+                }
+
+                await VivoxService.Instance.SetActiveOutputDeviceAsync(device);
+                return true;
+            }
+            catch (Exception exception)
+            {
+                Debug.LogWarning($"Vivox saved output device restore failed: {exception.Message}");
+                return false;
+            }
+            finally
+            {
+                outputDeviceChangeLock.Release();
             }
         }
 
@@ -353,16 +475,56 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
 
         public void SetRemoteParticipantVolumeByIndex(int index, int value)
         {
+            if (TryGetRemoteParticipantByIndex(index, out var participant))
+            {
+                participant.SetLocalVolume(value);
+            }
+        }
+
+        public bool TryGetRemoteParticipantVolumeByIndex(int index, out int volume)
+        {
+            if (TryGetRemoteParticipantByIndex(index, out var participant))
+            {
+                volume = participant.LocalVolume;
+                return true;
+            }
+
+            volume = 0;
+            return false;
+        }
+
+        public Dictionary<string, int> CaptureRemoteParticipantVolumes()
+        {
+            var volumes = new Dictionary<string, int>();
             if (!HasActiveVivoxChannel()
                 || !VivoxService.Instance.ActiveChannels.TryGetValue(ActiveChannelName, out var participants))
+            {
+                return volumes;
+            }
+
+            foreach (var participant in participants.Where(value => !value.IsSelf))
+            {
+                volumes[participant.PlayerId] = participant.LocalVolume;
+            }
+
+            return volumes;
+        }
+
+        public void RestoreRemoteParticipantVolumes(IReadOnlyDictionary<string, int> volumes)
+        {
+            if (volumes == null ||
+                !HasActiveVivoxChannel() ||
+                !VivoxService.Instance.ActiveChannels.TryGetValue(ActiveChannelName, out var participants))
             {
                 return;
             }
 
-            var remoteParticipants = participants.Where(participant => !participant.IsSelf).ToList();
-            if (index >= 0 && index < remoteParticipants.Count)
+            foreach (var participant in participants.Where(value => !value.IsSelf))
             {
-                remoteParticipants[index].SetLocalVolume(value);
+                if (volumes.TryGetValue(participant.PlayerId, out var volume))
+                {
+                    participant.SetLocalVolume(volume);
+                }
             }
         }
 
@@ -409,6 +571,23 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
                 return true;
             }
 
+            if (servicesReadyTask == null)
+            {
+                servicesReadyTask = InitializeServicesAsync();
+            }
+
+            var pendingTask = servicesReadyTask;
+            var ready = await pendingTask;
+            if (!ready && ReferenceEquals(servicesReadyTask, pendingTask))
+            {
+                servicesReadyTask = null;
+            }
+
+            return ready;
+        }
+
+        private async Task<bool> InitializeServicesAsync()
+        {
             try
             {
                 if (UnityServices.State == ServicesInitializationState.Uninitialized)
@@ -508,6 +687,25 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
             }
 
             return false;
+        }
+
+        private bool TryGetRemoteParticipantByIndex(int index, out VivoxParticipant participant)
+        {
+            participant = null;
+            if (!HasActiveVivoxChannel()
+                || !VivoxService.Instance.ActiveChannels.TryGetValue(ActiveChannelName, out var participants))
+            {
+                return false;
+            }
+
+            var remoteParticipants = participants.Where(value => !value.IsSelf).ToList();
+            if (index < 0 || index >= remoteParticipants.Count)
+            {
+                return false;
+            }
+
+            participant = remoteParticipants[index];
+            return participant != null;
         }
 
         private bool CanUpdateVoicePosition()

@@ -6,6 +6,7 @@ using LastJumpCrew.ParkHanSol.Shop;
 using LastJumpCrew.Common;
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using LastJumpCrew.ParkHanSol.Interaction;
 
 namespace LastJumpCrew.ParkHanSol.Multiplayer
@@ -23,7 +24,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
         [SerializeField, Min(0.1f)] private float maximumFallSpeed = 14f;
         [Header("Cinematic Zero Gravity Thruster")]
         [SerializeField, Min(1f)] private float thrusterFuelCapacity = 100f;
-        [SerializeField, Min(0.1f)] private float thrusterFuelUsePerSecond = 30f;
+        [SerializeField, Min(0.1f)] private float thrusterFuelUsePerSecond = 7.5f;
         [SerializeField, Min(0f)] private float thrusterFuelRecoveryDelay = 1f;
         [SerializeField, Min(0.1f)] private float thrusterFuelRecoveryPerSecond = 18f;
         [SerializeField, Min(0.1f)] private float thrusterAcceleration = 7f;
@@ -77,6 +78,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
         private bool gameplayInputEnabled;
         private bool pauseInputBlocked;
         private bool lifeInputBlocked;
+        private bool warpInputBlocked;
         private bool autoMoveEnabled;
         private float autoMoveSeconds;
         private float autoMoveEndTime;
@@ -204,19 +206,36 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
                 return;
             }
 
-            if (!IsOwner)
+            if (!IsOwner || !IsServer)
             {
-                Debug.LogError($"PHS_TEST_TELEPORT_FAILED reason=owner_required player={name}");
+                Debug.LogError($"PHS_TEST_TELEPORT_FAILED reason=server_owner_required player={name}");
+                return;
+            }
+
+            TeleportTo(targetPosition, targetRotation);
+        }
+
+        public void RequestLocalPortalTeleport(string portalName)
+        {
+            if (string.IsNullOrWhiteSpace(portalName))
+            {
+                Debug.LogError($"PHS_LOCAL_PORTAL_FAILED reason=portal_name_missing player={name}");
+                return;
+            }
+
+            if (!IsSpawned || !IsOwner)
+            {
+                Debug.LogError($"PHS_LOCAL_PORTAL_FAILED reason=owner_required player={name}");
                 return;
             }
 
             if (IsServer)
             {
-                TeleportTo(targetPosition, targetRotation);
+                TeleportThroughLocalPortal(portalName);
                 return;
             }
 
-            RequestTestTeleportServerRpc(targetPosition, targetRotation);
+            RequestLocalPortalTeleportServerRpc(portalName);
         }
 
         public void RequestGameplaySceneTransition(
@@ -349,6 +368,18 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
             RequestWarpActivationServerRpc();
         }
 
+        public bool TryTeleportForWarp(Vector3 targetPosition, Quaternion targetRotation)
+        {
+            if (!IsSpawned || !IsServer)
+            {
+                Debug.LogError($"PHS_WARP_TELEPORT_FAILED reason=server_required player={name}", this);
+                return false;
+            }
+
+            TeleportTo(targetPosition, targetRotation);
+            return true;
+        }
+
         [ServerRpc]
         private void RequestWarpActivationServerRpc(ServerRpcParams rpcParams = default)
         {
@@ -377,15 +408,54 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
         }
 
         [ServerRpc]
-        private void RequestTestTeleportServerRpc(Vector3 targetPosition, Quaternion targetRotation, ServerRpcParams rpcParams = default)
+        private void RequestLocalPortalTeleportServerRpc(
+            string portalName,
+            ServerRpcParams rpcParams = default)
         {
             if (rpcParams.Receive.SenderClientId != OwnerClientId)
             {
-                Debug.LogError($"PHS_TEST_TELEPORT_FAILED reason=owner_mismatch player={name}");
+                Debug.LogError($"PHS_LOCAL_PORTAL_FAILED reason=owner_mismatch player={name}");
                 return;
             }
 
-            TeleportTo(targetPosition, targetRotation);
+            TeleportThroughLocalPortal(portalName);
+        }
+
+        private void TeleportThroughLocalPortal(string portalName)
+        {
+            if (!IsServer)
+            {
+                return;
+            }
+
+            var matchingPortals = FindObjectsByType<ExteriorTestTeleportInteractable>(
+                    FindObjectsInactive.Exclude,
+                    FindObjectsSortMode.None)
+                .Where(portal =>
+                    portal != null
+                    && portal.gameObject.scene == gameObject.scene
+                    && string.Equals(portal.name, portalName, StringComparison.Ordinal))
+                .ToArray();
+            if (matchingPortals.Length != 1)
+            {
+                Debug.LogError(
+                    $"PHS_LOCAL_PORTAL_FAILED reason=portal_count_invalid portal={portalName} count={matchingPortals.Length}");
+                return;
+            }
+
+            if (!matchingPortals[0].TryResolveServerDestination(
+                    this,
+                    out var destinationPosition,
+                    out var destinationRotation,
+                    out var reason))
+            {
+                Debug.LogWarning(
+                    $"PHS_LOCAL_PORTAL_FAILED reason={reason ?? "invalid"} portal={portalName} clientId={OwnerClientId}");
+                return;
+            }
+
+            TeleportTo(destinationPosition, destinationRotation);
+            Debug.Log($"PHS_LOCAL_PORTAL_OK portal={portalName} clientId={OwnerClientId}");
         }
 
         public override void OnNetworkSpawn()
@@ -591,6 +661,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
             SetGameplayInputEnabled(isGameplayScene);
             if (isGameplayScene)
             {
+                ReleaseWarpInputForShop();
                 hudBindingErrorLogTime = Time.time + 0.5f;
                 MoveToGameplaySpawnPointIfServer(activeScene);
             }
@@ -602,6 +673,16 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
             }
 
             Debug.Log($"PHS_PLAYER_SCENE_STATE scene={SceneManager.GetActiveScene().name} owner={IsOwner} input={gameplayInputEnabled}");
+        }
+
+        private void ReleaseWarpInputForShop()
+        {
+            if (SceneManager.GetActiveScene().name != "PHS_ExteriorShopScene")
+            {
+                return;
+            }
+
+            SetWarpInputBlocked(false);
         }
 
         private void LateUpdate()
@@ -656,6 +737,22 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
             }
 
             lifeInputBlocked = blocked;
+            if (blocked)
+            {
+                HasMoveInput = false;
+                IsRunning = false;
+                UpdateLocalThrusterFeedback(false);
+            }
+        }
+
+        public void SetWarpInputBlocked(bool blocked)
+        {
+            if (IsSpawned && !IsOwner)
+            {
+                return;
+            }
+
+            warpInputBlocked = blocked;
             if (blocked)
             {
                 HasMoveInput = false;
@@ -1021,6 +1118,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
 
         private void TeleportTo(Vector3 targetPosition, Quaternion targetRotation)
         {
+            ResetGravityTracking();
             var wasEnabled = characterController != null && characterController.enabled;
             if (characterController != null)
             {
@@ -1037,7 +1135,17 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
                 characterController.enabled = wasEnabled;
             }
 
-            Debug.Log($"PHS_TEST_TELEPORT_OK player={name} pos={targetPosition}");
+            Debug.Log($"PHS_PLAYER_TELEPORT_OK player={name} pos={targetPosition}");
+        }
+
+        private void ResetGravityTracking()
+        {
+            gravityAreas.Clear();
+            ApplyGravityAreaMode();
+            if (TryGetComponent<PlayerGravityReceiver>(out var gravityReceiver))
+            {
+                gravityReceiver.ResetGravitySources();
+            }
         }
 
         private void ApplyLocalLook(Vector2 look)
@@ -1185,10 +1293,14 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
         {
             if (!IsSpawned)
             {
-                return !pauseInputBlocked && !lifeInputBlocked;
+                return !pauseInputBlocked && !lifeInputBlocked && !warpInputBlocked;
             }
 
-            return IsOwner && gameplayInputEnabled && !pauseInputBlocked && !lifeInputBlocked;
+            return IsOwner
+                && gameplayInputEnabled
+                && !pauseInputBlocked
+                && !lifeInputBlocked
+                && !warpInputBlocked;
         }
 
         private static float ReadVerticalMove()

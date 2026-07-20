@@ -3,6 +3,7 @@ using System.Collections;
 using System.Collections.Generic;
 using LastJumpCrew.Common;
 using LastJumpCrew.ParkHanSol.Interaction;
+using LastJumpCrew.ParkHanSol.Multiplayer.Events.MiniGames;
 using SM;
 using Unity.Collections;
 using Unity.Netcode;
@@ -21,7 +22,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Events
     {
         [Header("Event Domain References")]
         [SerializeField] private EventManager eventManager;
-        [SerializeField] private EventScheduler eventScheduler;
+        [SerializeField] private PHSNetworkEventScheduler eventScheduler;
         [SerializeField] private RoomRegistry roomRegistry;
 
         [Header("Client Effect Presentation")]
@@ -54,6 +55,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Events
         private readonly List<uint> effectRemovalBuffer = new();
 
         private bool setupValid;
+        private bool suppressTerminalShipImpact;
         private ulong nextEventInstanceId;
         private uint nextEffectInstanceId;
 
@@ -63,8 +65,19 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Events
         public int SnapshotCount => lifecycleSnapshots.Count;
         public int EffectSnapshotCount => effectSnapshots.Count;
 
+        public NetworkEventLifecycleSnapshot GetLifecycleSnapshotAt(int index)
+        {
+            if (index < 0 || index >= lifecycleSnapshots.Count)
+            {
+                throw new ArgumentOutOfRangeException(nameof(index));
+            }
+
+            return lifecycleSnapshots[index];
+        }
+
         public event Action LifecycleSnapshotsChanged;
         public event Action EffectSnapshotsChanged;
+        public event Action<ulong, EventId, bool> ServerEventFinished;
 
         private void Awake()
         {
@@ -360,6 +373,44 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Events
         {
             instanceId = 0UL;
 
+            if (!CanSpawnEventServer(eventId))
+            {
+                return false;
+            }
+
+            var room = roomRegistry.GetRandomRoom();
+            if (room == null)
+            {
+                Debug.LogWarning($"PHS_EVENT_SERVER_SPAWN_REJECTED reason=room_missing event={eventId}", this);
+                return false;
+            }
+
+            return TrySpawnEventInRoomServer(eventId, room, out instanceId);
+        }
+
+        public bool TrySpawnEventServer(
+            EventId eventId,
+            ShipRoom room,
+            out ulong instanceId)
+        {
+            instanceId = 0UL;
+
+            if (!CanSpawnEventServer(eventId))
+            {
+                return false;
+            }
+
+            if (room == null)
+            {
+                Debug.LogWarning($"PHS_EVENT_SERVER_SPAWN_REJECTED reason=room_missing event={eventId}", this);
+                return false;
+            }
+
+            return TrySpawnEventInRoomServer(eventId, room, out instanceId);
+        }
+
+        private bool CanSpawnEventServer(EventId eventId)
+        {
             if (!IsAuthoritative)
             {
                 Debug.LogWarning($"PHS_EVENT_SERVER_SPAWN_REJECTED reason=not_server event={eventId}", this);
@@ -378,13 +429,14 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Events
                 return false;
             }
 
-            var room = roomRegistry.GetRandomRoom();
-            if (room == null)
-            {
-                Debug.LogWarning($"PHS_EVENT_SERVER_SPAWN_REJECTED reason=room_missing event={eventId}", this);
-                return false;
-            }
+            return true;
+        }
 
+        private bool TrySpawnEventInRoomServer(
+            EventId eventId,
+            IRoom room,
+            out ulong instanceId)
+        {
             var accepted = eventManager.TrySpawnEvent(eventId, room, out instanceId);
             Debug.Log(
                 $"PHS_EVENT_SERVER_SPAWN_RESULT accepted={accepted} instance={instanceId} event={eventId} room={room.RoomId}",
@@ -426,13 +478,16 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Events
                 return false;
             }
 
-            if (eventScheduler != null)
-            {
-                eventScheduler.ForceClearAll();
-            }
-            else
+            eventScheduler?.ResetScheduler();
+            var previousSuppression = suppressTerminalShipImpact;
+            suppressTerminalShipImpact = true;
+            try
             {
                 eventManager.ForceClearAll();
+            }
+            finally
+            {
+                suppressTerminalShipImpact = previousSuppression;
             }
 
             Debug.Log("PHS_EVENT_TERMINATE_ALL_SERVER_COMPLETED", this);
@@ -739,6 +794,19 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Events
                 return;
             }
 
+            if (!suppressTerminalShipImpact)
+            {
+                ApplyTerminalShipImpact(instanceId, eventId, success);
+            }
+            else
+            {
+                Debug.Log(
+                    $"PHS_EVENT_TERMINAL_IMPACT_SUPPRESSED " +
+                    $"reason=forced_termination instance={instanceId} " +
+                    $"event={eventId}",
+                    this);
+            }
+
             RemoveActiveEffectsForEvent(instanceId);
 
             var terminalState = state == EventState.Resolve || state == EventState.Fail
@@ -755,6 +823,31 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Events
                 $"PHS_EVENT_LIFECYCLE_FINISHED instance={instanceId} event={eventId} success={success} revision={revision}",
                 this);
             StartCoroutine(RemoveTerminalSnapshotAfterDelay(instanceId, revision));
+            NotifyServerEventFinished(instanceId, eventId, success);
+        }
+
+        private void NotifyServerEventFinished(
+            ulong instanceId,
+            EventId eventId,
+            bool success)
+        {
+            var handlers = ServerEventFinished;
+            if (handlers == null)
+            {
+                return;
+            }
+
+            foreach (Action<ulong, EventId, bool> handler in handlers.GetInvocationList())
+            {
+                try
+                {
+                    handler(instanceId, eventId, success);
+                }
+                catch (Exception exception)
+                {
+                    Debug.LogException(exception, this);
+                }
+            }
         }
 
         [ServerRpc(RequireOwnership = false)]
@@ -943,15 +1036,17 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Events
             const float maximumResultDistance = 4f;
             var maximumResultDistanceSquared = maximumResultDistance * maximumResultDistance;
             var playerPosition = client.PlayerObject.transform.position;
-            var terminals = FindObjectsByType<MiniGameTerminal>(
+            var terminals = FindObjectsByType<PHSFinalMiniGameTerminal>(
                 FindObjectsInactive.Exclude,
                 FindObjectsSortMode.None);
 
             foreach (var terminal in terminals)
             {
                 if (terminal != null
-                    && terminal.miniGameType == miniGameType
-                    && (terminal.transform.position - playerPosition).sqrMagnitude
+                    && terminal.IsConfigured
+                    && terminal.ConfiguredEventId == eventId
+                    && terminal.ConfiguredMiniGameType == miniGameType
+                    && (terminal.WorldPosition - playerPosition).sqrMagnitude
                     <= maximumResultDistanceSquared)
                 {
                     rejectionReason = string.Empty;
@@ -961,6 +1056,48 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Events
 
             rejectionReason = "terminal_or_distance_invalid";
             return false;
+        }
+
+        private void ApplyTerminalShipImpact(
+            ulong eventInstanceId,
+            EventId eventId,
+            bool success)
+        {
+            if (eventId != EventId.EmpAttack
+                && eventId != EventId.MeteorAttack
+                && eventId != EventId.EnemyScout)
+            {
+                return;
+            }
+
+            var shipSystems = NetworkShipSystemsState.Instance;
+            if (shipSystems == null)
+            {
+                Debug.LogError(
+                    $"PHS_EVENT_TERMINAL_IMPACT_FAILED reason=ship_systems_missing instance={eventInstanceId} event={eventId}",
+                    this);
+                return;
+            }
+
+            var impactSink = shipSystems.GetComponent<IShipEventImpactSink>();
+            if (impactSink == null)
+            {
+                Debug.LogError(
+                    $"PHS_EVENT_TERMINAL_IMPACT_FAILED reason=impact_sink_missing instance={eventInstanceId} event={eventId}",
+                    shipSystems);
+                return;
+            }
+
+            if (!impactSink.TryApplyTerminalImpact(
+                    eventInstanceId,
+                    eventId,
+                    success,
+                    out var reason))
+            {
+                Debug.LogError(
+                    $"PHS_EVENT_TERMINAL_IMPACT_FAILED reason={reason} instance={eventInstanceId} event={eventId}",
+                    shipSystems);
+            }
         }
 
         private static bool TryGetMiniGameType(EventId eventId, out MiniGameType miniGameType)
