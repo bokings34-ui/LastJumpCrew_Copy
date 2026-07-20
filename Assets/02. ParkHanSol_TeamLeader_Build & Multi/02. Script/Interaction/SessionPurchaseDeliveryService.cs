@@ -1,12 +1,13 @@
 using System.Collections.Generic;
 using LastJumpCrew.ParkHanSol.Items;
+using LastJumpCrew.ParkHanSol.Shop;
 using UnityEngine;
 
 namespace LastJumpCrew.ParkHanSol.Interaction
 {
     /// <summary>Persists Host-confirmed shop purchases while gameplay scenes change.</summary>
     [DefaultExecutionOrder(-190)]
-    public sealed class SessionPurchaseDeliveryService : MonoBehaviour
+    public sealed class SessionPurchaseDeliveryService : MonoBehaviour, IShopDeliveryService
     {
         public static SessionPurchaseDeliveryService Instance { get; private set; }
 
@@ -42,16 +43,52 @@ namespace LastJumpCrew.ParkHanSol.Interaction
             }
         }
 
-        public void QueueDelivery(UtilityItemPrefabData itemPrefabData)
+        public bool TryQueueDelivery(UtilityItemPrefabData itemPrefabData)
         {
-            if (itemPrefabData == null)
+            return TryQueueDeliveries(new[] { itemPrefabData });
+        }
+
+        public bool CanQueueDeliveries(IReadOnlyList<UtilityItemPrefabData> itemPrefabData)
+        {
+            if (itemPrefabData == null || itemPrefabData.Count == 0)
             {
-                Debug.LogError($"PHS_PURCHASE_DELIVERY_QUEUE_FAILED reason=item_missing service={name}");
-                return;
+                Debug.LogError($"PHS_PURCHASE_DELIVERY_QUEUE_FAILED reason=items_missing service={name}");
+                return false;
             }
 
-            pendingItems.Enqueue(itemPrefabData);
-            Debug.Log($"PHS_PURCHASE_DELIVERY_QUEUED service={name} item={itemPrefabData.ItemId} pending={pendingItems.Count}");
+            for (var index = 0; index < itemPrefabData.Count; index++)
+            {
+                if (itemPrefabData[index] == null)
+                {
+                    Debug.LogError(
+                        $"PHS_PURCHASE_DELIVERY_QUEUE_FAILED reason=item_missing service={name} index={index}");
+                    return false;
+                }
+            }
+
+            return true;
+        }
+
+        public bool TryQueueDeliveries(IReadOnlyList<UtilityItemPrefabData> itemPrefabData)
+        {
+            if (!CanQueueDeliveries(itemPrefabData))
+            {
+                return false;
+            }
+
+            foreach (var item in itemPrefabData)
+            {
+                pendingItems.Enqueue(item);
+            }
+
+            Debug.Log(
+                $"PHS_PURCHASE_DELIVERY_BATCH_QUEUED service={name} count={itemPrefabData.Count} pending={pendingItems.Count}");
+            return true;
+        }
+
+        public void QueueDelivery(UtilityItemPrefabData itemPrefabData)
+        {
+            TryQueueDelivery(itemPrefabData);
         }
 
         public void DeliverTo(PurchaseDeliveryBox deliveryBox)

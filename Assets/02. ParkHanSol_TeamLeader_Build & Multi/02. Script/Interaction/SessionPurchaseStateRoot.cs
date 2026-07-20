@@ -18,8 +18,9 @@ namespace LastJumpCrew.ParkHanSol.Interaction
         {
             if (instance != null && instance != this)
             {
-                gameObject.SetActive(false);
-                Destroy(gameObject);
+                // 씬의 구매 서비스는 Inspector 참조 대상으로 남아 있어야 한다.
+                // 중복 지속 루트 컴포넌트만 제거하고 같은 오브젝트의 서비스는 유지한다.
+                Destroy(this);
                 return;
             }
 

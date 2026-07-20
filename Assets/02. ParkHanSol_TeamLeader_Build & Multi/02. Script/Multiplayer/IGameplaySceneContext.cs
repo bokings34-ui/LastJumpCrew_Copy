@@ -6,5 +6,6 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
     {
         bool IsGameplayScene { get; }
         bool TryGetSpawnPoint(ulong ownerClientId, out Transform spawnPoint);
+        bool TryGetRespawnPoint(out Transform respawnPoint);
     }
 }
