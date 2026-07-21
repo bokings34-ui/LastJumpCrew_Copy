@@ -4,9 +4,20 @@ namespace SM
     {
         protected override EventId GetNextEventId()
         {
-            // TODO :: 원래 PowerOff 인데 아직 미구현이라 Fire로 임시 변경
-            // return EventId.PowerOff;
-            return EventId.Fire;
+            return Context?.RuntimeBridge == null
+                ? EventId.Fire
+                : EventId.PowerOff;
+        }
+
+        public override void OnFail()
+        {
+            if (Context?.RuntimeBridge != null)
+            {
+                ChangeState(EventState.Fail);
+                return;
+            }
+
+            base.OnFail();
         }
 
         public override void OnResolve()

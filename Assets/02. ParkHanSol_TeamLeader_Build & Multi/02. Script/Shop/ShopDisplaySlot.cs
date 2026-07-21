@@ -10,6 +10,7 @@ namespace LastJumpCrew.ParkHanSol.Shop
         [SerializeField] private TMP_Text productLabel;
         [SerializeField] private TMP_Text productNameText;
         [SerializeField] private TMP_Text priceText;
+        [SerializeField, Min(0.01f)] private float displayScaleMultiplier = 0.75f;
 
         private GameObject displayedItem;
 
@@ -31,13 +32,14 @@ namespace LastJumpCrew.ParkHanSol.Shop
             }
 
             var itemData = product.ItemPrefabData;
-            if (!itemData.HasDroppedPrefab)
+            if (!itemData.HasHeldPrefab)
             {
-                Debug.LogError($"PHS_SHOP_DISPLAY_FAILED reason=dropped_prefab_missing slot={name} offer={product.OfferId}", product);
+                Debug.LogError($"PHS_SHOP_DISPLAY_FAILED reason=local_prefab_missing slot={name} offer={product.OfferId}", product);
                 return false;
             }
 
-            displayedItem = Instantiate(itemData.DroppedPrefab, itemSpawnPoint.position, itemSpawnPoint.rotation);
+            displayedItem = Instantiate(itemData.HeldPrefab, itemSpawnPoint.position, itemSpawnPoint.rotation);
+            displayedItem.transform.localScale *= displayScaleMultiplier;
             displayedItem.name = $"PHS_ShopDisplay_{product.OfferId}";
             if (!displayedItem.TryGetComponent<UtilityItemObject>(out var itemObject) || itemObject.ItemPrefabData != itemData)
             {

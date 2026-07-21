@@ -46,6 +46,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
 
         private readonly List<MultiplayerRoomListItem> spawnedEntries = new();
         private RoomSessionInfo selectedRoom;
+        private bool createRoomInProgress;
 
         private void Awake()
         {
@@ -173,6 +174,12 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
 
         private async void CreateRoom()
         {
+            if (createRoomInProgress)
+            {
+                SetStatus("방 생성중입니다");
+                return;
+            }
+
             if (!int.TryParse(maxPlayersInput.text, out var maxPlayers))
             {
                 SetStatus("INVALID MAX PLAYERS");
@@ -181,8 +188,17 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
             }
 
             var password = passwordToggle.isOn ? createPasswordInput.text : string.Empty;
+            createRoomInProgress = true;
             SetStatus("CREATING ROOM");
-            await roomService.CreateRoomAsync(roomNameInput.text, maxPlayers, password);
+
+            try
+            {
+                await roomService.CreateRoomAsync(roomNameInput.text, maxPlayers, password);
+            }
+            finally
+            {
+                createRoomInProgress = false;
+            }
         }
 
         private async void RefreshRooms()

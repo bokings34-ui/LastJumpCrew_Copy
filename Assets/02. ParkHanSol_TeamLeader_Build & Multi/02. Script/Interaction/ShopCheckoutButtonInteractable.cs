@@ -6,6 +6,7 @@ namespace LastJumpCrew.ParkHanSol.Interaction
     public sealed class ShopCheckoutButtonInteractable : MonoBehaviour, IInteractable
     {
         [SerializeField] private ShopCheckoutZone checkoutZone;
+        [SerializeField] private ShopCheckoutButtonPressVisual pressVisual;
         [SerializeField] private string interactionPrompt = "Calculate & Deliver";
 
         public string InteractionPrompt => interactionPrompt;
@@ -23,7 +24,8 @@ namespace LastJumpCrew.ParkHanSol.Interaction
                 return;
             }
 
-            checkoutZone.TryCheckout();
+            var accepted = checkoutZone.TryCheckout();
+            pressVisual?.Play(accepted);
         }
     }
 }

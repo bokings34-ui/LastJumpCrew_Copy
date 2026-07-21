@@ -2,6 +2,15 @@ using UnityEngine;
 
 namespace LastJumpCrew.ParkHanSol.Items
 {
+    public enum UtilityItemUpgradeEffect
+    {
+        None,
+        RestoreShipHp,
+        IncreaseShipMaximumHp,
+        IncreaseHookPower,
+        IncreaseThrusterDuration
+    }
+
     // 아이템 하나가 런타임에서 어떤 프리팹/아이콘/표시명을 사용할지 정의하는 데이터 asset이다.
     // 실제 아이템 오브젝트에 붙는 컴포넌트는 UtilityItemObject이고, 이 ScriptableObject는 그 오브젝트가 참조하는 설정값이다.
     // 팀원이 새 아이템을 추가할 때는 prefab만 만드는 것으로 끝내지 말고, 이 데이터 asset도 같이 만든 뒤 itemPrefabData에 연결해야 한다.
@@ -46,6 +55,10 @@ namespace LastJumpCrew.ParkHanSol.Items
         // 별도 드롭 모델이 필요해지면 여기만 다른 프리팹으로 교체한다.
         [SerializeField] private GameObject droppedPrefab;
 
+        [Header("Temporary Upgrade")]
+        [SerializeField] private UtilityItemUpgradeEffect upgradeEffect;
+        [SerializeField, Min(0f)] private float upgradeAmount;
+
         public string ItemId => itemId;
         public string DisplayName => displayName;
         public Sprite Icon => icon;
@@ -54,6 +67,9 @@ namespace LastJumpCrew.ParkHanSol.Items
         public int MaxDurability => maxDurability;
         public GameObject HeldPrefab => heldPrefab;
         public GameObject DroppedPrefab => droppedPrefab;
+        public UtilityItemUpgradeEffect UpgradeEffect => upgradeEffect;
+        public float UpgradeAmount => upgradeAmount;
+        public bool IsUpgradeItem => upgradeEffect != UtilityItemUpgradeEffect.None && upgradeAmount > 0f;
         public bool HasHeldPrefab => heldPrefab != null;
         public bool HasDroppedPrefab => droppedPrefab != null;
     }

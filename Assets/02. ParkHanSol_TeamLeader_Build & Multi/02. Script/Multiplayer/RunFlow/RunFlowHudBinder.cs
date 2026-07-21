@@ -31,6 +31,12 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
             {
                 presenter.SetWarpGauge(coordinator.WarpChargeNormalized);
             }
+
+            var stageClock = NetworkRunSessionRoot.Instance?.StageClock;
+            if (stageClock != null)
+            {
+                presenter.SetTimeLimit(stageClock.RemainingSeconds);
+            }
         }
     }
 }
