@@ -8,7 +8,8 @@ namespace LastJumpCrew.ParkHanSol.Items
         RestoreShipHp,
         IncreaseShipMaximumHp,
         IncreaseHookPower,
-        IncreaseThrusterDuration
+        IncreaseThrusterDuration,
+        IncreasePlayerMaximumHp
     }
 
     // 아이템 하나가 런타임에서 어떤 프리팹/아이콘/표시명을 사용할지 정의하는 데이터 asset이다.

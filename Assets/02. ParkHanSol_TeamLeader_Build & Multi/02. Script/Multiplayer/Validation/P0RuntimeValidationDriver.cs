@@ -2330,6 +2330,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Validation
                 SetPlayerPosition(playerObject, entryPortal.transform.position);
                 yield return null;
                 entryPortal.Interact(holder);
+                RequestRemoteShopTransitionVotes();
                 yield return WaitFor(
                     () => SceneManager.GetActiveScene().name == ShopSceneName,
                     30f,
@@ -2559,6 +2560,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Validation
             SetPlayerPosition(playerObject, returnPortal.transform.position);
             yield return null;
             returnPortal.Interact(holder);
+            RequestRemoteShopTransitionVotes();
             yield return WaitFor(
                 () => SceneManager.GetActiveScene().name == MapSceneName,
                 30f,
@@ -4105,6 +4107,52 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Validation
             }
 
             Physics.SyncTransforms();
+        }
+
+        [ClientRpc]
+        private void SubmitShopTransitionVoteClientRpc(ClientRpcParams clientRpcParams = default)
+        {
+            StartCoroutine(SubmitShopTransitionVoteWhenReady());
+        }
+
+        private IEnumerator SubmitShopTransitionVoteWhenReady()
+        {
+            var deadline = Time.realtimeSinceStartup + 5f;
+            while (Time.realtimeSinceStartup < deadline)
+            {
+                var voteCoordinator = NetworkShopTransitionVoteCoordinator.Instance;
+                if (voteCoordinator != null && voteCoordinator.IsVoteActive)
+                {
+                    voteCoordinator.SubmitLocalVote(true);
+                    Debug.Log(
+                        $"PHS_P0_SHOP_VOTE_CLIENT_OK client={NetworkManager.LocalClientId}",
+                        this);
+                    yield break;
+                }
+
+                yield return null;
+            }
+
+            Debug.LogError(
+                $"PHS_P0_SHOP_VOTE_CLIENT_FAILED reason=vote_not_active client={NetworkManager.LocalClientId}",
+                this);
+        }
+
+        private void RequestRemoteShopTransitionVotes()
+        {
+            var remoteClientIds = NetworkManager.ConnectedClientsIds
+                .Where(clientId => clientId != NetworkManager.ServerClientId)
+                .ToArray();
+            if (remoteClientIds.Length == 0)
+            {
+                return;
+            }
+
+            SubmitShopTransitionVoteClientRpc(
+                new ClientRpcParams
+                {
+                    Send = new ClientRpcSendParams { TargetClientIds = remoteClientIds }
+                });
         }
 
         [ClientRpc]

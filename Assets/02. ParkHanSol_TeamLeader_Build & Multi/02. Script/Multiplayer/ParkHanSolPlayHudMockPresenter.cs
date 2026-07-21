@@ -283,7 +283,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
                 return;
             }
 
-            if (itemPrefabData == null || !itemPrefabData.HasDurability)
+            if (itemPrefabData == null || itemPrefabData.IsUpgradeItem)
             {
                 heldItemDurabilityText.gameObject.SetActive(false);
                 SetText(heldItemDurabilityText, string.Empty);
@@ -291,7 +291,11 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
             }
 
             heldItemDurabilityText.gameObject.SetActive(true);
-            SetText(heldItemDurabilityText, $"DUR {itemPrefabData.MaxDurability}/{itemPrefabData.MaxDurability}");
+            SetText(
+                heldItemDurabilityText,
+                itemPrefabData.HasDurability
+                    ? $"DUR {itemPrefabData.MaxDurability}/{itemPrefabData.MaxDurability}"
+                    : "DUR ∞");
         }
 
         private void RebuildSpeakingPlayerViews(IReadOnlyList<string> playerNames)

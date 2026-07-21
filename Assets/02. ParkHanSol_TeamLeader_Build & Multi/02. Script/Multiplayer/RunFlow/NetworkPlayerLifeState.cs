@@ -17,6 +17,10 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
             100,
             NetworkVariableReadPermission.Everyone,
             NetworkVariableWritePermission.Server);
+        private readonly NetworkVariable<int> synchronizedMaximumHealth = new(
+            100,
+            NetworkVariableReadPermission.Everyone,
+            NetworkVariableWritePermission.Server);
         private readonly NetworkVariable<bool> synchronizedAlive = new(
             true,
             NetworkVariableReadPermission.Everyone,
@@ -45,6 +49,8 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
         private float nextRespawnSyncTime;
 
         public bool IsAlive => synchronizedAlive.Value;
+        public int CurrentHealth => synchronizedHealth.Value;
+        public int MaximumHealth => synchronizedMaximumHealth.Value;
         public bool IsWaitingForWarpRevive => synchronizedWarpRevivePending.Value;
         public bool IsWaitingForAutomaticRespawn => !synchronizedAlive.Value
             && !synchronizedWarpRevivePending.Value
@@ -68,7 +74,8 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
             synchronizedRespawnSeconds.OnValueChanged += HandleRespawnSecondsChanged;
             if (IsServer)
             {
-                synchronizedHealth.Value = maximumHealth;
+                synchronizedMaximumHealth.Value = maximumHealth;
+                synchronizedHealth.Value = synchronizedMaximumHealth.Value;
             }
 
             ApplyAlivePresentation(synchronizedAlive.Value);
@@ -171,6 +178,39 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
             }
         }
 
+        public bool TryIncreaseMaximumHealthServer(int amount, out string reason)
+        {
+            if (!IsSpawned || !IsServer)
+            {
+                reason = "server_required";
+                return false;
+            }
+
+            if (!synchronizedAlive.Value)
+            {
+                reason = "player_dead";
+                return false;
+            }
+
+            if (amount <= 0)
+            {
+                reason = "positive_amount_required";
+                return false;
+            }
+
+            if (synchronizedMaximumHealth.Value > int.MaxValue - amount
+                || synchronizedHealth.Value > int.MaxValue - amount)
+            {
+                reason = "maximum_player_hp_overflow";
+                return false;
+            }
+
+            synchronizedMaximumHealth.Value += amount;
+            synchronizedHealth.Value += amount;
+            reason = null;
+            return true;
+        }
+
         public void BeginDeadZoneWarning(float warningSeconds)
         {
             if (!RequireServer(nameof(BeginDeadZoneWarning)) || !synchronizedAlive.Value)
@@ -258,7 +298,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
 
             playerController.ResetMovementForRespawn();
             TeleportTo(respawnPoint.position, respawnPoint.rotation);
-            synchronizedHealth.Value = maximumHealth;
+            synchronizedHealth.Value = synchronizedMaximumHealth.Value;
             synchronizedWarpRevivePending.Value = false;
             synchronizedRespawnSeconds.Value = -1f;
             synchronizedDeadZoneSeconds.Value = -1f;

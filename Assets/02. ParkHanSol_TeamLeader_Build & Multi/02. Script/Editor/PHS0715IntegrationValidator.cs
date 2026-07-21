@@ -49,8 +49,8 @@ namespace LastJumpCrew.ParkHanSol.Editor
             "Assets/01. MainGame/02. Final_Prefab/PHS_ShipRuntime.prefab";
         private const string TradeStationPrefabPath =
             "Assets/01. MainGame/02. Final_Prefab/02. Prefab_SeoBoGyeong_Game Economy/TradeStation.prefab";
-        private const string ShopShelfPrefabPath =
-            "Assets/01. MainGame/02. Final_Prefab/02. Prefab_SeoBoGyeong_Game Economy/Shelf_Dummy.prefab";
+        private const string ShopDisplayDeskPrefabPath =
+            "Assets/02. ParkHanSol_TeamLeader_Build & Multi/03. Prefab/Shop/PHS_ShopDisplayDesk_Shared.prefab";
         private const string EventPresentationPrefabFolder =
             "Assets/02. ParkHanSol_TeamLeader_Build & Multi/03. Prefab/Props/Prefabs/EventPresentation";
         private const string MapProfileFolder =
@@ -1095,7 +1095,8 @@ namespace LastJumpCrew.ParkHanSol.Editor
                 Require(buttonVisual != null, "shop_trade_station_cylinder_missing", errors);
                 Require(
                     buttonVisual != null && buttonVisual.name == "Cylinder" &&
-                    buttonVisual.parent != null && buttonVisual.parent.name == "Button",
+                    buttonVisual.parent != null && buttonVisual.parent.name == "Cylinder" &&
+                    buttonVisual.parent.parent == pressVisual.transform,
                     "shop_trade_station_cylinder_hierarchy_invalid",
                     errors);
                 RequireObject(
@@ -1118,24 +1119,22 @@ namespace LastJumpCrew.ParkHanSol.Editor
                 "shop_legacy_checkout_button_present",
                 errors);
 
-            var shelf = GameObject.Find("Shelf_Dummy");
-            Require(shelf != null, "shop_shelf_dummy_missing", errors);
-            if (shelf != null)
+            var shelfSlots = UnityEngine.Object.FindObjectsByType<ShopDisplaySlot>(
+                FindObjectsInactive.Include,
+                FindObjectsSortMode.None);
+            Require(shelfSlots.Length == 12, "shop_display_slots_invalid expected=12", errors);
+            foreach (var slot in shelfSlots)
             {
                 Require(
-                    PrefabUtility.GetPrefabAssetPathOfNearestInstanceRoot(shelf) == ShopShelfPrefabPath,
-                    "shop_shelf_dummy_prefab_invalid",
+                    PrefabUtility.GetPrefabAssetPathOfNearestInstanceRoot(slot.gameObject) ==
+                    ShopDisplayDeskPrefabPath,
+                    $"shop_display_slot_prefab_invalid slot={slot.name}",
                     errors);
-                var shelfSlots = shelf.GetComponentsInChildren<ShopDisplaySlot>(true);
-                Require(shelfSlots.Length == 10, "shop_shelf_slots_invalid expected=10", errors);
-                foreach (var slot in shelfSlots)
-                {
-                    RequireObject(
-                        new SerializedObject(slot),
-                        "itemSpawnPoint",
-                        $"shop_shelf_spawn_point_missing slot={slot.name}",
-                        errors);
-                }
+                RequireObject(
+                    new SerializedObject(slot),
+                    "itemSpawnPoint",
+                    $"shop_display_spawn_point_missing slot={slot.name}",
+                    errors);
             }
 
             ValidateShopCatalog(errors);
@@ -1148,7 +1147,7 @@ namespace LastJumpCrew.ParkHanSol.Editor
         private static void ValidateShopPresentationPrefabs(ICollection<string> errors)
         {
             ValidateTradeStationPrefab(errors);
-            ValidateShopShelfPrefab(errors);
+            ValidateShopDisplayDeskPrefab(errors);
         }
 
         private static void ValidateTradeStationPrefab(ICollection<string> errors)
@@ -1196,26 +1195,29 @@ namespace LastJumpCrew.ParkHanSol.Editor
             }
         }
 
-        private static void ValidateShopShelfPrefab(ICollection<string> errors)
+        private static void ValidateShopDisplayDeskPrefab(ICollection<string> errors)
         {
-            var prefab = PrefabUtility.LoadPrefabContents(ShopShelfPrefabPath);
+            var prefab = PrefabUtility.LoadPrefabContents(ShopDisplayDeskPrefabPath);
             if (prefab == null)
             {
-                errors.Add($"shop_shelf_prefab_missing path={ShopShelfPrefabPath}");
+                errors.Add($"shop_display_desk_prefab_missing path={ShopDisplayDeskPrefabPath}");
                 return;
             }
 
             try
             {
-                Require(prefab.name == "Shelf_Dummy", "shop_shelf_root_name_invalid", errors);
+                Require(
+                    prefab.name == "PHS_ShopDisplayDesk_Shared",
+                    "shop_display_desk_root_name_invalid",
+                    errors);
                 var slots = prefab.GetComponentsInChildren<ShopDisplaySlot>(true);
-                Require(slots.Length == 10, "shop_shelf_prefab_slots_invalid expected=10", errors);
+                Require(slots.Length == 2, "shop_display_desk_slots_invalid expected=2", errors);
                 foreach (var slot in slots)
                 {
                     RequireObject(
                         new SerializedObject(slot),
                         "itemSpawnPoint",
-                        $"shop_shelf_prefab_spawn_point_missing slot={slot.name}",
+                        $"shop_display_desk_spawn_point_missing slot={slot.name}",
                         errors);
                 }
             }
@@ -1771,7 +1773,24 @@ namespace LastJumpCrew.ParkHanSol.Editor
 
             Require(prefab.GetComponent<NetworkObject>() != null, "player_network_object_missing", errors);
             Require(prefab.GetComponent<NetworkPlayerController>() != null, "player_controller_missing", errors);
-            Require(prefab.GetComponent<NetworkPlayerLifeState>() != null, "player_life_state_missing", errors);
+            var playerLifeState = prefab.GetComponent<NetworkPlayerLifeState>();
+            Require(playerLifeState != null, "player_life_state_missing", errors);
+            var playerUpgradeState = prefab.GetComponent<NetworkPlayerUpgradeState>();
+            Require(playerUpgradeState != null, "player_upgrade_state_missing", errors);
+            if (playerUpgradeState != null)
+            {
+                var serializedUpgradeState = new SerializedObject(playerUpgradeState);
+                RequireObject(
+                    serializedUpgradeState,
+                    "playerLifeState",
+                    "player_upgrade_life_state_missing",
+                    errors);
+                Require(
+                    serializedUpgradeState.FindProperty("playerLifeState")?.objectReferenceValue
+                        == playerLifeState,
+                    "player_upgrade_life_state_mismatch",
+                    errors);
+            }
             Require(
                 prefab.GetComponent<PlayerEnemyTargetRegistration>() != null,
                 "player_enemy_target_registration_missing",
@@ -1860,20 +1879,20 @@ namespace LastJumpCrew.ParkHanSol.Editor
 
             ValidateCombatItemRoute(
                 "Assets/02. ParkHanSol_TeamLeader_Build & Multi/04. Data/UtilityItems/ParkHanSol_WrenchItemPrefabData.asset",
-                "Assets/06. JoHanYong_PlayerSystem/03. Prefab/ParkHanSol_Wrench 2.prefab",
-                "Assets/06. JoHanYong_PlayerSystem/03. Prefab/ParkHanSol_Wrench 1.prefab",
+                "Assets/02. ParkHanSol_TeamLeader_Build & Multi/03. Prefab/Props/Prefabs/Items/Imported/ParkHanSol_Wrench_Held.prefab",
+                "Assets/02. ParkHanSol_TeamLeader_Build & Multi/03. Prefab/Props/Prefabs/Items/Imported/ParkHanSol_Wrench_Dropped.prefab",
                 "wrench",
                 errors);
             ValidateCombatItemRoute(
                 "Assets/02. ParkHanSol_TeamLeader_Build & Multi/04. Data/UtilityItems/ParkHanSol_FireExtinguisherItemPrefabData.asset",
-                "Assets/06. JoHanYong_PlayerSystem/03. Prefab/ParkHanSol_FireExtinguisher 2.prefab",
-                "Assets/06. JoHanYong_PlayerSystem/03. Prefab/ParkHanSol_FireExtinguisher 1.prefab",
+                "Assets/02. ParkHanSol_TeamLeader_Build & Multi/03. Prefab/Props/Prefabs/Items/Imported/ParkHanSol_FireExtinguisher_Held.prefab",
+                "Assets/02. ParkHanSol_TeamLeader_Build & Multi/03. Prefab/Props/Prefabs/Items/Imported/ParkHanSol_FireExtinguisher_Dropped.prefab",
                 "fire_extinguisher",
                 errors);
             ValidateCombatItemRoute(
                 "Assets/02. ParkHanSol_TeamLeader_Build & Multi/04. Data/UtilityItems/ParkHanSol_BatteryItemPrefabData.asset",
-                "Assets/06. JoHanYong_PlayerSystem/03. Prefab/ParkHanSol_FuturisticBatteryPack 2.prefab",
-                "Assets/06. JoHanYong_PlayerSystem/03. Prefab/ParkHanSol_FuturisticBatteryPack 1.prefab",
+                "Assets/02. ParkHanSol_TeamLeader_Build & Multi/03. Prefab/Props/Prefabs/Items/Imported/ParkHanSol_BatteryPack_Held.prefab",
+                "Assets/02. ParkHanSol_TeamLeader_Build & Multi/03. Prefab/Props/Prefabs/Items/Imported/ParkHanSol_BatteryPack_Dropped.prefab",
                 "battery",
                 errors);
         }
@@ -2547,7 +2566,7 @@ namespace LastJumpCrew.ParkHanSol.Editor
                 return;
             }
 
-            Require(catalog.Products.Count == 12, $"shop_catalog_count_invalid actual={catalog.Products.Count}", errors);
+            Require(catalog.Products.Count == 13, $"shop_catalog_count_invalid actual={catalog.Products.Count}", errors);
             var networkPrefabHashes = new HashSet<long>();
             foreach (var product in catalog.Products)
             {
@@ -2683,7 +2702,7 @@ namespace LastJumpCrew.ParkHanSol.Editor
             }
 
             Require(
-                catalog.Items.Count == 17,
+                catalog.Items.Count == 18,
                 $"utility_item_catalog_count_invalid actual={catalog.Items.Count}",
                 errors);
 
