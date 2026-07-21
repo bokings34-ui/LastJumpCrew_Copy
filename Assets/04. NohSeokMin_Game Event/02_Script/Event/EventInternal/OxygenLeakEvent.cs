@@ -18,7 +18,7 @@ namespace SM
             _repairRuntimeBridge = Context?.RuntimeBridge as IEventRepairRuntimeBridge;
             _effectInstanceId = 0U;
 
-            var point = OxygenLeakSpawnSetting.Instance.GetRandomPoint();
+            var point = ShipSpawnPointConfig.Instance.GetRandomPoint();
 
             if (point == null)
             {

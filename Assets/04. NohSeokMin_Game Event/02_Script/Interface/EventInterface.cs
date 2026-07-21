@@ -20,7 +20,6 @@ namespace SM
     public interface IRoom
     {
         string RoomId { get; }
-        IReadOnlyList<Transform> FireSpawnPoints { get; }
     }
     
     public interface IDevice

@@ -1,0 +1,20 @@
+{
+	"owner": "석민",
+	"bundleType": "FirePresentation",
+	"version": "0.1.0",
+	"prefabPath": "Assets/04. NohSeokMin_Game Event/03_Prefab/FirePresentationBundle/FirePresentation_Root.prefab",
+	"contentId": "7101",
+	"requiredLocation": {
+		"kind": "N/A",
+		"note": "Visual Socket 조립 방식"
+	},
+	"inputs": [
+		"Telegraph()",
+		"Activate(FireIntensity intensity)",
+		"SetIntensity(FireIntensity intensity)",
+		"Extinguish()",
+		"ResetPresentation()"
+	],
+	"outputs": [],
+	"resetContract": "ResetPresentation() 호출 시 모든 파티클/오디오/트윈 초기화"
+}
