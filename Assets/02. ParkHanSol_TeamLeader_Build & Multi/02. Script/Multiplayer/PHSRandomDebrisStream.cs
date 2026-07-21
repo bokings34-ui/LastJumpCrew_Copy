@@ -116,6 +116,12 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
                     }
                 }
 
+                var itemObject = debris.GetComponent<UtilityItemObject>();
+                if (itemObject != null && itemObject.IsHeld)
+                {
+                    continue;
+                }
+
                 debris.position += Vector3.left * (speeds[index] * Time.deltaTime);
                 debris.Rotate(angularVelocities[index] * Time.deltaTime, Space.Self);
 

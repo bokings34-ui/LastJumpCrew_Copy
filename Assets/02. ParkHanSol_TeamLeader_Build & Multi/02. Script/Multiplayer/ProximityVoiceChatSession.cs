@@ -113,6 +113,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
                 BindVoiceParticipantEvents();
                 await ApplyChannelVolumeAsync();
                 UpdateLocalPosition(localPlayer);
+                Debug.Log($"PHS_VOICE_CHANNEL_READY channel={ActiveChannelName}");
                 return true;
             }
             catch (Exception exception)
@@ -607,6 +608,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
                 VivoxService.Instance.ParticipantRemovedFromChannel -= OnParticipantRemovedFromChannel;
                 VivoxService.Instance.ParticipantRemovedFromChannel += OnParticipantRemovedFromChannel;
                 ApplyVoiceDeviceSettings();
+                Debug.Log("PHS_VOICE_SERVICE_READY");
                 return true;
             }
             catch (Exception exception)

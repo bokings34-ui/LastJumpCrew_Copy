@@ -44,7 +44,9 @@ namespace LastJumpCrew.ParkHanSol.Shop
             var isFinalShop = networkRunFlow != null
                 && networkRunFlow.IsFinalShopPending
                 && state.Phase == GamePhase.GameClear;
-            if (state.Phase != GamePhase.Shop && !isFinalShop)
+            var isWarpSafeShop = networkRunFlow != null
+                && networkRunFlow.Phase == NetworkRunPhase.WarpSafe;
+            if (state.Phase != GamePhase.Shop && !isFinalShop && !isWarpSafeShop)
             {
                 reason = $"phase_{state.Phase}";
                 return false;
@@ -56,9 +58,8 @@ namespace LastJumpCrew.ParkHanSol.Shop
 
         public bool TryCompleteShop(out string reason)
         {
-            if (!IsReady)
+            if (!CanCompleteShop(out reason))
             {
-                reason = "run_flow_not_ready";
                 return false;
             }
 
@@ -93,6 +94,39 @@ namespace LastJumpCrew.ParkHanSol.Shop
 
             reason = null;
             Debug.Log($"PHS_SHOP_RUN_FLOW_CLOSED adapter={name} clearedZones={state.ClearedZoneCount}");
+            return true;
+        }
+
+        public bool CanCompleteShop(out string reason)
+        {
+            if (!IsReady)
+            {
+                reason = "run_flow_not_ready";
+                return false;
+            }
+
+            var networkRunFlow = NetworkRunFlowCoordinator.Instance;
+            if (networkRunFlow != null && networkRunFlow.IsFinalShopPending)
+            {
+                if (state.Phase != GamePhase.GameClear)
+                {
+                    reason = $"phase_{state.Phase}";
+                    return false;
+                }
+
+                reason = null;
+                return true;
+            }
+
+            if (state.Phase != GamePhase.Shop
+                && state.Phase != GamePhase.ZoneSelect
+                && state.Phase != GamePhase.Play)
+            {
+                reason = $"phase_{state.Phase}";
+                return false;
+            }
+
+            reason = null;
             return true;
         }
     }

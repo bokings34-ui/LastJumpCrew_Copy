@@ -12,7 +12,8 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
         NetworkBehaviour,
         IShipSystemsState,
         IShipSystemsCommands,
-        IShipDockRepairCommands
+        IShipDockRepairCommands,
+        IShipDockUpgradeCommands
     {
         [Header("Ship Defaults")]
         [SerializeField, Min(1)] private int maximumShipHp = 100;
@@ -240,6 +241,37 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
             reason = null;
             Debug.Log(
                 $"PHS_SHIP_DOCK_REPAIR_APPLIED amount={synchronizedCurrentShipHp.Value - previousHp} hp={CurrentShipHp}/{MaximumShipHp} revision={Revision}",
+                this);
+            return true;
+        }
+
+        public bool TryIncreaseMaximumShipHpAtDock(int amount, out string reason)
+        {
+            if (!RequireServer(out reason))
+            {
+                return false;
+            }
+
+            if (amount <= 0)
+            {
+                reason = "positive_maximum_increase_required";
+                return false;
+            }
+
+            if (!IsShipAlive)
+            {
+                reason = "ship_destroyed";
+                return false;
+            }
+
+            synchronizedMaximumShipHp.Value = checked(synchronizedMaximumShipHp.Value + amount);
+            synchronizedCurrentShipHp.Value = Mathf.Min(
+                synchronizedMaximumShipHp.Value,
+                synchronizedCurrentShipHp.Value + amount);
+            IncrementRevision();
+            reason = null;
+            Debug.Log(
+                $"PHS_SHIP_MAXIMUM_HP_INCREASED amount={amount} hp={CurrentShipHp}/{MaximumShipHp} revision={Revision}",
                 this);
             return true;
         }

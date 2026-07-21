@@ -44,4 +44,10 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
         bool TryRestorePowerWithBattery(out string reason);
         bool TrySetGravityEnabled(bool isEnabled, out string reason);
     }
+
+    public interface IShipDockUpgradeCommands
+    {
+        bool TryRestoreShipDurabilityAtDock(int amount, out string reason);
+        bool TryIncreaseMaximumShipHpAtDock(int amount, out string reason);
+    }
 }

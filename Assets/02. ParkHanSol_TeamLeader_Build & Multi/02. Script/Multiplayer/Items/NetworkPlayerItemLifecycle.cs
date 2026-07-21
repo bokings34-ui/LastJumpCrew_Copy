@@ -21,6 +21,9 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
         [SerializeField] private NetworkPlayerItemRecord itemRecord;
         [SerializeField] private TempPlayerItemHolder itemHolder;
 
+        [Header("Drop Motion")]
+        [SerializeField] private ItemDropMotionProfile dropMotionProfile;
+
         [Header("Server Validation")]
         [SerializeField, Min(0.1f)] private float serverPickupDistance = 3f;
         [SerializeField, Min(0.1f)] private float serverPlaceDistance = 3f;
@@ -85,6 +88,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
             return IsSpawned
                 && IsOwner
                 && itemCatalog != null
+                && dropMotionProfile != null
                 && itemRecord != null
                 && itemRecord.IsSpawned
                 && !string.IsNullOrEmpty(itemRecord.HeldItemId)
@@ -318,6 +322,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
         {
             if (!ValidateServerSender(senderClientId)
                 || itemRecord == null
+                || dropMotionProfile == null
                 || !itemRecord.IsSpawned
                 || string.IsNullOrEmpty(itemRecord.HeldItemId)
                 || !IsFinite(requestedPosition)
@@ -343,6 +348,17 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
                     out var spawnedItem))
             {
                 return RejectPlace("spawn_failed", senderClientId);
+            }
+
+            var droppedRigidbody = spawnedItem.GetComponent<Rigidbody>();
+            if (!dropMotionProfile.TryApply(droppedRigidbody, normalizedRotation))
+            {
+                if (spawnedItem.IsSpawned)
+                {
+                    spawnedItem.Despawn(true);
+                }
+
+                return RejectPlace("drop_motion_rejected", senderClientId);
             }
 
             if (!itemRecord.TryConsumeHeldItemServer(itemId, expectedRevision))

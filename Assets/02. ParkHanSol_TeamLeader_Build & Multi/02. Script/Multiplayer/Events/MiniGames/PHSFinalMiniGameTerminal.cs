@@ -2,6 +2,7 @@ using LastJumpCrew.ParkHanSol.Interaction;
 using LastJumpCrew.ParkHanSol.Multiplayer;
 using SM;
 using UnityEngine;
+using LastJumpCrew.ParkHanSol.Multiplayer.Events.MiniGames.Runtime;
 using CommonInteraction = LastJumpCrew.Common;
 
 namespace LastJumpCrew.ParkHanSol.Multiplayer.Events.MiniGames
@@ -11,12 +12,13 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Events.MiniGames
         MonoBehaviour,
         IEventMiniGameTerminal,
         CommonInteraction.IMiniGameTarget,
+        IPHSFinalMiniGameSessionOwner,
         LastJumpCrew.ParkHanSol.Interaction.IInteractable,
         CommonInteraction.IInteractable
     {
         [Header("Event Mini Game")]
         [SerializeField] private EventId eventId = EventId.EmpAttack;
-        [SerializeField] private MiniGameType miniGameType = MiniGameType.WireFix;
+        [SerializeField] private PHSMiniGameType miniGameType = PHSMiniGameType.WireFix;
 
         [Header("Interaction")]
         [SerializeField] private string interactionPrompt = "고장난 장치 수리하기";
@@ -28,7 +30,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Events.MiniGames
         private bool setupValid;
 
         public EventId ConfiguredEventId => eventId;
-        public MiniGameType ConfiguredMiniGameType => miniGameType;
+        public PHSMiniGameType ConfiguredMiniGameType => miniGameType;
         public Vector3 WorldPosition => transform.position;
         public bool IsConfigured => IsMatchingPair(eventId, miniGameType);
         public string MiniGameTargetId => eventId.ToString();
@@ -82,6 +84,11 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Events.MiniGames
             SubmitResult(false);
         }
 
+        public void OnMiniGameSessionClosed()
+        {
+            RestorePlayerInput();
+        }
+
         private bool CanInteractCore()
         {
             if (!setupValid || isMiniGameOpen)
@@ -105,7 +112,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Events.MiniGames
                 return;
             }
 
-            if (MiniGameManager.Instance == null)
+            if (PHSMiniGameManager.Instance == null)
             {
                 Debug.LogError(
                     $"PHS_FINAL_MINIGAME_OPEN_REJECTED reason=manager_missing event={eventId}",
@@ -137,7 +144,15 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Events.MiniGames
             Cursor.visible = true;
             isMiniGameOpen = true;
 
-            MiniGameManager.Instance.OpenMiniGame(miniGameType, this);
+            if (!PHSMiniGameManager.Instance.OpenMiniGame(miniGameType, this))
+            {
+                RestorePlayerInput();
+                Debug.LogWarning(
+                    $"PHS_FINAL_MINIGAME_OPEN_REJECTED reason=manager_busy event={eventId}",
+                    this);
+                return;
+            }
+
             Debug.Log(
                 $"PHS_FINAL_MINIGAME_OPENED event={eventId} type={miniGameType}",
                 this);
@@ -159,7 +174,6 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Events.MiniGames
                 Debug.LogError(
                     $"PHS_FINAL_MINIGAME_RESULT_REJECTED reason=coordinator_missing event={eventId} succeeded={succeeded}",
                     this);
-                RestorePlayerInput();
                 return;
             }
 
@@ -170,7 +184,6 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Events.MiniGames
                     this);
             }
 
-            RestorePlayerInput();
         }
 
         private void RestorePlayerInput()
@@ -199,13 +212,13 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Events.MiniGames
             return valid;
         }
 
-        private static bool IsMatchingPair(EventId configuredEventId, MiniGameType configuredMiniGameType)
+        private static bool IsMatchingPair(EventId configuredEventId, PHSMiniGameType configuredMiniGameType)
         {
             return configuredEventId switch
             {
-                EventId.EmpAttack => configuredMiniGameType == MiniGameType.WireFix,
-                EventId.MeteorAttack => configuredMiniGameType == MiniGameType.Cannon,
-                EventId.EnemyScout => configuredMiniGameType == MiniGameType.PowerSync,
+                EventId.EmpAttack => configuredMiniGameType == PHSMiniGameType.WireFix,
+                EventId.MeteorAttack => configuredMiniGameType == PHSMiniGameType.Cannon,
+                EventId.EnemyScout => configuredMiniGameType == PHSMiniGameType.PowerSync,
                 _ => false
             };
         }

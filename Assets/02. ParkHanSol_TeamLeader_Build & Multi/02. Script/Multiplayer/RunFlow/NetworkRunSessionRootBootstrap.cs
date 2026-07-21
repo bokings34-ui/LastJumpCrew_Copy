@@ -104,7 +104,8 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
                 || runSessionRootPrefab.GetComponent<NetworkRunEconomyLedger>() == null
                 || runSessionRootPrefab.GetComponent<NetworkRunRandomLedger>() == null
                 || runSessionRootPrefab.GetComponent<NetworkRunIncidentLedger>() == null
-                || runSessionRootPrefab.GetComponent<PHSNetworkIncidentDirector>() == null)
+                || runSessionRootPrefab.GetComponent<PHSNetworkIncidentDirector>() == null
+                || runSessionRootPrefab.GetComponent<NetworkShopTransitionVoteCoordinator>() == null)
             {
                 Debug.LogError(
                     "PHS_RUN_SESSION_ROOT_BOOTSTRAP_FAILED reason=prefab_contract_invalid",
