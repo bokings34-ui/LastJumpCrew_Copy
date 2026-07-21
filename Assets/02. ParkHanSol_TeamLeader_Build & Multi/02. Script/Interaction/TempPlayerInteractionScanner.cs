@@ -1,7 +1,7 @@
 using UnityEngine;
-using UnityEngine.InputSystem;
 using Unity.Netcode;
 using LastJumpCrew.ParkHanSol.Multiplayer;
+using LastJumpCrew.ParkHanSol.Multiplayer.Input;
 using CommonInteraction = LastJumpCrew.Common;
 
 namespace LastJumpCrew.ParkHanSol.Interaction
@@ -20,6 +20,7 @@ namespace LastJumpCrew.ParkHanSol.Interaction
         // 상호작용 대상 레이어 필터다. Trigger도 감지한다.
         [SerializeField] private LayerMask interactableLayers = ~0;
         [SerializeField] private ParkHanSolPlayHudMockPresenter playHudPresenter;
+        [SerializeField] private PlayerControlInput playerControlInput;
 
         // 같은 오브젝트에 붙은 아이템 보유 컴포넌트다.
         private IItemHolder itemHolder;
@@ -39,12 +40,24 @@ namespace LastJumpCrew.ParkHanSol.Interaction
         // 현재 바라보는 일반 상호작용 대상의 외곽선 glow다.
         private InteractableFocusGlow focusedGlow;
 
+        [Header("Drop And Throw Input")]
+        [SerializeField, Min(0.1f)] private float throwHoldThreshold = 0.4f;
+        [SerializeField] private NetworkPlayerCombatController combatController;
+
+        private float rightButtonPressedTime;
+        private bool isHoldingRightButton;
+
         private void Awake()
         {
             itemHolder = GetComponent<IItemHolder>();
             commonItemHolder = GetComponent<CommonInteraction.IItemHolder>();
             networkObject = GetComponent<NetworkObject>();
             playerController = GetComponent<NetworkPlayerController>();
+            combatController ??= GetComponent<NetworkPlayerCombatController>();
+            if (playerControlInput == null)
+            {
+                Debug.LogError($"PHS_PLAYER_INPUT_SETUP_FAILED reason=control_input_reference_missing player={name}", this);
+            }
         }
 
         private void Update()
@@ -52,6 +65,7 @@ namespace LastJumpCrew.ParkHanSol.Interaction
             // 네트워크 스폰 후 소유자가 아니면 입력/초점 표시를 하지 않는다.
             if (networkObject != null && networkObject.IsSpawned && !networkObject.IsOwner)
             {
+                isHoldingRightButton = false;
                 ClearToolBoxSlotFocus();
                 ClearInteractionPrompt();
                 return;
@@ -59,6 +73,7 @@ namespace LastJumpCrew.ParkHanSol.Interaction
 
             if (playerController != null && !playerController.CanAcceptLocalInput)
             {
+                isHoldingRightButton = false;
                 ClearToolBoxSlotFocus();
                 ClearInteractableFocusGlow();
                 ClearInteractionPrompt();
@@ -68,33 +83,23 @@ namespace LastJumpCrew.ParkHanSol.Interaction
             RefreshToolBoxSlotFocus();
             RefreshInteractableFocusGlow();
 
-            if (Keyboard.current != null && Keyboard.current.fKey.wasPressedThisFrame)
+            if (playerControlInput == null)
+            {
+                return;
+            }
+
+            if (playerControlInput.InteractPressedThisFrame)
             {
                 TryInteract();
             }
 
-            if (Mouse.current == null)
-            {
-                return;
-            }
-            if (Mouse.current.leftButton.wasPressedThisFrame)
-            {
-                if (TryInteractWithFocusedToolBoxSlot())
-                {
-                    return;
-                }
-
-                TryUseHeldItem();
-            }
-
-            if (Mouse.current.rightButton.wasPressedThisFrame)
-            {
-                PlaceHeldItem();
-            }
+            ProcessHeldItemUseInput();
+            ProcessDropOrThrowInput();
         }
 
         private void OnDisable()
         {
+            isHoldingRightButton = false;
             ClearToolBoxSlotFocus();
             ClearInteractableFocusGlow();
             ClearInteractionPrompt();
@@ -352,6 +357,76 @@ namespace LastJumpCrew.ParkHanSol.Interaction
         private void ClearInteractionPrompt()
         {
             playHudPresenter?.SetInteractionPrompt(string.Empty, string.Empty);
+        }
+
+        private void ProcessHeldItemUseInput()
+        {
+            if (playerControlInput == null)
+            {
+                return;
+            }
+
+            if (playerControlInput.UsePressedThisFrame && TryInteractWithFocusedToolBoxSlot())
+            {
+                return;
+            }
+
+            var heldItem = commonItemHolder?.CurrentItem;
+            if (heldItem == null || !TryGetUsableItem(heldItem, out var usableItem))
+            {
+                return;
+            }
+
+            if (usableItem is CommonInteraction.IContinuousUsableItem)
+            {
+                if (playerControlInput.UsePressed)
+                {
+                    TryUseHeldItem();
+                }
+
+                return;
+            }
+
+            if (playerControlInput.UsePressedThisFrame)
+            {
+                TryUseHeldItem();
+            }
+        }
+
+        private void ProcessDropOrThrowInput()
+        {
+            if (playerControlInput == null)
+            {
+                return;
+            }
+
+            if (playerControlInput.DropPressedThisFrame)
+            {
+                rightButtonPressedTime = Time.time;
+                isHoldingRightButton = true;
+                return;
+            }
+
+            if (!playerControlInput.DropReleasedThisFrame || !isHoldingRightButton)
+            {
+                return;
+            }
+
+            isHoldingRightButton = false;
+            var heldDuration = Time.time - rightButtonPressedTime;
+            if (heldDuration < throwHoldThreshold)
+            {
+                PlaceHeldItem();
+                return;
+            }
+
+            if (combatController == null)
+            {
+                Debug.LogError($"PHS_ITEM_THROW_FAILED reason=combat_controller_missing player={name}");
+                return;
+            }
+
+            combatController.RequestThrowHeldItem(heldDuration);
         }
         
     }

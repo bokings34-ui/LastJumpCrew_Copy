@@ -80,3 +80,8 @@ ProjectSettings/Packages/com.unity.services.vivox/Settings.json
 # Ignore assets and packages
 /[Aa]ssets/04. NohSeokMin_Game Event/06_IgnoreAssets/
 /[Aa]ssets/04. NohSeokMin_Game Event/06_IgnoreAssets.meta
+
+/Assets/05. TakHyunJae_Map & MiniGame/06. MyAsset/
+# Ignore test Import Object
+/[Aa]ssets/03. SeoBoGyeong_Game Economy/99. Test/
+/[Aa]ssets/03. SeoBoGyeong_Game Economy/99. Test.meta

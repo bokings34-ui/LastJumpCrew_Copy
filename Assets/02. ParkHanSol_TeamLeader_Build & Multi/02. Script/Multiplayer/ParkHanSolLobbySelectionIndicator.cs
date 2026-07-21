@@ -27,6 +27,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
         private ParkHanSolLobbySelectionTarget currentTarget;
         private Sequence transitionSequence;
         private bool hasPresented;
+        private readonly Vector3[] visualTargetWorldCorners = new Vector3[4];
 
         public void Register(ParkHanSolLobbySelectionTarget target)
         {
@@ -74,11 +75,22 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
                 currentTarget.SetFocused(true, focusedTextColor, textColorDuration, immediate);
             }
 
-            var bounds = RectTransformUtility.CalculateRelativeRectTransformBounds(indicatorParent, visualTarget);
-            var targetPosition = new Vector2(bounds.center.x, bounds.center.y);
+            visualTarget.GetWorldCorners(visualTargetWorldCorners);
+            var min = indicatorParent.InverseTransformPoint(visualTargetWorldCorners[0]);
+            var max = min;
+            for (var i = 1; i < visualTargetWorldCorners.Length; i++)
+            {
+                var corner = indicatorParent.InverseTransformPoint(visualTargetWorldCorners[i]);
+                min = Vector3.Min(min, corner);
+                max = Vector3.Max(max, corner);
+            }
+
+            var targetPosition = new Vector2(
+                (min.x + max.x) * 0.5f,
+                (min.y + max.y) * 0.5f);
             var targetSize = new Vector2(
-                bounds.size.x + horizontalPadding * 2f,
-                bounds.size.y + verticalPadding * 2f);
+                max.x - min.x + horizontalPadding * 2f,
+                max.y - min.y + verticalPadding * 2f);
 
             KillTransition();
             if (immediate || !hasPresented)

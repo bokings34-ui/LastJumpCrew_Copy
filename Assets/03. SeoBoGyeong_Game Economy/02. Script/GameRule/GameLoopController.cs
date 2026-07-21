@@ -1,4 +1,5 @@
 using UnityEngine;
+using LastJumpCrew.ParkHanSol.Multiplayer;
 
 namespace LastJumpCrew.SeoBoGyeong
 {
@@ -20,6 +21,7 @@ namespace LastJumpCrew.SeoBoGyeong
         private readonly IShipStatus ship;
         private readonly IDeathEventGate deathGate;
         private readonly CountdownTimer stageTimer = new();
+        private bool stageTimerPaused;
 
         public GameLoopController(GameLoopState loop, IShipStatus ship, IDeathEventGate deathGate)
         {
@@ -33,6 +35,7 @@ namespace LastJumpCrew.SeoBoGyeong
         {
             loop.ClearedZoneCount = 0;
             stageTimer.Stop();
+            stageTimerPaused = false;
             SetPhase(GamePhase.ZoneSelect);
         }
 
@@ -40,6 +43,7 @@ namespace LastJumpCrew.SeoBoGyeong
         public void OnZoneSelected(int zoneId)
         {
             loop.SelectedZoneId = zoneId;
+            stageTimerPaused = false;
             stageTimer.Start(GameLoopState.STAGE_TIME_LIMIT);
             loop.StageTimeRemaining = stageTimer.Remaining;
             SetPhase(GamePhase.Play);
@@ -53,6 +57,7 @@ namespace LastJumpCrew.SeoBoGyeong
         public bool TickStageTimer(float deltaTime)
         {
             if (loop.Phase != GamePhase.Play) return false;
+            if (stageTimerPaused) return false;
             if (!stageTimer.IsRunning) return false;
 
             bool justExpired = stageTimer.Tick(deltaTime);
@@ -60,10 +65,25 @@ namespace LastJumpCrew.SeoBoGyeong
 
             if (justExpired)
             {
+                var shipSystems = NetworkShipSystemsState.Instance;
+                var damageReason = "ship_systems_missing";
+                if (shipSystems != null
+                    && shipSystems.TryApplyShipDamage(999, "stage_timeout", out damageReason))
+                {
+                    Debug.Log("PHS_STAGE_TIMEOUT_SHIP_DAMAGE_APPLIED amount=999");
+                    return true;
+                }
+
+                Debug.LogError($"PHS_STAGE_TIMEOUT_SHIP_DAMAGE_FAILED reason={damageReason}");
                 GameOver(GameOverReason.TimeOver);
                 deathGate.ExecuteConfirmedDeath();
             }
             return true;
+        }
+
+        public void SetStageTimerPaused(bool paused)
+        {
+            stageTimerPaused = paused;
         }
 
         /// <summary>

@@ -86,3 +86,32 @@
 - 실제 Host+Client 2인 화면에서 알람과 지도 마커가 양쪽에 동일하게 보이는지 수동 확인합니다.
 - Relay/Lobby 실제 서비스 접속은 Unity Services 프로젝트 연결 상태와 분리해서 확인합니다.
 - MCP 로컬 설치물과 `ProjectSettings/Packages/com.unity.probuilder/Settings.json`은 커밋 범위에서 제외합니다.
+
+---
+
+## 🔥 PR #52 사건 장소·Fire Runtime 중간 작업 — 2026-07-19~20
+
+- 작업 브랜치: `codex/run-incident-ledger-0718`
+- Draft Pull Request: [#52](https://github.com/hyunje0609-sudo/LastJumpCrew/pull/52)
+- 0715 Scene Foundation: Zone `4`, Location `15`, Fire Patch `22`, Request Route `10`
+- Fire 상태 권한은 박한솔 소유 서버 Coordinator가 담당하고, Patch별 `NetworkObject`를 만들지 않는 Snapshot 구조로 진행 중입니다.
+- Scene Patch는 `Interactable` Layer, `PHSFirePatchRuntimeTarget`, Light, Visual Socket을 연결하는 계약입니다.
+- 연결 확인용 임시 출력 `Assets/02. ParkHanSol_TeamLeader_Build & Multi/03. Prefab/Props/Prefabs/IncidentFire/PHS_FirePatchPresentation.prefab`을 생성했습니다. Root 아래 `FlameCore`, `FlameOuter`, `Smoke`, `Embers` Particle 4종이며 0719 Authoring 검증을 통과했습니다.
+- 노석민 최종 납품은 Presentation-only VFX/Audio/Telegraph/Cleanup/Reset Bundle입니다. Prefab에 `NetworkObject`, `NetworkBehaviour`, 점화·확산·피해·소화 상태 로직을 넣지 않습니다.
+- 박한솔이 노석민 최종 Presentation Prefab을 `PHSFireZone.patchPresentationPrefab` 참조로 교체합니다. `PHSFirePatchRuntimeTarget`이 활성화 시 Scene Patch Visual Socket 아래에 지연 생성합니다.
+
+### 현재 검증 상태
+
+| 검증 | 상태 |
+| --- | --- |
+| Unity Compile Error 0 | 확인 |
+| 0719 `ValidateAuthoredScene` | 통과: `ok=True reason=none` |
+| 0719 Migration | 통과: `zones=4 locations=15 fireZones=4 firePatches=22 routes=10` |
+| 전체 `PHS0715IntegrationValidator` | 통과: `errors=0 scenes=3 prefabs=11` |
+| Direct local Host 점화·확산·피해·소화·Containment | 통과 |
+| 원격 Client Snapshot 동기화 | 미검증 |
+| Late Join 현재 화재 복원 | 미검증 |
+
+Direct local Host 0715 smoke에서 점화 `instance=2`, `fire_surface_room_a`, Patch `103`, Heat `70/Medium`, Target/Light 활성화를 확인했습니다. 자연 확산은 Patch `4`, Heat `176/122/68/39`, 활성 Target/Light `4`, 재생 Particle `28`이었고, 범위 피해는 Host Health `100 -> 0`이었습니다. 소화/Containment는 Hit `24`, Patch `0`, failure 없음, 최종 Fire `0`, Accident `2=false`였습니다.
+
+이 결과는 Fire flow 통과 증거입니다. 같은 run에서 Fire 외 `ParkHanSolGameSettingsController MissingReference` 1건과 EMP terminal impact `power_already_off` 2건을 관찰했으므로 전체 Host clean으로 보지 않습니다.

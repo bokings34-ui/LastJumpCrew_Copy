@@ -1,4 +1,5 @@
 using LastJumpCrew.ParkHanSol.Items;
+using LastJumpCrew.ParkHanSol.Multiplayer;
 using LastJumpCrew.ParkHanSol.Shop;
 using Unity.Collections;
 using Unity.Netcode;
@@ -13,6 +14,7 @@ namespace LastJumpCrew.ParkHanSol.Interaction
         [SerializeField] private ShopCatalogSO catalog;
         [SerializeField] private UtilityToolBoxStorageSlotInteractable[] deliverySlots;
         [SerializeField] private Transform[] overflowDropPoints;
+        [SerializeField] private string deliveryBoxId = "ship_delivery_box";
 
         private readonly NetworkList<FixedString64Bytes> deliveredItemIds = new(
             null,
@@ -87,6 +89,13 @@ namespace LastJumpCrew.ParkHanSol.Interaction
                 return;
             }
 
+            var networkManager = NetworkManager.Singleton;
+            if (networkManager != null && networkManager.IsListening)
+            {
+                DeliverNetworkLedgerItems();
+                return;
+            }
+
             var deliveryService = SessionPurchaseDeliveryService.Instance;
             if (deliveryService == null)
             {
@@ -95,6 +104,72 @@ namespace LastJumpCrew.ParkHanSol.Interaction
             }
 
             deliveryService.DeliverTo(this);
+        }
+
+        private void DeliverNetworkLedgerItems()
+        {
+            if (!IsSpawned || !IsServer)
+            {
+                return;
+            }
+
+            var ledger = NetworkRunSessionRoot.Instance?.Economy;
+            if (ledger == null || !ledger.IsSpawned || ledger.Revision == 0U)
+            {
+                Debug.LogError(
+                    $"PHS_PURCHASE_DELIVERY_FAILED reason=run_economy_ledger_missing box={name}",
+                    this);
+                return;
+            }
+
+            var claimReason = string.Empty;
+            while (ledger.TryClaimNextDeliveryServer(
+                       deliveryBoxId,
+                       out var entry,
+                       out claimReason))
+            {
+                var itemId = entry.ItemId.ToString();
+                if (!TryResolveItemData(itemId, out var itemPrefabData)
+                    || !TryReceive(itemPrefabData))
+                {
+                    if (!ledger.TryReleaseDeliveryClaimServer(
+                            entry.EntryId,
+                            deliveryBoxId,
+                            out var releaseReason))
+                    {
+                        Debug.LogError(
+                            $"PHS_PURCHASE_DELIVERY_INVARIANT_FAILED reason=claim_release_failed box={name} entry={entry.EntryId} detail={releaseReason}",
+                            this);
+                    }
+
+                    Debug.LogWarning(
+                        $"PHS_PURCHASE_DELIVERY_WAITING reason=box_apply_rejected box={name} entry={entry.EntryId} item={itemId}",
+                        this);
+                    return;
+                }
+
+                if (!ledger.TryCompleteDeliveryServer(
+                        entry.EntryId,
+                        deliveryBoxId,
+                        out var completeReason))
+                {
+                    Debug.LogError(
+                        $"PHS_PURCHASE_DELIVERY_INVARIANT_FAILED reason=ledger_complete_failed box={name} entry={entry.EntryId} detail={completeReason}",
+                        this);
+                    return;
+                }
+
+                Debug.Log(
+                    $"PHS_PURCHASE_DELIVERY_COMPLETED box={name} entry={entry.EntryId} item={itemId} pending={ledger.Snapshot.PendingDeliveryCount}",
+                    this);
+            }
+
+            if (claimReason != "pending_delivery_missing")
+            {
+                Debug.LogError(
+                    $"PHS_PURCHASE_DELIVERY_FAILED reason=claim_rejected box={name} detail={claimReason}",
+                    this);
+            }
         }
 
         private void HandleDeliveredItemsChanged(NetworkListEvent<FixedString64Bytes> changeEvent)
@@ -180,6 +255,14 @@ namespace LastJumpCrew.ParkHanSol.Interaction
                 return false;
             }
 
+            var networkManager = NetworkManager.Singleton;
+            var networkSessionActive = networkManager != null && networkManager.IsListening;
+            if (networkSessionActive && !IsServer)
+            {
+                // Server-spawned overflow object arrives through NGO. Client only advances delivery presentation state.
+                return true;
+            }
+
             var dropPoint = overflowDropPoints[nextOverflowDropPoint % overflowDropPoints.Length];
             nextOverflowDropPoint++;
             if (dropPoint == null)
@@ -193,6 +276,19 @@ namespace LastJumpCrew.ParkHanSol.Interaction
             if (droppedItem.TryGetComponent<UtilityItemObject>(out var itemObject))
             {
                 itemObject.OnDropped(dropPoint.position);
+            }
+
+            if (networkSessionActive)
+            {
+                if (!droppedItem.TryGetComponent<NetworkObject>(out var droppedNetworkObject))
+                {
+                    Debug.LogError(
+                        $"PHS_PURCHASE_DELIVERY_OVERFLOW_FAILED reason=network_object_missing box={name} item={itemPrefabData.ItemId}");
+                    Destroy(droppedItem);
+                    return false;
+                }
+
+                droppedNetworkObject.Spawn();
             }
 
             Debug.Log(
@@ -212,6 +308,12 @@ namespace LastJumpCrew.ParkHanSol.Interaction
             if (deliverySlots == null || deliverySlots.Length == 0)
             {
                 Debug.LogError($"PHS_PURCHASE_DELIVERY_SETUP_FAILED reason=slots_missing box={name}", this);
+                valid = false;
+            }
+
+            if (string.IsNullOrWhiteSpace(deliveryBoxId))
+            {
+                Debug.LogError($"PHS_PURCHASE_DELIVERY_SETUP_FAILED reason=box_id_missing box={name}", this);
                 valid = false;
             }
 

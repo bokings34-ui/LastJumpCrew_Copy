@@ -7,8 +7,10 @@ namespace LastJumpCrew.ParkHanSol.Interaction
     {
         [SerializeField] private Transform destination;
         [SerializeField] private string interactionPrompt = "Move To Exterior Test Zone";
+        [SerializeField, Min(0.5f)] private float serverInteractionDistance = 4f;
 
         public string InteractionPrompt => interactionPrompt;
+        public Transform Destination => destination;
 
         public bool CanInteract(IItemHolder itemHolder)
         {
@@ -30,7 +32,45 @@ namespace LastJumpCrew.ParkHanSol.Interaction
                 return;
             }
 
-            player.RequestTestTeleport(destination.position, destination.rotation);
+            player.RequestLocalPortalTeleport(name);
+        }
+
+        internal bool TryResolveServerDestination(
+            NetworkPlayerController player,
+            out Vector3 position,
+            out Quaternion rotation,
+            out string reason)
+        {
+            position = default;
+            rotation = default;
+            reason = null;
+            if (player == null)
+            {
+                reason = "player_missing";
+                return false;
+            }
+
+            if (!isActiveAndEnabled || destination == null)
+            {
+                reason = "portal_inactive_or_destination_missing";
+                return false;
+            }
+
+            if (gameObject.scene != player.gameObject.scene)
+            {
+                reason = "scene_mismatch";
+                return false;
+            }
+
+            if (Vector3.Distance(player.transform.position, transform.position) > serverInteractionDistance)
+            {
+                reason = "player_out_of_range";
+                return false;
+            }
+
+            position = destination.position;
+            rotation = destination.rotation;
+            return true;
         }
     }
 }

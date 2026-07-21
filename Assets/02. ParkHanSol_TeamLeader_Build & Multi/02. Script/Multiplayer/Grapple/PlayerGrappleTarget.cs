@@ -12,6 +12,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
         public Transform GrapplePoint => grapplePoint;
         public bool CanMoveByGrapple => true;
         public float GrappleMass => playerController == null ? 0f : playerController.SpaceMass;
+        public GrapplePullMode PullMode => GrapplePullMode.PullTarget;
 
         private void Awake()
         {

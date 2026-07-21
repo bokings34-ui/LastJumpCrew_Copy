@@ -1,69 +1,223 @@
-using System.Collections.Generic;
 using LastJumpCrew.ParkHanSol.Combat;
+using LastJumpCrew.ParkHanSol.Interaction;
+using LastJumpCrew.ParkHanSol.Items;
+using System.Collections.Generic;
 using Unity.Netcode;
 using UnityEngine;
+using UnityEngine.InputSystem;
 
 namespace LastJumpCrew.ParkHanSol.Multiplayer
 {
 
-    // «√∑π¿ÃæÓ ∞¯∞› ø‰√ª∞˙ º≠πˆ ∆«¡§¿ª ¥„¥Á«—¥Ÿ.
-    // Ω«¡¶ OverlapSphere, µ•πÃ¡ˆ, ≥ÀπÈ ∆«¡§¿∫ º≠πˆ∞° ºˆ«‡«—¥Ÿ.
+    // ÌîåÎ†àÏù¥Ïñ¥ Í≥µÍ≤© ÏöîÏ≤≠Í≥º ÏÑúÎ≤Ñ ÌåêÏ†ïÏùÑ Îã¥ÎãπÌïúÎã§.
+    // Ïã§Ï†ú OverlapSphere, Îç∞ÎØ∏ÏßÄ, ÎÑâÎ∞± ÌåêÏ†ïÏùÄ ÏÑúÎ≤ÑÍ∞Ä ÏàòÌñâÌïúÎã§.
 
     [DisallowMultipleComponent]
     [RequireComponent(typeof(NetworkObject))]
     public sealed class NetworkPlayerCombatController : NetworkBehaviour
     {
+        private const string WrenchItemId = "wrench";
+        private const string FireExtinguisherItemId = "fire_extinguisher";
+
         [Header("Wrench Attack")]
 
         [SerializeField]
         private Transform wrenchAttackPoint;
 
         [SerializeField, Min(0.1f)]
-        private float wrenchAttackRadius = 1.2f; //∑ªƒ° ∞¯∞›¿« ±∏«¸ ∆«¡§ π¸¿ß
+        private float wrenchAttackRadius = 1.2f; //Î†åÏπò Í≥µÍ≤©Ïùò Íµ¨Ìòï ÌåêÏ†ï Î≤îÏúÑ
 
         [SerializeField, Min(0)]
-        private int wrenchDamage = 15; //∏ÛΩ∫≈Õ«—≈◊ ¿˚øÎµ«¥¬ µ•πÃ¡ˆ
+        private int wrenchDamage = 15; //Î™¨Ïä§ÌÑ∞ÌïúÌÖå Ï†ÅÏö©ÎêòÎäî Îç∞ÎØ∏ÏßÄ
 
         [SerializeField, Min(0f)]
-        private float wrenchKnockback = 4f; //≥ÀπÈ ºº±‚ => ∏ÛΩ∫≈Õ
+        private float wrenchKnockback = 4f; //ÎÑâÎ∞± ÏÑ∏Í∏∞ => Î™¨Ïä§ÌÑ∞
 
         [SerializeField, Min(0.01f)]
-        private float wrenchCooldown = 0.5f; //∞¯∞› ∞£∞›
+        private float wrenchCooldown = 0.5f; //Í≥µÍ≤© Í∞ÑÍ≤©
 
         [Header("Fire Extinguisher Spray")]
         [SerializeField]
-        private Transform extinguisherSprayOrigin; //∫–ªÁ Ω√¿€¿ßƒ°
+        private Transform extinguisherSprayOrigin; //Î∂ÑÏÇ¨ ÏãúÏûëÏúÑÏπò
 
         [SerializeField, Min(0.05f)]
-        private float extinguisherSprayRadius = 0.6f; //∫–ªÁ π¸¿ß
+        private float extinguisherSprayRadius = 0.6f; //Î∂ÑÏÇ¨ Î≤îÏúÑ
 
         [SerializeField, Min(0.1f)]
-        private float extinguisherSprayDistance = 4f; //∫–ªÁ µµ¥ﬁ«œ¥¬ √÷¥Î∞≈∏Æ
+        private float extinguisherSprayDistance = 4f; //Î∂ÑÏÇ¨ ÎèÑÎã¨ÌïòÎäî ÏµúÎåÄÍ±∞Î¶¨
 
         [SerializeField, Min(0)]
-        private int extinguisherDamagePerTick = 2; //µ•πÃ¡ˆ
+        private int extinguisherDamagePerTick = 2; //Îç∞ÎØ∏ÏßÄ
 
         [SerializeField, Min(0f)]
-        private float extinguisherKnockback = 2f; //≥ÀπÈ ºº±‚
+        private float extinguisherKnockback = 2f; //ÎÑâÎ∞± ÏÑ∏Í∏∞
         [SerializeField, Min(0.05f)]
-        private float extinguisherDamageInterval = 0.5f; //∫–ªÁ ∆«¡§¿ª Ω««‡«œ¥¬ Ω√∞£ ∞£∞›
+        private float extinguisherDamageInterval = 0.5f; //Î∂ÑÏÇ¨ ÌåêÏ†ïÏùÑ Ïã§ÌñâÌïòÎäî ÏãúÍ∞Ñ Í∞ÑÍ≤©
 
         [SerializeField]
-        private LayerMask extinguisherTargetLayers; //∫–ªÁ∑Œ ∞®¡ˆ«œ¥¬ ∑π¿ÃæÓ «√∑π¿ÃæÓ ∏ÛΩ∫≈Õ
+        private LayerMask extinguisherTargetLayers; //Î∂ÑÏÇ¨Î°ú Í∞êÏßÄÌïòÎäî Î†àÏù¥Ïñ¥ ÌîåÎ†àÏù¥Ïñ¥ Î™¨Ïä§ÌÑ∞
 
-        private float nextExtinguisherDamgeTime; //º≠πˆ∞° ∞¸∏Æ«œ¥¬ ¥Ÿ¿Ω ∫–ªÁ∆«¡§ ∞°¥… Ω√∞£
+        private float nextExtinguisherDamgeTime; //ÏÑúÎ≤ÑÍ∞Ä Í¥ÄÎ¶¨ÌïòÎäî Îã§Ïùå Î∂ÑÏÇ¨ÌåêÏ†ï Í∞ÄÎä• ÏãúÍ∞Ñ
+
+        [Header("Battery Throw")] //Î∞∞ÌÑ∞Î¶¨ ÌïÑÎìú
+        [SerializeField] private Transform batteryThrowOrigin;
+
+        [SerializeField, Min(0f)]
+        private float batteryThrowForce = 12f; //Ïπ¥Î©îÎùº Ï†ÑÎ©¥ Ìà¨Ï≤ô Ìûò
+        [SerializeField, Min(0f)]
+        private float battetyUpwardForce = 1.5f; //ÏïΩÍ∞Ñ Îõ∞Ïö∞Í∏∞ ÏúÑÌïú Í∞í -> Ìè¨Î¨ºÏÑ† ÎäêÎÇå?
+
+        [SerializeField, Min(0f)]
+        private float batteryThrowCooldown = 0.8f; //Ï¢åÌÅ¥Î¶≠ Ïó∞ÏÜç ÏûÖÎ†• ÏöîÏ≤≠ Ï§ëÎ≥µ Î∞©ÏßÄ
+
+        private float nextBatteryThrowTime;
+
+        private float nextBatteryServerThrowTime;
+        [Header("General Item Throw")] //ÏùºÎ∞ò Ìà¨Ï≤ô
 
         [SerializeField]
-        private LayerMask wrenchTargetLayers; //∏ÛΩ∫≈Õ «√∑π¿ÃæÓ ∑π¿ÃæÓ ∆«¡§
+        private Transform generalThrowOrigin; //ÏùºÎ∞ò Ìà¨Ï≤ô ÏãúÏûëÏúÑÏπò
+        [SerializeField, Min(0f)]
+        private float minimumThrowForce = 5f; //Ìà¨Ï≤ô ÏµúÏÜå ÏÜçÎèÑ
+        [SerializeField, Min(0f)]
+        private float maximumThrowForce = 13f;//ÏôÑÏ†Ñ Ï∂©Ï†Ñ Ìà¨Ï≤ô ÏÜçÎèÑ
+        [SerializeField, Min(0.1f)]
+        private float fullChargeTime = 2.5f; //ÏµúÎåÄ Ï∂©Ï†Ñ ÏãúÍ∞Ñ
+        [SerializeField, Min(0f)]
+        private float generalThrowCooldown = 0.3f; //ÏùºÎã® Ìà¨Ï≤ô Ïø®ÌÉÄÏûÑ
+
+        [Header("Fire Extinguisher Visual Effect")]
+        [SerializeField]
+        private GameObject extinguisherSprayEffectRoot;
+
+        private ParticleSystem[] extinguisherSprayPartucles;
+        private AudioSource[] extinguisherSprayAudioSources;
+        private Light[] extinguisherSprayLights;
+
+        [SerializeField, Min(0.05f)]
+        private float extinguisherEffectKeepAliceTime = 0.2f;
+        private float extinguisherEffectStopTime;
+
+        [Header("Local Use Feedback")]
+        [SerializeField] private ParticleSystem wrenchUseEffect;
+        [SerializeField] private ParticleSystem batteryUseEffect;
+
+        private float nextGeneralThrowTime;
+
+
+
+
+        [SerializeField]
+        private string batteryItemId = "battery_pack";
+        [SerializeField]
+        private LayerMask wrenchTargetLayers; //Î™¨Ïä§ÌÑ∞ ÌîåÎ†àÏù¥Ïñ¥ Î†àÏù¥Ïñ¥ ÌåêÏ†ï
 
         private readonly HashSet<GameObject> processedTargets = new();
 
         private float nextWrenchAttackTime;
 
+        private uint utilityAttackSequence;
+
+        private bool isExtinguisherEffectPlaying;
+        private void Awake()
+        {
+            CacheExtinguisherEffects();
+        }
+        private void Update()
+        {
+            UpdateExtinguisherEffect();
+
+        }
+        private void CacheExtinguisherEffects()
+        {
+            if(extinguisherSprayEffectRoot == null)
+            {
+                extinguisherSprayPartucles = System.Array.Empty<ParticleSystem>();
+                extinguisherSprayAudioSources = System.Array.Empty<AudioSource>();
+                extinguisherSprayLights = System.Array.Empty<Light>();
+
+                Debug.LogError($"PHS_EXTINGUISHER_EFFECT_CACHE_FAILED " + $"reason=effect_root_missing " + $"player={name}");
+                return;
+            }
+            extinguisherSprayEffectRoot.SetActive(true);
+
+            extinguisherSprayPartucles = extinguisherSprayEffectRoot.GetComponentsInChildren<ParticleSystem>(true);
+            extinguisherSprayAudioSources = extinguisherSprayEffectRoot.GetComponentsInChildren<AudioSource>(true);
+            extinguisherSprayLights = extinguisherSprayEffectRoot.GetComponentsInChildren<Light>(true);
+
+            foreach (var particle in extinguisherSprayPartucles)
+            {
+                if (particle == null)
+                {
+                    continue;
+                }
+
+                particle.Stop(true,ParticleSystemStopBehavior.StopEmittingAndClear);
+            }
+            foreach (var audioSource in extinguisherSprayAudioSources)
+            {
+                if (audioSource != null)
+                {
+                    audioSource.Stop();
+                }
+            }
+            foreach (var effectLight in extinguisherSprayLights)
+            {
+                if (effectLight != null)
+                {
+                    effectLight.enabled = false;
+                }
+            }
+            isExtinguisherEffectPlaying = false;
+            Debug.Log($"PHS_EXTINGUISHER_EFFECT_CACHED " + $"player={name} " + $"particles={extinguisherSprayPartucles.Length}");
+        }
+        private void UpdateExtinguisherEffect()
+        {
+            if (!isExtinguisherEffectPlaying)
+            {
+                return;
+            }
+
+            if (Time.time < extinguisherEffectStopTime)
+            {
+                return;
+            }
+
+            foreach (var particle in extinguisherSprayPartucles)
+            {
+                if (particle == null)
+                {
+                    continue;
+                }
+
+                // Ïù¥ÎØ∏ ÏÉùÏÑ±Îêú ÏûÖÏûêÎäî ÏûêÏó∞Ïä§ÎüΩÍ≤å ÏÇ¨ÎùºÏßÄÍ≤å ÌïúÎã§.
+                particle.Stop( true,ParticleSystemStopBehavior.StopEmitting);
+            }
+            foreach (var audioSource in extinguisherSprayAudioSources)
+            {
+                if (audioSource != null)
+                {
+                    audioSource.Stop();
+                }
+            }
+
+            foreach (var effectLight in extinguisherSprayLights)
+            {
+                if (effectLight != null)
+                {
+                    effectLight.enabled = false;
+                }
+            }
+
+            isExtinguisherEffectPlaying = false;
+
+            Debug.Log($"PHS_EXTINGUISHER_EFFECT_STOPPED " +$"player={name}");
+        }
         public void RequestWrenchAttack()
         {
             if (!IsSpawned)
             {
+                PlayOneShotEffect(wrenchUseEffect);
                 PerformWrenchAttack();
                 return;
             }
@@ -71,10 +225,11 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
             {
                 return;
             }
+            PlayOneShotEffect(wrenchUseEffect);
             RequestWrenchAttackServerRpc();
         }
         [ServerRpc]
-        private void RequestWrenchAttackServerRpc() //º≠πˆø°º≠ Ω«¡¶ ∑ªƒ° ∞¯∞› ∆«¡§ Ω««‡
+        private void RequestWrenchAttackServerRpc() //ÏÑúÎ≤ÑÏóêÏÑú Ïã§Ï†ú Î†åÏπò Í≥µÍ≤© ÌåêÏ†ï Ïã§Ìñâ
         {
             PerformWrenchAttack();
         }
@@ -82,6 +237,11 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
         {
             if (IsSpawned && !IsServer)
             {
+                return;
+            }
+            if (!HasExpectedHeldItem(WrenchItemId))
+            {
+                Debug.LogWarning($"PHS_WRENCH_ATTACK_FAILED reason=item_mismatch player={name}");
                 return;
             }
             if (wrenchAttackPoint == null)
@@ -92,7 +252,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
 
                 return;
             }
-            if (Time.time < nextWrenchAttackTime) //º≠πˆ ±‚¡ÿ ƒ≈∏¿” ∞ÀªÁ
+            if (Time.time < nextWrenchAttackTime) //ÏÑúÎ≤Ñ Í∏∞Ï§Ä Ïø®ÌÉÄÏûÑ Í≤ÄÏÇ¨
             {
                 return;
             }
@@ -109,47 +269,264 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
                     continue;
                 }
 
-                var targetRoot = hit.transform.root.gameObject;
+                var targetObject = CombatHitResolver.ResolveTargetObject(hit.gameObject);
 
-                if (targetRoot == transform.gameObject)//¿⁄±‚ ¿⁄Ω≈¿∫ ∞¯∞›«œ¡ˆ æ ¥¬¥Ÿ.
+                if (targetObject == null || targetObject.transform.root == transform.root)//ÏûêÍ∏∞ ÏûêÏã†ÏùÄ Í≥µÍ≤©ÌïòÏßÄ ÏïäÎäîÎã§.
                 {
                     continue;
                 }
 
-                if (!processedTargets.Add(targetRoot)) //ƒ›∂Û¿ÃµÂ∞° ø©∑Ø∞≥ ¿÷æÓµµ «—π¯ ∏∏ √≥∏Æ
+                if (!processedTargets.Add(targetObject)) //ÏΩúÎùºÏù¥ÎìúÍ∞Ä Ïó¨Îü¨Í∞ú ÏûàÏñ¥ÎèÑ ÌïúÎ≤à Îßå Ï≤òÎ¶¨
                 {
                     continue;
                 }
-                var knockbackDirection = targetRoot.transform.position - wrenchAttackPoint.position;
+                if (CombatHitResolver.TryResolveUtilityAttack(
+                        targetObject,
+                        gameObject,
+                        WrenchItemId,
+                        NextUtilityAttackSequence()))
+                {
+                    continue;
+                }
 
-                CombatHitResolver.ResolveDamageAndKnockback(targetRoot, gameObject, wrenchDamage, knockbackDirection, wrenchKnockback);
+                var knockbackDirection = targetObject.transform.position - wrenchAttackPoint.position;
+
+                CombatHitResolver.ResolveDamageAndKnockback(targetObject, gameObject, wrenchDamage, knockbackDirection, wrenchKnockback);
             }
             Debug.Log($"PHS_WRENCH_ATTACK " + $"player={name} " + $"hitCount={processedTargets.Count}");
         }
-        public void RequestExtinguisherSpray() //¿⁄±‚ «√∑π¿ÃæÓ∏∏ º“»≠±‚ ªÁøÎ ø‰√ª¿ª ∫∏≥æ ºˆ ¿÷¿Ω
+        public void RequestExtinguisherSpray() //ÏûêÍ∏∞ ÌîåÎ†àÏù¥Ïñ¥Îßå ÏÜåÌôîÍ∏∞ ÏÇ¨Ïö© ÏöîÏ≤≠ÏùÑ Î≥¥ÎÇº Ïàò ÏûàÏùå
         {
             if (!IsSpawned)
             {
                 PerformExtinguisherSpray();
+                PlayExtinguisherEffectLocal();
                 return;
             }
             if (!IsOwner)
             {
                 return;
             }
+            PlayExtinguisherEffectLocal();
+
             RequestExtinguisherSprayServerRpc();
         }
+        public void RequestBatteryThrow() //Î∞∞ÌÑ∞Î¶¨
+        {
+            if(batteryThrowOrigin == null)
+            {
+                Debug.LogError($"PHS_BATTERY_THROW_FAILED " + $"reason=throw_origin_missing " + $"player={name}");
+                return;
+            }
+            if (!IsSpawned)
+            {
+                PlayOneShotEffect(batteryUseEffect);
+                PerformBatteryThrow(batteryThrowOrigin.position, batteryThrowOrigin.forward);
+                return;
+            }
+            if (!IsOwner)
+            {
+                return;
+            }
+            if(Time.time < nextBatteryThrowTime) //Ïø®ÌÉÄÏûÑ ÏïÑÏßÅ ÎÅùÎÇòÏßÄ ÏïäÏúºÎ©¥ Ï§ëÎ≥µ Ìà¨Ï≤ô ÏöîÏ≤≠ x
+            {
+                return ;
+            }
+            if(batteryThrowOrigin == null)
+            {
+                Debug.LogError($"PHS_BATTERY_THROW_FAILED " + $"reason=throw_origin_missing " + $"player={name}");
+                return;
+            }
+            nextBatteryThrowTime = Time.time + batteryThrowCooldown;
+            PlayOneShotEffect(batteryUseEffect);
+
+            var direction = batteryThrowOrigin.forward.normalized; //ÌîåÎ†àÏù¥Ïñ¥Í∞Ä Î∞îÎùºÎ≥¥Îäî Î∞©Ìñ•
+
+            Debug.Log($"PHS_BATTERY_THROW_INPUT_ACCEPTED " + $"player={name} " + $"position={batteryThrowOrigin.position} " + $"direction={direction}");
+
+            RequestBatteryThrowServerRpc(batteryThrowOrigin.position, direction);
+
+        }
+        public void RequestThrowHeldItem(float heldDuration)
+        {
+            if (!IsSpawned)
+            {
+                if(generalThrowOrigin == null)
+                {
+                    return;
+                }
+                var localForce = CalculateThrowForce(heldDuration);
+
+                PerformThrowHeldItem(generalThrowOrigin.position, generalThrowOrigin.forward, localForce);
+                return;
+
+            }
+            if(generalThrowOrigin == null)
+            {
+                Debug.LogError($"PHS_ITEM_THROW_FAILED " + $"reason=throw_origin_missing " + $"player={name}");
+                return;
+            }
+            if(Time.time < nextGeneralThrowTime)
+            {
+                return ;
+            }
+            nextGeneralThrowTime = Time.time + generalThrowCooldown;
+
+            var throwForce = CalculateThrowForce(heldDuration);
+
+            var throwDirection = generalThrowOrigin.forward.normalized;
+
+            Debug.Log($"PHS_ITEM_THROW_REQUESTED " + $"player={name} " + $"duration={heldDuration:F2} " + $"force={throwForce:F2}");
+
+            RequestThrowHeldItemServerRpc(generalThrowOrigin.position, throwDirection, throwForce);
+        }
+        private void PerformThrowHeldItem(Vector3 requestedPosition, Vector3 requestedDirection, float requestedForce)
+        {
+            if (IsSpawned && !IsServer) //Î©ÄÌã∞ Ï§ëÏóêÎäî ÏÑúÎ≤ÑÎßå Ìà¨Ï≤ôÏ≤òÎ¶¨
+            {
+                return;
+            }
+            var itemHolder = GetComponent<TempPlayerItemHolder>();
+
+            if(itemHolder == null)
+            {
+                Debug.LogError($"PHS_ITEM_THROW_FAILED " + $"reason=item_holder_missing " + $"player={name}");
+                return;
+            }
+            if (!itemHolder.HasItem) //ÏÜêÏùò ÏïÑÎ¨¥Í≤ÉÎèÑ ÏóÜÏúºÎ©¥ Ìà¨Ï≤ôx
+            {
+                return;
+            }
+            var direction = requestedDirection.sqrMagnitude > 0.001f ? requestedDirection.normalized : transform.forward;
+            var throwPosition = requestedPosition;
+
+            if ((throwPosition - transform.position).sqrMagnitude > 9f)
+            {
+                throwPosition = transform.position + transform.forward * 0.7f;
+            }
+            var throwForce = Mathf.Clamp(requestedForce, minimumThrowForce, maximumThrowForce);
+
+            if(!itemHolder.TryCreateThrownItem(throwPosition, Quaternion.LookRotation(direction), out var thrownItem)) //ÌòÑÏû¨ ÏÜê ÏïÑÏù¥ÌÖúÏùò DroppedPrefabÏùÑ ÏÉùÏÑ±
+            {
+                return;
+            }
+            var body = thrownItem.GetComponent<Rigidbody>();
+            if (body == null)
+            {
+                Debug.LogError($"PHS_ITEM_THROW_FAILED " + $"reason=rigidbody_missing " + $"item={thrownItem.name}");
+
+                RemoveFailedThrownObject(thrownItem);
+
+                return;
+            }
+            body.isKinematic = false;
+            body.detectCollisions = true;
+
+            //Ïπ¥Î©îÎùº Î∞©Ìñ•ÏúºÎ°ú Í≥ÑÏÇ∞Îêú Ìûò ÎßåÌÅº ÎÇ†Î¶∞Îã§.
+            body.linearVelocity = direction * throwForce;
+
+            var impact = thrownItem.GetComponent<ThrownItemImpact>();
+            if (impact != null)
+            {
+                impact.InitializeThrow(gameObject);
+            }
+            else
+            {
+                Debug.LogWarning($"PHS_ITEM_THROW_WARNING " + $"reason=thrown_impact_missing " + $"item={thrownItem.name}");
+            }
+            Debug.Log($"PHS_ITEM_THROW_EXECUTED " + $"player={name} " + $"item={thrownItem.name} " + $"force={throwForce:F2}");
+        }
+        private float CalculateThrowForce(float heldDuration)
+        {
+            var chargeRatio = Mathf.Clamp01(heldDuration / fullChargeTime);
+
+            return Mathf.Lerp(minimumThrowForce, maximumThrowForce, chargeRatio);
+        }
+        private void PerformBatteryThrow(Vector3 requestedPosition,Vector3 requestedDirection)
+        {
+            if (IsSpawned && !IsServer)
+            {
+                return;
+            }
+            var itemHolder = GetComponent<TempPlayerItemHolder>();
+
+            if(itemHolder == null)
+            {
+                Debug.LogError($"PHS_BATTERY_THROW_FAILED " + $"reason=item_holder_missing " + $"player={name}");
+
+                return;
+            }
+            if (!itemHolder.IsHoldingItem(batteryItemId))
+            {
+                Debug.LogWarning($"PHS_BATTERY_THROW_FAILED " + $"reason=battery_not_held " + $"player={name} " + $"actual=" + $"{itemHolder.CurrentItemPrefabData?.ItemId ?? "none"}");
+                return;
+            }
+            var direction = requestedDirection.sqrMagnitude > 0.001f ? requestedDirection.normalized : transform.forward;
+
+            var throwPosition = requestedPosition;
+
+            if((throwPosition - transform.position).sqrMagnitude > 9f)
+            {
+                throwPosition = transform.position + transform.forward * 0.7f;
+            }
+            if (!itemHolder.TryCreateThrownItem(throwPosition, Quaternion.LookRotation(direction), out var batteryInstance))
+            {
+                return;
+            }
+            var body = batteryInstance.GetComponent<Rigidbody>();
+
+            var impact = batteryInstance.GetComponent<BatteryThrownImpact>();
+
+            if (body == null || impact == null)
+            {
+                Debug.LogError($"PHS_BATTERY_THROW_FAILED " + $"reason=required_component_missing " + $"battery={batteryInstance.name}");
+                RemoveFailedThrownObject(batteryInstance);
+
+                return;
+            }
+            body.isKinematic = false;
+            body.detectCollisions = true;
+
+            impact.InitializeAttackThrow(gameObject);
+
+            var throwVelocity = direction * batteryThrowForce + Vector3.up * battetyUpwardForce;
+
+            body.linearVelocity = throwVelocity;
+
+            Debug.Log($"PHS_BATTERY_THROW_EXECUTED " + $"player={name} " + $"battery={batteryInstance.name}");
+        }
+        private void RemoveFailedThrownObject(GameObject thrownObject)
+        {
+            if (thrownObject == null)
+            {
+                return ;
+            }
+            var networkObject = thrownObject.GetComponent<NetworkObject>();
+            if(networkObject != null && networkObject.IsSpawned && IsServer)
+            {
+                networkObject.Despawn(true);
+                return;
+            }
+            Destroy(thrownObject );
+        }
+
         [ServerRpc]
         private void RequestExtinguisherSprayServerRpc()
         {
             PerformExtinguisherSpray();
+            PlayExtinguisherEffectClientRpc();
         }
         private void PerformExtinguisherSpray()
         {
             if (IsSpawned && !IsServer)
             {
                 return;
-            }//≥◊∆Æøˆ≈© «√∑π¿Ã ¡ﬂø°¥¬ º≠πˆ∏∏ ∞¯∞›∆«¡§ ºˆ«‡
+            }//ÎÑ§Ìä∏ÏõåÌÅ¨ ÌîåÎ†àÏù¥ Ï§ëÏóêÎäî ÏÑúÎ≤ÑÎßå Í≥µÍ≤©ÌåêÏ†ï ÏàòÌñâ
+            if (!HasExpectedHeldItem(FireExtinguisherItemId))
+            {
+                Debug.LogWarning($"PHS_EXTINGUISHER_SPRAY_FAILED reason=item_mismatch player={name}");
+                return;
+            }
 
             if (extinguisherSprayOrigin == null)
             {
@@ -158,14 +535,14 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
                 return;
             }
 
-            //º≠πˆ ∆«¡§ ∞£∞› ∞ÀªÁ
+            //ÏÑúÎ≤Ñ ÌåêÏ†ï Í∞ÑÍ≤© Í≤ÄÏÇ¨
             if (Time.time < nextExtinguisherDamgeTime)
             {
                 return;
             }
             nextExtinguisherDamgeTime = Time.time + extinguisherDamageInterval;
 
-            //∫–ªÁ π¸¿ß ∆«¡§
+            //Î∂ÑÏÇ¨ Î≤îÏúÑ ÌåêÏ†ï
             var hits = Physics.SphereCastAll(extinguisherSprayOrigin.position, extinguisherSprayRadius, extinguisherSprayOrigin.forward, extinguisherSprayDistance, extinguisherTargetLayers, QueryTriggerInteraction.Collide);
 
             processedTargets.Clear();
@@ -176,22 +553,42 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
                 {
                     continue;
                 }
-                var targetRoot = hit.collider.transform.root.gameObject;
+                var targetObject = CombatHitResolver.ResolveTargetObject(hit.collider.gameObject);
 
-                //º“»≠±‚ ªÁøÎ«œ¥¬ ¿⁄Ω≈¿∫ æ» ∏¬¿Ω
-                if (targetRoot == transform.root.gameObject)
+                //ÏÜåÌôîÍ∏∞ ÏÇ¨Ïö©ÌïòÎäî ÏûêÏã†ÏùÄ Ïïà ÎßûÏùå
+                if (targetObject == null || targetObject.transform.root == transform.root)
                 {
                     continue;
                 }
-                if (!processedTargets.Add(targetRoot))//Collider∞° ø©∑Ø ∞≥ ∞À√‚µ≈∞Ì «—π¯∏∏ µ•πÃ¡ˆ ≥ÀπÈ √≥∏ÆøÎ
+                if (!processedTargets.Add(targetObject))//ColliderÍ∞Ä Ïó¨Îü¨ Í∞ú Í≤ÄÏ∂úÎèºÍ≥† ÌïúÎ≤àÎßå Îç∞ÎØ∏ÏßÄ ÎÑâÎ∞± Ï≤òÎ¶¨Ïö©
                 {
                     continue;
                 }
-                var sprayDirection = extinguisherSprayOrigin.forward; //≥ÀπÈ πÊ«‚ 
+                if (CombatHitResolver.TryResolveUtilityAttack(
+                        targetObject,
+                        gameObject,
+                        FireExtinguisherItemId,
+                        NextUtilityAttackSequence()))
+                {
+                    continue;
+                }
 
-                CombatHitResolver.ResolveDamageAndKnockback(targetRoot, gameObject, extinguisherDamagePerTick, sprayDirection, extinguisherKnockback);
+                var sprayDirection = extinguisherSprayOrigin.forward; //ÎÑâÎ∞± Î∞©Ìñ•
+
+                CombatHitResolver.ResolveDamageAndKnockback(targetObject, gameObject, extinguisherDamagePerTick, sprayDirection, extinguisherKnockback);
             }
             Debug.Log($"PHS_EXTINGUISHER_SPRAY " + $"player={name} " + $"hitCount={processedTargets.Count}");
+        }
+        [ServerRpc]
+        private void RequestBatteryThrowServerRpc(Vector3 throwPosition, Vector3 throwDirection, ServerRpcParams rpcParams = default)
+        {
+            PerformBatteryThrow(throwPosition, throwDirection);
+
+        }
+        [ServerRpc]
+        private void RequestThrowHeldItemServerRpc(Vector3 throwPosition, Vector3 throwDirection, float requestedForce, ServerRpcParams rpcParams = default)
+        {
+            PerformThrowHeldItem(throwPosition, throwDirection, requestedForce);
         }
         private void OnDrawGizmosSelected()
         {
@@ -201,8 +598,8 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
             }
             Gizmos.DrawWireSphere(wrenchAttackPoint.position, wrenchAttackRadius);
 
-            // º“»≠±‚ ∫–ªÁ π¸¿ß
-            
+            // ÏÜåÌôîÍ∏∞ Î∂ÑÏÇ¨ Î≤îÏúÑ
+
 
             if (extinguisherSprayOrigin != null)
             {
@@ -211,21 +608,170 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
                     + extinguisherSprayOrigin.forward
                     * extinguisherSprayDistance;
 
-                // ∫–ªÁ Ω√¿€ ¡ˆ¡°
+                // Î∂ÑÏÇ¨ ÏãúÏûë ÏßÄÏ†ê
                 Gizmos.DrawWireSphere(
                     extinguisherSprayOrigin.position,
                     extinguisherSprayRadius);
 
-                // ∫–ªÁ ≥° ¡ˆ¡°
+                // Î∂ÑÏÇ¨ ÎÅù ÏßÄÏ†ê
                 Gizmos.DrawWireSphere(
                     endPosition,
                     extinguisherSprayRadius);
 
-                // ∫–ªÁ πÊ«‚
+                // Î∂ÑÏÇ¨ Î∞©Ìñ•
                 Gizmos.DrawLine(
                     extinguisherSprayOrigin.position,
                     endPosition);
             }
         }
-    } 
+
+        private uint NextUtilityAttackSequence()
+        {
+            utilityAttackSequence++;
+            if (utilityAttackSequence == 0U)
+            {
+                utilityAttackSequence = 1U;
+            }
+
+            return utilityAttackSequence;
+        }
+
+        private bool HasExpectedHeldItem(string expectedItemId)
+        {
+            if (IsSpawned)
+            {
+                var itemRecord = GetComponent<NetworkPlayerItemRecord>();
+                return itemRecord != null
+                    && itemRecord.IsSpawned
+                    && itemRecord.HeldItemId == expectedItemId;
+            }
+
+            var itemHolder = GetComponent<TempPlayerItemHolder>();
+            return itemHolder != null
+                && itemHolder.CurrentItemPrefabData != null
+                && itemHolder.CurrentItemPrefabData.ItemId == expectedItemId;
+        }
+        [ClientRpc]
+        private void PlayExtinguisherEffectClientRpc()
+        {
+            if (IsOwner)
+            {
+                return;
+            }
+            PlayExtinguisherEffectLocal();
+        }
+        private void PlayExtinguisherEffectLocal()
+        {
+            if (extinguisherSprayEffectRoot == null)
+            {
+                Debug.LogError($"PHS_EXTINGUISHER_EFFECT_FAILED" + $"reason=effect_root_missing " + $"player={{name}}");
+                return;
+            }
+
+            if (extinguisherSprayPartucles == null || extinguisherSprayPartucles.Length == 0)
+            {
+                Debug.LogError($"PHS_EXTINGUISHER_EFFECT_FAILED " + $"reason=particles_missing " + $"player={name}");
+                return;
+            }
+
+
+            if (!extinguisherSprayEffectRoot.activeInHierarchy)
+            {
+                Debug.LogError($"PHS_EXTINGUISHER_EFFECT_FAILED " + $"reason=effect_inactive_in_hierarchy " + $"player={name}");
+
+                return;
+            }
+            if (!isExtinguisherEffectPlaying)
+            {
+                foreach (var particle in extinguisherSprayPartucles)
+                {
+                    if (particle == null)
+                    {
+                        continue;
+                    }
+
+                    particle.Stop(true, ParticleSystemStopBehavior.StopEmittingAndClear);
+
+                    var particleRenderer = particle.GetComponent<ParticleSystemRenderer>();
+                    if (particleRenderer != null)
+                    {
+                        particleRenderer.enabled = true;
+                    }
+
+                    particle.Play(true);
+                }
+            }
+            foreach (var audioSource in extinguisherSprayAudioSources)
+            {
+                if (audioSource != null &&
+                    audioSource.clip != null)
+                {
+                    audioSource.Play();
+                }
+            }
+            foreach (var effectLight in extinguisherSprayLights)
+            {
+                if (effectLight != null)
+                {
+                    effectLight.enabled = true;
+                }
+            }
+            isExtinguisherEffectPlaying = true;
+
+            Debug.Log($"PHS_EXTINGUISHER_EFFECT_STARTED " + $"player={name} " + $"particles={extinguisherSprayPartucles.Length}");
+
+            extinguisherEffectStopTime = Time.time + extinguisherEffectKeepAliceTime;
+        }
+
+        private static void PlayOneShotEffect(ParticleSystem effect)
+        {
+            if (effect == null)
+            {
+                return;
+            }
+
+            var effectRenderer = effect.GetComponent<ParticleSystemRenderer>();
+            if (effectRenderer != null)
+            {
+                effectRenderer.enabled = true;
+            }
+
+            effect.Stop(true, ParticleSystemStopBehavior.StopEmittingAndClear);
+            effect.Play(true);
+        }
+
+
+
+
+        private void StopExtinguisherEffect()
+        {
+            foreach (var particle in extinguisherSprayPartucles)
+            {
+                if (particle == null)
+                {
+                    continue;
+                }
+
+                particle.Stop(
+                    true,
+                    ParticleSystemStopBehavior.StopEmitting);
+            }
+
+            foreach (var audioSource in extinguisherSprayAudioSources)
+            {
+                if (audioSource != null)
+                {
+                    audioSource.Stop();
+                }
+            }
+
+            foreach (var effectLight in extinguisherSprayLights)
+            {
+                if (effectLight != null)
+                {
+                    effectLight.enabled = false;
+                }
+            }
+        }
+    }
 }

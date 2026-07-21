@@ -9,6 +9,9 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
         [SerializeField] private NetworkPlayerGravityArea[] shipInteriorAreas;
         [SerializeField] private GravityZone[] gravityZones;
 
+        [Header("Generator Visual")]
+        [SerializeField] private Renderer generatorRenderer;
+
         private NetworkShipSystemsState boundShipState;
         private float nextBindAttemptTime;
 
@@ -173,6 +176,17 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
 
             var changed = IsGravityEnabled != isEnabled;
             IsGravityEnabled = isEnabled;
+            if (generatorRenderer == null)
+            {
+                Debug.LogError(
+                    $"PHS_SHIP_GRAVITY_APPLY_FAILED reason=generator_renderer_missing controller={name}",
+                    this);
+                return;
+            }
+
+            // Generator body remains visible during a gravity failure. State feedback belongs
+            // to its dedicated indicator, not the only renderer on the placed model.
+            generatorRenderer.enabled = true;
             if (changed)
             {
                 GravityStateChanged?.Invoke(isEnabled);

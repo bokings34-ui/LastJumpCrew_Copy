@@ -53,13 +53,21 @@ namespace LastJumpCrew.SeoBoGyeong
         private void FillItem()
         {
             UtilityItemData[] item = _tools.All.Values.ToArray<UtilityItemData>();
-            _itemPrefabs = new GameObject[item.Length];
-            _itemIds = new int[item.Length];
-
-            for (int i = 0; i < item.Length; i++)
+            List<UtilityItemData> shopItem = new List<UtilityItemData>();
+            
+            foreach (var data in item)
             {
-                _itemPrefabs[i] = item[i].DroppedPrefab;
-                _itemIds[i] = item[i].Id;
+                if (data.CanBuy != true) continue;
+                shopItem.Add(data);
+            }
+
+            _itemPrefabs = new GameObject[shopItem.Count];
+            _itemIds = new int[shopItem.Count];
+
+            for (int i = 0; i < shopItem.Count; i++)
+            {
+                _itemPrefabs[i] = shopItem[i].DroppedPrefab;
+                _itemIds[i] = shopItem[i].Id;
             }
 
         }
@@ -112,7 +120,7 @@ namespace LastJumpCrew.SeoBoGyeong
         private void SpawnDisplayItem(int prefabIndex, Vector3 pos, Quaternion rot)
         {
             var go = Instantiate(_itemPrefabs[prefabIndex], pos, rot);
-            go.AddComponent<ShopItemTag>().Init(_itemIds[prefabIndex]);
+            go.AddComponent<ShopItemTag>().Init(_itemIds[prefabIndex], _tools.Get(_itemIds[prefabIndex]).Price);
         }
 
         [ContextMenu("Spawn Item")]

@@ -38,7 +38,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
         [Header("Timing")]
         [SerializeField, Min(0.01f)] private float showDuration = 0.16f;
         [SerializeField, Min(0.01f)] private float hideDuration = 0.12f;
-        [SerializeField, Min(1f)] private float timeLimitTotalSeconds = 600f;
+        [SerializeField, Min(1f)] private float timeLimitTotalSeconds = 300f;
 
         private int previousHealth;
         private int previousBoost;

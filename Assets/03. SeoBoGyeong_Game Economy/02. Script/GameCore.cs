@@ -75,6 +75,10 @@ namespace LastJumpCrew.SeoBoGyeong
             // 지속 데이터(개인 세이브) 로드 — 인게임 네트워크 상태와 분리(로비/메타 전용)
             Services.Register<IPlayerProfile>(new PlayerProfile(new JsonPlayerProfileStore()));
 
+            // 권위 판정 제공자 등록 — 소비자(감지 등)가 Services.Get<IAuthority>() 로 서버 게이트에 쓴다.
+            // 로컬은 LocalAuthority(IsServer=true). 나중 네트워크 모드면 여기서 NGO 구현체로 교체.
+            Services.Register<IAuthority>(new LocalAuthority());
+
             // 세션에 레지스트리·데이터 주입(의존성 resolve) 후 상태/명령 제공자로 등록
             // TODO(3단계): 네트워크 모드면 여기서 NetworkGameSession 을 대신 등록(소비자 코드 무변경)
             session.Bind(Services, data);

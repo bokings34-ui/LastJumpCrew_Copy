@@ -1,4 +1,5 @@
 using LastJumpCrew.ParkHanSol.Multiplayer;
+using LastJumpCrew.ParkHanSol.Multiplayer.Maps;
 using LastJumpCrew.ParkHanSol.Shop;
 using UnityEngine;
 
@@ -10,8 +11,11 @@ namespace LastJumpCrew.ParkHanSol.Interaction
         [SerializeField] private ShopSceneTransitionMode shopTransitionMode;
         [SerializeField] private string interactionPrompt = "Travel To Exterior Shop";
         [SerializeField, Min(0.1f)] private float serverInteractionDistance = 4f;
+        [SerializeField] private bool requiresPartyVote = true;
 
         public string InteractionPrompt => interactionPrompt;
+        public string DestinationSceneName => destinationSceneName;
+        public bool RequiresPartyVote => requiresPartyVote;
 
         public bool MatchesServerRequest(
             Transform playerTransform,
@@ -20,7 +24,7 @@ namespace LastJumpCrew.ParkHanSol.Interaction
         {
             return playerTransform != null
                 && destinationSceneName == requestedSceneName
-                && shopTransitionMode == requestedTransitionMode
+                && ResolveTransitionMode() == requestedTransitionMode
                 && Vector3.Distance(playerTransform.position, transform.position) <= serverInteractionDistance;
         }
 
@@ -43,7 +47,15 @@ namespace LastJumpCrew.ParkHanSol.Interaction
             }
 
             var player = ((Component)itemHolder).GetComponent<NetworkPlayerController>();
-            player.RequestGameplaySceneTransition(destinationSceneName, shopTransitionMode);
+            player.RequestGameplaySceneTransition(destinationSceneName, ResolveTransitionMode());
+        }
+
+        private ShopSceneTransitionMode ResolveTransitionMode()
+        {
+            var mapRuntime = FindAnyObjectByType<PHSMapRuntimeContext>(FindObjectsInactive.Include);
+            return mapRuntime != null && mapRuntime.KeepShopPortalAlwaysActive
+                ? ShopSceneTransitionMode.None
+                : shopTransitionMode;
         }
     }
 }
