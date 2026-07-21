@@ -63,6 +63,9 @@ namespace LastJumpCrew.ParkHanSol.Interaction
         public UtilityItemPrefabData CurrentItemPrefabData => currentItemPrefabData;
         public DebrisItem HeldDebris => heldDebris;
         public float HeldDebrisMass => heldDebris == null ? 0f : heldDebris.Mass;
+        public Transform HeldPresentationTransform => heldItemInstance == null
+            ? null
+            : heldItemInstance.transform;
         LastJumpCrew.Common.IHoldableItem LastJumpCrew.Common.IItemHolder.CurrentItem => currentItemObject;
         public bool HasItem => IsNetworkSessionActive() && networkItemRecord != null && networkItemRecord.IsSpawned
             ? !string.IsNullOrEmpty(networkItemRecord.HeldItemId)

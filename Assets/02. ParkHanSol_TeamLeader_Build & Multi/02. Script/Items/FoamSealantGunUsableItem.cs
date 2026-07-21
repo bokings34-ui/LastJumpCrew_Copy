@@ -1,11 +1,33 @@
 namespace LastJumpCrew.ParkHanSol.Items
 {
-    // 폼 실란트 건 사용 기능이다. 실제 분사/봉합 판정은 여기에 추가한다.
+    using LastJumpCrew.Common;
+    using LastJumpCrew.ParkHanSol.Multiplayer.ShipAccidents;
+
     public sealed class FoamSealantGunUsableItem : UtilityItemUseBehaviour
     {
-        protected override void OnUseStarted(LastJumpCrew.Common.IItemHolder user, LastJumpCrew.Common.IInteractable target)
+        protected override bool CanUseItem(IItemHolder user, IInteractable target)
         {
-            UnityEngine.Debug.Log($"PHS_FOAM_SEALANT_GUN_USED item={name}");
+            return user != null
+                && user.HasItem
+                && user.CurrentItem != null
+                && user.CurrentItem.ItemId == "foam_sealant_gun"
+                && TryGetTarget<IShipAccidentRepairTarget>(target, out var repairTarget)
+                && repairTarget.RequiredItemId == "foam_sealant_gun"
+                && repairTarget.CanInteract(user);
+        }
+
+        protected override void OnUseFinished(IItemHolder user, IInteractable target)
+        {
+            if (!TryGetTarget<PHSShipAccidentAnchor>(target, out var anchor)
+                || !anchor.RequestRepair(user))
+            {
+                UnityEngine.Debug.LogWarning(
+                    $"PHS_FOAM_SEALANT_REPAIR_FAILED reason=target_or_request item={name}",
+                    this);
+                return;
+            }
+
+            UnityEngine.Debug.Log($"PHS_FOAM_SEALANT_REPAIR_SENT item={name}", this);
         }
     }
 }

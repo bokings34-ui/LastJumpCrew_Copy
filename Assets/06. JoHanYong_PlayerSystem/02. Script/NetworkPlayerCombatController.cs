@@ -113,6 +113,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
         private LayerMask wrenchTargetLayers; //몬스터 플레이어 레이어 판정
 
         private readonly HashSet<GameObject> processedTargets = new();
+        private readonly List<Vector3> itemFeedbackTargetPositions = new();
 
         private float nextWrenchAttackTime;
 
@@ -261,6 +262,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
             var hits = Physics.OverlapSphere(wrenchAttackPoint.position, wrenchAttackRadius, wrenchTargetLayers, QueryTriggerInteraction.Collide);
 
             processedTargets.Clear();
+            itemFeedbackTargetPositions.Clear();
 
             foreach (var hit in hits)
             {
@@ -280,6 +282,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
                 {
                     continue;
                 }
+                itemFeedbackTargetPositions.Add(targetObject.transform.position);
                 if (CombatHitResolver.TryResolveUtilityAttack(
                         targetObject,
                         gameObject,
@@ -293,6 +296,12 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
 
                 CombatHitResolver.ResolveDamageAndKnockback(targetObject, gameObject, wrenchDamage, knockbackDirection, wrenchKnockback);
             }
+            PublishItemUseFeedback(
+                PHSItemUseFeedbackShape.Sphere,
+                wrenchAttackPoint.position,
+                wrenchAttackPoint.forward,
+                wrenchAttackRadius,
+                0f);
             Debug.Log($"PHS_WRENCH_ATTACK " + $"player={name} " + $"hitCount={processedTargets.Count}");
         }
         public void RequestExtinguisherSpray() //자기 플레이어만 소화기 사용 요청을 보낼 수 있음
@@ -493,6 +502,14 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
 
             body.linearVelocity = throwVelocity;
 
+            itemFeedbackTargetPositions.Clear();
+            PublishItemUseFeedback(
+                PHSItemUseFeedbackShape.Cast,
+                throwPosition,
+                direction,
+                0.12f,
+                4f);
+
             Debug.Log($"PHS_BATTERY_THROW_EXECUTED " + $"player={name} " + $"battery={batteryInstance.name}");
         }
         private void RemoveFailedThrownObject(GameObject thrownObject)
@@ -546,6 +563,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
             var hits = Physics.SphereCastAll(extinguisherSprayOrigin.position, extinguisherSprayRadius, extinguisherSprayOrigin.forward, extinguisherSprayDistance, extinguisherTargetLayers, QueryTriggerInteraction.Collide);
 
             processedTargets.Clear();
+            itemFeedbackTargetPositions.Clear();
 
             foreach (var hit in hits)
             {
@@ -564,6 +582,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
                 {
                     continue;
                 }
+                itemFeedbackTargetPositions.Add(targetObject.transform.position);
                 if (CombatHitResolver.TryResolveUtilityAttack(
                         targetObject,
                         gameObject,
@@ -577,6 +596,12 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
 
                 CombatHitResolver.ResolveDamageAndKnockback(targetObject, gameObject, extinguisherDamagePerTick, sprayDirection, extinguisherKnockback);
             }
+            PublishItemUseFeedback(
+                PHSItemUseFeedbackShape.Cast,
+                extinguisherSprayOrigin.position,
+                extinguisherSprayOrigin.forward,
+                extinguisherSprayRadius,
+                extinguisherSprayDistance);
             Debug.Log($"PHS_EXTINGUISHER_SPRAY " + $"player={name} " + $"hitCount={processedTargets.Count}");
         }
         [ServerRpc]
@@ -634,6 +659,31 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
             }
 
             return utilityAttackSequence;
+        }
+
+        private void PublishItemUseFeedback(
+            PHSItemUseFeedbackShape shape,
+            Vector3 origin,
+            Vector3 direction,
+            float radius,
+            float distance)
+        {
+            var feedbackController = GetComponent<PHSNetworkItemUseFeedbackController>();
+            if (feedbackController == null)
+            {
+                Debug.LogError(
+                    $"PHS_ITEM_FEEDBACK_FAILED reason=controller_missing player={name}",
+                    this);
+                return;
+            }
+
+            feedbackController.PublishServerFeedback(
+                shape,
+                origin,
+                direction,
+                radius,
+                distance,
+                itemFeedbackTargetPositions.ToArray());
         }
 
         private bool HasExpectedHeldItem(string expectedItemId)

@@ -5,7 +5,10 @@ using UnityEngine;
 namespace LastJumpCrew.ParkHanSol.Multiplayer.ShipAccidents
 {
     [DisallowMultipleComponent]
-    public sealed class PHSShipAccidentAnchor : MonoBehaviour, IShipAccidentRepairTarget
+    public sealed class PHSShipAccidentAnchor :
+        MonoBehaviour,
+        IShipAccidentRepairTarget,
+        IUtilityAttackTarget
     {
         [Header("Anchor Identity")]
         [SerializeField] private string anchorId;
@@ -77,6 +80,33 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.ShipAccidents
             RequestRepair(itemHolder);
         }
 
+        public bool TryResolveUtilityAttack(in UtilityAttackHit hit)
+        {
+            if (hit.Attacker == null || hit.RequestSequence == 0U)
+            {
+                Debug.LogWarning(
+                    $"PHS_SHIP_ACCIDENT_UTILITY_REPAIR_REJECTED reason=attack_contract anchor={anchorId}",
+                    this);
+                return false;
+            }
+
+            if (hit.ItemId != RequiredItemId)
+            {
+                return false;
+            }
+
+            var itemHolder = hit.Attacker.GetComponent<IItemHolder>();
+            if (itemHolder == null)
+            {
+                Debug.LogError(
+                    $"PHS_SHIP_ACCIDENT_UTILITY_REPAIR_REJECTED reason=item_holder_missing anchor={anchorId}",
+                    this);
+                return false;
+            }
+
+            return RequestRepair(itemHolder, hit.RequestSequence);
+        }
+
         public bool RequestRepair(IItemHolder itemHolder)
         {
             if (!CanInteract(itemHolder))
@@ -108,6 +138,39 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.ShipAccidents
             }
 
             return coordinator.RequestRepair(this, itemRecord, requestSequence);
+        }
+
+        private bool RequestRepair(IItemHolder itemHolder, uint utilityRequestSequence)
+        {
+            if (!CanInteract(itemHolder))
+            {
+                return false;
+            }
+
+            if (coordinator == null)
+            {
+                Debug.LogError(
+                    $"PHS_SHIP_ACCIDENT_UTILITY_REPAIR_REJECTED reason=coordinator_missing anchor={anchorId}",
+                    this);
+                return false;
+            }
+
+            var holderComponent = itemHolder as Component;
+            var itemRecord = holderComponent == null
+                ? null
+                : holderComponent.GetComponent<NetworkPlayerItemRecord>();
+            if (itemRecord == null)
+            {
+                Debug.LogError(
+                    $"PHS_SHIP_ACCIDENT_UTILITY_REPAIR_REJECTED reason=item_record_missing anchor={anchorId}",
+                    this);
+                return false;
+            }
+
+            return coordinator.RequestRepair(
+                this,
+                itemRecord,
+                utilityRequestSequence);
         }
 
         internal bool TryValidate(out string reason)
