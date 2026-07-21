@@ -75,6 +75,7 @@ namespace LastJumpCrew.ParkHanSol.Items
             var targetPosition = anchor.RepairPosition;
             var direction = targetPosition - origin;
             feedback.RequestOwnerFeedback(
+                PHSItemUseFeedbackKind.Battery,
                 PHSItemUseFeedbackShape.Cast,
                 origin,
                 direction,
@@ -83,7 +84,7 @@ namespace LastJumpCrew.ParkHanSol.Items
                 new[] { targetPosition });
 
             Debug.Log(
-                $"PHS_BATTERY_REPAIR_SENT holder={holderComponent.name} anchor={anchor.name}",
+                $"PHS_ITEM_TARGET_REACTION item=battery_pack target={anchor.name} reaction=repair_request_sent result=accepted position={targetPosition}",
                 this);
         }
 

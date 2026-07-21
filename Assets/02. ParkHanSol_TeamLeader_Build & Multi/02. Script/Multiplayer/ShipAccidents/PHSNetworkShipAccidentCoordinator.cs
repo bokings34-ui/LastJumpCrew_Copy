@@ -27,6 +27,8 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.ShipAccidents
             NetworkVariableWritePermission.Server);
         private readonly Dictionary<string, PHSShipAccidentAnchor> anchorsById = new(StringComparer.Ordinal);
         private readonly Dictionary<uint, double> nextDamageTimes = new();
+        private readonly HashSet<string> desiredPresentationAnchorIds =
+            new(StringComparer.Ordinal);
         private readonly Dictionary<(ulong ClientId, uint ItemRevision), uint> repairRequestSequences = new();
 
         private PHSMapShipAccidentWeight[] configuredEntries = Array.Empty<PHSMapShipAccidentWeight>();
@@ -681,6 +683,9 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.ShipAccidents
                 Debug.Log(
                     $"PHS_SHIP_ACCIDENT_RESOLVED instance={accidentInstanceId} accident={definition.Id} client={senderClientId} shipHp={shipSystemsState.CurrentShipHp}",
                     this);
+                Debug.Log(
+                    $"PHS_ITEM_TARGET_REACTION item={expectedItemId} target={anchor.name} reaction=repair_complete result=accepted progress={snapshot.RepairProgress}->{nextProgress}/{snapshot.RequiredRepairProgress} instance={accidentInstanceId}",
+                    anchor);
                 NotifyServerAccidentFinished(accidentInstanceId, definition.Id, true);
                 return true;
             }
@@ -693,6 +698,9 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.ShipAccidents
                 nextProgress,
                 snapshot.RequiredRepairProgress,
                 snapshot.Revision + 1U);
+            Debug.Log(
+                $"PHS_ITEM_TARGET_REACTION item={expectedItemId} target={anchor.name} reaction=repair_progress result=accepted progress={snapshot.RepairProgress}->{nextProgress}/{snapshot.RequiredRepairProgress} instance={accidentInstanceId}",
+                anchor);
             return true;
         }
 
@@ -817,7 +825,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.ShipAccidents
 
             if (module.CurrentHp >= module.MaximumHp)
             {
-                return TryRestoreGravityIfNeeded(definition, out reason);
+                return TryRestoreOperationalStateIfNeeded(definition, out reason);
             }
 
             if (!shipSystemsState.TryRepairModule(
@@ -828,13 +836,25 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.ShipAccidents
                 return false;
             }
 
-            return TryRestoreGravityIfNeeded(definition, out reason);
+            return TryRestoreOperationalStateIfNeeded(definition, out reason);
         }
 
-        private bool TryRestoreGravityIfNeeded(
+        private bool TryRestoreOperationalStateIfNeeded(
             PHSShipAccidentDefinitionSO definition,
             out string reason)
         {
+            if (definition.TargetModule == NetworkShipModuleId.Power)
+            {
+                if (shipSystemsState.IsPowerEnabled
+                    && shipSystemsState.IsGravityEnabled)
+                {
+                    reason = null;
+                    return true;
+                }
+
+                return shipSystemsState.TryRestorePowerWithBattery(out reason);
+            }
+
             if (definition.TargetModule != NetworkShipModuleId.Gravity)
             {
                 reason = null;
@@ -975,14 +995,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.ShipAccidents
 
         private void RefreshPresentations()
         {
-            foreach (var anchor in anchors)
-            {
-                if (anchor != null)
-                {
-                    anchor.ClearSnapshot();
-                }
-            }
-
+            desiredPresentationAnchorIds.Clear();
             foreach (var snapshot in activeAccidents)
             {
                 if (!anchorsById.TryGetValue(snapshot.AnchorId.ToString(), out var anchor)
@@ -994,7 +1007,18 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.ShipAccidents
                     continue;
                 }
 
+                desiredPresentationAnchorIds.Add(anchor.AnchorId);
                 anchor.ApplySnapshot(snapshot, definition);
+            }
+
+            foreach (var anchor in anchors)
+            {
+                if (anchor != null
+                    && anchor.AccidentInstanceId != 0U
+                    && !desiredPresentationAnchorIds.Contains(anchor.AnchorId))
+                {
+                    anchor.ClearSnapshot();
+                }
             }
         }
 

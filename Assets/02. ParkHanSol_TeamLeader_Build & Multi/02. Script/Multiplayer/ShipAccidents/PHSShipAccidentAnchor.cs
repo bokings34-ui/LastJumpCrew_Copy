@@ -1,4 +1,5 @@
 using System;
+using System.Collections;
 using LastJumpCrew.Common;
 using UnityEngine;
 
@@ -23,6 +24,8 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.ShipAccidents
         private PHSShipAccidentDefinitionSO activeDefinition;
         private NetworkShipAccidentSnapshot snapshot;
         private GameObject presentationInstance;
+        private IShipAccidentPresentation presentationLifecycle;
+        private Coroutine presentationDestroyRoutine;
         private uint requestSequence;
 
         public string AnchorId => anchorId;
@@ -252,37 +255,88 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.ShipAccidents
             snapshot = currentSnapshot;
             activeDefinition = definition;
 
-            if (!needsNewPresentation)
+            if (needsNewPresentation)
             {
-                return;
+                DestroyPresentation();
+                if (definition.PresentationPrefab != null)
+                {
+                    presentationInstance = Instantiate(
+                        definition.PresentationPrefab,
+                        presentationRoot);
+                    presentationInstance.name =
+                        $"PHS_Accident_{currentSnapshot.InstanceId}_{definition.Id}";
+                    presentationLifecycle =
+                        presentationInstance.GetComponentInChildren<IShipAccidentPresentation>();
+                }
             }
 
-            DestroyPresentation();
-            if (definition.PresentationPrefab == null)
-            {
-                return;
-            }
-
-            presentationInstance = Instantiate(definition.PresentationPrefab, presentationRoot);
-            presentationInstance.name = $"PHS_Accident_{currentSnapshot.InstanceId}_{definition.Id}";
+            presentationLifecycle?.ApplySnapshot(currentSnapshot);
         }
 
         internal void ClearSnapshot()
         {
             snapshot = default;
             activeDefinition = null;
-            DestroyPresentation();
+            BeginClearPresentation();
         }
 
         private void DestroyPresentation()
         {
+            if (presentationDestroyRoutine != null)
+            {
+                StopCoroutine(presentationDestroyRoutine);
+                presentationDestroyRoutine = null;
+            }
+
             if (presentationInstance == null)
             {
+                presentationLifecycle = null;
                 return;
             }
 
             Destroy(presentationInstance);
             presentationInstance = null;
+            presentationLifecycle = null;
+        }
+
+        private void BeginClearPresentation()
+        {
+            if (presentationDestroyRoutine != null)
+            {
+                return;
+            }
+
+            if (presentationInstance == null)
+            {
+                presentationLifecycle = null;
+                return;
+            }
+
+            var clearDelay = presentationLifecycle == null
+                ? 0f
+                : Mathf.Max(0f, presentationLifecycle.BeginClear());
+            if (clearDelay <= 0f)
+            {
+                DestroyPresentation();
+                return;
+            }
+
+            presentationDestroyRoutine = StartCoroutine(
+                DestroyPresentationAfter(clearDelay, presentationInstance));
+        }
+
+        private IEnumerator DestroyPresentationAfter(
+            float delaySeconds,
+            GameObject expectedInstance)
+        {
+            yield return new WaitForSeconds(delaySeconds);
+            presentationDestroyRoutine = null;
+            if (presentationInstance == expectedInstance)
+            {
+                Destroy(presentationInstance);
+                presentationInstance = null;
+                presentationLifecycle = null;
+            }
         }
     }
 }

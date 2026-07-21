@@ -1,6 +1,7 @@
 using LastJumpCrew.ParkHanSol.Combat;
 using LastJumpCrew.ParkHanSol.Interaction;
 using LastJumpCrew.ParkHanSol.Items;
+using LastJumpCrew.Common;
 using System.Collections.Generic;
 using Unity.Netcode;
 using UnityEngine;
@@ -282,27 +283,48 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
                 {
                     continue;
                 }
-                itemFeedbackTargetPositions.Add(targetObject.transform.position);
+                var requestSequence = NextUtilityAttackSequence();
                 if (CombatHitResolver.TryResolveUtilityAttack(
                         targetObject,
                         gameObject,
                         WrenchItemId,
-                        NextUtilityAttackSequence()))
+                        requestSequence))
                 {
+                    RecordAcceptedItemTarget(
+                        WrenchItemId,
+                        targetObject,
+                        "utility_repair",
+                        hit.ClosestPoint(wrenchAttackPoint.position),
+                        requestSequence);
                     continue;
                 }
 
                 var knockbackDirection = targetObject.transform.position - wrenchAttackPoint.position;
-
+                var damageable = targetObject.GetComponentInParent<IDamageable>();
+                var knockbackable = targetObject.GetComponentInParent<IKnockbackable>();
+                var acceptsCombatReaction = (damageable != null && damageable.IsAlive)
+                    || knockbackable != null;
                 CombatHitResolver.ResolveDamageAndKnockback(targetObject, gameObject, wrenchDamage, knockbackDirection, wrenchKnockback);
+                if (acceptsCombatReaction)
+                {
+                    RecordAcceptedItemTarget(
+                        WrenchItemId,
+                        targetObject,
+                        "damage_or_knockback",
+                        hit.ClosestPoint(wrenchAttackPoint.position),
+                        requestSequence);
+                }
             }
             PublishItemUseFeedback(
+                PHSItemUseFeedbackKind.Wrench,
                 PHSItemUseFeedbackShape.Sphere,
                 wrenchAttackPoint.position,
                 wrenchAttackPoint.forward,
                 wrenchAttackRadius,
                 0f);
-            Debug.Log($"PHS_WRENCH_ATTACK " + $"player={name} " + $"hitCount={processedTargets.Count}");
+            Debug.Log(
+                $"PHS_WRENCH_ATTACK player={name} candidates={processedTargets.Count} acceptedTargets={itemFeedbackTargetPositions.Count}",
+                this);
         }
         public void RequestExtinguisherSpray() //자기 플레이어만 소화기 사용 요청을 보낼 수 있음
         {
@@ -502,15 +524,9 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
 
             body.linearVelocity = throwVelocity;
 
-            itemFeedbackTargetPositions.Clear();
-            PublishItemUseFeedback(
-                PHSItemUseFeedbackShape.Cast,
-                throwPosition,
-                direction,
-                0.12f,
-                4f);
-
-            Debug.Log($"PHS_BATTERY_THROW_EXECUTED " + $"player={name} " + $"battery={batteryInstance.name}");
+            Debug.Log(
+                $"PHS_BATTERY_THROW_EXECUTED player={name} battery={batteryInstance.name} rangeFeedback=on_first_impact",
+                this);
         }
         private void RemoveFailedThrownObject(GameObject thrownObject)
         {
@@ -582,27 +598,48 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
                 {
                     continue;
                 }
-                itemFeedbackTargetPositions.Add(targetObject.transform.position);
+                var requestSequence = NextUtilityAttackSequence();
                 if (CombatHitResolver.TryResolveUtilityAttack(
                         targetObject,
                         gameObject,
                         FireExtinguisherItemId,
-                        NextUtilityAttackSequence()))
+                        requestSequence))
                 {
+                    RecordAcceptedItemTarget(
+                        FireExtinguisherItemId,
+                        targetObject,
+                        "fire_suppression",
+                        hit.point,
+                        requestSequence);
                     continue;
                 }
 
                 var sprayDirection = extinguisherSprayOrigin.forward; //넉백 방향
-
+                var damageable = targetObject.GetComponentInParent<IDamageable>();
+                var knockbackable = targetObject.GetComponentInParent<IKnockbackable>();
+                var acceptsCombatReaction = (damageable != null && damageable.IsAlive)
+                    || knockbackable != null;
                 CombatHitResolver.ResolveDamageAndKnockback(targetObject, gameObject, extinguisherDamagePerTick, sprayDirection, extinguisherKnockback);
+                if (acceptsCombatReaction)
+                {
+                    RecordAcceptedItemTarget(
+                        FireExtinguisherItemId,
+                        targetObject,
+                        "damage_or_knockback",
+                        hit.point,
+                        requestSequence);
+                }
             }
             PublishItemUseFeedback(
+                PHSItemUseFeedbackKind.FireExtinguisher,
                 PHSItemUseFeedbackShape.Cast,
                 extinguisherSprayOrigin.position,
                 extinguisherSprayOrigin.forward,
                 extinguisherSprayRadius,
                 extinguisherSprayDistance);
-            Debug.Log($"PHS_EXTINGUISHER_SPRAY " + $"player={name} " + $"hitCount={processedTargets.Count}");
+            Debug.Log(
+                $"PHS_EXTINGUISHER_SPRAY player={name} candidates={processedTargets.Count} acceptedTargets={itemFeedbackTargetPositions.Count}",
+                this);
         }
         [ServerRpc]
         private void RequestBatteryThrowServerRpc(Vector3 throwPosition, Vector3 throwDirection, ServerRpcParams rpcParams = default)
@@ -662,6 +699,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
         }
 
         private void PublishItemUseFeedback(
+            PHSItemUseFeedbackKind kind,
             PHSItemUseFeedbackShape shape,
             Vector3 origin,
             Vector3 direction,
@@ -678,12 +716,29 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
             }
 
             feedbackController.PublishServerFeedback(
+                kind,
                 shape,
                 origin,
                 direction,
                 radius,
                 distance,
                 itemFeedbackTargetPositions.ToArray());
+        }
+
+        private void RecordAcceptedItemTarget(
+            string itemId,
+            GameObject target,
+            string reaction,
+            Vector3 feedbackPosition,
+            uint requestSequence)
+        {
+            var resolvedPosition = feedbackPosition == Vector3.zero && target != null
+                ? target.transform.position
+                : feedbackPosition;
+            itemFeedbackTargetPositions.Add(resolvedPosition);
+            Debug.Log(
+                $"PHS_ITEM_TARGET_REACTION item={itemId} target={target?.name ?? "missing"} reaction={reaction} result=accepted sequence={requestSequence} position={resolvedPosition}",
+                target);
         }
 
         private bool HasExpectedHeldItem(string expectedItemId)
