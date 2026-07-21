@@ -2,7 +2,7 @@
 	"owner": "석민",
 	"bundleType": "FirePresentation",
 	"version": "0.1.0",
-	"prefabPath": "Assets/SM/Presentation/Fire/FirePresentation_Root.prefab",
+	"prefabPath": "Assets/04. NohSeokMin_Game Event/03_Prefab/FirePresentationBundle/FirePresentation_Root.prefab",
 	"contentId": "7101",
 	"requiredLocation": {
 		"kind": "N/A",
