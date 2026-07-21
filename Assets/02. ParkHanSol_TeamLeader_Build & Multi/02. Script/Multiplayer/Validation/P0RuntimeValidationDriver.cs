@@ -7,6 +7,7 @@ using LastJumpCrew.ParkHanSol.Interaction;
 using LastJumpCrew.ParkHanSol.Items;
 using LastJumpCrew.ParkHanSol.Multiplayer.Events;
 using LastJumpCrew.ParkHanSol.Multiplayer.Events.MiniGames;
+using LastJumpCrew.ParkHanSol.Multiplayer.Events.MiniGames.Runtime;
 using LastJumpCrew.ParkHanSol.Shop;
 using LastJumpCrew.SeoBoGyeong;
 using SM;
@@ -294,7 +295,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Validation
         private readonly struct ExternalMiniGameValidationCase
         {
             public ExternalMiniGameValidationCase(
-                MiniGameType miniGameType,
+                PHSMiniGameType miniGameType,
                 EventId externalEventId,
                 EventId chainedFailureEventId)
             {
@@ -303,7 +304,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Validation
                 ChainedFailureEventId = chainedFailureEventId;
             }
 
-            public MiniGameType MiniGameType { get; }
+            public PHSMiniGameType MiniGameType { get; }
             public EventId ExternalEventId { get; }
             public EventId ChainedFailureEventId { get; }
         }
@@ -1453,15 +1454,15 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Validation
             var validationCases = new[]
             {
                 new ExternalMiniGameValidationCase(
-                    MiniGameType.Cannon,
+                    PHSMiniGameType.Cannon,
                     EventId.MeteorAttack,
                     EventId.OxygenLeak),
                 new ExternalMiniGameValidationCase(
-                    MiniGameType.WireFix,
+                    PHSMiniGameType.WireFix,
                     EventId.EmpAttack,
                     EventId.PowerOff),
                 new ExternalMiniGameValidationCase(
-                    MiniGameType.PowerSync,
+                    PHSMiniGameType.PowerSync,
                     EventId.EnemyScout,
                     EventId.EnemySpawn)
             };
@@ -1766,7 +1767,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Validation
                     FindObjectsInactive.Exclude,
                     FindObjectsSortMode.None)
                 .FirstOrDefault(terminal =>
-                    terminal != null && terminal.ConfiguredMiniGameType == MiniGameType.WireFix);
+                    terminal != null && terminal.ConfiguredMiniGameType == PHSMiniGameType.WireFix);
             var batterySocket = FindObjectsByType<BatteryInsertPowerStationSocket>(
                     FindObjectsInactive.Exclude,
                     FindObjectsSortMode.None)
