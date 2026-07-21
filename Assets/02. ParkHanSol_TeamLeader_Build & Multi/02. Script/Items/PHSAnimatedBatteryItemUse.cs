@@ -1,5 +1,6 @@
 using LastJumpCrew.Common;
 using LastJumpCrew.ParkHanSol.Multiplayer;
+using LastJumpCrew.ParkHanSol.Multiplayer.ShipAccidents;
 using UnityEngine;
 
 namespace LastJumpCrew.ParkHanSol.Items
@@ -31,9 +32,73 @@ namespace LastJumpCrew.ParkHanSol.Items
                 return;
             }
 
+            if (TryGetPowerFailureAnchor(target, out var powerFailureAnchor))
+            {
+                action.TryBeginImpactAction(
+                    PHSItemUseActionKind.Battery,
+                    () => TryRepairPowerFailure(
+                        holder,
+                        holderComponent,
+                        powerFailureAnchor));
+                return;
+            }
+
             action.TryBeginImpactAction(
                 PHSItemUseActionKind.Battery,
                 combat.RequestBatteryThrow);
+        }
+
+        private void TryRepairPowerFailure(
+            IItemHolder holder,
+            Component holderComponent,
+            PHSShipAccidentAnchor anchor)
+        {
+            var feedback =
+                holderComponent.GetComponent<PHSNetworkItemUseFeedbackController>();
+            if (feedback == null)
+            {
+                Debug.LogError(
+                    $"PHS_BATTERY_REPAIR_FAILED reason=feedback_controller_missing holder={holderComponent.name}",
+                    this);
+                return;
+            }
+
+            if (!anchor.RequestRepair(holder))
+            {
+                Debug.LogWarning(
+                    $"PHS_BATTERY_REPAIR_FAILED reason=request_rejected anchor={anchor.name}",
+                    this);
+                return;
+            }
+
+            var origin = holderComponent.transform.position;
+            var targetPosition = anchor.RepairPosition;
+            var direction = targetPosition - origin;
+            feedback.RequestOwnerFeedback(
+                PHSItemUseFeedbackShape.Cast,
+                origin,
+                direction,
+                0.12f,
+                Mathf.Max(0.1f, direction.magnitude),
+                new[] { targetPosition });
+
+            Debug.Log(
+                $"PHS_BATTERY_REPAIR_SENT holder={holderComponent.name} anchor={anchor.name}",
+                this);
+        }
+
+        private static bool TryGetPowerFailureAnchor(
+            IInteractable target,
+            out PHSShipAccidentAnchor anchor)
+        {
+            anchor = target as PHSShipAccidentAnchor;
+            if (anchor == null && target is Component targetComponent)
+            {
+                anchor = targetComponent.GetComponentInParent<PHSShipAccidentAnchor>();
+            }
+
+            return anchor != null
+                && anchor.AccidentId == PHSShipAccidentId.PowerFailure;
         }
     }
 }
