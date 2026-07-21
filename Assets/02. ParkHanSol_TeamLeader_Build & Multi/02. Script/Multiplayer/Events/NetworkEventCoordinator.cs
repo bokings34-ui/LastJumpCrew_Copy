@@ -4,6 +4,7 @@ using System.Collections.Generic;
 using LastJumpCrew.Common;
 using LastJumpCrew.ParkHanSol.Interaction;
 using LastJumpCrew.ParkHanSol.Multiplayer.Events.MiniGames;
+using LastJumpCrew.ParkHanSol.Multiplayer.Events.MiniGames.Runtime;
 using SM;
 using Unity.Collections;
 using Unity.Netcode;
@@ -1100,18 +1101,18 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Events
             }
         }
 
-        private static bool TryGetMiniGameType(EventId eventId, out MiniGameType miniGameType)
+        private static bool TryGetMiniGameType(EventId eventId, out PHSMiniGameType miniGameType)
         {
             switch (eventId)
             {
                 case EventId.EmpAttack:
-                    miniGameType = MiniGameType.WireFix;
+                    miniGameType = PHSMiniGameType.WireFix;
                     return true;
                 case EventId.MeteorAttack:
-                    miniGameType = MiniGameType.Cannon;
+                    miniGameType = PHSMiniGameType.Cannon;
                     return true;
                 case EventId.EnemyScout:
-                    miniGameType = MiniGameType.PowerSync;
+                    miniGameType = PHSMiniGameType.PowerSync;
                     return true;
                 default:
                     miniGameType = default;

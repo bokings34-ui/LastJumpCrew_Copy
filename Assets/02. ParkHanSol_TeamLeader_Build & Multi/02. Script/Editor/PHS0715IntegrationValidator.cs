@@ -6,6 +6,7 @@ using LastJumpCrew.ParkHanSol.Items;
 using LastJumpCrew.ParkHanSol.Multiplayer;
 using LastJumpCrew.ParkHanSol.Multiplayer.Events;
 using LastJumpCrew.ParkHanSol.Multiplayer.Events.MiniGames;
+using LastJumpCrew.ParkHanSol.Multiplayer.Events.MiniGames.Runtime;
 using LastJumpCrew.ParkHanSol.Multiplayer.Maps;
 using LastJumpCrew.ParkHanSol.Multiplayer.ShipAccidents;
 using LastJumpCrew.ParkHanSol.Multiplayer.Validation;
@@ -719,7 +720,7 @@ namespace LastJumpCrew.ParkHanSol.Editor
                 RequireObject(serializedWarpPresenter, "arrivalSkybox", "map_warp_arrival_skybox_missing", errors);
             }
 
-            FindOne<MiniGameManager>("map_minigame_manager", errors);
+            FindOne<PHSMiniGameManager>("map_minigame_manager", errors);
             var miniGameTerminals = UnityEngine.Object.FindObjectsByType<PHSFinalMiniGameTerminal>(
                 FindObjectsInactive.Include,
                 FindObjectsSortMode.None);

@@ -5,6 +5,7 @@ using UnityEngine;
 using UnityEngine.InputSystem;
 using UnityEngine.SceneManagement;
 using UnityEngine.UI;
+using LastJumpCrew.ParkHanSol.Multiplayer.Events.MiniGames.Runtime;
 
 namespace LastJumpCrew.ParkHanSol.Multiplayer
 {
@@ -82,6 +83,11 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
         private void Update()
         {
             if (Keyboard.current == null || !Keyboard.current.escapeKey.wasPressedThisFrame)
+            {
+                return;
+            }
+
+            if (PHSMiniGameManager.Instance != null && PHSMiniGameManager.Instance.BlocksPauseMenuEscape)
             {
                 return;
             }

@@ -13,7 +13,6 @@ public class CannonGame : MiniGameBase
     [Header("이동 속도 설정")]
     public float minMoveSpeed = 150f;
     public float maxMoveSpeed = 350f;
-    public float targetSpacing = 20f;
 
     [Header("상하좌우 여백 자유 조절 (화면 밖으로 안 나가게 방어)")]
     public float paddingLeft = 100f;
@@ -48,12 +47,8 @@ public class CannonGame : MiniGameBase
         float halfWidth = panelRect.rect.width / 2f;
         float halfHeight = panelRect.rect.height / 2f;
 
+        // 과녁 이미지의 반지름 크기(약 60)만큼 여유 공간을 더 둬서 이미지가 잘리지 않게 방어
         float buttonOffset = 60f;
-        foreach (Button btn in targetButtons)
-        {
-            if (btn == null) continue;
-            buttonOffset = Mathf.Max(buttonOffset, GetTargetRadius(btn.GetComponent<RectTransform>()));
-        }
 
         // 인스펙터에서 설정한 패딩값들을 바탕으로 과녁이 돌아다닐 '가상의 벽' 좌표를 계산합니다.
         boundMinX = -halfWidth + paddingLeft + buttonOffset;
@@ -65,24 +60,16 @@ public class CannonGame : MiniGameBase
         if (boundMinX > boundMaxX) boundMinX = boundMaxX;
         if (boundMinY > boundMaxY) boundMinY = boundMaxY;
 
-        List<Vector2> occupiedPositions = new List<Vector2>();
-        List<float> occupiedRadii = new List<float>();
-
         // 모든 과녁 버튼들을 순회하면서 위치와 속도를 세팅합니다.
         foreach (Button btn in targetButtons)
         {
             btn.gameObject.SetActive(true); // 버튼을 켜줌
             RectTransform btnRect = btn.GetComponent<RectTransform>();
 
-            float targetRadius = GetTargetRadius(btnRect);
-            Vector2 spawnPosition = FindNonOverlappingSpawnPosition(
-                targetRadius,
-                occupiedPositions,
-                occupiedRadii);
-
-            btnRect.anchoredPosition = spawnPosition;
-            occupiedPositions.Add(spawnPosition);
-            occupiedRadii.Add(targetRadius);
+            // 가상의 벽 안쪽에서 랜덤하게 시작 위치를 잡습니다.
+            float randomX = Random.Range(boundMinX, boundMaxX);
+            float randomY = Random.Range(boundMinY, boundMaxY);
+            btnRect.anchoredPosition = new Vector2(randomX, randomY);
 
             // Random.insideUnitCircle.normalized는 무작위 방향(360도)으로 화살표를 만들어줍니다.
             Vector2 randomDirection = Random.insideUnitCircle.normalized;
@@ -143,105 +130,6 @@ public class CannonGame : MiniGameBase
             // 튕기기 계산이 끝난 최종 좌표를 과녁에 다시 적용합니다.
             target.rect.anchoredPosition = pos;
         }
-
-        ResolveTargetOverlaps();
-    }
-
-    private Vector2 FindNonOverlappingSpawnPosition(
-        float targetRadius,
-        List<Vector2> occupiedPositions,
-        List<float> occupiedRadii)
-    {
-        const int maxAttempts = 32;
-        Vector2 bestCandidate = Vector2.zero;
-        float bestClearance = float.MinValue;
-
-        for (int attempt = 0; attempt < maxAttempts; attempt++)
-        {
-            Vector2 candidate = new Vector2(
-                Random.Range(boundMinX, boundMaxX),
-                Random.Range(boundMinY, boundMaxY));
-
-            float minimumClearance = float.MaxValue;
-            bool overlaps = false;
-
-            for (int i = 0; i < occupiedPositions.Count; i++)
-            {
-                float requiredDistance = targetRadius + occupiedRadii[i] + targetSpacing;
-                float clearance = Vector2.Distance(candidate, occupiedPositions[i]) - requiredDistance;
-                minimumClearance = Mathf.Min(minimumClearance, clearance);
-
-                if (clearance < 0f)
-                {
-                    overlaps = true;
-                }
-            }
-
-            if (!overlaps)
-            {
-                return candidate;
-            }
-
-            if (minimumClearance > bestClearance)
-            {
-                bestClearance = minimumClearance;
-                bestCandidate = candidate;
-            }
-        }
-
-        return bestCandidate;
-    }
-
-    private void ResolveTargetOverlaps()
-    {
-        for (int i = 0; i < movingTargets.Count; i++)
-        {
-            MovingTarget first = movingTargets[i];
-            if (!first.rect.gameObject.activeSelf) continue;
-
-            for (int j = i + 1; j < movingTargets.Count; j++)
-            {
-                MovingTarget second = movingTargets[j];
-                if (!second.rect.gameObject.activeSelf) continue;
-
-                Vector2 firstPosition = first.rect.anchoredPosition;
-                Vector2 secondPosition = second.rect.anchoredPosition;
-                Vector2 delta = firstPosition - secondPosition;
-
-                float firstRadius = GetTargetRadius(first.rect);
-                float secondRadius = GetTargetRadius(second.rect);
-                float minimumDistance = firstRadius + secondRadius + targetSpacing;
-                float distance = delta.magnitude;
-
-                if (distance >= minimumDistance) continue;
-
-                Vector2 normal = distance > 0.001f ? delta / distance : Vector2.right;
-                float correction = (minimumDistance - distance) * 0.5f;
-
-                firstPosition += normal * correction;
-                secondPosition -= normal * correction;
-
-                first.rect.anchoredPosition = new Vector2(
-                    Mathf.Clamp(firstPosition.x, boundMinX, boundMaxX),
-                    Mathf.Clamp(firstPosition.y, boundMinY, boundMaxY));
-                second.rect.anchoredPosition = new Vector2(
-                    Mathf.Clamp(secondPosition.x, boundMinX, boundMaxX),
-                    Mathf.Clamp(secondPosition.y, boundMinY, boundMaxY));
-
-                Vector2 relativeVelocity = first.velocity - second.velocity;
-                if (Vector2.Dot(relativeVelocity, normal) < 0f)
-                {
-                    first.velocity = Vector2.Reflect(first.velocity, normal);
-                    second.velocity = Vector2.Reflect(second.velocity, normal);
-                }
-            }
-        }
-    }
-
-    private static float GetTargetRadius(RectTransform targetRect)
-    {
-        Vector2 size = targetRect.rect.size;
-        return Mathf.Max(size.x, size.y) * 0.5f;
     }
 
     private void OnTargetClicked(Button clickedButton)
