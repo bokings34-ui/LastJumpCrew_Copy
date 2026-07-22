@@ -8,6 +8,7 @@ using LastJumpCrew.ParkHanSol.Items;
 using LastJumpCrew.ParkHanSol.Multiplayer.Events;
 using LastJumpCrew.ParkHanSol.Multiplayer.Events.MiniGames;
 using LastJumpCrew.ParkHanSol.Multiplayer.Events.MiniGames.Runtime;
+using LastJumpCrew.ParkHanSol.Multiplayer.ShipAccidents;
 using LastJumpCrew.ParkHanSol.Shop;
 using LastJumpCrew.SeoBoGyeong;
 using SM;
@@ -326,7 +327,11 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Validation
                 uint shipRevision,
                 uint itemRevision,
                 string heldItemId,
-                bool powerOffActive)
+                bool powerOffActive,
+                bool lightingFound,
+                bool blackoutApplied,
+                bool emergencyLightingActive,
+                float ambientIntensityRatio)
             {
                 StateFound = stateFound;
                 PowerEnabled = powerEnabled;
@@ -336,6 +341,10 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Validation
                 ItemRevision = itemRevision;
                 HeldItemId = heldItemId;
                 PowerOffActive = powerOffActive;
+                LightingFound = lightingFound;
+                BlackoutApplied = blackoutApplied;
+                EmergencyLightingActive = emergencyLightingActive;
+                AmbientIntensityRatio = ambientIntensityRatio;
             }
 
             public bool StateFound { get; }
@@ -346,6 +355,10 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Validation
             public uint ItemRevision { get; }
             public string HeldItemId { get; }
             public bool PowerOffActive { get; }
+            public bool LightingFound { get; }
+            public bool BlackoutApplied { get; }
+            public bool EmergencyLightingActive { get; }
+            public float AmbientIntensityRatio { get; }
         }
 
         public override void OnNetworkSpawn()
@@ -1894,6 +1907,9 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Validation
                 "p2_power_off_not_applied");
             if (scenarioFinished) yield break;
 
+            yield return ProbeShipPowerVisualState(true);
+            if (scenarioFinished) yield break;
+
             var itemRevisionBeforeHold = itemRecord.Revision;
             holder.ReplaceHeldItem(validationBatteryItem, playerObject.transform);
             yield return WaitFor(
@@ -1965,8 +1981,63 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Validation
             Debug.Log(
                 $"PHS_P2_SHIP_POWER_BATTERY_OK item={validationBatteryItem.ItemId} " +
                 $"shipRevision={restoredShipRevision} itemRevision={consumedItemRevision} " +
-                $"peers={shipPowerReports.Count} duplicateReason={repeatedRestoreReason}",
+                $"peers={shipPowerReports.Count} blackoutRestored=true " +
+                $"duplicateReason={repeatedRestoreReason}",
                 this);
+        }
+
+        private IEnumerator ProbeShipPowerVisualState(bool expectedBlackout)
+        {
+            var deadline = Time.realtimeSinceStartup + 10f;
+            while (scenarioRunning && !scenarioFinished
+                && Time.realtimeSinceStartup < deadline)
+            {
+                shipPowerReports.Clear();
+                var token = ++activeProbeToken;
+                ProbeShipPowerStateClientRpc(token);
+
+                var probeDeadline = Mathf.Min(
+                    deadline,
+                    Time.realtimeSinceStartup + 2f);
+                while (shipPowerReports.Count < expectedClientCount
+                    && Time.realtimeSinceStartup < probeDeadline)
+                {
+                    yield return null;
+                }
+
+                if (shipPowerReports.Count >= expectedClientCount
+                    && shipPowerReports.Values.All(report =>
+                        report.StateFound
+                        && report.LightingFound
+                        && report.BlackoutApplied == expectedBlackout
+                        && report.EmergencyLightingActive == expectedBlackout
+                        && Mathf.Abs(
+                            report.AmbientIntensityRatio
+                            - (expectedBlackout ? 0.12f : 1f)) <= 0.03f))
+                {
+                    Debug.Log(
+                        $"PHS_P2_SHIP_POWER_VISUAL_OK blackout={expectedBlackout} " +
+                        $"peers={shipPowerReports.Count} ambientRatio=" +
+                        $"{shipPowerReports.Values.First().AmbientIntensityRatio:F3}",
+                        this);
+                    yield break;
+                }
+
+                yield return new WaitForSecondsRealtime(0.25f);
+            }
+
+            var reports = shipPowerReports.Count == 0
+                ? "none"
+                : string.Join(
+                    ";",
+                    shipPowerReports.OrderBy(report => report.Key).Select(report =>
+                        $"{report.Key}:found={report.Value.LightingFound}," +
+                        $"blackout={report.Value.BlackoutApplied}," +
+                        $"emergency={report.Value.EmergencyLightingActive}," +
+                        $"ambient={report.Value.AmbientIntensityRatio:F3}"));
+            Fail(
+                $"p2_ship_power_visual_sync_timeout blackout={expectedBlackout} " +
+                $"reports={reports}");
         }
 
         private IEnumerator ProbeShipPowerState(uint expectedShipRevision, uint expectedItemRevision)
@@ -1994,7 +2065,11 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Validation
                         && report.ShipRevision == expectedShipRevision
                         && report.ItemRevision == expectedItemRevision
                         && string.IsNullOrEmpty(report.HeldItemId)
-                        && !report.PowerOffActive))
+                        && !report.PowerOffActive
+                        && report.LightingFound
+                        && !report.BlackoutApplied
+                        && !report.EmergencyLightingActive
+                        && Mathf.Abs(report.AmbientIntensityRatio - 1f) <= 0.03f))
                 {
                     yield break;
                 }
@@ -2011,7 +2086,10 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Validation
                         $"power={report.Value.PowerEnabled},gravity={report.Value.GravityEnabled}," +
                         $"battery={report.Value.BatteryInstalled},shipRev={report.Value.ShipRevision}," +
                         $"itemRev={report.Value.ItemRevision},held={report.Value.HeldItemId}," +
-                        $"powerOff={report.Value.PowerOffActive}"));
+                        $"powerOff={report.Value.PowerOffActive}," +
+                        $"lighting={report.Value.LightingFound},blackout={report.Value.BlackoutApplied}," +
+                        $"emergency={report.Value.EmergencyLightingActive}," +
+                        $"ambient={report.Value.AmbientIntensityRatio:F3}"));
             Fail(
                 $"p2_ship_power_peer_sync_timeout expectedShipRevision={expectedShipRevision} " +
                 $"expectedItemRevision={expectedItemRevision} reports={reports}");
@@ -5353,6 +5431,10 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Validation
                     FindObjectsSortMode.None)
                 .FirstOrDefault(record => record.IsSpawned
                     && record.OwnerClientId == NetworkManager.ServerClientId);
+            var lighting = FindObjectsByType<PHSShipPowerFailureLighting>(
+                    FindObjectsInactive.Include,
+                    FindObjectsSortMode.None)
+                .FirstOrDefault(controller => controller.isActiveAndEnabled);
             ReportShipPowerStateServerRpc(
                 token,
                 shipState != null && shipState.IsSpawned,
@@ -5362,7 +5444,11 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Validation
                 shipState == null ? uint.MaxValue : shipState.Revision,
                 hostRecord == null ? uint.MaxValue : hostRecord.Revision,
                 hostRecord == null ? "record_missing" : hostRecord.HeldItemId,
-                eventCoordinator != null && eventCoordinator.IsEventActive(EventId.PowerOff));
+                eventCoordinator != null && eventCoordinator.IsEventActive(EventId.PowerOff),
+                lighting != null,
+                lighting != null && lighting.IsBlackoutApplied,
+                lighting != null && lighting.IsEmergencyLightingActive,
+                lighting == null ? -1f : lighting.CurrentAmbientIntensityRatio);
         }
 
         [ServerRpc(RequireOwnership = false)]
@@ -5376,6 +5462,10 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Validation
             uint itemRevision,
             string heldItemId,
             bool powerOffActive,
+            bool lightingFound,
+            bool blackoutApplied,
+            bool emergencyLightingActive,
+            float ambientIntensityRatio,
             ServerRpcParams rpcParams = default)
         {
             if (!AcceptProbe(token)) return;
@@ -5387,7 +5477,11 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Validation
                 shipRevision,
                 itemRevision,
                 heldItemId,
-                powerOffActive);
+                powerOffActive,
+                lightingFound,
+                blackoutApplied,
+                emergencyLightingActive,
+                ambientIntensityRatio);
         }
 
         [ServerRpc(RequireOwnership = false)]
