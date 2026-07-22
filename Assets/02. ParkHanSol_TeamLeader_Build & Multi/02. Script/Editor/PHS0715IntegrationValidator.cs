@@ -31,6 +31,8 @@ namespace LastJumpCrew.ParkHanSol.Editor
             "Assets/02. ParkHanSol_TeamLeader_Build & Multi/01. Scene/0715/PHS_Map_ver1.unity";
         private const string ShopScenePath =
             "Assets/02. ParkHanSol_TeamLeader_Build & Multi/01. Scene/0715/PHS_ExteriorShopScene.unity";
+        private const string FeatureInspectionScenePath =
+            "Assets/02. ParkHanSol_TeamLeader_Build & Multi/01. Scene/test/PHS_FeatureInspectionScene.unity";
         private const string MapSceneName = "PHS_Map_ver1";
         private const string ShopSceneName = "PHS_ExteriorShopScene";
         private const string ShopCatalogPath =
@@ -60,7 +62,8 @@ namespace LastJumpCrew.ParkHanSol.Editor
         {
             LobbyScenePath,
             MapScenePath,
-            ShopScenePath
+            ShopScenePath,
+            FeatureInspectionScenePath
         };
 
         private static readonly int[] IncidentGameplayMapIds =
@@ -526,6 +529,7 @@ namespace LastJumpCrew.ParkHanSol.Editor
                 ValidateBuildSettings(errors);
                 ValidateLobbyScene(errors);
                 ValidateMapScene(errors);
+                ValidateFeatureInspectionScene(errors);
                 ValidateShopScene(errors);
                 ValidateShopPresentationPrefabs(errors);
                 ValidateUtilityItemCatalog(errors);
@@ -552,7 +556,7 @@ namespace LastJumpCrew.ParkHanSol.Editor
                 throw new InvalidOperationException(message);
             }
 
-            const string success = "PHS_0715_VALIDATE_OK errors=0 scenes=3 prefabs=11";
+            const string success = "PHS_0715_VALIDATE_OK errors=0 scenes=4 prefabs=11";
             Debug.Log(success);
             return success;
         }
@@ -998,6 +1002,152 @@ namespace LastJumpCrew.ParkHanSol.Editor
             ValidatePurchaseDeliveryBox(errors);
 
             ValidateShipPowerWiring(errors);
+        }
+
+        private static void ValidateFeatureInspectionScene(
+            ICollection<string> errors)
+        {
+            OpenAndValidateScene(FeatureInspectionScenePath, errors);
+            Require(
+                PHS0719IncidentLocationAuthoring.ValidateAuthoredScene(
+                    out var incidentLocationReason),
+                $"feature_incident_location_authoring_invalid " +
+                $"reason={incidentLocationReason}",
+                errors);
+            ValidateNoSceneOwnedStageClock("feature", errors);
+            ValidateNoSceneOwnedEconomyLedger("feature", errors);
+            ValidateNoSceneOwnedRandomLedger("feature", errors);
+            ValidateNoSceneOwnedIncidentRootComponents("feature", errors);
+
+            var mapRuntime = FindOne<PHSMapRuntimeContext>(
+                "feature_runtime_context",
+                errors);
+            var eventCoordinator = FindOne<NetworkEventCoordinator>(
+                "feature_event_coordinator",
+                errors);
+            var consumer = FindOne<PHSMapIncidentCommandConsumer>(
+                "feature_incident_consumer",
+                errors);
+            var gateway = mapRuntime == null
+                ? null
+                : mapRuntime.GetComponent<PHSIncidentRequestGateway>();
+            if (mapRuntime != null && consumer != null)
+            {
+                var serializedRuntime = new SerializedObject(mapRuntime);
+                Require(
+                    serializedRuntime.FindProperty("incidentCommandConsumer")
+                        ?.objectReferenceValue == consumer,
+                    "feature_runtime_incident_consumer_reference_mismatch",
+                    errors);
+                Require(
+                    consumer.gameObject == mapRuntime.gameObject,
+                    "feature_incident_consumer_owner_invalid",
+                    errors);
+                Require(
+                    consumer.enabled && consumer.IncidentLayout != null,
+                    "feature_incident_consumer_not_ready",
+                    errors);
+                Require(
+                    !consumer.AllowLegacyLocationFallback,
+                    "feature_incident_legacy_location_fallback_must_be_false",
+                    errors);
+                Require(
+                    eventCoordinator == null
+                    || consumer.EventCoordinator == eventCoordinator,
+                    "feature_incident_event_coordinator_mismatch",
+                    errors);
+
+                var selectors = UnityEngine.Object
+                    .FindObjectsByType<PHSIncidentConsequenceSelector>(
+                        FindObjectsInactive.Include,
+                        FindObjectsSortMode.None);
+                Require(
+                    selectors.Length == 1,
+                    $"feature_incident_consequence_selector_count_invalid " +
+                    $"expected=1 actual={selectors.Length}",
+                    errors);
+                if (selectors.Length == 1)
+                {
+                    var selector = selectors[0];
+                    var serializedConsumer = new SerializedObject(consumer);
+                    Require(
+                        selector.gameObject == mapRuntime.gameObject,
+                        "feature_incident_consequence_selector_owner_invalid",
+                        errors);
+                    Require(
+                        serializedConsumer.FindProperty("consequenceSelector")
+                            ?.objectReferenceValue == selector,
+                        "feature_incident_consequence_selector_reference_mismatch",
+                        errors);
+                    Require(
+                        selector.RequestGateway == gateway,
+                        "feature_incident_consequence_gateway_mismatch",
+                        errors);
+                    Require(
+                        selector.AccidentCoordinator
+                            == consumer.AccidentCoordinator,
+                        "feature_incident_consequence_accident_coordinator_mismatch",
+                        errors);
+                }
+            }
+
+            var terminalEventIds = new HashSet<EventId>
+            {
+                EventId.EnemyScout,
+                EventId.MeteorAttack,
+                EventId.EmpAttack
+            };
+            var configuredTerminalEventIds = new HashSet<EventId>();
+            var buttons = UnityEngine.Object
+                .FindObjectsByType<PHSFeatureInspectionTriggerButton>(
+                    FindObjectsInactive.Include,
+                    FindObjectsSortMode.None);
+            foreach (var button in buttons)
+            {
+                var serializedButton = new SerializedObject(button);
+                if (serializedButton.FindProperty("triggerKind")?.enumValueIndex
+                        != (int)PHSFeatureInspectionTriggerKind.NetworkEvent)
+                {
+                    continue;
+                }
+
+                var eventId = (EventId)(serializedButton
+                    .FindProperty("networkEventId")?.intValue ?? 0);
+                if (!terminalEventIds.Contains(eventId))
+                {
+                    continue;
+                }
+
+                Require(
+                    configuredTerminalEventIds.Add(eventId),
+                    $"feature_terminal_event_button_duplicate event={eventId}",
+                    errors);
+                Require(
+                    gateway != null
+                    && serializedButton.FindProperty("incidentGateway")
+                        ?.objectReferenceValue == gateway,
+                    $"feature_terminal_event_gateway_mismatch event={eventId}",
+                    errors);
+                Require(
+                    consumer != null
+                    && serializedButton.FindProperty("incidentLayout")
+                        ?.objectReferenceValue == consumer.IncidentLayout,
+                    $"feature_terminal_event_layout_mismatch event={eventId}",
+                    errors);
+
+                var room = serializedButton.FindProperty("networkEventRoom")
+                    ?.objectReferenceValue as ShipRoom;
+                Require(
+                    room == null,
+                    $"feature_terminal_event_target_must_be_automatic event={eventId}",
+                    errors);
+            }
+
+            Require(
+                terminalEventIds.SetEquals(configuredTerminalEventIds),
+                $"feature_terminal_event_buttons_invalid expected=3 " +
+                $"actual={configuredTerminalEventIds.Count}",
+                errors);
         }
 
         private static void ValidateShopScene(ICollection<string> errors)
@@ -1486,6 +1636,39 @@ namespace LastJumpCrew.ParkHanSol.Editor
                     ?.objectReferenceValue == expectedAccidentCoordinator,
                 "map_incident_accident_coordinator_mismatch",
                 errors);
+            var selectors =
+                UnityEngine.Object.FindObjectsByType<PHSIncidentConsequenceSelector>(
+                    FindObjectsInactive.Include,
+                    FindObjectsSortMode.None);
+            Require(
+                selectors.Length == 1,
+                $"map_incident_consequence_selector_count_invalid " +
+                $"expected=1 actual={selectors.Length}",
+                errors);
+            if (selectors.Length == 1)
+            {
+                var selector = selectors[0];
+                Require(
+                    selector.gameObject == mapRuntime.gameObject,
+                    "map_incident_consequence_selector_owner_invalid",
+                    errors);
+                Require(
+                    serializedConsumer.FindProperty("consequenceSelector")
+                        ?.objectReferenceValue == selector,
+                    "map_incident_consequence_selector_reference_mismatch",
+                    errors);
+                Require(
+                    selector.RequestGateway
+                        == mapRuntime.GetComponent<PHSIncidentRequestGateway>(),
+                    "map_incident_consequence_gateway_mismatch",
+                    errors);
+                Require(
+                    expectedAccidentCoordinator == null
+                    || selector.AccidentCoordinator
+                        == expectedAccidentCoordinator,
+                    "map_incident_consequence_accident_coordinator_mismatch",
+                    errors);
+            }
             var configuredRooms = serializedConsumer.FindProperty("rooms");
             Require(
                 configuredRooms != null

@@ -2,6 +2,7 @@ using System.Collections.Generic;
 using LastJumpCrew.Common;
 using LastJumpCrew.ParkHanSol.Multiplayer;
 using LastJumpCrew.ParkHanSol.Multiplayer.Events;
+using LastJumpCrew.ParkHanSol.Multiplayer.Incidents.Locations;
 using LastJumpCrew.ParkHanSol.Multiplayer.ShipAccidents;
 using SM;
 using Unity.Netcode;
@@ -31,6 +32,10 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Validation
         [SerializeField] private PHSShipAccidentId shipAccidentId = PHSShipAccidentId.Fire;
         [SerializeField] private string shipAccidentAnchorId;
         [SerializeField, Min(1)] private int shipDamageAmount = 40;
+
+        [Header("Incident Command")]
+        [SerializeField] private PHSIncidentRequestGateway incidentGateway;
+        [SerializeField] private PHSShipIncidentLayout incidentLayout;
 
         [Header("Presentation")]
         [SerializeField] private string interactionPrompt = "Activate inspection event";
@@ -73,6 +78,11 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Validation
                 var coordinator = NetworkEventCoordinator.Instance;
                 return coordinator != null
                     && coordinator.IsAuthoritative
+                    && (!IsTerminalExternalEvent(networkEventId)
+                        || (incidentGateway != null
+                            && incidentGateway.IsReady
+                            && (networkEventRoom == null
+                                || incidentLayout != null)))
                     && !coordinator.IsEventActive(networkEventId);
             }
 
@@ -196,24 +206,115 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Validation
 
         private bool TryTriggerNetworkEvent()
         {
-            var coordinator = NetworkEventCoordinator.Instance;
-            ulong instanceId = 0UL;
-            var accepted = coordinator != null
-                && (networkEventRoom != null
-                    ? coordinator.TrySpawnEventServer(networkEventId, networkEventRoom, out instanceId)
-                    : coordinator.TrySpawnEventServer(networkEventId, out instanceId));
-            if (!accepted)
+            if (!IsTerminalExternalEvent(networkEventId))
+            {
+                var coordinator = NetworkEventCoordinator.Instance;
+                ulong instanceId = 0UL;
+                var accepted = coordinator != null
+                    && (networkEventRoom != null
+                        ? coordinator.TrySpawnEventServer(
+                            networkEventId,
+                            networkEventRoom,
+                            out instanceId)
+                        : coordinator.TrySpawnEventServer(
+                            networkEventId,
+                            out instanceId));
+                if (!accepted)
+                {
+                    Debug.LogWarning(
+                        $"PHS_FEATURE_INSPECTION_TRIGGER_REJECTED " +
+                        $"kind=event event={networkEventId}",
+                        this);
+                    return false;
+                }
+
+                Debug.Log(
+                    $"PHS_FEATURE_INSPECTION_TRIGGERED kind=event " +
+                    $"event={networkEventId} instance={instanceId} " +
+                    $"room={networkEventRoom?.RoomId}",
+                    this);
+                return true;
+            }
+
+            if (incidentGateway == null)
             {
                 Debug.LogWarning(
-                    $"PHS_FEATURE_INSPECTION_TRIGGER_REJECTED kind=event event={networkEventId}",
+                    $"PHS_FEATURE_INSPECTION_TRIGGER_REJECTED kind=event " +
+                    $"event={networkEventId} reason=incident_gateway_missing",
+                    this);
+                return false;
+            }
+
+            if (!TryResolveNetworkEventTarget(
+                    out var targetId,
+                    out var targetReason))
+            {
+                Debug.LogWarning(
+                    $"PHS_FEATURE_INSPECTION_TRIGGER_REJECTED kind=event " +
+                    $"event={networkEventId} " +
+                    $"reason={targetReason}",
+                    this);
+                return false;
+            }
+
+            if (!incidentGateway.TrySubmitTerminalEventServer(
+                    networkEventId,
+                    targetId,
+                    out var command,
+                    out var submitReason))
+            {
+                Debug.LogWarning(
+                    $"PHS_FEATURE_INSPECTION_TRIGGER_REJECTED kind=event " +
+                    $"event={networkEventId} reason={submitReason}",
                     this);
                 return false;
             }
 
             Debug.Log(
-                $"PHS_FEATURE_INSPECTION_TRIGGERED kind=event event={networkEventId} instance={instanceId} room={networkEventRoom?.RoomId}",
+                $"PHS_FEATURE_INSPECTION_TRIGGERED kind=event " +
+                $"event={networkEventId} command={command.CommandId} " +
+                $"target={targetId ?? "automatic"}",
                 this);
             return true;
+        }
+
+        private bool TryResolveNetworkEventTarget(
+            out string targetId,
+            out string reason)
+        {
+            targetId = null;
+            if (networkEventRoom == null)
+            {
+                reason = null;
+                return true;
+            }
+
+            if (incidentLayout == null)
+            {
+                reason = "incident_layout_missing";
+                return false;
+            }
+
+            foreach (var location in incidentLayout.Locations)
+            {
+                if (location != null
+                    && location.RuntimeTarget == networkEventRoom)
+                {
+                    targetId = location.LocationId;
+                    reason = null;
+                    return true;
+                }
+            }
+
+            reason = $"network_event_room_location_missing:{networkEventRoom.RoomId}";
+            return false;
+        }
+
+        private static bool IsTerminalExternalEvent(EventId eventId)
+        {
+            return eventId == EventId.EmpAttack
+                || eventId == EventId.MeteorAttack
+                || eventId == EventId.EnemyScout;
         }
 
         private bool TryTriggerShipAccident()
