@@ -253,20 +253,21 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
                     continue;
                 }
 
-                var targetRoot = hit.transform.root.gameObject;
-
-                if (targetRoot == transform.gameObject)//자기 자신은 공격하지 않는다.
+                if(!CombatHitResolver.TryResolveCombatTarget(hit, out var targetObject))
                 {
                     continue;
                 }
-
-                if (!processedTargets.Add(targetRoot)) //콜라이드가 여러개 있어도 한번 만 처리
+                if(CombatHitResolver.IsSameTarget(targetObject, gameObject))
                 {
                     continue;
                 }
-                var knockbackDirection = targetRoot.transform.position - wrenchAttackPoint.position;
+                if (!processedTargets.Add(targetObject))
+                {
+                    continue;
+                }
+                var knockbackDirection = targetObject.transform.position - wrenchAttackPoint.position;
 
-                CombatHitResolver.ResolveDamageAndKnockback(targetRoot, gameObject, wrenchDamage, knockbackDirection, wrenchKnockback);
+                CombatHitResolver.ResolveDamageAndKnockback(targetObject, gameObject, wrenchDamage, knockbackDirection, wrenchKnockback);
             }
             Debug.Log($"PHS_WRENCH_ATTACK " + $"player={name} " + $"hitCount={processedTargets.Count}");
         }
@@ -521,20 +522,20 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
                 {
                     continue;
                 }
-                var targetRoot = hit.collider.transform.root.gameObject;
-
-                //소화기 사용하는 자신은 안 맞음
-                if (targetRoot == transform.root.gameObject)
+                if(!CombatHitResolver.TryResolveCombatTarget(hit.collider, out var targetObject))
                 {
                     continue;
                 }
-                if (!processedTargets.Add(targetRoot))//Collider가 여러 개 검출돼고 한번만 데미지 넉백 처리용
+                if(CombatHitResolver.IsSameTarget(targetObject, gameObject))
                 {
                     continue;
                 }
-                var sprayDirection = extinguisherSprayOrigin.forward; //넉백 방향 
-
-                CombatHitResolver.ResolveDamageAndKnockback(targetRoot, gameObject, extinguisherDamagePerTick, sprayDirection, extinguisherKnockback);
+                if (!processedTargets.Add(targetObject))
+                {
+                    continue;
+                }
+                var sprayDirection = extinguisherSprayOrigin.forward;
+                CombatHitResolver.ResolveDamageAndKnockback(targetObject, gameObject, extinguisherDamagePerTick, sprayDirection, extinguisherKnockback);
             }
             Debug.Log($"PHS_EXTINGUISHER_SPRAY " + $"player={name} " + $"hitCount={processedTargets.Count}");
         }

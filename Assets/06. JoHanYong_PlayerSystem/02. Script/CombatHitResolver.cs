@@ -12,11 +12,13 @@ namespace LastJumpCrew.ParkHanSol.Combat
             {
                 return;
             }
-            if(damage > 0)
-            {
-                var damageable = target.GetComponentInParent<IDamageable>();//데미지 처리
+            bool isPlayer = target.GetComponentInParent<NetworkPlayerController>() != null;
 
-                if (damageable != null && damageable.IsAlive)
+            if(!isPlayer && damage > 0)
+            {
+                var damageable = target.GetComponentInParent<IDamageable>();
+
+                if(damageable != null && damageable.IsAlive)
                 {
                     damageable.ApplyDamage(damage, attacker);
                 }
@@ -62,6 +64,43 @@ namespace LastJumpCrew.ParkHanSol.Combat
                 return;
             }
             statusReceiver.ApplyStatusEffect(effectType, duration, source);
+        }
+        public static bool TryResolveCombatTarget(Collider hitCollider, out GameObject targetObject)
+        {
+            targetObject = null;
+
+            if(hitCollider == null)
+            {
+                return false;
+            }
+            var damageable = hitCollider.GetComponentInParent<IDamageable>();
+
+            if(damageable is Component damageableComponent)
+            {
+                targetObject = damageableComponent.gameObject;
+                return true;
+            }
+            var statusReceiver = hitCollider.GetComponentInParent<IStatusEffectReceiver>();
+
+            if(statusReceiver is Component statusComponent)
+            {
+                targetObject = statusComponent.gameObject;
+                return true;
+            }
+            return false;
+        }
+        public static bool IsSameTarget(GameObject first, GameObject second)
+        {
+            if(first == null || second == null)
+            {
+                return false;
+            }
+            if(first == second)
+            {
+                return true;
+            }
+
+            return first.transform.IsChildOf(second.transform) || second.transform.IsChildOf(first.transform);
         }
     }
 }

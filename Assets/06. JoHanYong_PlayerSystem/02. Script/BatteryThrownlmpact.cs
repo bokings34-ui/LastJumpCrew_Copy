@@ -1,4 +1,5 @@
 using LastJumpCrew.Common;
+using LastJumpCrew.ParkHanSol.Combat;
 using LastJumpCrew.ParkHanSol.Multiplayer;
 using System.Collections.Generic;
 using Unity.Netcode;
@@ -31,6 +32,12 @@ namespace LastJumpCrew.ParkHanSol.Items
 
         private bool hasExploded; //여러번 터지는 걸 막음
 
+        [Header("Impact Effect")]
+        [SerializeField]
+        private GameObject impactEffectPrefab;
+        [SerializeField]
+        private float impactEffectLifetime = 3f;
+
         public void InitializeAttackThrow(GameObject throwAttacker)
         {
             if (!IsServer)
@@ -60,6 +67,7 @@ namespace LastJumpCrew.ParkHanSol.Items
         }
         private void Explode(Vector3 center)
         {
+            PlayImpactEffectClientRpc(center);
             var colliders = Physics.OverlapSphere(center, explosionRedius, targetLayers, QueryTriggerInteraction.Collide); //충돌 지점 범위 대상을 검사
 
             var processedTargets = new HashSet<GameObject>();
@@ -70,13 +78,19 @@ namespace LastJumpCrew.ParkHanSol.Items
                 {
                     continue;
                 }
-                var targetRoot = hitCollider.transform.root.gameObject;
-
-                if (!processedTargets.Add(targetRoot))
+                if(!CombatHitResolver.TryResolveCombatTarget(hitCollider, out var targetObject))
                 {
                     continue;
                 }
-                ApplyBatteryEffect(targetRoot);
+                if(CombatHitResolver.IsSameTarget(targetObject, attacker))
+                {
+                    continue;
+                }
+                if (!processedTargets.Add(targetObject))
+                {
+                    continue;
+                }
+                ApplyBatteryEffect(targetObject);
             }
             Debug.Log($"PHS_BATTERY_EXPLODED " + $"battery={name} " + $"targetCount={processedTargets.Count}");
 
@@ -88,36 +102,37 @@ namespace LastJumpCrew.ParkHanSol.Items
             {
                 return;
             }
-            var playerTarget = target.GetComponentInParent<NetworkPlayerController>() != null;
+            bool isPlayer = target.GetComponentInParent<NetworkPlayerController>() != null;
 
-            var effectReciver = target.GetComponentInParent<IStatusEffectReceiver>(); //상태이상 컴포넌트 찾기
-
-            if (playerTarget)
+            if (!isPlayer)
             {
-                if (effectReciver != null && effectReciver.CanReceiveStatusEffect(StatusEffectType.ElectricShok))
-                {
-                    effectReciver.ApplyStatusEffect(StatusEffectType.ElectricShok, electricShockDuration, attacker);
+                var damgeable = target.GetComponentInParent<IDamageable>();
 
-                    Debug.Log($"PHS_BATTERY_PLAYER_SHOCKED" + $"target={target.name}");
+                if (damgeable != null && damgeable.IsAlive)
+                {
+                    damgeable.ApplyDamage(damage, attacker);
+                    Debug.Log($"PHS_BATTERY_DAMAGE_APPLIED " + $"target={target.name} " + $"damage={damage}");
                 }
+            }
+            CombatHitResolver.ResolveStatusEffect(target, attacker, StatusEffectType.ElectricShok, electricShockDuration);
+
+        }
+        [ClientRpc]
+        private void PlayImpactEffectClientRpc(Vector3 position)
+        {
+            PlayImpactEffectLocal(position);
+        }
+        private void PlayImpactEffectLocal(Vector3 position)
+        {
+            if(impactEffectPrefab == null)
+            {
+                Debug.Log($"PHS_BATTERY_IMPACT_EFFECT_FAILED " + $"reason=prefab_missing " + $"battery={name}");
 
                 return;
             }
-            var damageable = target.GetComponentInParent<IDamageable>();
+            GameObject effectInstance = Instantiate(impactEffectPrefab, position, Quaternion.identity);
 
-            if(damageable != null && damageable.IsAlive)
-            {
-                damageable.ApplyDamage(damage, attacker);
-
-                Debug.Log($"PHS_BATTERY_DAMAGE_APPLIED " + $"target={target.name} " + $"damage={damage}");
-            }
-            if(effectReciver != null && effectReciver.CanReceiveStatusEffect(StatusEffectType.ElectricShok))
-            {
-                effectReciver.ApplyStatusEffect(StatusEffectType.ElectricShok, electricShockDuration, attacker);
-
-                Debug.Log($"PHS_BATTERY_ENEMY_SHOCKED " + $"target={target.name}");
-            }
-
+            Destroy(effectInstance, impactEffectLifetime);
         }
         private void OnDrawGizmosSelected()
         {

@@ -347,11 +347,12 @@ namespace LastJumpCrew.ParkHanSol.Interaction
             currentItemPrefabData = null;
 
             RefreshHeldItemHud();
+            ReportHeldItemRecord();
+            
         }
 
-            ReportHeldItemRecord();
-            RefreshHeldItemHud();
-        }
+           
+        
 
         private void PlaceHeldDebris()
         {

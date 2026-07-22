@@ -802,11 +802,11 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
             var velocity = PlanarVelocity;
             velocity.y = verticalVelocity;
 
-            PlanarVelocity = nextPlanar;
+           
             var finalVelocity = velocity + externalVelocity; //걷기, 달리기, 점프 속도에 외부 넉백 속도 +
 
 
-            characterController.Move(velocity * deltaTime);
+            characterController.Move(finalVelocity * deltaTime);
 
             externalVelocity = Vector3.MoveTowards(externalVelocity, Vector3.zero, groundedKnockbackRecovery * deltaTime);
         }
