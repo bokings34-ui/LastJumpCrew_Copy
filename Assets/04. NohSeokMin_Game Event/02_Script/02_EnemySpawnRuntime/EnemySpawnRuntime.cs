@@ -10,7 +10,7 @@ namespace SM
     public class EnemySpawnRuntime : MonoBehaviour
     {
         [SerializeField] private EnemySpawnDataSO spawnData;
-
+        
         public event Action OnResolved;
         public event Action OnFailed;
         public event Action OnCancelled;

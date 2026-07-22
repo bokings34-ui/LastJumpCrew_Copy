@@ -33,6 +33,8 @@ namespace SM
 
         public NavMeshAgent Agent { get; private set; }
         public EnemyStateMachine StateMachine { get; private set; }
+        public Animator Anim { get; private set; }
+
         public float AttackRange { get { return attackRange; } }
         public float AttackDamage { get { return attackDamage; } }
         public float AttackCooldown { get { return attackCooldown; } }
@@ -41,6 +43,8 @@ namespace SM
         {
             Agent = GetComponent<NavMeshAgent>();
             _colliders = GetComponentsInChildren<Collider>();
+
+            Anim = GetComponentInChildren<Animator>();
 
             StateMachine = new EnemyStateMachine();
             StateMachine.Register(EnemyStateType.Chase, new EnemyChaseState());
@@ -57,6 +61,8 @@ namespace SM
 
             Agent.enabled = true;
             gameObject.SetActive(true);
+
+            if (Anim != null) Anim.Play(EnemyAnimData.Spawn, -1, 0f);
 
             GetTarget();
             StateMachine.ChangeState(this, EnemyStateType.Chase);
@@ -86,6 +92,19 @@ namespace SM
             StateMachine.Tick(this, deltaTime);
         }
 
+        public void RotateTowards(Vector3 targetPosition, float deltaTime, float turnSpeed = 12f)
+        {
+            Vector3 direction = (targetPosition - transform.position);
+            direction.y = 0f;
+
+            if (direction.sqrMagnitude > 0.001f)
+            {
+                Quaternion targetRotation = Quaternion.LookRotation(direction);
+                
+                transform.rotation = Quaternion.Slerp(transform.rotation, targetRotation, turnSpeed * deltaTime);
+            }
+        }
+
         // ________ IDamageable __________
 
         public void ApplyDamage(int amount, GameObject attacker)
@@ -97,6 +116,10 @@ namespace SM
             if (_currentHealth <= 0f)
             {
                 StateMachine.ChangeState(this, EnemyStateType.Dead);
+            }
+            else
+            {
+                if (Anim != null) Anim.Play(EnemyAnimData.TakeDamage, -1, 0f);
             }
         }
 

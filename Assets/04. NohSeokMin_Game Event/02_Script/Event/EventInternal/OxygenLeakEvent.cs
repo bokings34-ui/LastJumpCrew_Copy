@@ -18,16 +18,16 @@ namespace SM
             _repairRuntimeBridge = Context?.RuntimeBridge as IEventRepairRuntimeBridge;
             _effectInstanceId = 0U;
 
-            var point = ShipSpawnPointConfig.Instance.GetRandomPoint();
+            var point = OxygenLeakSpawnSetting.Instance.GetRandomPoint();
 
             if (point == null)
             {
-                Debug.Log($"</color=lime>[{LeakData.EventName}]</color> 스폰 가능한 스폰 포인트가 없음.");
+                Debug.Log($"<color=lime>[{LeakData.EventName}]</color> 스폰 가능한 스폰 포인트가 없음.");
                 OnFail();
                 return;
             }
 
-            _effect = OxygenLeakEffectPool.Instance.Get(point.transform.position, LeakData);
+            _effect = OxygenLeakEffectPool.Instance.Get(point.position, LeakData);
             if (_effectRuntimeBridge != null)
             {
                 _effectInstanceId = _effectRuntimeBridge.AllocateEffectInstanceId(InstanceId);
@@ -54,7 +54,7 @@ namespace SM
                     InstanceId,
                     _effectInstanceId,
                     EventEffectKind.OxygenLeak,
-                    point.transform.position,
+                    point.position,
                     0);
             }
 

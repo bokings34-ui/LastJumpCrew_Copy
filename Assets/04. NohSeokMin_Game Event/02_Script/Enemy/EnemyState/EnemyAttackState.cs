@@ -5,11 +5,19 @@ namespace SM
     public class EnemyAttackState : IEnemyState
     {
         private float _cooldownTimer;
+        private int _originalPriority;
 
         public void Enter(EnemyBase owner)
         {
             owner.Agent.isStopped = true;
+            owner.Agent.velocity = Vector3.zero;
+
+            _originalPriority = owner.Agent.avoidancePriority;
+            owner.Agent.avoidancePriority = 10;
+
             _cooldownTimer = 0f;
+
+            if (owner.Anim != null) owner.Anim.CrossFade(EnemyAnimData.Attack, 0.05f);
         }
 
         public void Tick(EnemyBase owner, float deltaTime)
@@ -21,6 +29,8 @@ namespace SM
                 owner.StateMachine.ChangeState(owner, EnemyStateType.Chase);
                 return;
             }
+
+            owner.RotateTowards(target.position, deltaTime);
 
             if (owner.GetDistanceToTarget(target) > owner.AttackRange)
             {
@@ -34,9 +44,14 @@ namespace SM
             {
                 _cooldownTimer = 0f;
                 owner.PerformAttack(target);
+
+                if (owner.Anim != null) owner.Anim.Play(EnemyAnimData.Attack, -1, 0f);
             }
         }
 
-        public void Exit(EnemyBase owner) { }
+        public void Exit(EnemyBase owner) 
+        {
+            owner.Agent.avoidancePriority = _originalPriority;
+        }
     }
 }
