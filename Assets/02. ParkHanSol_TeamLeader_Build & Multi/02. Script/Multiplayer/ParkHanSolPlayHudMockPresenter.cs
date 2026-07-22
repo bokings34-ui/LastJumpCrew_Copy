@@ -123,7 +123,9 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
             SetText(heldItemText, string.IsNullOrWhiteSpace(itemName) ? "EMPTY" : itemName);
         }
 
-        public void SetHeldItem(UtilityItemPrefabData itemPrefabData)
+        public void SetHeldItem(
+            UtilityItemPrefabData itemPrefabData,
+            int currentDurability)
         {
             if (itemPrefabData == null)
             {
@@ -133,7 +135,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
 
             SetHeldItem(itemPrefabData.DisplayName);
             SetHeldItemIcon(itemPrefabData.Icon);
-            SetHeldItemDurability(itemPrefabData);
+            SetHeldItemDurability(itemPrefabData, currentDurability);
             hudFeedbackController?.PlayHeldItemChanged(true);
         }
 
@@ -141,7 +143,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
         {
             SetHeldItem(string.Empty);
             SetHeldItemIcon(null);
-            SetHeldItemDurability(null);
+            SetHeldItemDurability(null, 0);
             hudFeedbackController?.PlayHeldItemChanged(false);
         }
 
@@ -271,7 +273,9 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
             heldItemIconImage.color = icon == null ? new Color(1f, 1f, 1f, 0f) : Color.white;
         }
 
-        private void SetHeldItemDurability(UtilityItemPrefabData itemPrefabData)
+        private void SetHeldItemDurability(
+            UtilityItemPrefabData itemPrefabData,
+            int currentDurability)
         {
             if (heldItemDurabilityText == null)
             {
@@ -294,7 +298,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
             SetText(
                 heldItemDurabilityText,
                 itemPrefabData.HasDurability
-                    ? $"DUR {itemPrefabData.MaxDurability}/{itemPrefabData.MaxDurability}"
+                    ? $"DUR {currentDurability}/{itemPrefabData.MaxDurability}"
                     : "DUR ∞");
         }
 

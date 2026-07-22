@@ -1,5 +1,7 @@
 using System.Collections.Generic;
 using LastJumpCrew.ParkHanSol.Multiplayer;
+using LastJumpCrew.ParkHanSol.Multiplayer.ShipAccidents;
+using LastJumpCrew.ParkHanSol.Items;
 using Unity.Collections;
 using Unity.Netcode;
 using UnityEngine;
@@ -252,7 +254,12 @@ namespace LastJumpCrew.ParkHanSol.Interaction
             }
 
             var itemRecord = client.PlayerObject.GetComponent<NetworkPlayerItemRecord>();
-            if (itemRecord == null || !itemRecord.IsSpawned || itemRecord.OwnerClientId != senderClientId)
+            var itemLifecycle =
+                client.PlayerObject.GetComponent<NetworkPlayerItemLifecycle>();
+            if (itemRecord == null
+                || itemLifecycle == null
+                || !itemRecord.IsSpawned
+                || itemRecord.OwnerClientId != senderClientId)
             {
                 reason = "item_record_missing";
                 return false;
@@ -275,6 +282,24 @@ namespace LastJumpCrew.ParkHanSol.Interaction
             {
                 return false;
             }
+
+            if (!itemLifecycle.TryResolveHeldItemActionServer(
+                    itemId,
+                    expectedRevision,
+                    UtilityItemActionKind.PowerRestore,
+                    out var powerRestoreProfile))
+            {
+                reason = "power_restore_profile_mismatch";
+                return false;
+            }
+
+            var shipAccidentCoordinator = PHSNetworkShipAccidentCoordinator.Instance;
+            var powerFailureInstanceId = 0U;
+            var hasActivePowerFailureAccident = shipAccidentCoordinator != null
+                && shipAccidentCoordinator.TryGetSingleActiveAccidentServer(
+                    PHSShipAccidentId.PowerFailure,
+                    out powerFailureInstanceId,
+                    out _);
 
             var requestKey = $"{senderClientId}:{expectedRevision}";
             if (!completedRequests.Add(requestKey))
@@ -300,8 +325,21 @@ namespace LastJumpCrew.ParkHanSol.Interaction
                 return false;
             }
 
+            if (hasActivePowerFailureAccident
+                && !shipAccidentCoordinator.TryResolveAccidentServer(
+                    powerFailureInstanceId,
+                    "battery_insert",
+                    out var accidentReason))
+            {
+                reason = $"accident_resolve_failed:{accidentReason}";
+                Debug.LogError(
+                    $"PHS_BATTERY_TRANSACTION_FAILED reason={reason} clientId={senderClientId} revision={expectedRevision}",
+                    this);
+                return false;
+            }
+
             Debug.Log(
-                $"PHS_BATTERY_INSTALLED target={name} clientId={senderClientId} item={itemId} shipRevision={shipState.Revision}",
+                $"PHS_BATTERY_INSTALLED target={name} clientId={senderClientId} item={itemId} amount={powerRestoreProfile.Amount} durabilityCost={powerRestoreProfile.DurabilityCost} accidentInstance={powerFailureInstanceId} shipRevision={shipState.Revision}",
                 this);
             return true;
         }

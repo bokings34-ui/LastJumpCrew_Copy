@@ -15,9 +15,6 @@ namespace LastJumpCrew.ParkHanSol.Items
         [SerializeField, Min(0.1f)]
         private float explosionRedius = 3f;
 
-        [SerializeField, Min(0)]
-        private int damage = 20;
-
         [SerializeField]
         private LayerMask targetLayers;
 
@@ -25,18 +22,43 @@ namespace LastJumpCrew.ParkHanSol.Items
         [SerializeField, Min(0f)]
         private float electricShockDuration = 2f;
 
+        [Header("Impact Visual Effect")]
+        [SerializeField] private GameObject lightningBallEffectPrefab;
+        [SerializeField] private GameObject lightningRingEffectPrefab;
+        [SerializeField, Min(0.01f)] private float lightningBallScale = 0.35f;
+        [SerializeField, Min(0.01f)] private float lightningRingScale = 1.25f;
+        [SerializeField, Min(0.05f)] private float impactEffectLifetime = 0.8f;
+
         private GameObject attacker;
+        private int attackDamage;
         private bool isAttackThrow;
         private bool hasExploded;
 
-        public void InitializeAttackThrow(GameObject throwAttacker)
+        private void Awake()
+        {
+            ValidateImpactEffectPrefab(lightningBallEffectPrefab, "lightning_ball");
+            ValidateImpactEffectPrefab(lightningRingEffectPrefab, "lightning_ring");
+        }
+
+        public void InitializeAttackThrow(
+            GameObject throwAttacker,
+            int damage)
         {
             if (!IsServer)
             {
                 return;
             }
 
+            if (throwAttacker == null || damage <= 0)
+            {
+                Debug.LogError(
+                    $"PHS_BATTERY_ATTACK_THROW_FAILED reason=contract attacker={(throwAttacker == null ? "null" : throwAttacker.name)} damage={damage}",
+                    this);
+                return;
+            }
+
             attacker = throwAttacker;
+            attackDamage = damage;
             isAttackThrow = true;
             hasExploded = false;
             Debug.Log(
@@ -63,6 +85,8 @@ namespace LastJumpCrew.ParkHanSol.Items
 
         private void Explode(Vector3 center)
         {
+            PlayImpactEffectClientRpc(center);
+
             var colliders = Physics.OverlapSphere(
                 center,
                 explosionRedius,
@@ -118,6 +142,83 @@ namespace LastJumpCrew.ParkHanSol.Items
                 this);
         }
 
+        [ClientRpc]
+        private void PlayImpactEffectClientRpc(Vector3 center)
+        {
+            SpawnImpactEffect(
+                lightningBallEffectPrefab,
+                center,
+                lightningBallScale,
+                "lightning_ball");
+            SpawnImpactEffect(
+                lightningRingEffectPrefab,
+                center,
+                lightningRingScale,
+                "lightning_ring");
+        }
+
+        private void SpawnImpactEffect(
+            GameObject effectPrefab,
+            Vector3 center,
+            float scaleMultiplier,
+            string effectName)
+        {
+            if (!ValidateImpactEffectPrefab(effectPrefab, effectName))
+            {
+                return;
+            }
+
+            var effectInstance = Instantiate(
+                effectPrefab,
+                center,
+                Quaternion.identity);
+            effectInstance.transform.localScale =
+                effectPrefab.transform.localScale * scaleMultiplier;
+            foreach (var particle in effectInstance.GetComponentsInChildren<ParticleSystem>(true))
+            {
+                particle.Stop(
+                    true,
+                    ParticleSystemStopBehavior.StopEmittingAndClear);
+                particle.Play(true);
+            }
+
+            Destroy(effectInstance, impactEffectLifetime);
+            Debug.Log(
+                $"PHS_BATTERY_IMPACT_EFFECT effect={effectName} center={center} lifetime={impactEffectLifetime:F2}",
+                this);
+        }
+
+        private bool ValidateImpactEffectPrefab(
+            GameObject effectPrefab,
+            string effectName)
+        {
+            if (effectPrefab == null)
+            {
+                Debug.LogError(
+                    $"PHS_BATTERY_IMPACT_EFFECT_FAILED reason=prefab_missing effect={effectName}",
+                    this);
+                return false;
+            }
+
+            if (effectPrefab.GetComponentsInChildren<Collider>(true).Length > 0)
+            {
+                Debug.LogError(
+                    $"PHS_BATTERY_IMPACT_EFFECT_FAILED reason=collider_present effect={effectName}",
+                    effectPrefab);
+                return false;
+            }
+
+            if (effectPrefab.GetComponentsInChildren<ParticleSystem>(true).Length > 0)
+            {
+                return true;
+            }
+
+            Debug.LogError(
+                $"PHS_BATTERY_IMPACT_EFFECT_FAILED reason=particles_missing effect={effectName}",
+                effectPrefab);
+            return false;
+        }
+
         private bool TryApplyBatteryEffect(GameObject target, out string reaction)
         {
             reaction = null;
@@ -154,10 +255,10 @@ namespace LastJumpCrew.ParkHanSol.Items
             var shockApplied = false;
             if (damageable != null && damageable.IsAlive)
             {
-                damageable.ApplyDamage(damage, attacker);
+                damageable.ApplyDamage(attackDamage, attacker);
                 damageApplied = true;
                 Debug.Log(
-                    $"PHS_BATTERY_DAMAGE_APPLIED target={target.name} damage={damage}",
+                    $"PHS_BATTERY_DAMAGE_APPLIED target={target.name} damage={attackDamage}",
                     target);
             }
 

@@ -3,6 +3,7 @@ using System;
 using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.AI;
+using LastJumpCrew.ParkHanSol.Multiplayer;
 
 namespace SM
 {
@@ -14,7 +15,6 @@ namespace SM
         IUtilityAttackTarget
     {
         private const string WrenchItemId = "wrench";
-        private const float RepairAmountPerHit = 1f;
 
         [Header("벽 무시 레이어 설정")]
         [SerializeField] private LayerMask _wallLayerMask;
@@ -236,13 +236,36 @@ namespace SM
         // __________ 플레이어가 수리할 때 호출하는 함수 ____________
         public bool TryResolveUtilityAttack(in UtilityAttackHit hit)
         {
-            if (IsSealed || hit.ItemId != RequiredItemId)
+            if (IsSealed
+                || hit.ItemId != RequiredItemId
+                || hit.Attacker == null
+                || hit.RequestSequence == 0U
+                || _repairRuntimeBridge == null)
             {
                 return false;
             }
 
-            ApplyRepair(RepairAmountPerHit);
-            return true;
+            var itemRecord =
+                hit.Attacker.GetComponentInParent<NetworkPlayerItemRecord>();
+            if (itemRecord == null)
+            {
+                itemRecord =
+                    hit.Attacker.GetComponentInChildren<
+                        NetworkPlayerItemRecord>(true);
+            }
+
+            if (itemRecord == null)
+            {
+                Debug.LogError(
+                    $"PHS_EVENT_REPAIR_REQUEST_REJECTED reason=item_record_missing target={name}",
+                    this);
+                return false;
+            }
+
+            return _repairRuntimeBridge.RequestEffectRepair(
+                this,
+                itemRecord,
+                hit.RequestSequence);
         }
 
         public void ApplyRepair(float amount)

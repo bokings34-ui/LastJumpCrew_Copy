@@ -22,6 +22,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Validation
     public sealed class P0RuntimeValidationDriver : NetworkBehaviour
     {
         private const string ScenarioFlag = "-phsAutoP0Scenario";
+        private const string ItemScenarioFlag = "-phsAutoItemScenario";
         private const string MapSceneName = "PHS_Map_ver1";
         private const string ShopSceneName = "PHS_ExteriorShopScene";
         private const string LocalDebrisEntryPortalName = "PHS_DebrisCollectionPortal_0715";
@@ -55,6 +56,10 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Validation
         private bool remoteItemRequestIssued;
         private bool remoteThrowRequestReported;
         private bool remoteThrowRequestIssued;
+        private bool remotePrimaryUseRequestReported;
+        private bool remotePrimaryUseRequestIssued;
+        private bool remoteItemPositionReported;
+        private Vector3 remoteItemPosition;
         private bool farSelectProbeReported;
         private bool farSelectRequestIssued;
         private bool localPortalProbeReported;
@@ -351,7 +356,62 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Validation
 
             expectedClientCount = Mathf.Max(2, GetCommandLineInt("-phsAutoStartClients", 2));
             scenarioRunning = true;
+            if (HasCommandLineFlag(ItemScenarioFlag))
+            {
+                StartCoroutine(RunItemServerScenario());
+                return;
+            }
+
             StartCoroutine(RunServerScenario());
+        }
+
+        private IEnumerator RunItemServerScenario()
+        {
+            Debug.Log($"PHS_ITEM_P0_BEGIN expectedClients={expectedClientCount}", this);
+
+            yield return WaitFor(
+                () => NetworkManager != null
+                    && NetworkManager.ConnectedClients.Count >= expectedClientCount,
+                DefaultStepTimeout,
+                "item_clients_not_connected");
+            if (scenarioFinished) yield break;
+
+            yield return WaitFor(
+                () => SceneManager.GetActiveScene().name == MapSceneName,
+                DefaultStepTimeout,
+                "item_map_scene_not_loaded");
+            if (scenarioFinished) yield break;
+
+            var remoteClientId = NetworkManager.ConnectedClientsIds.FirstOrDefault(
+                clientId => clientId != NetworkManager.ServerClientId);
+            if (remoteClientId == NetworkManager.ServerClientId
+                || !NetworkManager.ConnectedClients.TryGetValue(remoteClientId, out var remoteClient)
+                || remoteClient.PlayerObject == null
+                || remoteClient.PlayerObject.GetComponent<NetworkPlayerItemLifecycle>() is not { } lifecycle
+                || lifecycle.ItemCatalog == null)
+            {
+                Fail("item_remote_catalog_missing");
+                yield break;
+            }
+
+            var itemIds = new[] { "wrench", "fire_extinguisher", "battery_pack" };
+            foreach (var itemId in itemIds)
+            {
+                if (!lifecycle.ItemCatalog.TryGetById(itemId, out var itemData)
+                    || itemData == null
+                    || !itemData.HasHeldPrefab
+                    || !itemData.HasDroppedPrefab
+                    || !itemData.HasDurability)
+                {
+                    Fail($"item_catalog_contract_invalid item={itemId}");
+                    yield break;
+                }
+
+                yield return RunRemoteOwnedThrownItemValidation(itemData, true);
+                if (scenarioFinished) yield break;
+            }
+
+            Pass($"item_network_lifecycle peers={expectedClientCount} items={itemIds.Length}");
         }
 
         public override void OnNetworkDespawn()
@@ -2062,14 +2122,14 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Validation
             var originalPosition = playerObject.transform.position;
             var requiredItemId = eventId == EventId.Fire ? "fire_extinguisher" : "wrench";
             var wrongItemId = eventId == EventId.Fire ? "wrench" : "fire_extinguisher";
-            itemRecord.ReportHeldItem(wrongItemId);
+            itemRecord.ReportHeldItem(wrongItemId, 100);
             if (coordinator.RequestEffectRepair(repairTarget, itemRecord, 1U))
             {
                 Fail($"event_repair_wrong_item_accepted event={eventId}");
                 yield break;
             }
 
-            itemRecord.ReportHeldItem(requiredItemId);
+            itemRecord.ReportHeldItem(requiredItemId, 100);
             SetPlayerPosition(playerObject, repairTarget is IEventRepairableEffect serverTarget
                 ? serverTarget.RepairPosition + Vector3.right * 10f
                 : originalPosition + Vector3.right * 10f);
@@ -2110,7 +2170,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Validation
                 yield return null;
             }
 
-            itemRecord.ReportHeldItem(string.Empty);
+            itemRecord.ReportHeldItem(string.Empty, 0);
             SetPlayerPosition(playerObject, originalPosition);
             if (coordinator.IsEventActive(eventId))
             {
@@ -3310,11 +3370,19 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Validation
                 $"networkObjectId={networkObjectId} peers={thrownItemReports.Count}",
                 this);
 
-            yield return RunRemoteOwnedThrownItemValidation();
+            yield return RunRemoteOwnedThrownItemValidation(validationThrownItem, false);
         }
 
-        private IEnumerator RunRemoteOwnedThrownItemValidation()
+        private IEnumerator RunRemoteOwnedThrownItemValidation(
+            UtilityItemPrefabData itemData,
+            bool exercisePrimaryUse)
         {
+            if (itemData == null)
+            {
+                Fail("remote_item_data_missing");
+                yield break;
+            }
+
             var remoteClientId = NetworkManager.ConnectedClientsIds.FirstOrDefault(
                 clientId => clientId != NetworkManager.ServerClientId);
             if (remoteClientId == NetworkManager.ServerClientId
@@ -3339,9 +3407,52 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Validation
                 yield break;
             }
 
-            var pickupPosition = remotePlayer.transform.position + Vector3.up * 0.5f;
+            var gameplayContext = GameplaySceneContext.FindForScene(SceneManager.GetActiveScene());
+            if (gameplayContext == null
+                || !gameplayContext.TryGetSpawnPoint(remoteClientId, out var expectedSpawnPoint)
+                || expectedSpawnPoint == null)
+            {
+                Fail($"remote_item_spawn_point_missing client={remoteClientId}");
+                yield break;
+            }
+
+            yield return WaitFor(
+                () => Vector3.Distance(remotePlayer.transform.position, expectedSpawnPoint.position) <= 1f,
+                10f,
+                "remote_item_server_spawn_not_ready");
+            if (scenarioFinished) yield break;
+
+            activeRemoteItemClientId = remoteClientId;
+            remoteItemPositionReported = false;
+            remoteItemPosition = default;
+            var positionProbeToken = ++activeProbeToken;
+            ProbeRemoteItemPositionClientRpc(
+                positionProbeToken,
+                new ClientRpcParams
+                {
+                    Send = new ClientRpcSendParams { TargetClientIds = new[] { remoteClientId } }
+                });
+            yield return WaitFor(
+                () => remoteItemPositionReported,
+                10f,
+                "remote_item_position_probe_timeout");
+            if (scenarioFinished) yield break;
+
+            Debug.Log(
+                $"PHS_ITEM_REMOTE_POSITION client={remoteClientId} " +
+                $"server={remotePlayer.transform.position} owner={remoteItemPosition} " +
+                $"distance={Vector3.Distance(remotePlayer.transform.position, remoteItemPosition):F3}",
+                this);
+
+            yield return WaitFor(
+                () => Vector3.Distance(remotePlayer.transform.position, remoteItemPosition) <= 1f,
+                10f,
+                "remote_item_position_not_synchronized");
+            if (scenarioFinished) yield break;
+
+            var pickupPosition = remoteItemPosition + Vector3.up * 0.5f;
             if (!remoteLifecycle.TryCreateDroppedItemServer(
-                    validationThrownItem.ItemId,
+                    itemData.ItemId,
                     pickupPosition,
                     remotePlayer.transform.rotation,
                     out var pickupNetworkObject)
@@ -3352,7 +3463,6 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Validation
                 yield break;
             }
 
-            activeRemoteItemClientId = remoteClientId;
             remoteItemRequestReported = false;
             remoteItemRequestIssued = false;
             var pickupNetworkObjectId = pickupNetworkObject.NetworkObjectId;
@@ -3379,8 +3489,9 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Validation
             yield return WaitFor(
                 () => string.Equals(
                         remoteRecord.HeldItemId,
-                        validationThrownItem.ItemId,
+                        itemData.ItemId,
                         StringComparison.Ordinal)
+                    && remoteRecord.CurrentDurability == itemData.MaxDurability
                     && !NetworkManager.SpawnManager.SpawnedObjects.ContainsKey(
                         pickupNetworkObjectId),
                 10f,
@@ -3393,7 +3504,8 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Validation
                 heldProbeToken,
                 remoteClientId,
                 pickupNetworkObjectId,
-                validationThrownItem.ItemId);
+                itemData.ItemId,
+                itemData.MaxDurability);
             yield return WaitFor(
                 () => remoteHeldItemReports.Count >= expectedClientCount,
                 10f,
@@ -3406,13 +3518,88 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Validation
                 yield break;
             }
 
+            if (exercisePrimaryUse)
+            {
+                var knownPrimaryUseNetworkObjectIds =
+                    NetworkManager.SpawnManager.SpawnedObjects.Keys.ToHashSet();
+                remotePrimaryUseRequestReported = false;
+                remotePrimaryUseRequestIssued = false;
+                var primaryUseToken = ++activeProbeToken;
+                RequestRemoteItemPrimaryUseClientRpc(
+                    primaryUseToken,
+                    itemData.ItemId,
+                    new ClientRpcParams
+                    {
+                        Send = new ClientRpcSendParams { TargetClientIds = new[] { remoteClientId } }
+                    });
+                yield return WaitFor(
+                    () => remotePrimaryUseRequestReported,
+                    10f,
+                    $"remote_item_primary_use_request_timeout:{itemData.ItemId}");
+                if (scenarioFinished) yield break;
+
+                if (!remotePrimaryUseRequestIssued)
+                {
+                    Fail($"remote_item_primary_use_not_issued item={itemData.ItemId}");
+                    yield break;
+                }
+
+                if (string.Equals(itemData.ItemId, "battery_pack", StringComparison.Ordinal))
+                {
+                    NetworkObject usedBatteryNetworkObject = null;
+                    yield return WaitFor(
+                        () => string.IsNullOrEmpty(remoteRecord.HeldItemId)
+                            && remoteRecord.CurrentDurability == 0
+                            && TryFindNewSpawnedUtilityItem(
+                                knownPrimaryUseNetworkObjectIds,
+                                itemData.ItemId,
+                                out usedBatteryNetworkObject),
+                        10f,
+                        "remote_battery_primary_use_not_committed");
+                    if (scenarioFinished) yield break;
+
+                    var durabilityState = usedBatteryNetworkObject
+                        .GetComponent<NetworkUtilityItemDurabilityState>();
+                    if (durabilityState == null
+                        || durabilityState.CurrentDurability != 0
+                        || usedBatteryNetworkObject.GetComponent<BatteryThrownImpact>() == null)
+                    {
+                        Fail("remote_battery_primary_use_contract_invalid");
+                        yield break;
+                    }
+
+                    var usedBatteryNetworkObjectId = usedBatteryNetworkObject.NetworkObjectId;
+                    usedBatteryNetworkObject.Despawn(true);
+                    activeRemoteItemClientId = ulong.MaxValue;
+                    Debug.Log(
+                        $"PHS_ITEM_REMOTE_PRIMARY_USE_OK client={remoteClientId} " +
+                        $"item={itemData.ItemId} durability=0 " +
+                        $"networkObjectId={usedBatteryNetworkObjectId}",
+                        this);
+                    yield break;
+                }
+
+                yield return new WaitForSecondsRealtime(0.25f);
+                if (!string.Equals(remoteRecord.HeldItemId, itemData.ItemId, StringComparison.Ordinal)
+                    || remoteRecord.CurrentDurability != itemData.MaxDurability)
+                {
+                    Fail($"remote_item_primary_use_state_invalid item={itemData.ItemId}");
+                    yield break;
+                }
+
+                Debug.Log(
+                    $"PHS_ITEM_REMOTE_PRIMARY_USE_OK client={remoteClientId} " +
+                    $"item={itemData.ItemId} durability={remoteRecord.CurrentDurability}",
+                    this);
+            }
+
             var knownNetworkObjectIds = NetworkManager.SpawnManager.SpawnedObjects.Keys.ToHashSet();
             remoteThrowRequestReported = false;
             remoteThrowRequestIssued = false;
             var throwRequestToken = ++activeProbeToken;
             RequestRemoteItemThrowClientRpc(
                 throwRequestToken,
-                validationThrownItem.ItemId,
+                itemData.ItemId,
                 new ClientRpcParams
                 {
                     Send = new ClientRpcSendParams { TargetClientIds = new[] { remoteClientId } }
@@ -3434,7 +3621,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Validation
                 () => string.IsNullOrEmpty(remoteRecord.HeldItemId)
                     && TryFindNewSpawnedUtilityItem(
                         knownNetworkObjectIds,
-                        validationThrownItem.ItemId,
+                        itemData.ItemId,
                         out remoteThrownNetworkObject),
                 10f,
                 "remote_item_throw_not_committed");
@@ -3446,7 +3633,8 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Validation
                 throwProbeToken,
                 remoteClientId,
                 remoteThrownNetworkObject.NetworkObjectId,
-                validationThrownItem.ItemId);
+                itemData.ItemId,
+                itemData.MaxDurability);
             yield return WaitFor(
                 () => thrownItemReports.Count >= expectedClientCount,
                 10f,
@@ -3464,9 +3652,10 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Validation
             activeRemoteItemClientId = ulong.MaxValue;
             Debug.Log(
                 $"PHS_P0_REMOTE_ITEM_OWNERSHIP_OK client={remoteClientId} " +
-                $"item={validationThrownItem.ItemId} pickupNetworkObjectId={pickupNetworkObjectId} " +
+                $"item={itemData.ItemId} pickupNetworkObjectId={pickupNetworkObjectId} " +
                 $"thrownNetworkObjectId={thrownNetworkObjectId} peers={thrownItemReports.Count} " +
-                $"heldVisualNetworkObjects=0 recordRevision={remoteRecord.Revision}",
+                $"heldVisualNetworkObjects=0 durability={itemData.MaxDurability} " +
+                $"recordRevision={remoteRecord.Revision}",
                 this);
         }
 
@@ -4402,6 +4591,41 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Validation
         }
 
         [ClientRpc]
+        private void ProbeRemoteItemPositionClientRpc(
+            uint token,
+            ClientRpcParams clientRpcParams = default)
+        {
+            if (!IsScenarioEnabled()) return;
+
+            var localLifecycle = FindObjectsByType<NetworkPlayerItemLifecycle>(
+                    FindObjectsInactive.Include,
+                    FindObjectsSortMode.None)
+                .FirstOrDefault(lifecycle => lifecycle.IsSpawned && lifecycle.IsOwner);
+            ReportRemoteItemPositionServerRpc(
+                token,
+                localLifecycle != null,
+                localLifecycle == null ? default : localLifecycle.transform.position);
+        }
+
+        [ServerRpc(RequireOwnership = false)]
+        private void ReportRemoteItemPositionServerRpc(
+            uint token,
+            bool found,
+            Vector3 position,
+            ServerRpcParams rpcParams = default)
+        {
+            if (!AcceptProbe(token)
+                || rpcParams.Receive.SenderClientId != activeRemoteItemClientId
+                || !found)
+            {
+                return;
+            }
+
+            remoteItemPosition = position;
+            remoteItemPositionReported = true;
+        }
+
+        [ClientRpc]
         private void RequestRemoteItemPickupClientRpc(
             uint token,
             ulong targetNetworkObjectId,
@@ -4464,21 +4688,24 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Validation
             uint token,
             ulong ownerClientId,
             ulong despawnedNetworkObjectId,
-            string expectedItemId)
+            string expectedItemId,
+            int expectedDurability)
         {
             if (!IsScenarioEnabled()) return;
             StartCoroutine(ProbeRemoteHeldItemWhenReady(
                 token,
                 ownerClientId,
                 despawnedNetworkObjectId,
-                expectedItemId));
+                expectedItemId,
+                expectedDurability));
         }
 
         private IEnumerator ProbeRemoteHeldItemWhenReady(
             uint token,
             ulong ownerClientId,
             ulong despawnedNetworkObjectId,
-            string expectedItemId)
+            string expectedItemId,
+            int expectedDurability)
         {
             var deadline = Time.realtimeSinceStartup + 5f;
             while (Time.realtimeSinceStartup < deadline)
@@ -4510,6 +4737,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Validation
                         itemRecord.HeldItemId,
                         expectedItemId,
                         StringComparison.Ordinal)
+                    && itemRecord.CurrentDurability == expectedDurability
                     && holder != null
                     && holder.CurrentItemPrefabData != null
                     && string.Equals(
@@ -4538,6 +4766,62 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Validation
         {
             if (!AcceptProbe(token)) return;
             remoteHeldItemReports[rpcParams.Receive.SenderClientId] = valid;
+        }
+
+        [ClientRpc]
+        private void RequestRemoteItemPrimaryUseClientRpc(
+            uint token,
+            string expectedItemId,
+            ClientRpcParams clientRpcParams = default)
+        {
+            if (!IsScenarioEnabled()) return;
+
+            var localCombatController = FindObjectsByType<NetworkPlayerCombatController>(
+                    FindObjectsInactive.Include,
+                    FindObjectsSortMode.None)
+                .FirstOrDefault(controller => controller.IsSpawned && controller.IsOwner);
+            var holder = localCombatController == null
+                ? null
+                : localCombatController.GetComponent<TempPlayerItemHolder>();
+            var issued = localCombatController != null
+                && holder != null
+                && holder.IsHoldingItem(expectedItemId);
+            if (issued)
+            {
+                switch (expectedItemId)
+                {
+                    case "wrench":
+                        localCombatController.RequestWrenchAttack();
+                        break;
+                    case "fire_extinguisher":
+                        localCombatController.RequestExtinguisherSpray();
+                        break;
+                    case "battery_pack":
+                        localCombatController.RequestBatteryThrow();
+                        break;
+                    default:
+                        issued = false;
+                        break;
+                }
+            }
+
+            ReportRemoteItemPrimaryUseRequestServerRpc(token, issued);
+        }
+
+        [ServerRpc(RequireOwnership = false)]
+        private void ReportRemoteItemPrimaryUseRequestServerRpc(
+            uint token,
+            bool issued,
+            ServerRpcParams rpcParams = default)
+        {
+            if (!AcceptProbe(token)
+                || rpcParams.Receive.SenderClientId != activeRemoteItemClientId)
+            {
+                return;
+            }
+
+            remotePrimaryUseRequestReported = true;
+            remotePrimaryUseRequestIssued = issued;
         }
 
         [ClientRpc]
@@ -4587,21 +4871,24 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Validation
             uint token,
             ulong ownerClientId,
             ulong networkObjectId,
-            string expectedItemId)
+            string expectedItemId,
+            int expectedDurability)
         {
             if (!IsScenarioEnabled()) return;
             StartCoroutine(ProbeRemoteThrownItemWhenReady(
                 token,
                 ownerClientId,
                 networkObjectId,
-                expectedItemId));
+                expectedItemId,
+                expectedDurability));
         }
 
         private IEnumerator ProbeRemoteThrownItemWhenReady(
             uint token,
             ulong ownerClientId,
             ulong networkObjectId,
-            string expectedItemId)
+            string expectedItemId,
+            int expectedDurability)
         {
             var deadline = Time.realtimeSinceStartup + 5f;
             while (Time.realtimeSinceStartup < deadline)
@@ -4635,6 +4922,8 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Validation
                         itemObject.ItemPrefabData.ItemId,
                         expectedItemId,
                         StringComparison.Ordinal)
+                    && networkObject.GetComponent<NetworkUtilityItemDurabilityState>() is { } durabilityState
+                    && durabilityState.CurrentDurability == expectedDurability
                     && networkObject.GetComponent<Rigidbody>() != null
                     && networkObject.GetComponent<Unity.Netcode.Components.NetworkTransform>() != null
                     && networkObject.GetComponent<ThrownItemImpact>() != null
@@ -5230,7 +5519,9 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Validation
 
         private static bool IsScenarioEnabled()
         {
-            return Debug.isDebugBuild && HasCommandLineFlag(ScenarioFlag);
+            return Debug.isDebugBuild
+                && (HasCommandLineFlag(ScenarioFlag)
+                    || HasCommandLineFlag(ItemScenarioFlag));
         }
 
         private static bool HasCommandLineFlag(string flag)

@@ -709,7 +709,14 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
             {
                 ReleaseWarpInputForShop();
                 hudBindingErrorLogTime = Time.time + 0.5f;
-                MoveToGameplaySpawnPointIfServer(activeScene);
+                if (IsServer && IsOwner)
+                {
+                    MoveToGameplaySpawnPointIfServer(activeScene);
+                }
+                else if (IsOwner)
+                {
+                    RequestGameplaySpawnPointServerRpc(activeScene.name);
+                }
             }
 
             if (gameplayInputEnabled && autoMoveEnabled && !autoMoveStarted)
@@ -1154,18 +1161,25 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
             attachedRigidbody.isKinematic = isNetworkSpawned ? true : originalRigidbodyIsKinematic;
         }
 
-        private void MoveToGameplaySpawnPointIfServer(Scene activeScene)
+        private bool MoveToGameplaySpawnPointIfServer(Scene activeScene)
         {
             if (!IsSpawned || !IsServer || gameplaySceneContext == null
                 || initializedGameplaySceneHandle == activeScene.handle.GetRawData())
             {
-                return;
+                return false;
             }
 
             if (!gameplaySceneContext.TryGetSpawnPoint(OwnerClientId, out var spawnPoint))
             {
                 Debug.LogWarning($"PHS_SPAWN_POINT_MISSING scene={SceneManager.GetActiveScene().name}");
-                return;
+                return false;
+            }
+
+            var networkTransform = GetComponent<NetworkTransform>();
+            if (networkTransform == null)
+            {
+                Debug.LogError($"PHS_SPAWN_POINT_FAILED reason=network_transform_missing player={name}", this);
+                return false;
             }
 
             var wasEnabled = characterController != null && characterController.enabled;
@@ -1174,7 +1188,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
                 characterController.enabled = false;
             }
 
-            transform.SetPositionAndRotation(spawnPoint.position, spawnPoint.rotation);
+            networkTransform.Teleport(spawnPoint.position, spawnPoint.rotation, transform.localScale);
             verticalVelocity = 0f;
             initializedGameplaySceneHandle = activeScene.handle.GetRawData();
 
@@ -1184,6 +1198,84 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
             }
 
             Debug.Log($"PHS_PLAYER_SPAWN_POINT ownerClientId={OwnerClientId} pos={transform.position}");
+            return true;
+        }
+
+        [ServerRpc]
+        private void RequestGameplaySpawnPointServerRpc(
+            string sceneName,
+            ServerRpcParams rpcParams = default)
+        {
+            if (rpcParams.Receive.SenderClientId != OwnerClientId)
+            {
+                Debug.LogError($"PHS_SPAWN_POINT_FAILED reason=owner_mismatch player={name}", this);
+                return;
+            }
+
+            var activeScene = SceneManager.GetActiveScene();
+            if (!string.Equals(activeScene.name, sceneName, StringComparison.Ordinal))
+            {
+                Debug.LogError(
+                    $"PHS_SPAWN_POINT_FAILED reason=scene_mismatch requested={sceneName} active={activeScene.name}",
+                    this);
+                return;
+            }
+
+            gameplaySceneContext = GameplaySceneContext.FindForScene(activeScene);
+            if (gameplaySceneContext == null || !gameplaySceneContext.IsGameplayScene)
+            {
+                Debug.LogError(
+                    $"PHS_SPAWN_POINT_FAILED reason=gameplay_context_missing scene={activeScene.name}",
+                    this);
+                return;
+            }
+
+            if (initializedGameplaySceneHandle == activeScene.handle.GetRawData())
+            {
+                return;
+            }
+
+            if (!MoveToGameplaySpawnPointIfServer(activeScene))
+            {
+                return;
+            }
+
+            ApplyGameplaySpawnPointClientRpc(
+                activeScene.name,
+                transform.position,
+                transform.rotation,
+                new ClientRpcParams
+                {
+                    Send = new ClientRpcSendParams
+                    {
+                        TargetClientIds = new[] { OwnerClientId }
+                    }
+                });
+        }
+
+        [ClientRpc]
+        private void ApplyGameplaySpawnPointClientRpc(
+            string sceneName,
+            Vector3 position,
+            Quaternion rotation,
+            ClientRpcParams clientRpcParams = default)
+        {
+            if (!IsOwner)
+            {
+                return;
+            }
+
+            var activeScene = SceneManager.GetActiveScene();
+            if (!string.Equals(activeScene.name, sceneName, StringComparison.Ordinal))
+            {
+                Debug.LogError(
+                    $"PHS_SPAWN_POINT_FAILED reason=client_scene_mismatch requested={sceneName} active={activeScene.name}",
+                    this);
+                return;
+            }
+
+            TeleportTo(position, rotation);
+            Debug.Log($"PHS_PLAYER_SPAWN_POINT_CLIENT ownerClientId={OwnerClientId} pos={transform.position}", this);
         }
 
         private void TeleportTo(Vector3 targetPosition, Quaternion targetRotation)

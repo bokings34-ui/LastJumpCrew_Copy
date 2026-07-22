@@ -91,12 +91,12 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
         [SerializeField]
         private GameObject extinguisherSprayEffectRoot;
 
-        private ParticleSystem[] extinguisherSprayPartucles;
-        private AudioSource[] extinguisherSprayAudioSources;
-        private Light[] extinguisherSprayLights;
+        [SerializeField]
+        private GameObject extinguisherWorldSprayEffectRoot;
 
+        [UnityEngine.Serialization.FormerlySerializedAs("extinguisherEffectKeepAliceTime")]
         [SerializeField, Min(0.05f)]
-        private float extinguisherEffectKeepAliceTime = 0.2f;
+        private float extinguisherEffectKeepAliveTime = 0.65f;
         private float extinguisherEffectStopTime;
 
         [Header("Local Use Feedback")]
@@ -132,46 +132,22 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
         }
         private void CacheExtinguisherEffects()
         {
-            if(extinguisherSprayEffectRoot == null)
+            var firstPersonParticleCount = PrepareExtinguisherEffectRoot(
+                extinguisherSprayEffectRoot,
+                "first_person");
+            var worldParticleCount = PrepareExtinguisherEffectRoot(
+                extinguisherWorldSprayEffectRoot,
+                "world");
+            if (firstPersonParticleCount < 0 || worldParticleCount < 0)
             {
-                extinguisherSprayPartucles = System.Array.Empty<ParticleSystem>();
-                extinguisherSprayAudioSources = System.Array.Empty<AudioSource>();
-                extinguisherSprayLights = System.Array.Empty<Light>();
-
-                Debug.LogError($"PHS_EXTINGUISHER_EFFECT_CACHE_FAILED " + $"reason=effect_root_missing " + $"player={name}");
                 return;
             }
-            extinguisherSprayEffectRoot.SetActive(true);
 
-            extinguisherSprayPartucles = extinguisherSprayEffectRoot.GetComponentsInChildren<ParticleSystem>(true);
-            extinguisherSprayAudioSources = extinguisherSprayEffectRoot.GetComponentsInChildren<AudioSource>(true);
-            extinguisherSprayLights = extinguisherSprayEffectRoot.GetComponentsInChildren<Light>(true);
-
-            foreach (var particle in extinguisherSprayPartucles)
-            {
-                if (particle == null)
-                {
-                    continue;
-                }
-
-                particle.Stop(true,ParticleSystemStopBehavior.StopEmittingAndClear);
-            }
-            foreach (var audioSource in extinguisherSprayAudioSources)
-            {
-                if (audioSource != null)
-                {
-                    audioSource.Stop();
-                }
-            }
-            foreach (var effectLight in extinguisherSprayLights)
-            {
-                if (effectLight != null)
-                {
-                    effectLight.enabled = false;
-                }
-            }
             isExtinguisherEffectPlaying = false;
-            Debug.Log($"PHS_EXTINGUISHER_EFFECT_CACHED " + $"player={name} " + $"particles={extinguisherSprayPartucles.Length}");
+            Debug.Log(
+                $"PHS_EXTINGUISHER_EFFECT_CACHED player={name} " +
+                $"firstPersonParticles={firstPersonParticleCount} " +
+                $"worldParticles={worldParticleCount}");
         }
         private void UpdateExtinguisherEffect()
         {
@@ -185,32 +161,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
                 return;
             }
 
-            foreach (var particle in extinguisherSprayPartucles)
-            {
-                if (particle == null)
-                {
-                    continue;
-                }
-
-                // 이미 생성된 입자는 자연스럽게 사라지게 한다.
-                particle.Stop( true,ParticleSystemStopBehavior.StopEmitting);
-            }
-            foreach (var audioSource in extinguisherSprayAudioSources)
-            {
-                if (audioSource != null)
-                {
-                    audioSource.Stop();
-                }
-            }
-
-            foreach (var effectLight in extinguisherSprayLights)
-            {
-                if (effectLight != null)
-                {
-                    effectLight.enabled = false;
-                }
-            }
-
+            StopExtinguisherEffect();
             isExtinguisherEffectPlaying = false;
 
             Debug.Log($"PHS_EXTINGUISHER_EFFECT_STOPPED " +$"player={name}");
@@ -500,7 +451,12 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
             {
                 throwPosition = transform.position + transform.forward * 0.7f;
             }
-            if (!itemHolder.TryCreateThrownItem(throwPosition, Quaternion.LookRotation(direction), out var batteryInstance))
+            if (!itemHolder.TryCreateThrownItem(
+                    throwPosition,
+                    Quaternion.LookRotation(direction),
+                    UtilityItemActionKind.BatteryDischarge,
+                    out var batteryInstance,
+                    out var batteryDamage))
             {
                 return;
             }
@@ -518,7 +474,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
             body.isKinematic = false;
             body.detectCollisions = true;
 
-            impact.InitializeAttackThrow(gameObject);
+            impact.InitializeAttackThrow(gameObject, batteryDamage);
 
             var throwVelocity = direction * batteryThrowForce + Vector3.up * battetyUpwardForce;
 
@@ -766,20 +722,17 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
         }
         private void PlayExtinguisherEffectLocal()
         {
-            if (extinguisherSprayEffectRoot == null)
+            if (!TryGetActiveExtinguisherEffect(
+                    out var effectRoot,
+                    out var particles,
+                    out var audioSources,
+                    out var effectLights,
+                    out var view))
             {
-                Debug.LogError($"PHS_EXTINGUISHER_EFFECT_FAILED" + $"reason=effect_root_missing " + $"player={{name}}");
                 return;
             }
 
-            if (extinguisherSprayPartucles == null || extinguisherSprayPartucles.Length == 0)
-            {
-                Debug.LogError($"PHS_EXTINGUISHER_EFFECT_FAILED " + $"reason=particles_missing " + $"player={name}");
-                return;
-            }
-
-
-            if (!extinguisherSprayEffectRoot.activeInHierarchy)
+            if (!effectRoot.activeInHierarchy)
             {
                 Debug.LogError($"PHS_EXTINGUISHER_EFFECT_FAILED " + $"reason=effect_inactive_in_hierarchy " + $"player={name}");
 
@@ -787,7 +740,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
             }
             if (!isExtinguisherEffectPlaying)
             {
-                foreach (var particle in extinguisherSprayPartucles)
+                foreach (var particle in particles)
                 {
                     if (particle == null)
                     {
@@ -805,7 +758,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
                     particle.Play(true);
                 }
             }
-            foreach (var audioSource in extinguisherSprayAudioSources)
+            foreach (var audioSource in audioSources)
             {
                 if (audioSource != null &&
                     audioSource.clip != null)
@@ -813,7 +766,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
                     audioSource.Play();
                 }
             }
-            foreach (var effectLight in extinguisherSprayLights)
+            foreach (var effectLight in effectLights)
             {
                 if (effectLight != null)
                 {
@@ -822,9 +775,11 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
             }
             isExtinguisherEffectPlaying = true;
 
-            Debug.Log($"PHS_EXTINGUISHER_EFFECT_STARTED " + $"player={name} " + $"particles={extinguisherSprayPartucles.Length}");
+            Debug.Log(
+                $"PHS_EXTINGUISHER_EFFECT_STARTED player={name} " +
+                $"view={view} particles={particles.Length}");
 
-            extinguisherEffectStopTime = Time.time + extinguisherEffectKeepAliceTime;
+            extinguisherEffectStopTime = Time.time + extinguisherEffectKeepAliveTime;
         }
 
         private static void PlayOneShotEffect(ParticleSystem effect)
@@ -849,7 +804,17 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
 
         private void StopExtinguisherEffect()
         {
-            foreach (var particle in extinguisherSprayPartucles)
+            if (!TryGetActiveExtinguisherEffect(
+                    out _,
+                    out var particles,
+                    out var audioSources,
+                    out var effectLights,
+                    out _))
+            {
+                return;
+            }
+
+            foreach (var particle in particles)
             {
                 if (particle == null)
                 {
@@ -861,7 +826,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
                     ParticleSystemStopBehavior.StopEmitting);
             }
 
-            foreach (var audioSource in extinguisherSprayAudioSources)
+            foreach (var audioSource in audioSources)
             {
                 if (audioSource != null)
                 {
@@ -869,13 +834,98 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
                 }
             }
 
-            foreach (var effectLight in extinguisherSprayLights)
+            foreach (var effectLight in effectLights)
             {
                 if (effectLight != null)
                 {
                     effectLight.enabled = false;
                 }
             }
+        }
+
+        private int PrepareExtinguisherEffectRoot(GameObject effectRoot, string view)
+        {
+            if (effectRoot == null)
+            {
+                Debug.LogError(
+                    $"PHS_EXTINGUISHER_EFFECT_CACHE_FAILED reason=effect_root_missing player={name} view={view}",
+                    this);
+                return -1;
+            }
+
+            if (effectRoot.GetComponentsInChildren<Collider>(true).Length > 0)
+            {
+                Debug.LogError(
+                    $"PHS_EXTINGUISHER_EFFECT_CACHE_FAILED reason=collider_present player={name} view={view}",
+                    effectRoot);
+                return -1;
+            }
+
+            effectRoot.SetActive(true);
+            var particles = effectRoot.GetComponentsInChildren<ParticleSystem>(true);
+            if (particles.Length == 0)
+            {
+                Debug.LogError(
+                    $"PHS_EXTINGUISHER_EFFECT_CACHE_FAILED reason=particles_missing player={name} view={view}",
+                    effectRoot);
+                return -1;
+            }
+
+            foreach (var particle in particles)
+            {
+                particle.Stop(
+                    true,
+                    ParticleSystemStopBehavior.StopEmittingAndClear);
+            }
+
+            foreach (var audioSource in effectRoot.GetComponentsInChildren<AudioSource>(true))
+            {
+                audioSource.Stop();
+            }
+
+            foreach (var effectLight in effectRoot.GetComponentsInChildren<Light>(true))
+            {
+                effectLight.enabled = false;
+            }
+
+            return particles.Length;
+        }
+
+        private bool TryGetActiveExtinguisherEffect(
+            out GameObject effectRoot,
+            out ParticleSystem[] particles,
+            out AudioSource[] audioSources,
+            out Light[] effectLights,
+            out string view)
+        {
+            var firstPerson = !IsSpawned || IsOwner;
+            effectRoot = firstPerson
+                ? extinguisherSprayEffectRoot
+                : extinguisherWorldSprayEffectRoot;
+            view = firstPerson ? "first_person" : "world";
+            if (effectRoot == null)
+            {
+                particles = null;
+                audioSources = null;
+                effectLights = null;
+                Debug.LogError(
+                    $"PHS_EXTINGUISHER_EFFECT_FAILED reason=effect_root_missing player={name} view={view}",
+                    this);
+                return false;
+            }
+
+            particles = effectRoot.GetComponentsInChildren<ParticleSystem>(true);
+            audioSources = effectRoot.GetComponentsInChildren<AudioSource>(true);
+            effectLights = effectRoot.GetComponentsInChildren<Light>(true);
+            if (particles.Length > 0)
+            {
+                return true;
+            }
+
+            Debug.LogError(
+                $"PHS_EXTINGUISHER_EFFECT_FAILED reason=particles_missing player={name} view={view}",
+                effectRoot);
+            return false;
         }
     }
 }
