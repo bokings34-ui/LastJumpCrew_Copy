@@ -45,6 +45,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Validation
         private readonly Dictionary<ulong, EventSnapshotReport> eventSnapshotReports = new();
         private readonly Dictionary<ulong, EventTerminalReport> eventTerminalReports = new();
         private readonly Dictionary<ulong, ShipPowerReport> shipPowerReports = new();
+        private readonly Dictionary<ulong, int> oxygenHealthReports = new();
         private readonly Dictionary<ulong, bool> thrownItemReports = new();
         private readonly Dictionary<ulong, bool> remoteHeldItemReports = new();
         private readonly HashSet<ulong> eventObservationReadyClients = new();
@@ -75,6 +76,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Validation
         private ulong activeObservedInstanceId;
         private NetworkEventCoordinator observedEventCoordinator;
         private uint initialStageClockSequence;
+        private uint eventRepairRequestSequence;
         private int validatedIncidentCommandCount;
         private uint validatedIncidentRevision;
 
@@ -2120,10 +2122,21 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Validation
             }
 
             var originalPosition = playerObject.transform.position;
+            if (eventId == EventId.OxygenLeak)
+            {
+                yield return ValidateOxygenSuffocation(
+                    playerObject,
+                    repairTarget);
+                if (scenarioFinished) yield break;
+            }
+
             var requiredItemId = eventId == EventId.Fire ? "fire_extinguisher" : "wrench";
             var wrongItemId = eventId == EventId.Fire ? "wrench" : "fire_extinguisher";
             itemRecord.ReportHeldItem(wrongItemId, 100);
-            if (coordinator.RequestEffectRepair(repairTarget, itemRecord, 1U))
+            if (coordinator.RequestEffectRepair(
+                    repairTarget,
+                    itemRecord,
+                    NextEventRepairRequestSequence()))
             {
                 Fail($"event_repair_wrong_item_accepted event={eventId}");
                 yield break;
@@ -2133,7 +2146,10 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Validation
             SetPlayerPosition(playerObject, repairTarget is IEventRepairableEffect serverTarget
                 ? serverTarget.RepairPosition + Vector3.right * 10f
                 : originalPosition + Vector3.right * 10f);
-            if (coordinator.RequestEffectRepair(repairTarget, itemRecord, 1U))
+            if (coordinator.RequestEffectRepair(
+                    repairTarget,
+                    itemRecord,
+                    NextEventRepairRequestSequence()))
             {
                 Fail($"event_repair_far_request_accepted event={eventId}");
                 yield break;
@@ -2143,7 +2159,8 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Validation
                 ? authoritativeTarget.RepairPosition
                 : originalPosition;
             SetPlayerPosition(playerObject, targetPosition);
-            var requestSequence = 2U;
+            var requestSequence = NextEventRepairRequestSequence();
+            var acceptedStepCount = 1U;
             if (!coordinator.RequestEffectRepair(repairTarget, itemRecord, requestSequence))
             {
                 Fail($"event_repair_first_step_rejected event={eventId}");
@@ -2159,7 +2176,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Validation
             var deadline = Time.realtimeSinceStartup + 10f;
             while (coordinator.IsEventActive(eventId) && Time.realtimeSinceStartup < deadline)
             {
-                requestSequence++;
+                requestSequence = NextEventRepairRequestSequence();
                 if (!coordinator.RequestEffectRepair(repairTarget, itemRecord, requestSequence))
                 {
                     Fail(
@@ -2167,6 +2184,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Validation
                     yield break;
                 }
 
+                acceptedStepCount++;
                 yield return null;
             }
 
@@ -2180,7 +2198,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Validation
 
             Debug.Log(
                 $"PHS_P1_EVENT_REPAIR_OK event={eventId} instance={instanceId} item={requiredItemId} " +
-                $"steps={requestSequence - 1U} wrongItemReject=true farReject=true duplicateReject=true authority=server",
+                $"steps={acceptedStepCount} wrongItemReject=true farReject=true duplicateReject=true authority=server",
                 this);
         }
 
@@ -3383,6 +3401,10 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Validation
                 yield break;
             }
 
+            var expectedDurability = itemData.HasDurability
+                ? itemData.MaxDurability
+                : 0;
+
             var remoteClientId = NetworkManager.ConnectedClientsIds.FirstOrDefault(
                 clientId => clientId != NetworkManager.ServerClientId);
             if (remoteClientId == NetworkManager.ServerClientId
@@ -3423,20 +3445,37 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Validation
             if (scenarioFinished) yield break;
 
             activeRemoteItemClientId = remoteClientId;
-            remoteItemPositionReported = false;
-            remoteItemPosition = default;
-            var positionProbeToken = ++activeProbeToken;
-            ProbeRemoteItemPositionClientRpc(
-                positionProbeToken,
-                new ClientRpcParams
+            var positionSynchronized = false;
+            var positionProbeDeadline = Time.realtimeSinceStartup + 10f;
+            while (!positionSynchronized
+                && Time.realtimeSinceStartup < positionProbeDeadline)
+            {
+                remoteItemPositionReported = false;
+                remoteItemPosition = default;
+                var positionProbeToken = ++activeProbeToken;
+                ProbeRemoteItemPositionClientRpc(
+                    positionProbeToken,
+                    new ClientRpcParams
+                    {
+                        Send = new ClientRpcSendParams { TargetClientIds = new[] { remoteClientId } }
+                    });
+
+                var responseDeadline = Time.realtimeSinceStartup + 2f;
+                while (!remoteItemPositionReported
+                    && Time.realtimeSinceStartup < responseDeadline)
                 {
-                    Send = new ClientRpcSendParams { TargetClientIds = new[] { remoteClientId } }
-                });
-            yield return WaitFor(
-                () => remoteItemPositionReported,
-                10f,
-                "remote_item_position_probe_timeout");
-            if (scenarioFinished) yield break;
+                    yield return null;
+                }
+
+                positionSynchronized = remoteItemPositionReported
+                    && Vector3.Distance(
+                        remotePlayer.transform.position,
+                        remoteItemPosition) <= 1f;
+                if (!positionSynchronized)
+                {
+                    yield return new WaitForSecondsRealtime(0.2f);
+                }
+            }
 
             Debug.Log(
                 $"PHS_ITEM_REMOTE_POSITION client={remoteClientId} " +
@@ -3444,11 +3483,13 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Validation
                 $"distance={Vector3.Distance(remotePlayer.transform.position, remoteItemPosition):F3}",
                 this);
 
-            yield return WaitFor(
-                () => Vector3.Distance(remotePlayer.transform.position, remoteItemPosition) <= 1f,
-                10f,
-                "remote_item_position_not_synchronized");
-            if (scenarioFinished) yield break;
+            if (!positionSynchronized)
+            {
+                Fail(remoteItemPositionReported
+                    ? "remote_item_position_not_synchronized"
+                    : "remote_item_position_probe_timeout");
+                yield break;
+            }
 
             var pickupPosition = remoteItemPosition + Vector3.up * 0.5f;
             if (!remoteLifecycle.TryCreateDroppedItemServer(
@@ -3491,7 +3532,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Validation
                         remoteRecord.HeldItemId,
                         itemData.ItemId,
                         StringComparison.Ordinal)
-                    && remoteRecord.CurrentDurability == itemData.MaxDurability
+                    && remoteRecord.CurrentDurability == expectedDurability
                     && !NetworkManager.SpawnManager.SpawnedObjects.ContainsKey(
                         pickupNetworkObjectId),
                 10f,
@@ -3505,7 +3546,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Validation
                 remoteClientId,
                 pickupNetworkObjectId,
                 itemData.ItemId,
-                itemData.MaxDurability);
+                expectedDurability);
             yield return WaitFor(
                 () => remoteHeldItemReports.Count >= expectedClientCount,
                 10f,
@@ -3581,7 +3622,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Validation
 
                 yield return new WaitForSecondsRealtime(0.25f);
                 if (!string.Equals(remoteRecord.HeldItemId, itemData.ItemId, StringComparison.Ordinal)
-                    || remoteRecord.CurrentDurability != itemData.MaxDurability)
+                    || remoteRecord.CurrentDurability != expectedDurability)
                 {
                     Fail($"remote_item_primary_use_state_invalid item={itemData.ItemId}");
                     yield break;
@@ -3634,7 +3675,8 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Validation
                 remoteClientId,
                 remoteThrownNetworkObject.NetworkObjectId,
                 itemData.ItemId,
-                itemData.MaxDurability);
+                itemData.HasDurability,
+                expectedDurability);
             yield return WaitFor(
                 () => thrownItemReports.Count >= expectedClientCount,
                 10f,
@@ -3654,9 +3696,96 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Validation
                 $"PHS_P0_REMOTE_ITEM_OWNERSHIP_OK client={remoteClientId} " +
                 $"item={itemData.ItemId} pickupNetworkObjectId={pickupNetworkObjectId} " +
                 $"thrownNetworkObjectId={thrownNetworkObjectId} peers={thrownItemReports.Count} " +
-                $"heldVisualNetworkObjects=0 durability={itemData.MaxDurability} " +
+                $"heldVisualNetworkObjects=0 durability={expectedDurability} " +
                 $"recordRevision={remoteRecord.Revision}",
                 this);
+        }
+
+        private IEnumerator ValidateOxygenSuffocation(
+            NetworkObject playerObject,
+            IEventRepairTargetHandle repairTarget)
+        {
+            var lifeState = playerObject.GetComponent<NetworkPlayerLifeState>();
+            var repairableEffect = repairTarget as IEventRepairableEffect;
+            var matchingZones = FindObjectsByType<PHSOxygenDeprivationZone>(
+                    FindObjectsInactive.Include,
+                    FindObjectsSortMode.None)
+                .Where(zone => repairableEffect != null
+                    && Vector3.SqrMagnitude(
+                        zone.RepairPosition - repairableEffect.RepairPosition) < 0.01f)
+                .ToArray();
+            if (lifeState == null
+                || repairableEffect == null
+                || matchingZones.Length != 1
+                || matchingZones[0].GetComponent<BoxCollider>() is not { } zoneBounds)
+            {
+                Fail("oxygen_suffocation_contract_missing");
+                yield break;
+            }
+
+            var healthBeforeExposure = lifeState.CurrentHealth;
+            SetPlayerPosition(playerObject, zoneBounds.bounds.center);
+            yield return WaitFor(
+                () => lifeState.CurrentHealth < healthBeforeExposure,
+                5f,
+                "oxygen_suffocation_damage_timeout");
+            if (scenarioFinished) yield break;
+
+            var damagedHealth = lifeState.CurrentHealth;
+            var outsidePosition = zoneBounds.bounds.center
+                + Vector3.right * (zoneBounds.bounds.extents.x + 5f);
+            SetPlayerPosition(playerObject, outsidePosition);
+            yield return new WaitForSecondsRealtime(0.5f);
+            yield return ProbeOxygenHealth(
+                playerObject.NetworkObjectId,
+                damagedHealth,
+                "after_exposure");
+            if (scenarioFinished) yield break;
+
+            yield return new WaitForSecondsRealtime(1.75f);
+            if (lifeState.CurrentHealth != damagedHealth)
+            {
+                Fail(
+                    $"oxygen_suffocation_outside_damage before={damagedHealth} " +
+                    $"after={lifeState.CurrentHealth}");
+                yield break;
+            }
+
+            yield return ProbeOxygenHealth(
+                playerObject.NetworkObjectId,
+                damagedHealth,
+                "outside");
+            if (scenarioFinished) yield break;
+
+            Debug.Log(
+                $"PHS_P1_OXYGEN_SUFFOCATION_OK damage={healthBeforeExposure - damagedHealth} " +
+                $"health={damagedHealth} peers={oxygenHealthReports.Count} outsideStable=true",
+                this);
+        }
+
+        private IEnumerator ProbeOxygenHealth(
+            ulong playerNetworkObjectId,
+            int expectedHealth,
+            string label)
+        {
+            oxygenHealthReports.Clear();
+            var token = ++activeProbeToken;
+            ProbeOxygenHealthClientRpc(token, playerNetworkObjectId);
+            yield return WaitFor(
+                () => oxygenHealthReports.Count >= expectedClientCount,
+                5f,
+                $"oxygen_health_peer_timeout label={label}");
+            if (scenarioFinished) yield break;
+
+            if (oxygenHealthReports.Values.Any(health => health != expectedHealth))
+            {
+                var reports = string.Join(
+                    ",",
+                    oxygenHealthReports.Select(pair => $"{pair.Key}:{pair.Value}"));
+                Fail(
+                    $"oxygen_health_peer_mismatch label={label} " +
+                    $"expected={expectedHealth} reports={reports}");
+            }
         }
 
         private bool TryFindNewSpawnedUtilityItem(
@@ -4345,6 +4474,39 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Validation
         }
 
         [ClientRpc]
+        private void ProbeOxygenHealthClientRpc(
+            uint token,
+            ulong playerNetworkObjectId)
+        {
+            if (!IsScenarioEnabled()) return;
+
+            var health = -1;
+            var spawnManager = NetworkManager == null
+                ? null
+                : NetworkManager.SpawnManager;
+            if (spawnManager != null
+                && spawnManager.SpawnedObjects.TryGetValue(
+                    playerNetworkObjectId,
+                    out var playerObject)
+                && playerObject.GetComponent<NetworkPlayerLifeState>() is { } lifeState)
+            {
+                health = lifeState.CurrentHealth;
+            }
+
+            ReportOxygenHealthServerRpc(token, health);
+        }
+
+        [ServerRpc(RequireOwnership = false)]
+        private void ReportOxygenHealthServerRpc(
+            uint token,
+            int health,
+            ServerRpcParams rpcParams = default)
+        {
+            if (!AcceptProbe(token)) return;
+            oxygenHealthReports[rpcParams.Receive.SenderClientId] = health;
+        }
+
+        [ClientRpc]
         private void ProbeEventSnapshotClientRpc(uint token, EventId eventId, ulong instanceId)
         {
             if (!IsScenarioEnabled()) return;
@@ -4872,6 +5034,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Validation
             ulong ownerClientId,
             ulong networkObjectId,
             string expectedItemId,
+            bool expectsDurability,
             int expectedDurability)
         {
             if (!IsScenarioEnabled()) return;
@@ -4880,6 +5043,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Validation
                 ownerClientId,
                 networkObjectId,
                 expectedItemId,
+                expectsDurability,
                 expectedDurability));
         }
 
@@ -4888,6 +5052,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Validation
             ulong ownerClientId,
             ulong networkObjectId,
             string expectedItemId,
+            bool expectsDurability,
             int expectedDurability)
         {
             var deadline = Time.realtimeSinceStartup + 5f;
@@ -4910,6 +5075,15 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Validation
                                 itemObject.ItemPrefabData.ItemId,
                                 expectedItemId,
                                 StringComparison.Ordinal));
+                var durabilityState = NetworkManager == null
+                    || !NetworkManager.SpawnManager.SpawnedObjects.TryGetValue(
+                        networkObjectId,
+                        out var durabilityNetworkObject)
+                    ? null
+                    : durabilityNetworkObject.GetComponent<NetworkUtilityItemDurabilityState>();
+                var durabilityValid = !expectsDurability
+                    || durabilityState != null
+                    && durabilityState.CurrentDurability == expectedDurability;
                 var valid = NetworkManager != null
                     && NetworkManager.SpawnManager.SpawnedObjects.TryGetValue(
                         networkObjectId,
@@ -4922,8 +5096,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Validation
                         itemObject.ItemPrefabData.ItemId,
                         expectedItemId,
                         StringComparison.Ordinal)
-                    && networkObject.GetComponent<NetworkUtilityItemDurabilityState>() is { } durabilityState
-                    && durabilityState.CurrentDurability == expectedDurability
+                    && durabilityValid
                     && networkObject.GetComponent<Rigidbody>() != null
                     && networkObject.GetComponent<Unity.Netcode.Components.NetworkTransform>() != null
                     && networkObject.GetComponent<ThrownItemImpact>() != null
@@ -5467,6 +5640,13 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Validation
         private bool AcceptProbe(uint token)
         {
             return IsServer && scenarioRunning && !scenarioFinished && token == activeProbeToken;
+        }
+
+        private uint NextEventRepairRequestSequence()
+        {
+            eventRepairRequestSequence =
+                NextNonZeroSequence(eventRepairRequestSequence);
+            return eventRepairRequestSequence;
         }
 
         private static uint NextNonZeroSequence(uint sequence)
