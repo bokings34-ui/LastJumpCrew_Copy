@@ -47,6 +47,9 @@ namespace LastJumpCrew.ParkHanSol.Items
         // 현재는 표시용 기준값이고, 실제 감소/수리 로직은 아직 붙어 있지 않다.
         [SerializeField, Min(1)] private int maxDurability = 100;
 
+        [Header("Tool Performance")]
+        [SerializeField, Min(0)] private int repairAmount;
+
         // 플레이어 손/보관함 시각화에 생성되는 프리팹이다.
         // 이 프리팹의 루트에는 UtilityItemObject가 있어야 한다.
         [SerializeField] private GameObject heldPrefab;
@@ -66,6 +69,7 @@ namespace LastJumpCrew.ParkHanSol.Items
         public int Price => price;
         public bool HasDurability => hasDurability;
         public int MaxDurability => maxDurability;
+        public int RepairAmount => repairAmount;
         public GameObject HeldPrefab => heldPrefab;
         public GameObject DroppedPrefab => droppedPrefab;
         public UtilityItemUpgradeEffect UpgradeEffect => upgradeEffect;
