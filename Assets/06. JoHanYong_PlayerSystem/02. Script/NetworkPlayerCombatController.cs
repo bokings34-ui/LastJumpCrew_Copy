@@ -330,16 +330,16 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
         {
             if (!IsSpawned)
             {
-                PerformExtinguisherSpray();
-                PlayExtinguisherEffectLocal();
+                if (PerformExtinguisherSpray())
+                {
+                    PlayExtinguisherEffectLocal();
+                }
                 return;
             }
             if (!IsOwner)
             {
                 return;
             }
-            PlayExtinguisherEffectLocal();
-
             RequestExtinguisherSprayServerRpc();
         }
         public void RequestBatteryThrow() //배터리
@@ -546,32 +546,34 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
         [ServerRpc]
         private void RequestExtinguisherSprayServerRpc()
         {
-            PerformExtinguisherSpray();
-            PlayExtinguisherEffectClientRpc();
+            if (PerformExtinguisherSpray())
+            {
+                PlayExtinguisherEffectClientRpc();
+            }
         }
-        private void PerformExtinguisherSpray()
+        private bool PerformExtinguisherSpray()
         {
             if (IsSpawned && !IsServer)
             {
-                return;
+                return false;
             }//네트워크 플레이 중에는 서버만 공격판정 수행
             if (!HasExpectedHeldItem(FireExtinguisherItemId))
             {
                 Debug.LogWarning($"PHS_EXTINGUISHER_SPRAY_FAILED reason=item_mismatch player={name}");
-                return;
+                return false;
             }
 
             if (extinguisherSprayOrigin == null)
             {
                 Debug.LogError($"PHS_EXTINGUISHER_SPRAY_FAILED" + $"reason=spray_origin_missing " + $"player={name}");
 
-                return;
+                return false;
             }
 
             //서버 판정 간격 검사
             if (Time.time < nextExtinguisherDamgeTime)
             {
-                return;
+                return false;
             }
             nextExtinguisherDamgeTime = Time.time + extinguisherDamageInterval;
 
@@ -640,6 +642,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
             Debug.Log(
                 $"PHS_EXTINGUISHER_SPRAY player={name} candidates={processedTargets.Count} acceptedTargets={itemFeedbackTargetPositions.Count}",
                 this);
+            return true;
         }
         [ServerRpc]
         private void RequestBatteryThrowServerRpc(Vector3 throwPosition, Vector3 throwDirection, ServerRpcParams rpcParams = default)
@@ -759,10 +762,6 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
         [ClientRpc]
         private void PlayExtinguisherEffectClientRpc()
         {
-            if (IsOwner)
-            {
-                return;
-            }
             PlayExtinguisherEffectLocal();
         }
         private void PlayExtinguisherEffectLocal()
