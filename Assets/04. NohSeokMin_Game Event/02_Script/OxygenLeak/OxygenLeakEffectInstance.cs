@@ -33,6 +33,7 @@ namespace SM
         private float _damageTimer;
         private float _elapsedSinceSpawn;
         private IEventRepairRuntimeBridge _repairRuntimeBridge;
+        private bool _hazardHandledExternally;
 
         public bool IsSealed { get; private set; }
         public ulong EventInstanceId { get; private set; }
@@ -51,7 +52,9 @@ namespace SM
         private readonly Dictionary<Transform, PullTarget> _targetsInRange
             = new Dictionary<Transform, PullTarget>();
 
-        public void Activate(OxygenLeakEventDataSO data)
+        public void Activate(
+            OxygenLeakEventDataSO data,
+            bool hazardHandledExternally)
         {
             _outerPullRadius = data.outerPullRadius;
             _innerDamageRadius = data.innerDamageRadius;
@@ -63,6 +66,7 @@ namespace SM
             _repairProgress = 0f;
             _damageTimer = 0f;
             _elapsedSinceSpawn = 0f;
+            _hazardHandledExternally = hazardHandledExternally;
             IsSealed = false;
 
             gameObject.SetActive(true);
@@ -72,6 +76,7 @@ namespace SM
         {
             UnbindRepairTarget();
             _targetsInRange.Clear();
+            _hazardHandledExternally = false;
             gameObject.SetActive(false);
         }
 
@@ -114,7 +119,7 @@ namespace SM
 
         private void Update()
         {
-            if (IsSealed) return;
+            if (IsSealed || _hazardHandledExternally) return;
 
             _elapsedSinceSpawn += Time.deltaTime;
 

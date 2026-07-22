@@ -22,11 +22,14 @@ namespace SM
             }
         }
 
-        public OxygenLeakEffectInstance Get(Vector3 position, OxygenLeakEventDataSO data)
+        public OxygenLeakEffectInstance Get(
+            Vector3 position,
+            OxygenLeakEventDataSO data,
+            bool hazardHandledExternally)
         {
             var instance = _pool.Count > 0 ? _pool.Dequeue() : Instantiate(effectPrefab, transform);
             instance.transform.position = position;
-            instance.Activate(data);
+            instance.Activate(data, hazardHandledExternally);
             return instance;
         }
 

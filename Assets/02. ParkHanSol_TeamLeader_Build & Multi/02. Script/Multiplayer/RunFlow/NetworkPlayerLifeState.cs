@@ -68,6 +68,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
 
         public override void OnNetworkSpawn()
         {
+            synchronizedHealth.OnValueChanged += HandleHealthChanged;
             synchronizedAlive.OnValueChanged += HandleAliveChanged;
             synchronizedWarpRevivePending.OnValueChanged += HandleWarpRevivePendingChanged;
             synchronizedDeadZoneSeconds.OnValueChanged += HandleWarningChanged;
@@ -85,6 +86,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
 
         public override void OnNetworkDespawn()
         {
+            synchronizedHealth.OnValueChanged -= HandleHealthChanged;
             synchronizedAlive.OnValueChanged -= HandleAliveChanged;
             synchronizedWarpRevivePending.OnValueChanged -= HandleWarpRevivePendingChanged;
             synchronizedDeadZoneSeconds.OnValueChanged -= HandleWarningChanged;
@@ -320,6 +322,31 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
             {
                 characterController.enabled = wasEnabled;
             }
+        }
+
+        private void HandleHealthChanged(int previousValue, int currentValue)
+        {
+            if (IsServer || !IsOwner)
+            {
+                return;
+            }
+
+            var networkManager = NetworkManager.Singleton;
+            if (networkManager == null)
+            {
+                Debug.LogError(
+                    $"PHS_PLAYER_HEALTH_SYNC_FAILED " +
+                    $"reason=network_manager_missing ownerClient={OwnerClientId}",
+                    this);
+                return;
+            }
+
+            Debug.Log(
+                $"PHS_PLAYER_HEALTH_SYNC " +
+                $"localClient={networkManager.LocalClientId} " +
+                $"ownerClient={OwnerClientId} " +
+                $"previous={previousValue} current={currentValue}",
+                this);
         }
 
         private void HandleAliveChanged(bool previousValue, bool currentValue)
