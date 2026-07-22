@@ -34,7 +34,6 @@ namespace SM
                 Debug.LogError($"[{FireData.EventName}] 사용 가능한 화재 스폰 포인트가 없습니다.");
                 OnFail();
             }
-            //Debug.Log($"<color=lime>[{FireData.EventName}]</color> 발생! 초기 레벨: {FireLevel}");
         }
 
         public override void OnTick(float deltaTime)
@@ -42,7 +41,6 @@ namespace SM
             if (State != EventState.InProgress) return;
 
             _timer += deltaTime;
-
             if (_timer >= FireData.levelUpInterval)
             {
                 _timer = 0f;
@@ -50,28 +48,20 @@ namespace SM
             }
         }
 
-        private ShipSpawnPoint PickNextSpawnPoint()
+        private Transform PickNextSpawnPoint()
         {
-            if (_occupiedPoints.Count == 0)
+            var spawnPoints = Context?.Room?.FireSpawnPoints;
+            if (spawnPoints == null || spawnPoints.Count == 0) return null;
+
+            var free = new List<Transform>();
+            foreach (var point in spawnPoints)
             {
-                return ShipSpawnPointConfig.Instance.GetRandomPoint();
+                if (!_occupiedPoints.ContainsKey(point))
+                    free.Add(point);
             }
 
-            var candidates = new List<ShipSpawnPoint>();
-
-            foreach (var occupied in _occupiedPoints.Keys)
-            {
-                foreach (var neighbor in occupied.Neighbors)
-                {
-                    if (!_occupiedPoints.ContainsKey(neighbor) && !candidates.Contains(neighbor))
-                    {
-                        candidates.Add(neighbor);
-                    }
-                }
-            }
-
-            if (candidates.Count == 0) return null;
-            return candidates[Random.Range(0, candidates.Count)];
+            if (free.Count == 0) return null;
+            return free[Random.Range(0, free.Count)];
         }
 
         private void SpawnNextFire()
@@ -79,8 +69,7 @@ namespace SM
             var point = PickNextSpawnPoint();
             if (point == null) return;
 
-            var effect = FireEffectPool.Instance.Get
-                (point.position, FireData.damagePerSecond, FireData.maxRepairProgress);
+            var effect = FireEffectPool.Instance.Get(point.position, FireData.damagePerSecond, FireData.maxRepairProgress);
 
             var effectInstanceId = AllocateEffectInstanceId();
             if (_effectRuntimeBridge != null && effectInstanceId == 0U)
@@ -95,6 +84,7 @@ namespace SM
             _occupiedPoints[point] = effect;
             _effectToPoint[effect] = point;
             _activeEffects.Add(effect);
+
             if (effectInstanceId != 0U)
             {
                 if (!effect.BindRepairTarget(InstanceId, effectInstanceId, _repairRuntimeBridge))
@@ -144,7 +134,7 @@ namespace SM
         protected override float GetMaxRepairProgress() => 0f;
 
         public override void ApplyRepair(float amount)
-        { 
+        {
             // Fire는 개별 단위로 진화되므로 사용 안 함
         }
 
@@ -174,18 +164,12 @@ namespace SM
 
         private uint AllocateEffectInstanceId()
         {
-            return _effectRuntimeBridge == null
-                ? 0U
-                : _effectRuntimeBridge.AllocateEffectInstanceId(InstanceId);
+            return _effectRuntimeBridge == null ? 0U : _effectRuntimeBridge.AllocateEffectInstanceId(InstanceId);
         }
 
         private void PublishEffectRemoved(FireEffectInstance effect)
         {
-            if (!_effectInstanceIds.Remove(effect, out var effectInstanceId))
-            {
-                return;
-            }
-
+            if (!_effectInstanceIds.Remove(effect, out var effectInstanceId)) return;
             _effectRuntimeBridge?.PublishEffectRemoved(InstanceId, effectInstanceId);
         }
     }

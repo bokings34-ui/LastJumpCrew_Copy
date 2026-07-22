@@ -27,7 +27,7 @@ namespace SM
                 return;
             }
 
-            _effect = OxygenLeakEffectPool.Instance.Get(point.position, LeakData);
+            _effect = OxygenLeakEffectPool.Instance.Get(point.transform.position, LeakData);
             if (_effectRuntimeBridge != null)
             {
                 _effectInstanceId = _effectRuntimeBridge.AllocateEffectInstanceId(InstanceId);
@@ -54,7 +54,7 @@ namespace SM
                     InstanceId,
                     _effectInstanceId,
                     EventEffectKind.OxygenLeak,
-                    point.position,
+                    point.transform.position,
                     0);
             }
 

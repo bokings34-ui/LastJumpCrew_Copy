@@ -5,55 +5,25 @@ namespace SM
 {
     public class ShipSpawnPointConfig : MonoSingleton<ShipSpawnPointConfig>
     {
-        [SerializeField] private List<ShipSpawnPoint> spawnPoints = new List<ShipSpawnPoint>();
+        [SerializeField] private List<Transform> spawnPoints = new List<Transform>();
 
-        [Header("자동 이웃 연결 설정")]
-        [SerializeField] private float neighborConnectionRadius = 4f;
-        [SerializeField] private bool autoConnectOnAwake = true;
-
-        protected override void Awake()
-        {
-            base.Awake();
-
-            if (autoConnectOnAwake)
-            {
-                AutoConnectNeighbors();
-            }
-        }
-
-        public ShipSpawnPoint GetRandomPoint()
+        public Transform GetRandomPoint()
         {
             if (spawnPoints.Count == 0) return null;
             return spawnPoints[Random.Range(0, spawnPoints.Count)];
         }
 
-        [ContextMenu("Auto Connect Neighbors")]
-        public void AutoConnectNeighbors()
+        public Transform GetRandomFreePoint(ICollection<Transform> occupiedPoints)
         {
-            int connectionCount = 0;
-
+            var free = new List<Transform>();
             foreach (var point in spawnPoints)
             {
-                point.ClearNeighbors();
+                if (!occupiedPoints.Contains(point))
+                    free.Add(point);
             }
 
-            for (int i = 0; i < spawnPoints.Count; i++)
-            {
-                for (int j = i + 1; j < spawnPoints.Count; j++)
-                {
-                    var a = spawnPoints[i];
-                    var b = spawnPoints[j];
-
-                    float dist = Vector3.Distance(a.transform.position, b.transform.position);
-
-                    if (dist <= neighborConnectionRadius)
-                    {
-                        a.AddNeighbor(b);
-                        b.AddNeighbor(a);
-                        connectionCount++;
-                    }
-                }
-            }
+            if (free.Count == 0) return null;
+            return free[Random.Range(0, free.Count)];
         }
     }
 }
