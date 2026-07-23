@@ -94,12 +94,35 @@ namespace LastJumpCrew.ParkHanSol.EditorTools
                             $"PHS_OXYGEN_PREFAB_VALIDATION_FAILED " +
                             $"reason={reason} room={room.RoomId}");
                     }
+
+                    var roomZones = room
+                        .GetComponentsInChildren<PHSOxygenDeprivationZone>(true)
+                        .Where(zone => zone.GetComponentInParent<ShipRoom>() == room)
+                        .ToArray();
+                    if (roomZones.Length != 1)
+                    {
+                        throw new InvalidOperationException(
+                            $"PHS_OXYGEN_PREFAB_VALIDATION_FAILED " +
+                            $"reason=zone_count room={room.RoomId} " +
+                            $"count={roomZones.Length}");
+                    }
+                }
+
+                var totalZoneCount = root
+                    .GetComponentsInChildren<PHSOxygenDeprivationZone>(true)
+                    .Length;
+                if (totalZoneCount != rooms.Length)
+                {
+                    throw new InvalidOperationException(
+                        $"PHS_OXYGEN_PREFAB_VALIDATION_FAILED " +
+                        $"reason=total_zone_count expected={rooms.Length} " +
+                        $"actual={totalZoneCount}");
                 }
 
                 Debug.Log(
                     $"PHS_OXYGEN_PREFAB_VALIDATION_OK " +
                     $"prefab={RuntimePrefabPath} rooms={rooms.Length} " +
-                    $"providers={rooms.Length} zones={rooms.Length}");
+                    $"providers={rooms.Length} zones={totalZoneCount}");
             }
             finally
             {
@@ -141,7 +164,7 @@ namespace LastJumpCrew.ParkHanSol.EditorTools
                 : room.gameObject.AddComponent<PHSOxygenLeakZoneProvider>();
             var zones = room
                 .GetComponentsInChildren<PHSOxygenDeprivationZone>(true)
-                .Where(zone => zone.transform.parent == room.transform)
+                .Where(zone => zone.GetComponentInParent<ShipRoom>() == room)
                 .ToArray();
             if (zones.Length > 1)
             {

@@ -31,8 +31,8 @@
 `actionProfiles` 한 줄은 다음 의미다.
 
 - `ActionKind`: 아이템이 간섭하는 기능.
-- `Amount`: 실제 수리·진압·전력 복구·배터리 공격 수치.
-- `DurabilityCost`: 성공 1회당 내구도 소모량.
+- `Amount`: 실제 수리·진압·배터리 공격 수치. `PowerRestore`는 현재 값 존재만 검사하며 복구량에는 아직 반영되지 않는다.
+- `DurabilityCost`: 성공 1회당 내구도 소모량. 단, 배터리 삽입은 이 값과 무관하게 아이템 1개를 전부 소비한다.
 
 같은 `ActionKind`를 한 SO에 중복 등록하지 않는다. 잘못된 값은 `PHS_UTILITY_ITEM_PROFILE_INVALID` 로그로 실패해야 한다.
 
@@ -44,7 +44,7 @@
 | 소화기 | 100 | 화재 진압 35 | 1 |
 | 배터리 | 100 | 전력 복구 100, 투척 피해 20 | 100 |
 
-렌치 몬스터 피해 15와 소화기 피해 2/0.5초는 현재 SO가 아니라 플레이어 전투 컴포넌트 값이다. 배터리 투척 피해는 SO의 `BatteryDischarge.Amount`를 사용한다.
+렌치 몬스터 피해 15와 소화기 피해 2/0.5초는 현재 SO가 아니라 플레이어 전투 컴포넌트 값이다. 배터리 투척 피해는 SO의 `BatteryDischarge.Amount`를 사용한다. 배터리 `PowerRestore.Amount`와 `DurabilityCost`는 현재 실제 정전 복구량·소모량을 조절하지 않으므로 고급 배터리 밸런스 수치로 사용하지 않는다.
 
 ## Held 프리팹
 
@@ -65,7 +65,9 @@
 - `ThrownItemImpact`
 - 내구도 아이템이면 `NetworkUtilityItemDurabilityState`
 
-`UtilityItemObject.itemPrefabData`와 내구도 상태의 `itemObject`를 해당 SO/컴포넌트에 연결한다. Dropped 프리팹만 `DefaultNetworkPrefabs`에 등록한다. Held 프리팹은 등록하지 않는다. SO는 `PHS_UtilityItemCatalog_0717.asset`에 등록한다.
+`UtilityItemObject.itemPrefabData`와 내구도 상태의 `itemObject`를 해당 SO/컴포넌트에 연결한다. Dropped 프리팹만 아래 현재 빌드용 네트워크 프리팹 목록에 등록한다. 동명 asset이 여러 개이므로 이름 검색만으로 고르지 않는다. Held 프리팹은 등록하지 않는다. SO는 `PHS_UtilityItemCatalog_0717.asset`에 등록한다.
+
+`Assets/01. MainGame/02. Final_Prefab/01. Prefab_ParkHanSol_TeamLeader/Prefab/DefaultNetworkPrefabs.asset`
 
 ## 온라인 동작 규칙
 
@@ -81,7 +83,7 @@
 - 이벤트 수리용 Collider만 Trigger로 허용한다.
 - 플레이어 이동을 막는 물리 Collider와 피해 판정은 VFX가 아니라 별도 서버 Hazard 컴포넌트가 담당한다.
 - 이벤트 표시 VFX는 `EventEffectPresentationView` 하위에 둔다.
-- 제출 전 `collider_present` 로그가 없는지 확인한다.
+- 프리팹 Inspector에서 VFX 하위 Collider가 0개인지 직접 확인한다. 이벤트 표시 프리팹은 Validator의 `event_presentation_collider_count_invalid`, 수리 대상은 런타임의 `unsafe_repair_collider` 로그도 확인한다. 아이템 VFX Collider 전용 자동 검사는 아직 없다.
 
 ## 고급 아이템 주의
 
@@ -95,7 +97,7 @@
 2. 1인칭과 원격 손 위치 확인.
 3. 줍기, 사용, 내구도 감소, 던지기, 재줍기 확인.
 4. Host/Client에서 원격 손 모델, 사용 VFX, 투척 위치, 내구도 동기화 확인.
-5. Console에 `*_FAILED`, `PHS_ITEM_ACTION_REJECTED`, `collider_present`가 없어야 함.
+5. VFX 하위 Collider 0개를 Inspector에서 확인. Console에 `*_FAILED`, `PHS_ITEM_ACTION_REJECTED`, `event_presentation_collider_count_invalid`, `unsafe_repair_collider`가 없어야 함.
 6. `Tools/ParkHanSol/Validate 0715 Integration` 실행.
 7. P0 로그 `PHS_P0_RESULT PASS`, `PHS_P0_LOG_HEALTH_OK` 확인.
 
