@@ -21,10 +21,26 @@ namespace LastJumpCrew.ParkHanSol.Editor
         private const string RunSessionRootPath =
             "Assets/02. ParkHanSol_TeamLeader_Build & Multi/03. Prefab/Integration/PHS_NetworkRunSessionRoot.prefab";
 
+        private const string CarrierPath =
+            "Assets/SpecialSkillsEffectsPack/Models/AircraftCarrier_01.fbx";
+        private const string JetPath =
+            "Assets/SpecialSkillsEffectsPack/Models/Jet_04.fbx";
+        private const string BomberPath =
+            "Assets/SpecialSkillsEffectsPack/Models/Bomber_02.fbx";
+        private const string FleetArrivalPath =
+            "Assets/SpecialSkillsEffectsPack/AllEffects/EffectsSet_2(ScriptBased)/Effects/Effect_46_CyberAirTroopInvader/Effect_46_Parts/Effect_46_CyberBomber.prefab";
+        private const string HitEffectPath =
+            "Assets/SpecialSkillsEffectsPack/AllEffects/EffectsSet_2(ScriptBased)/Effects/Effect_45_MultipleLaserCanon/Effect_45_Parts/Effect_45_HitEffect.prefab";
+        private const string ImpactEffectPath =
+            "Assets/SpecialSkillsEffectsPack/AllEffects/EffectsSet_2(ScriptBased)/Effects/Effect_45_MultipleLaserCanon/Effect_45_Parts/Effect_45_Impact.prefab";
+        private const string ExplosionPath =
+            "Assets/SpecialSkillsEffectsPack/AllEffects/EffectsSet_2(ScriptBased)/Effects/Effect_14_RuinExplosion/Effect_14_RuinExplosion.prefab";
+
         [MenuItem(MenuRoot + "Author Presentation")]
         public static void Author()
         {
             EnsureFolders();
+            ValidateSourceAssets();
             var heroMaterial = CreateOrUpdateMaterial(
                 MaterialFolder + "/PHS_GameOver_HeroShip.mat",
                 new Color(0.08f, 0.3f, 0.58f, 1f),
@@ -88,23 +104,21 @@ namespace LastJumpCrew.ParkHanSol.Editor
                 rimLight.intensity = 1.6f;
 
                 var heroRoot = CreateChild(visualRoot.transform, "HeroShipVisualRoot", Vector3.zero);
-                var hero = CreateShipSilhouette(
-                    heroRoot.transform,
-                    "HeroShip",
-                    heroMaterial,
-                    1.1f);
+                var hero = InstantiateAsset(CarrierPath, heroRoot.transform, "HeroShip_AircraftCarrier");
                 hero.transform.localRotation = Quaternion.Euler(-4f, 155f, -3f);
+                hero.transform.localScale = Vector3.one * 1.1f;
+                ReplaceMaterials(hero, heroMaterial);
 
                 var enemyRoot = CreateChild(visualRoot.transform, "EnemyFleetRoot", new Vector3(0f, 3f, 52f));
-                CreateFleetMember(enemyRoot.transform, "EnemyCarrier", new Vector3(0f, 4f, 0f), 0.75f, enemyMaterial);
-                CreateFleetMember(enemyRoot.transform, "EnemyBomber_Left", new Vector3(-9f, 1f, -4f), 0.52f, enemyMaterial);
-                CreateFleetMember(enemyRoot.transform, "EnemyBomber_Right", new Vector3(9f, 1f, -4f), 0.52f, enemyMaterial);
-                CreateFleetMember(enemyRoot.transform, "EnemyJet_Left", new Vector3(-14f, -2f, -9f), 0.38f, enemyMaterial);
-                CreateFleetMember(enemyRoot.transform, "EnemyJet_Right", new Vector3(14f, -2f, -9f), 0.38f, enemyMaterial);
+                CreateFleetMember(CarrierPath, enemyRoot.transform, "EnemyCarrier", new Vector3(0f, 4f, 0f), 0.55f, enemyMaterial);
+                CreateFleetMember(BomberPath, enemyRoot.transform, "EnemyBomber_Left", new Vector3(-9f, 1f, -4f), 0.65f, enemyMaterial);
+                CreateFleetMember(BomberPath, enemyRoot.transform, "EnemyBomber_Right", new Vector3(9f, 1f, -4f), 0.65f, enemyMaterial);
+                CreateFleetMember(JetPath, enemyRoot.transform, "EnemyJet_Left", new Vector3(-14f, -2f, -9f), 0.7f, enemyMaterial);
+                CreateFleetMember(JetPath, enemyRoot.transform, "EnemyJet_Right", new Vector3(14f, -2f, -9f), 0.7f, enemyMaterial);
 
                 var fleetArrivalRoot = CreateChild(visualRoot.transform, "FleetArrivalEffects", new Vector3(0f, 2f, 30f));
-                CreatePulseMarker(fleetArrivalRoot.transform, "ArrivalPulse_Left", new Vector3(-8f, 0f, 0f), 2.4f, barrageMaterial);
-                CreatePulseMarker(fleetArrivalRoot.transform, "ArrivalPulse_Right", new Vector3(8f, 1f, 4f), 2.4f, barrageMaterial);
+                CreateEffect(FleetArrivalPath, fleetArrivalRoot.transform, "CyberBomberArrival_Left", new Vector3(-8f, 0f, 0f), 1.4f);
+                CreateEffect(FleetArrivalPath, fleetArrivalRoot.transform, "CyberBomberArrival_Right", new Vector3(8f, 1f, 4f), 1.4f);
 
                 var barrageRoot = CreateChild(visualRoot.transform, "ConcentratedBarrageEffects", Vector3.zero);
                 var impactPositions = new[]
@@ -117,28 +131,14 @@ namespace LastJumpCrew.ParkHanSol.Editor
                 };
                 for (var index = 0; index < impactPositions.Length; index++)
                 {
-                    CreatePulseMarker(
-                        barrageRoot.transform,
-                        $"HullImpact_{index + 1:00}",
-                        impactPositions[index],
-                        index % 2 == 0 ? 0.65f : 0.9f,
-                        barrageMaterial);
+                    var path = index % 2 == 0 ? HitEffectPath : ImpactEffectPath;
+                    CreateEffect(path, barrageRoot.transform, $"HullImpact_{index + 1:00}", impactPositions[index], 1.5f);
                 }
                 CreateConcentratedBarrageBeams(barrageRoot.transform, barrageMaterial);
 
                 var explosionRoot = CreateChild(visualRoot.transform, "FinalShipExplosionEffects", Vector3.zero);
-                CreateExplosionCluster(
-                    explosionRoot.transform,
-                    "ShipExplosion_Main",
-                    Vector3.zero,
-                    3.4f,
-                    barrageMaterial);
-                CreateExplosionCluster(
-                    explosionRoot.transform,
-                    "ShipExplosion_Secondary",
-                    new Vector3(2.6f, 0.8f, -1.4f),
-                    1.8f,
-                    barrageMaterial);
+                CreateEffect(ExplosionPath, explosionRoot.transform, "RuinExplosion_Main", Vector3.zero, 2.2f);
+                CreateEffect(ExplosionPath, explosionRoot.transform, "RuinExplosion_Secondary", new Vector3(2.6f, 0.8f, -1.4f), 1.15f);
 
                 SetSerializedReference(presenter, "visualRoot", visualRoot);
                 SetSerializedReference(presenter, "cinematicCamera", camera);
@@ -240,119 +240,62 @@ namespace LastJumpCrew.ParkHanSol.Editor
             return child;
         }
 
+        private static GameObject InstantiateAsset(
+            string assetPath,
+            Transform parent,
+            string name)
+        {
+            var asset = AssetDatabase.LoadAssetAtPath<GameObject>(assetPath);
+            if (asset == null)
+            {
+                throw new InvalidOperationException($"Required game over asset missing: {assetPath}");
+            }
+
+            var instance = (GameObject)PrefabUtility.InstantiatePrefab(asset);
+            instance.name = name;
+            instance.transform.SetParent(parent, false);
+            return instance;
+        }
+
         private static void CreateFleetMember(
+            string assetPath,
             Transform parent,
             string name,
             Vector3 localPosition,
             float scale,
             Material material)
         {
-            var member = CreateShipSilhouette(parent, name, material, scale);
+            var member = InstantiateAsset(assetPath, parent, name);
             member.transform.localPosition = localPosition;
             member.transform.localRotation = Quaternion.Euler(0f, 180f, 0f);
+            member.transform.localScale = Vector3.one * scale;
+            ReplaceMaterials(member, material);
         }
 
-        private static GameObject CreateShipSilhouette(
+        private static void CreateEffect(
+            string assetPath,
             Transform parent,
             string name,
-            Material material,
+            Vector3 localPosition,
             float scale)
         {
-            var root = CreateChild(parent, name, Vector3.zero);
-            CreatePrimitiveChild(
-                root.transform,
-                "Hull",
-                PrimitiveType.Cube,
-                Vector3.zero,
-                new Vector3(4.4f, 1.25f, 8f) * scale,
-                material);
-            CreatePrimitiveChild(
-                root.transform,
-                "Nose",
-                PrimitiveType.Sphere,
-                new Vector3(0f, 0f, 4.3f * scale),
-                new Vector3(2.2f, 0.85f, 2.8f) * scale,
-                material);
-            CreatePrimitiveChild(
-                root.transform,
-                "PortWing",
-                PrimitiveType.Cube,
-                new Vector3(-3.4f * scale, 0f, -0.4f * scale),
-                new Vector3(3.7f, 0.35f, 4.1f) * scale,
-                material);
-            CreatePrimitiveChild(
-                root.transform,
-                "StarboardWing",
-                PrimitiveType.Cube,
-                new Vector3(3.4f * scale, 0f, -0.4f * scale),
-                new Vector3(3.7f, 0.35f, 4.1f) * scale,
-                material);
-            return root;
+            var effect = InstantiateAsset(assetPath, parent, name);
+            effect.transform.localPosition = localPosition;
+            effect.transform.localScale = Vector3.one * scale;
         }
 
-        private static void CreatePulseMarker(
-            Transform parent,
-            string name,
-            Vector3 localPosition,
-            float scale,
-            Material material)
+        private static void ReplaceMaterials(GameObject root, Material material)
         {
-            CreatePrimitiveChild(
-                parent,
-                name,
-                PrimitiveType.Sphere,
-                localPosition,
-                Vector3.one * scale,
-                material);
-        }
+            foreach (var renderer in root.GetComponentsInChildren<Renderer>(true))
+            {
+                var materials = new Material[renderer.sharedMaterials.Length];
+                for (var index = 0; index < materials.Length; index++)
+                {
+                    materials[index] = material;
+                }
 
-        private static void CreateExplosionCluster(
-            Transform parent,
-            string name,
-            Vector3 localPosition,
-            float scale,
-            Material material)
-        {
-            var root = CreateChild(parent, name, localPosition);
-            var offsets = new[]
-            {
-                Vector3.zero,
-                new Vector3(0.7f, 0.25f, -0.35f),
-                new Vector3(-0.55f, 0.4f, 0.5f),
-                new Vector3(0.2f, -0.45f, 0.65f)
-            };
-            for (var index = 0; index < offsets.Length; index++)
-            {
-                CreatePrimitiveChild(
-                    root.transform,
-                    $"Blast_{index + 1:00}",
-                    PrimitiveType.Sphere,
-                    offsets[index] * scale,
-                    Vector3.one * scale * (1f - index * 0.12f),
-                    material);
+                renderer.sharedMaterials = materials;
             }
-        }
-
-        private static GameObject CreatePrimitiveChild(
-            Transform parent,
-            string name,
-            PrimitiveType primitiveType,
-            Vector3 localPosition,
-            Vector3 localScale,
-            Material material)
-        {
-            var child = GameObject.CreatePrimitive(primitiveType);
-            child.name = name;
-            child.transform.SetParent(parent, false);
-            child.transform.localPosition = localPosition;
-            child.transform.localScale = localScale;
-            if (child.TryGetComponent<Collider>(out var collider))
-            {
-                UnityEngine.Object.DestroyImmediate(collider);
-            }
-
-            child.GetComponent<Renderer>().sharedMaterial = material;
-            return child;
         }
 
         private static Material CreateOrUpdateMaterial(
@@ -462,6 +405,29 @@ namespace LastJumpCrew.ParkHanSol.Editor
                 ?? throw new InvalidOperationException($"Serialized property missing: {propertyName}");
             property.vector3Value = value;
             serializedObject.ApplyModifiedPropertiesWithoutUndo();
+        }
+
+        private static void ValidateSourceAssets()
+        {
+            var requiredPaths = new[]
+            {
+                CarrierPath,
+                JetPath,
+                BomberPath,
+                FleetArrivalPath,
+                HitEffectPath,
+                ImpactEffectPath,
+                ExplosionPath,
+            };
+
+            var missing = requiredPaths
+                .Where(path => AssetDatabase.LoadMainAssetAtPath(path) == null)
+                .ToArray();
+            if (missing.Length > 0)
+            {
+                throw new InvalidOperationException(
+                    "Required downloaded game over assets missing: " + string.Join(", ", missing));
+            }
         }
 
         private static void EnsureFolders()
