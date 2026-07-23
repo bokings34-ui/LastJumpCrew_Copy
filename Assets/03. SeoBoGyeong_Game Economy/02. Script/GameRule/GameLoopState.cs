@@ -9,7 +9,13 @@ namespace LastJumpCrew.SeoBoGyeong
     public enum GamePhase { ZoneSelect, Play, Disaster, Jump, Shop, GameClear, GameOver }
 
     /// <summary>게임오버 사유. 함선 파괴 / 크루 전멸 / 제한시간 초과.</summary>
-    public enum GameOverReason { ShipDestroyed, CrewWipedOut, TimeOver }
+    public enum GameOverReason
+    {
+        ShipDestroyed = 0,
+        CrewWipedOut = 1,
+        TimeOver = 2,
+        None = 3,
+    }
 
     /// <summary>
     /// 게임 루프의 런타임 상태(데이터만 보관). 전이 규칙은 GameLoopController 가 처리(SRP).
@@ -31,7 +37,7 @@ namespace LastJumpCrew.SeoBoGyeong
         /// <summary>9구역을 모두 클리어했는가.</summary>
         public bool IsGameClear => ClearedZoneCount >= TOTAL_ZONES;
 
-        /// <summary>이번 클리어 직후 상점에 들러야 하는가(3구역마다, 단 게임 클리어 제외).</summary>
+        /// <summary>이번 클리어 직후 상점에 들러야 하는가(4구역마다, 단 게임 클리어 제외).</summary>
         public bool IsShopDue => ClearedZoneCount > 0
                               && ClearedZoneCount % SHOP_INTERVAL == 0
                               && !IsGameClear;

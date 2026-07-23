@@ -10,6 +10,8 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
     [RequireComponent(typeof(NetworkPlayerController))]
     public sealed class NetworkPlayerGrappleController : NetworkBehaviour
     {
+        public bool IsGrappleActive => IsGrappleActiveInternal();
+
         private enum GrappleMotionState
         {
             Idle,
@@ -223,7 +225,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
 
         private void HandleHookPressed()
         {
-            if (IsGrappleActive())
+            if (IsGrappleActiveInternal())
             {
                 RequestStopGrapple();
                 return;
@@ -545,7 +547,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
 
         private void SetPullRequested(bool requested)
         {
-            if (requested && !IsGrappleActive())
+            if (requested && !IsGrappleActiveInternal())
             {
                 Debug.LogWarning($"PHS_GRAPPLE_PULL_IGNORED reason=not_latched player={name}");
                 return;
@@ -684,7 +686,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
             standaloneVisualPhase = visualPhase;
         }
 
-        private bool IsGrappleActive()
+        private bool IsGrappleActiveInternal()
         {
             return IsSpawned ? grappleActive.Value : standaloneActive;
         }
@@ -701,7 +703,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
 
         private void RefreshRope()
         {
-            var active = IsGrappleActive();
+            var active = IsGrappleActiveInternal();
             SetRopeVisible(active);
             SetHookVisible(active);
             clawVisual.SetPhase(GetGrappleVisualPhase());
@@ -723,7 +725,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
 
         private void RefreshAimMarker()
         {
-            if (!playerController.CanAcceptLocalInput || IsGrappleActive())
+            if (!playerController.CanAcceptLocalInput || IsGrappleActiveInternal())
             {
                 SetAimMarkerVisible(false);
                 SetAimReticleState(false, false);

@@ -106,6 +106,27 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
         public event Action<int, int> ActiveMapChanged;
         public event Action<int> ActiveMapCommitted;
 
+        public bool TryResolveInitialMapScene(
+            out string sceneName,
+            out string reason)
+        {
+            if (mapCatalog == null)
+            {
+                sceneName = null;
+                reason = "map_catalog_missing";
+                return false;
+            }
+
+            if (!TryResolveMapScene(initialMapId, out _, out sceneName))
+            {
+                reason = $"initial_map_scene_unresolved:{initialMapId}";
+                return false;
+            }
+
+            reason = null;
+            return true;
+        }
+
         public bool TryConfigureRuntimeValidationTimings(float chargeSeconds)
         {
             if (!Debug.isDebugBuild || !IsSpawned || !IsServer || chargeSeconds <= 0f)

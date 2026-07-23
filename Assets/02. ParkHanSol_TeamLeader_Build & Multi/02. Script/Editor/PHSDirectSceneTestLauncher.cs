@@ -15,7 +15,7 @@ namespace LastJumpCrew.ParkHanSol.Editor
     public static class PHSDirectSceneTestLauncher
     {
         private const string LobbyScenePath =
-            "Assets/01. MainGame/01. MainScene/Beta/ParkHanSol_LobbyScene.unity";
+            "Assets/02. ParkHanSol_TeamLeader_Build & Multi/01. Scene/BEAVER_2026/ParkHanSol_LobbyScene.unity";
         private const string FeatureInspectionScenePath =
             "Assets/02. ParkHanSol_TeamLeader_Build & Multi/01. Scene/test/PHS_FeatureInspectionScene.unity";
         private const string PlayMenuPath =

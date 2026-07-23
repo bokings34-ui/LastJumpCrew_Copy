@@ -9,6 +9,7 @@ using LastJumpCrew.ParkHanSol.Multiplayer.Events.MiniGames;
 using LastJumpCrew.ParkHanSol.Multiplayer.Events.MiniGames.Runtime;
 using LastJumpCrew.ParkHanSol.Multiplayer.Maps;
 using LastJumpCrew.ParkHanSol.Multiplayer.ShipAccidents;
+using LastJumpCrew.ParkHanSol.Multiplayer.Tutorial;
 using LastJumpCrew.ParkHanSol.Multiplayer.Validation;
 using LastJumpCrew.ParkHanSol.Shop;
 using LastJumpCrew.SeoBoGyeong.Economy;
@@ -26,11 +27,13 @@ namespace LastJumpCrew.ParkHanSol.Editor
     public static class PHS0715IntegrationValidator
     {
         private const string LobbyScenePath =
-            "Assets/01. MainGame/01. MainScene/Beta/ParkHanSol_LobbyScene.unity";
+            "Assets/02. ParkHanSol_TeamLeader_Build & Multi/01. Scene/BEAVER_2026/ParkHanSol_LobbyScene.unity";
+        private const string TutorialScenePath =
+            "Assets/02. ParkHanSol_TeamLeader_Build & Multi/01. Scene/BEAVER_2026/Tutorial/PHS_NetworkTutorialScene.unity";
         private const string MapScenePath =
-            "Assets/01. MainGame/01. MainScene/Beta/PHS_Map_ver1.unity";
+            "Assets/02. ParkHanSol_TeamLeader_Build & Multi/01. Scene/BEAVER_2026/PHS_Map_ver1.unity";
         private const string ShopScenePath =
-            "Assets/01. MainGame/01. MainScene/Beta/PHS_ExteriorShopScene.unity";
+            "Assets/02. ParkHanSol_TeamLeader_Build & Multi/01. Scene/BEAVER_2026/PHS_ExteriorShopScene.unity";
         private const string FeatureInspectionScenePath =
             "Assets/02. ParkHanSol_TeamLeader_Build & Multi/01. Scene/test/PHS_FeatureInspectionScene.unity";
         private const string MapSceneName = "PHS_Map_ver1";
@@ -61,9 +64,9 @@ namespace LastJumpCrew.ParkHanSol.Editor
         private static readonly string[] RequiredBuildScenes =
         {
             LobbyScenePath,
+            TutorialScenePath,
             MapScenePath,
-            ShopScenePath,
-            FeatureInspectionScenePath
+            ShopScenePath
         };
 
         private static readonly int[] IncidentGameplayMapIds =
@@ -528,8 +531,8 @@ namespace LastJumpCrew.ParkHanSol.Editor
             {
                 ValidateBuildSettings(errors);
                 ValidateLobbyScene(errors);
+                ValidateTutorialScene(errors);
                 ValidateMapScene(errors);
-                ValidateFeatureInspectionScene(errors);
                 ValidateShopScene(errors);
                 ValidateShopPresentationPrefabs(errors);
                 ValidateUtilityItemCatalog(errors);
@@ -625,6 +628,62 @@ namespace LastJumpCrew.ParkHanSol.Editor
             }
 
             FindOne<MultiplayerRoomService>("lobby_room_service", errors);
+        }
+
+        private static void ValidateTutorialScene(ICollection<string> errors)
+        {
+            OpenAndValidateScene(TutorialScenePath, errors);
+            var director = FindOne<NetworkTutorialDirector>(
+                "tutorial_director",
+                errors);
+            if (director == null)
+            {
+                return;
+            }
+
+            var serializedDirector = new SerializedObject(director);
+            RequireObject(
+                serializedDirector,
+                "playerController",
+                "tutorial_player_controller_missing",
+                errors);
+            RequireObject(
+                serializedDirector,
+                "grappleController",
+                "tutorial_grapple_controller_missing",
+                errors);
+            RequireObject(
+                serializedDirector,
+                "itemHolder",
+                "tutorial_item_holder_missing",
+                errors);
+            RequireObject(
+                serializedDirector,
+                "instructionText",
+                "tutorial_instruction_text_missing",
+                errors);
+            RequireObject(
+                serializedDirector,
+                "completionPanel",
+                "tutorial_completion_panel_missing",
+                errors);
+            RequireObject(
+                serializedDirector,
+                "returnToLobbyButton",
+                "tutorial_return_button_missing",
+                errors);
+
+            var station = FindOne<NetworkTutorialInteractionStation>(
+                "tutorial_interaction_station",
+                errors);
+            if (station != null)
+            {
+                RequireObject(
+                    new SerializedObject(station),
+                    "tutorialDirector",
+                    "tutorial_station_director_missing",
+                    errors);
+            }
         }
 
         private static void ValidateLobbyNetworkPrefabRegistration(

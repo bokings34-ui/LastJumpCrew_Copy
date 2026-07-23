@@ -1,4 +1,3 @@
-using System;
 using Unity.Netcode;
 using UnityEngine;
 using UnityEngine.InputSystem;
@@ -7,7 +6,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Input
 {
     public sealed class PlayerControlInput : NetworkBehaviour, IPlayerControlInput
     {
-        public const string BindingOverridesPreferenceKey = "PHS_InputBindingOverrides_v1";
+        public const string BindingOverridesPreferenceKey = NetworkPlayerOptionsStore.BindingOverridesPreferenceKey;
 
         [SerializeField] private PlayerInput playerInput;
         [SerializeField] private string playerActionMapName = "Player";
@@ -148,30 +147,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Input
 
         private void LoadBindingOverrides()
         {
-            if (!PlayerPrefs.HasKey(BindingOverridesPreferenceKey))
-            {
-                return;
-            }
-
-            var json = PlayerPrefs.GetString(BindingOverridesPreferenceKey, string.Empty);
-            if (string.IsNullOrWhiteSpace(json))
-            {
-                Debug.LogError(
-                    $"PHS_PLAYER_INPUT_OVERRIDE_FAILED reason=saved_json_empty key={BindingOverridesPreferenceKey}",
-                    this);
-                return;
-            }
-
-            try
-            {
-                playerInput.actions.LoadBindingOverridesFromJson(json);
-            }
-            catch (Exception exception)
-            {
-                Debug.LogError(
-                    $"PHS_PLAYER_INPUT_OVERRIDE_FAILED reason=invalid_json exception={exception.GetType().Name} message={exception.Message}",
-                    this);
-            }
+            NetworkPlayerOptionsStore.Shared.LoadBindingOverrides(playerInput.actions);
         }
     }
 }

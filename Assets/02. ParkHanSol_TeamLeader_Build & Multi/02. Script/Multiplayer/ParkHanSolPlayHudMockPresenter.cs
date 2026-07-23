@@ -28,6 +28,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
         [SerializeField] private PHSHudFeedbackController hudFeedbackController;
 
         private readonly List<SpeakingPlayerView> speakingPlayerViews = new();
+        private NetworkPartyCreditsHudBinding networkPartyCreditsBinding;
         private float speakingPlayerHideTime;
 
         private void Awake()
@@ -37,7 +38,18 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
                 hudFeedbackController = GetComponent<PHSHudFeedbackController>();
             }
 
+            networkPartyCreditsBinding = new NetworkPartyCreditsHudBinding(this);
             ResetPlaceholders();
+        }
+
+        private void OnEnable()
+        {
+            networkPartyCreditsBinding.Enable();
+        }
+
+        private void OnDisable()
+        {
+            networkPartyCreditsBinding.Disable();
         }
 
         private void Update()

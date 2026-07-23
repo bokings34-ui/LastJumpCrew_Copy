@@ -154,12 +154,24 @@ namespace LastJumpCrew.ParkHanSol.Interaction
             if (IsNetworkSessionActive()
                 && networkItemRecord != null
                 && networkItemRecord.IsSpawned
-                && !string.IsNullOrEmpty(networkItemRecord.HeldItemId))
+                && !string.IsNullOrEmpty(networkItemRecord.HeldItemId)
+                && (networkObject == null
+                    || networkObject.NetworkManager == null
+                    || !networkObject.NetworkManager.IsServer))
             {
+                // 월드 아이템 획득은 INetworkItemPickupRequester RPC 경로가 교체를 처리한다.
+                // 직접 ReplaceHeldItem을 호출하는 자판기/툴박스는 서버 권한 경로가 없으므로 클라이언트 로컬 교체를 열지 않는다.
                 return false;
             }
 
             return true;
+        }
+
+        public void GetDropPose(out Vector3 position, out Quaternion rotation)
+        {
+            var source = dropPoint == null ? transform : dropPoint;
+            position = source.TransformPoint(droppedLocalOffset);
+            rotation = source.rotation;
         }
 
         public void ReplaceHeldItem(UtilityItemPrefabData itemPrefabData, Transform interactionSource)

@@ -113,6 +113,53 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
             return true;
         }
 
+        public bool TryReplaceHeldItemServer(
+            string expectedItemId,
+            string replacementItemId,
+            int replacementDurability,
+            uint expectedRevision)
+        {
+            if (!IsSpawned || !IsServer)
+            {
+                Debug.LogError($"PHS_ITEM_RECORD_REPLACE_FAILED reason=server_required player={name}", this);
+                return false;
+            }
+
+            if (string.IsNullOrWhiteSpace(expectedItemId)
+                || string.IsNullOrWhiteSpace(replacementItemId))
+            {
+                Debug.LogError(
+                    $"PHS_ITEM_RECORD_REPLACE_FAILED reason=item_missing player={name} expectedItem={expectedItemId} replacementItem={replacementItemId}",
+                    this);
+                return false;
+            }
+
+            if (heldItemId.Value.ToString() != expectedItemId
+                || revision.Value != expectedRevision)
+            {
+                Debug.LogWarning(
+                    $"PHS_ITEM_RECORD_REPLACE_FAILED reason=record_mismatch player={name} expectedItem={expectedItemId} actualItem={heldItemId.Value} replacementItem={replacementItemId} expectedRevision={expectedRevision} actualRevision={revision.Value}",
+                    this);
+                return false;
+            }
+
+            if (replacementDurability < 0)
+            {
+                Debug.LogError(
+                    $"PHS_ITEM_RECORD_REPLACE_FAILED reason=durability_invalid player={name} replacementItem={replacementItemId} durability={replacementDurability}",
+                    this);
+                return false;
+            }
+
+            heldItemId.Value = new FixedString64Bytes(replacementItemId);
+            currentDurability.Value = replacementDurability;
+            revision.Value++;
+            Debug.Log(
+                $"PHS_ITEM_RECORD_REPLACED player={name} owner={OwnerClientId} item={expectedItemId}->{replacementItemId} durability={replacementDurability} revision={revision.Value}",
+                this);
+            return true;
+        }
+
         public bool CanSpendHeldItemDurabilityServer(
             string expectedItemId,
             uint expectedRevision,

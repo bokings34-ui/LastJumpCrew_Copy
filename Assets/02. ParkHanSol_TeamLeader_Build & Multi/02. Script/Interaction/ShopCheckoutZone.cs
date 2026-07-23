@@ -1,7 +1,9 @@
+using System;
 using System.Collections.Generic;
 using LastJumpCrew.ParkHanSol.Items;
 using LastJumpCrew.ParkHanSol.Shop;
 using TMPro;
+using Unity.Collections;
 using Unity.Netcode;
 using UnityEngine;
 
@@ -11,6 +13,8 @@ namespace LastJumpCrew.ParkHanSol.Interaction
     [RequireComponent(typeof(NetworkObject))]
     public sealed class ShopCheckoutZone : NetworkBehaviour
     {
+        private const int MaximumItemsPerCheckout = 16;
+
         private readonly struct CheckoutEntry
         {
             public CheckoutEntry(UtilityItemObject itemObject, ShopProductData productData)
@@ -34,9 +38,11 @@ namespace LastJumpCrew.ParkHanSol.Interaction
         [SerializeField] private Transform teleportEffectAnchor;
         [SerializeField, Min(0.01f)] private float teleportEffectScale = 0.1f;
         [SerializeField, Min(0.1f)] private float teleportEffectDuration = 3.2f;
+        [SerializeField, Min(0.1f)] private float maximumServerCheckoutDistance = 4f;
 
         private readonly HashSet<UtilityItemObject> checkoutItems = new();
         private IShopPurchaseService purchaseService;
+        private INetworkShopPurchaseReceiptService networkPurchaseReceiptService;
         private bool checkoutPending;
         private int lastDisplayedPrice = -1;
         private int lastDisplayedCredits = -1;
@@ -49,6 +55,8 @@ namespace LastJumpCrew.ParkHanSol.Interaction
         private void Awake()
         {
             purchaseService = purchaseServiceSource as IShopPurchaseService;
+            networkPurchaseReceiptService =
+                purchaseServiceSource as INetworkShopPurchaseReceiptService;
             ValidateSetup();
             RefreshPriceText(true);
         }
@@ -125,6 +133,15 @@ namespace LastJumpCrew.ParkHanSol.Interaction
                 return false;
             }
 
+            if (entries.Count > MaximumItemsPerCheckout)
+            {
+                Debug.LogError(
+                    $"PHS_SHOP_CHECKOUT_FAILED reason=item_count_invalid zone={name} count={entries.Count}",
+                    this);
+                ShowTemporaryStatus("TOO MANY ITEMS", true);
+                return false;
+            }
+
             var availableCredits = purchaseService.AvailableCredits;
             if (totalPrice > availableCredits)
             {
@@ -132,17 +149,27 @@ namespace LastJumpCrew.ParkHanSol.Interaction
                 return false;
             }
 
+            if (IsNetworkSessionActive())
+            {
+                return RequestNetworkCheckout(entries);
+            }
+
             var requests = new List<ShopPurchaseRequest>(entries.Count);
             foreach (var entry in entries)
             {
-                requests.Add(new ShopPurchaseRequest(entry.ItemObject.GetEntityId().ToString(), entry.ProductData));
+                requests.Add(new ShopPurchaseRequest(
+                    entry.ItemObject.GetEntityId().ToString(),
+                    entry.ProductData));
             }
 
             checkoutPending = true;
             ShowTemporaryStatus("PURCHASE PENDING");
             if (!purchaseService.RequestPurchase(
                     requests,
-                    result => HandlePurchaseCompleted(entries, totalPrice, result)))
+                    result => HandleStandalonePurchaseCompleted(
+                        entries,
+                        totalPrice,
+                        result)))
             {
                 checkoutPending = false;
                 return false;
@@ -151,7 +178,7 @@ namespace LastJumpCrew.ParkHanSol.Interaction
             return true;
         }
 
-        private void HandlePurchaseCompleted(
+        private void HandleStandalonePurchaseCompleted(
             IReadOnlyList<CheckoutEntry> entries,
             int requestedTotalPrice,
             ShopPurchaseResult result)
@@ -174,33 +201,30 @@ namespace LastJumpCrew.ParkHanSol.Interaction
                 checkoutItems.Remove(entry.ItemObject);
             }
 
-            CompletePurchasedItems(entries);
+            PlayCheckoutTeleportEffect();
+            foreach (var entry in entries)
+            {
+                if (entry.ItemObject != null)
+                {
+                    Destroy(entry.ItemObject.gameObject);
+                }
+            }
 
             Debug.Log($"PHS_SHOP_CHECKOUT_COMPLETED zone={name} totalPrice={result.TotalPrice} itemCount={result.PurchasedCount}");
             ShowTemporaryStatus($"PAID {result.TotalPrice} CR\nSHIP DELIVERY");
         }
 
-        private void CompletePurchasedItems(IReadOnlyList<CheckoutEntry> entries)
+        private bool RequestNetworkCheckout(
+            IReadOnlyList<CheckoutEntry> entries)
         {
-            if (entries == null || entries.Count == 0)
+            if (entries == null
+                || entries.Count == 0
+                || entries.Count > MaximumItemsPerCheckout)
             {
-                return;
-            }
-
-            if (NetworkManager.Singleton == null || !NetworkManager.Singleton.IsListening)
-            {
-                PlayCheckoutTeleportEffect();
-                foreach (var entry in entries)
-                {
-                    if (entry.ItemObject == null)
-                    {
-                        continue;
-                    }
-
-                    Destroy(entry.ItemObject.gameObject);
-                }
-
-                return;
+                Debug.LogError(
+                    $"PHS_SHOP_CHECKOUT_NETWORK_FAILED reason=request_count_invalid zone={name} entries={entries?.Count ?? 0}",
+                    this);
+                return false;
             }
 
             var itemReferences = new NetworkObjectReference[entries.Count];
@@ -214,7 +238,7 @@ namespace LastJumpCrew.ParkHanSol.Interaction
                     Debug.LogError(
                         $"PHS_SHOP_CHECKOUT_NETWORK_FAILED reason=item_network_object_missing zone={name} item={itemObject?.name}",
                         this);
-                    return;
+                    return false;
                 }
 
                 itemReferences[index] = new NetworkObjectReference(itemNetworkObject);
@@ -223,59 +247,257 @@ namespace LastJumpCrew.ParkHanSol.Interaction
             if (!IsSpawned)
             {
                 Debug.LogError($"PHS_SHOP_CHECKOUT_NETWORK_FAILED reason=checkout_zone_not_spawned zone={name}", this);
-                return;
+                return false;
             }
+
+            checkoutPending = true;
+            ShowTemporaryStatus("PURCHASE PENDING");
 
             if (IsServer)
             {
-                CompletePurchasedItemsServer(itemReferences);
-                return;
+                var result = TryCompleteNetworkCheckoutServer(
+                    itemReferences,
+                    NetworkManager.ServerClientId);
+                HandleNetworkCheckoutResult(result);
+                return true;
             }
 
-            CompletePurchasedItemsServerRpc(itemReferences);
+            RequestNetworkCheckoutServerRpc(itemReferences);
+            return true;
         }
 
         [ServerRpc(RequireOwnership = false)]
-        private void CompletePurchasedItemsServerRpc(NetworkObjectReference[] itemReferences)
+        private void RequestNetworkCheckoutServerRpc(
+            NetworkObjectReference[] itemReferences,
+            ServerRpcParams rpcParams = default)
         {
-            CompletePurchasedItemsServer(itemReferences);
+            var senderClientId = rpcParams.Receive.SenderClientId;
+            var result = TryCompleteNetworkCheckoutServer(
+                itemReferences,
+                senderClientId);
+            SendNetworkCheckoutResult(senderClientId, result);
         }
 
-        private void CompletePurchasedItemsServer(NetworkObjectReference[] itemReferences)
+        private ShopPurchaseResult TryCompleteNetworkCheckoutServer(
+            NetworkObjectReference[] itemReferences,
+            ulong senderClientId)
         {
-            if (itemReferences == null || itemReferences.Length == 0)
+            if (!IsSpawned
+                || !IsServer
+                || !IsTriggerConfigured()
+                || networkPurchaseReceiptService == null)
             {
-                Debug.LogError($"PHS_SHOP_CHECKOUT_NETWORK_FAILED reason=item_references_missing zone={name}", this);
-                return;
+                return RejectNetworkCompletion(
+                    "server_contract",
+                    senderClientId);
             }
 
+            if (itemReferences == null
+                || itemReferences.Length == 0
+                || itemReferences.Length > MaximumItemsPerCheckout)
+            {
+                return RejectNetworkCompletion(
+                    "request_count_invalid",
+                    senderClientId);
+            }
+
+            var networkManager = NetworkManager;
+            if (networkManager == null
+                || !networkManager.ConnectedClients.TryGetValue(
+                    senderClientId,
+                    out var senderClient)
+                || senderClient.PlayerObject == null
+                || senderClient.PlayerObject.gameObject.scene != gameObject.scene)
+            {
+                return RejectNetworkCompletion(
+                    "sender_player_invalid",
+                    senderClientId);
+            }
+
+            var senderPosition = senderClient.PlayerObject.transform.position;
+            var closestCheckoutPoint = checkoutTrigger.ClosestPoint(senderPosition);
+            if ((senderPosition - closestCheckoutPoint).sqrMagnitude
+                > maximumServerCheckoutDistance * maximumServerCheckoutDistance)
+            {
+                return RejectNetworkCompletion(
+                    "sender_too_far",
+                    senderClientId);
+            }
+
+            RefreshCheckoutItemsFromZone();
+            var validatedNetworkObjects =
+                new NetworkObject[itemReferences.Length];
+            var validatedProducts =
+                new ShopProductData[itemReferences.Length];
+            var validatedPurchaseIds = new string[itemReferences.Length];
+            var uniqueNetworkObjectIds = new HashSet<ulong>();
+            var uniquePurchaseIds = new HashSet<string>(StringComparer.Ordinal);
             for (var index = 0; index < itemReferences.Length; index++)
             {
                 if (!itemReferences[index].TryGet(out var itemNetworkObject) ||
                     itemNetworkObject == null ||
-                    !itemNetworkObject.IsSpawned ||
-                    itemNetworkObject.GetComponent<UtilityItemObject>() == null)
+                    !itemNetworkObject.IsSpawned)
                 {
-                    Debug.LogError($"PHS_SHOP_CHECKOUT_NETWORK_FAILED reason=item_reference_invalid zone={name} index={index}", this);
-                    return;
+                    return RejectNetworkCompletion(
+                        "item_reference_invalid",
+                        senderClientId,
+                        index);
                 }
 
+                if (itemNetworkObject == NetworkObject
+                    || itemNetworkObject.gameObject.scene != gameObject.scene
+                    || !uniqueNetworkObjectIds.Add(
+                        itemNetworkObject.NetworkObjectId))
+                {
+                    return RejectNetworkCompletion(
+                        "item_network_identity_invalid",
+                        senderClientId,
+                        index);
+                }
+
+                var itemObject =
+                    itemNetworkObject.GetComponent<UtilityItemObject>();
+                if (itemObject == null
+                    || !checkoutItems.Contains(itemObject)
+                    || !TryResolveProduct(
+                        itemObject,
+                        out var productData,
+                        true))
+                {
+                    return RejectNetworkCompletion(
+                        "item_not_in_checkout_snapshot",
+                        senderClientId,
+                        index);
+                }
+
+                var purchaseId =
+                    CreateNetworkPurchaseId(
+                        itemNetworkObject.NetworkObjectId);
+                if (!uniquePurchaseIds.Add(purchaseId))
+                {
+                    return RejectNetworkCompletion(
+                        "purchase_id_duplicate",
+                        senderClientId,
+                        index);
+                }
+
+                validatedNetworkObjects[index] = itemNetworkObject;
+                validatedProducts[index] = productData;
+                validatedPurchaseIds[index] = purchaseId;
+            }
+
+            if (!networkPurchaseReceiptService.TryCommitCheckoutPurchaseServer(
+                    senderClientId,
+                    validatedPurchaseIds,
+                    validatedProducts,
+                    out var purchaseResult))
+            {
+                return RejectNetworkCompletion(
+                    purchaseResult.Reason ?? "purchase_rejected",
+                    senderClientId,
+                    result: purchaseResult);
             }
 
             PlayCheckoutTeleportEffectClientRpc();
-            foreach (var itemReference in itemReferences)
+            foreach (var itemNetworkObject in validatedNetworkObjects)
             {
-                if (itemReference.TryGet(out var itemNetworkObject) && itemNetworkObject != null && itemNetworkObject.IsSpawned)
+                var itemObject =
+                    itemNetworkObject.GetComponent<UtilityItemObject>();
+                if (itemObject != null)
                 {
-                    itemNetworkObject.Despawn(true);
+                    checkoutItems.Remove(itemObject);
                 }
+
+                itemNetworkObject.Despawn(true);
             }
+
+            Debug.Log(
+                $"PHS_SHOP_CHECKOUT_NETWORK_COMPLETED zone={name} purchaser={senderClientId} itemCount={validatedNetworkObjects.Length}",
+                this);
+            return purchaseResult;
+        }
+
+        private void SendNetworkCheckoutResult(
+            ulong targetClientId,
+            ShopPurchaseResult result)
+        {
+            var clientRpcParams = new ClientRpcParams
+            {
+                Send = new ClientRpcSendParams
+                {
+                    TargetClientIds = new[] { targetClientId }
+                }
+            };
+            CompleteNetworkCheckoutClientRpc(
+                result.Success,
+                new FixedString64Bytes(result.Reason ?? string.Empty),
+                result.TotalPrice,
+                result.PurchasedCount,
+                clientRpcParams);
+        }
+
+        [ClientRpc]
+        private void CompleteNetworkCheckoutClientRpc(
+            bool success,
+            FixedString64Bytes reason,
+            int totalPrice,
+            int purchasedCount,
+            ClientRpcParams clientRpcParams = default)
+        {
+            HandleNetworkCheckoutResult(new ShopPurchaseResult(
+                success,
+                reason.IsEmpty ? null : reason.ToString(),
+                totalPrice,
+                purchasedCount));
+        }
+
+        private void HandleNetworkCheckoutResult(ShopPurchaseResult result)
+        {
+            checkoutPending = false;
+            if (!result.Success)
+            {
+                var status = result.Reason switch
+                {
+                    "insufficient_credits" => "NOT ENOUGH CR",
+                    "out_of_stock" => "ITEM SOLD OUT",
+                    "sender_too_far" => "MOVE CLOSER",
+                    _ => "PURCHASE FAILED"
+                };
+                ShowTemporaryStatus(status, true);
+                return;
+            }
+
+            Debug.Log(
+                $"PHS_SHOP_CHECKOUT_COMPLETED zone={name} totalPrice={result.TotalPrice} itemCount={result.PurchasedCount}",
+                this);
+            ShowTemporaryStatus(
+                $"PAID {result.TotalPrice} CR\nSHIP DELIVERY");
         }
 
         [ClientRpc]
         private void PlayCheckoutTeleportEffectClientRpc()
         {
             PlayCheckoutTeleportEffect();
+        }
+
+        private ShopPurchaseResult RejectNetworkCompletion(
+            string reason,
+            ulong senderClientId,
+            int itemIndex = -1,
+            ShopPurchaseResult result = default)
+        {
+            Debug.LogWarning(
+                $"PHS_SHOP_CHECKOUT_NETWORK_REJECTED reason={reason} zone={name} sender={senderClientId} index={itemIndex}",
+                this);
+            return string.IsNullOrWhiteSpace(result.Reason)
+                ? new ShopPurchaseResult(false, reason, 0, 0)
+                : result;
+        }
+
+        private static string CreateNetworkPurchaseId(
+            ulong networkObjectId)
+        {
+            return $"checkout:{networkObjectId}";
         }
 
         private void PlayCheckoutTeleportEffect()
@@ -375,8 +597,10 @@ namespace LastJumpCrew.ParkHanSol.Interaction
 
             if (!string.IsNullOrEmpty(temporaryStatus) && Time.unscaledTime < temporaryStatusUntil)
             {
-                priceText.text = temporaryStatus;
                 SetPurchaseUnavailable(temporaryPurchaseUnavailable);
+                priceText.text = temporaryPurchaseUnavailable
+                    ? $"{pricePrefix} ${CalculateTotalPrice()}"
+                    : temporaryStatus;
                 return;
             }
 
@@ -396,11 +620,7 @@ namespace LastJumpCrew.ParkHanSol.Interaction
 
             lastDisplayedPrice = totalPrice;
             lastDisplayedCredits = availableCredits;
-            priceText.text = totalPrice > 0 &&
-                availableCredits >= 0 &&
-                totalPrice > availableCredits
-                    ? $"{pricePrefix} ${totalPrice}\nHAVE ${availableCredits} - NOT ENOUGH"
-                    : $"{pricePrefix} ${totalPrice}";
+            priceText.text = $"{pricePrefix} ${totalPrice}";
         }
 
         private void ShowTemporaryStatus(string message, bool showPurchaseUnavailable = false)
@@ -443,6 +663,14 @@ namespace LastJumpCrew.ParkHanSol.Interaction
                 isValid = false;
             }
 
+            if (networkPurchaseReceiptService == null)
+            {
+                Debug.LogError(
+                    $"PHS_SHOP_CHECKOUT_SETUP_FAILED reason=network_receipt_service_missing zone={name}",
+                    this);
+                isValid = false;
+            }
+
             if (purchaseUnavailableText == null)
             {
                 Debug.LogError($"PHS_SHOP_CHECKOUT_SETUP_FAILED reason=purchase_unavailable_text_missing zone={name}");
@@ -455,6 +683,12 @@ namespace LastJumpCrew.ParkHanSol.Interaction
         private bool IsTriggerConfigured()
         {
             return checkoutTrigger != null && checkoutTrigger.isTrigger;
+        }
+
+        private static bool IsNetworkSessionActive()
+        {
+            var networkManager = NetworkManager.Singleton;
+            return networkManager != null && networkManager.IsListening;
         }
 
         private void RemoveMissingItems()

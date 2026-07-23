@@ -22,7 +22,7 @@ namespace LastJumpCrew.ParkHanSol.Editor
     public static class PHS0719IncidentLocationAuthoring
     {
         private const string MapScenePath =
-            "Assets/01. MainGame/01. MainScene/Beta/PHS_Map_ver1.unity";
+            "Assets/02. ParkHanSol_TeamLeader_Build & Multi/01. Scene/BEAVER_2026/PHS_Map_ver1.unity";
         private const string RuntimeRootName = "PHS_Map_Runtime";
         private const string LayoutRootName = "PHS_IncidentLayout";
         private const float ZoneHeight = 2.5f;
