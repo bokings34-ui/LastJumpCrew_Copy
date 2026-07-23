@@ -886,6 +886,32 @@ namespace LastJumpCrew.ParkHanSol.Editor
                     errors);
             }
 
+            var enemySpawnSetting = FindOne<EnemySpawnSetting>(
+                "map_enemy_spawn_setting",
+                errors);
+            if (enemySpawnSetting != null)
+            {
+                var spawnGroups = new SerializedObject(enemySpawnSetting)
+                    .FindProperty("spawnGroups");
+                Require(
+                    spawnGroups != null
+                    && spawnGroups.isArray
+                    && spawnGroups.arraySize > 0,
+                    "map_enemy_spawn_groups_missing",
+                    errors);
+                if (spawnGroups != null && spawnGroups.isArray)
+                {
+                    for (var index = 0; index < spawnGroups.arraySize; index++)
+                    {
+                        RequireRelativeObject(
+                            spawnGroups.GetArrayElementAtIndex(index),
+                            "spawnPoint",
+                            $"map_enemy_spawn_point_missing index={index}",
+                            errors);
+                    }
+                }
+            }
+
             var eventScheduler = FindOne<PHSNetworkEventScheduler>("map_event_scheduler", errors);
             if (eventScheduler != null)
             {
