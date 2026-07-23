@@ -17,22 +17,27 @@ namespace LastJumpCrew.ParkHanSol.Editor
 
         internal static readonly Definition[] Definitions =
         {
-            new Definition(8001, "WasteOrbit"),
-            new Definition(8002, "AsteroidField"),
-            new Definition(8003, "BrokenSatellites"),
-            new Definition(8004, "NebulaDebris")
+            new Definition(8001, "WasteOrbit", 1f),
+            new Definition(8002, "AsteroidField", 0.78f),
+            new Definition(8003, "BrokenSatellites", 1f),
+            new Definition(8004, "NebulaDebris", 1f)
         };
 
         internal sealed class Definition
         {
-            internal Definition(int mapId, string suffix)
+            internal Definition(
+                int mapId,
+                string suffix,
+                float exposure)
             {
                 MapId = mapId;
                 Suffix = suffix;
+                Exposure = exposure;
             }
 
             internal int MapId { get; }
             internal string Suffix { get; }
+            internal float Exposure { get; }
             internal string BaseName => $"PHS_Map_{MapId}_{Suffix}";
             internal string TexturePath => $"{Folder}/{BaseName}_Panorama.png";
             internal string MaterialPath => $"{Folder}/{BaseName}_Skybox.mat";
@@ -263,9 +268,11 @@ namespace LastJumpCrew.ParkHanSol.Editor
                 changed = true;
             }
 
-            if (!Mathf.Approximately(material.GetFloat("_Exposure"), 1f))
+            if (!Mathf.Approximately(
+                    material.GetFloat("_Exposure"),
+                    definition.Exposure))
             {
-                material.SetFloat("_Exposure", 1f);
+                material.SetFloat("_Exposure", definition.Exposure);
                 changed = true;
             }
 
@@ -417,6 +424,16 @@ namespace LastJumpCrew.ParkHanSol.Editor
                 if (material.GetTexture("_MainTex") != texture)
                 {
                     errors.Add($"material_texture_mismatch:mapId={definition.MapId}");
+                }
+
+                if (!Mathf.Approximately(
+                        material.GetFloat("_Exposure"),
+                        definition.Exposure))
+                {
+                    errors.Add(
+                        $"material_exposure_mismatch:mapId={definition.MapId}:" +
+                        $"expected={definition.Exposure}:" +
+                        $"actual={material.GetFloat("_Exposure")}");
                 }
             }
 

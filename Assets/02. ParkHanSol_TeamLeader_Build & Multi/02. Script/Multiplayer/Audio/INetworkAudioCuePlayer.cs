@@ -4,4 +4,13 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Audio
     {
         bool TryPlay(NetworkAudioCue cue, out string failureReason);
     }
+
+    public interface IPositionedNetworkAudioCuePlayer :
+        INetworkAudioCuePlayer
+    {
+        bool TryPlayAt(
+            NetworkAudioCue cue,
+            UnityEngine.Vector3 position,
+            out string failureReason);
+    }
 }

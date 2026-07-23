@@ -8,7 +8,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Audio
     [RequireComponent(typeof(NetworkObject))]
     public sealed class PHSNetworkItemInteractionAudioRelay : NetworkBehaviour
     {
-        private const int RememberedConfirmationLimit = 256;
+        private const int MaxRememberedKeys = 256;
 
         [Header("2D owner-predicted use/fire cues")]
         [SerializeField] private MonoBehaviour ownerCuePlayerSource;
@@ -21,16 +21,17 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Audio
         private readonly HashSet<ulong> playedKeys = new();
         private readonly Queue<ulong> playedKeyOrder = new();
         private INetworkAudioCuePlayer ownerCuePlayer;
-        private INetworkAudioCuePlayer worldCuePlayer;
+        private IPositionedNetworkAudioCuePlayer worldCuePlayer;
 
         public bool HasRequiredReferences =>
             ownerCuePlayerSource is INetworkAudioCuePlayer
-            && worldCuePlayerSource is INetworkAudioCuePlayer;
+            && worldCuePlayerSource is IPositionedNetworkAudioCuePlayer;
 
         private void Awake()
         {
             ownerCuePlayer = ownerCuePlayerSource as INetworkAudioCuePlayer;
-            worldCuePlayer = worldCuePlayerSource as INetworkAudioCuePlayer;
+            worldCuePlayer = worldCuePlayerSource
+                as IPositionedNetworkAudioCuePlayer;
             if (!HasRequiredReferences)
             {
                 Debug.LogError(
@@ -54,11 +55,13 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Audio
 
         public bool TryBroadcastConfirmedServer(
             NetworkAudioCue cue,
-            uint sourceSequence)
+            uint sourceSequence,
+            Vector3 confirmedPosition)
         {
             if (!IsSpawned
                 || !IsServer
                 || sourceSequence == 0U
+                || !IsFinite(confirmedPosition)
                 || !IsServerConfirmedCue(cue))
             {
                 return false;
@@ -70,21 +73,37 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Audio
                 return false;
             }
 
-            PlayConfirmedClientRpc(cue, key);
+            PlayConfirmedClientRpc(cue, key, confirmedPosition);
             return true;
         }
 
         [ClientRpc]
-        private void PlayConfirmedClientRpc(NetworkAudioCue cue, ulong key)
+        private void PlayConfirmedClientRpc(
+            NetworkAudioCue cue,
+            ulong key,
+            Vector3 confirmedPosition)
         {
             if (!IsServerConfirmedCue(cue)
+                || !IsFinite(confirmedPosition)
                 || worldCuePlayer == null
                 || !RememberKey(key, playedKeys, playedKeyOrder))
             {
                 return;
             }
 
-            worldCuePlayer.TryPlay(cue, out _);
+            worldCuePlayer.TryPlayAt(cue, confirmedPosition, out _);
+        }
+
+        private static bool IsFinite(Vector3 position)
+        {
+            return IsFinite(position.x)
+                && IsFinite(position.y)
+                && IsFinite(position.z);
+        }
+
+        private static bool IsFinite(float value)
+        {
+            return !float.IsNaN(value) && !float.IsInfinity(value);
         }
 
         private static bool RememberKey(
@@ -98,7 +117,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Audio
             }
 
             keyOrder.Enqueue(key);
-            while (keyOrder.Count > RememberedConfirmationLimit)
+            while (keyOrder.Count > MaxRememberedKeys)
             {
                 keys.Remove(keyOrder.Dequeue());
             }

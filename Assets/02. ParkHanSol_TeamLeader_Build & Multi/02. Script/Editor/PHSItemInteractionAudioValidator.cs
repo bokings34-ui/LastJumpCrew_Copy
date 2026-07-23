@@ -11,6 +11,7 @@ namespace LastJumpCrew.ParkHanSol.Editor
 {
     public static class PHSItemInteractionAudioValidator
     {
+        private const int PositionedVoiceLimit = 3;
         private const string Root =
             "Assets/02. ParkHanSol_TeamLeader_Build & Multi";
         private const string AudioRoot = Root + "/06. Audio/NetworkGenerated";
@@ -147,6 +148,7 @@ namespace LastJumpCrew.ParkHanSol.Editor
                 errors);
             var relayObject = new SerializedObject(relays[0]);
             if (!relays[0].HasRequiredReferences
+                || worldEmitter is not IPositionedNetworkAudioCuePlayer
                 || relayObject.FindProperty("ownerCuePlayerSource")
                     .objectReferenceValue != ownerEmitter
                 || relayObject.FindProperty("worldCuePlayerSource")
@@ -215,9 +217,10 @@ namespace LastJumpCrew.ParkHanSol.Editor
             if (objects.Length != 1
                 || source == null
                 || !Mathf.Approximately(source.spatialBlend, spatialBlend)
+                || !Mathf.Approximately(source.dopplerLevel, 0f)
                 || source.playOnAwake
                 || source.loop
-                || source.rolloffMode != AudioRolloffMode.Linear
+                || source.rolloffMode != AudioRolloffMode.Logarithmic
                 || !Mathf.Approximately(source.minDistance, 1f)
                 || !Mathf.Approximately(source.maxDistance, 20f)
                 || emitter == null)
@@ -231,6 +234,14 @@ namespace LastJumpCrew.ParkHanSol.Editor
                 != source)
             {
                 errors.Add($"emitter_source_contract path={path} name={name}");
+            }
+
+            var positionedVoiceLimit =
+                serialized.FindProperty("positionedVoiceLimit").intValue;
+            if (positionedVoiceLimit != PositionedVoiceLimit)
+            {
+                errors.Add(
+                    $"emitter_positioned_voice_limit path={path} name={name} actual={positionedVoiceLimit} expected={PositionedVoiceLimit}");
             }
 
             var bindings = serialized.FindProperty("cueBindings");
@@ -303,11 +314,14 @@ namespace LastJumpCrew.ParkHanSol.Editor
                 "lastServerSequence = requestSequence;",
                 "if (candidate.TryResolve(itemRecord, requestSequence, gameObject))",
                 "NetworkAudioCue.WrenchImpact",
+                "candidate.AimPosition",
                 "if (candidate.IsRepairComplete)",
                 "NetworkAudioCue.RepairComplete",
+                "candidate.AimPosition",
                 "== PHSUtilityFamilyActionKind.FireExtinguisher",
                 "&& candidate.IsRepairComplete)",
-                "NetworkAudioCue.ExtinguishComplete");
+                "NetworkAudioCue.ExtinguishComplete",
+                "candidate.AimPosition");
             RequireOrdered(
                 Root + "/02. Script/Items/PHSNetworkFoamGunController.cs",
                 "foam_owner_gate_sequence",
@@ -325,11 +339,13 @@ namespace LastJumpCrew.ParkHanSol.Editor
                 "PublishAccumulator(accumulator);",
                 "NetworkAudioCue.FoamAttach",
                 "blob.ShotSequence",
+                "attachPosition",
                 "var wasHardened = accumulator.State",
                 "accumulator.State = NetworkFoamTargetState.Hardened;",
                 "if (!wasHardened)",
                 "NetworkAudioCue.FoamHarden",
-                "blob.ShotSequence");
+                "blob.ShotSequence",
+                "attachPosition");
             RequireOrdered(
                 Root + "/02. Script/Items/PHSNetworkFoamCoordinator.cs",
                 "foam_terminal_sequence",
@@ -339,7 +355,8 @@ namespace LastJumpCrew.ParkHanSol.Editor
                 "PublishCompletionFeedback(shooter, accumulator);",
                 "NetworkAudioCue.FoamFireComplete",
                 "NetworkAudioCue.FoamSealComplete",
-                "blob.ShotSequence");
+                "blob.ShotSequence",
+                "attachPosition");
             RequireOrdered(
                 Root + "/02. Script/Interaction/BatteryInsertPowerStationSocket.cs",
                 "battery_commit_sequence",
@@ -351,7 +368,65 @@ namespace LastJumpCrew.ParkHanSol.Editor
                 "if (hasActivePowerFailureAccident",
                 "if (!TryResolveBatteryFamilyItem(",
                 "NetworkAudioCue.BatteryInstall",
-                "expectedRevision");
+                "expectedRevision",
+                "transform.position");
+            RequireOrdered(
+                Root + "/02. Script/Multiplayer/Audio/PHSNetworkItemInteractionAudioRelay.cs",
+                "confirmed_dedupe_store_separation",
+                errors,
+                "private const int MaxRememberedKeys = 256;",
+                "HashSet<ulong> broadcastKeys",
+                "HashSet<ulong> playedKeys",
+                "RememberKey(key, broadcastKeys, broadcastKeyOrder)",
+                "PlayConfirmedClientRpc(cue, key, confirmedPosition);",
+                "RememberKey(key, playedKeys, playedKeyOrder)",
+                "worldCuePlayer.TryPlayAt(cue, confirmedPosition");
+            RequireOrdered(
+                Root + "/02. Script/Multiplayer/Audio/PHSNetworkItemInteractionAudioRelay.cs",
+                "confirmed_position_rpc_sequence",
+                errors,
+                "TryBroadcastConfirmedServer(",
+                "Vector3 confirmedPosition",
+                "PlayConfirmedClientRpc(cue, key, confirmedPosition);",
+                "[ClientRpc]",
+                "Vector3 confirmedPosition)",
+                "worldCuePlayer.TryPlayAt(cue, confirmedPosition");
+            RequireOrdered(
+                Root + "/02. Script/Multiplayer/Audio/NetworkAudioCueEmitter.cs",
+                "positioned_emitter_pool_sequence",
+                errors,
+                "private const int DefaultPositionedVoiceLimit = 3;",
+                "private int positionedVoiceLimit = DefaultPositionedVoiceLimit;",
+                "public bool TryPlayAt(",
+                "EnsurePositionedVoicePool();",
+                "var voice = SelectPositionedVoice();",
+                "voice.Source.Stop();",
+                "CopyPlaybackSettings(audioSource, voice.Source);",
+                "voice.Root.transform.position = position;",
+                "voice.Source.PlayOneShot(",
+                "private void EnsurePositionedVoicePool()",
+                "positionedVoices.Capacity = voiceLimit;",
+                "private PositionedVoice SelectPositionedVoice()",
+                "if (!voice.Source.isPlaying)",
+                "return oldest;",
+                "private void OnDestroy()",
+                "Destroy(positionedVoiceRoot);");
+            RequireOrdered(
+                Root + "/02. Script/Editor/PHSItemInteractionAudioAuthoring.cs",
+                "positioned_voice_authoring",
+                errors,
+                "private const int PositionedVoiceLimit = 3;",
+                "serialized.FindProperty(\"positionedVoiceLimit\").intValue =",
+                "PositionedVoiceLimit;");
+            RequireAbsentBetween(
+                Root + "/02. Script/Multiplayer/Audio/NetworkAudioCueEmitter.cs",
+                "positioned_emitter_no_per_shot_allocation",
+                errors,
+                "public bool TryPlayAt(",
+                "private void EnsurePositionedVoicePool()",
+                "new GameObject(",
+                "AddComponent<AudioSource>()",
+                "Destroy(");
         }
 
         private static void RequireOrdered(
@@ -382,6 +457,43 @@ namespace LastJumpCrew.ParkHanSol.Editor
                 }
 
                 searchFrom = index + marker.Length;
+            }
+        }
+
+        private static void RequireAbsentBetween(
+            string path,
+            string contract,
+            ICollection<string> errors,
+            string startMarker,
+            string endMarker,
+            params string[] forbiddenMarkers)
+        {
+            if (!File.Exists(path))
+            {
+                errors.Add($"hook_source_missing contract={contract} path={path}");
+                return;
+            }
+
+            var source = File.ReadAllText(path);
+            var start = source.IndexOf(startMarker, StringComparison.Ordinal);
+            var end = start < 0
+                ? -1
+                : source.IndexOf(endMarker, start, StringComparison.Ordinal);
+            if (start < 0 || end <= start)
+            {
+                errors.Add(
+                    $"hook_range_contract contract={contract} start={startMarker} end={endMarker}");
+                return;
+            }
+
+            var body = source.Substring(start, end - start);
+            foreach (var marker in forbiddenMarkers)
+            {
+                if (body.IndexOf(marker, StringComparison.Ordinal) >= 0)
+                {
+                    errors.Add(
+                        $"hook_forbidden_contract contract={contract} marker={marker}");
+                }
             }
         }
     }

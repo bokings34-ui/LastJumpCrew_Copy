@@ -337,7 +337,8 @@ namespace LastJumpCrew.ParkHanSol.Items
                 PHSNetworkItemInteractionAudioRelay>();
             interactionAudio?.TryBroadcastConfirmedServer(
                 NetworkAudioCue.FoamAttach,
-                blob.ShotSequence);
+                blob.ShotSequence,
+                attachPosition);
 
             if (accumulator.Current < accumulator.Required)
             {
@@ -355,7 +356,8 @@ namespace LastJumpCrew.ParkHanSol.Items
                 {
                     interactionAudio?.TryBroadcastConfirmedServer(
                         NetworkAudioCue.FoamHarden,
-                        blob.ShotSequence);
+                        blob.ShotSequence,
+                        attachPosition);
                     Debug.Log(
                         $"PHS_FOAM_TARGET_HARDENED kind=Surface target={accumulator.Key} blobs={accumulator.Current}/{accumulator.Required}",
                         this);
@@ -388,7 +390,8 @@ namespace LastJumpCrew.ParkHanSol.Items
                 accumulator.Kind == NetworkFoamTargetKind.Fire
                     ? NetworkAudioCue.FoamFireComplete
                     : NetworkAudioCue.FoamSealComplete,
-                blob.ShotSequence);
+                blob.ShotSequence,
+                attachPosition);
             Debug.Log(
                 $"PHS_FOAM_TARGET_COMPLETED kind={accumulator.Kind} target={accumulator.Key} blobs={accumulator.Current}/{accumulator.Required}",
                 this);

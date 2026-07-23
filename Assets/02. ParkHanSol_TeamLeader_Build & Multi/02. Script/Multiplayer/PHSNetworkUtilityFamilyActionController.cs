@@ -210,12 +210,14 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
                     {
                         interactionAudio?.TryBroadcastConfirmedServer(
                             NetworkAudioCue.WrenchImpact,
-                            requestSequence);
+                            requestSequence,
+                            candidate.AimPosition);
                         if (candidate.IsRepairComplete)
                         {
                             interactionAudio?.TryBroadcastConfirmedServer(
                                 NetworkAudioCue.RepairComplete,
-                                requestSequence);
+                                requestSequence,
+                                candidate.AimPosition);
                         }
                     }
                     else if (familyKind
@@ -224,7 +226,8 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
                     {
                         interactionAudio?.TryBroadcastConfirmedServer(
                             NetworkAudioCue.ExtinguishComplete,
-                            requestSequence);
+                            requestSequence,
+                            candidate.AimPosition);
                     }
 
                     return true;

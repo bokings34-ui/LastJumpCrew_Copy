@@ -362,7 +362,8 @@ namespace LastJumpCrew.ParkHanSol.Interaction
                 .GetComponent<PHSNetworkItemInteractionAudioRelay>()
                 ?.TryBroadcastConfirmedServer(
                     NetworkAudioCue.BatteryInstall,
-                    expectedRevision);
+                    expectedRevision,
+                    transform.position);
 
             Debug.Log(
                 $"PHS_BATTERY_INSTALLED target={name} clientId={senderClientId} item={itemId} amount={powerRestoreProfile.Amount} durabilityCost={powerRestoreProfile.DurabilityCost} accidentInstance={powerFailureInstanceId} shipRevision={shipState.Revision}",

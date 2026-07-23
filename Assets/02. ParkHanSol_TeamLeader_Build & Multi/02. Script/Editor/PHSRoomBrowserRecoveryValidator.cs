@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Reflection;
 using LastJumpCrew.ParkHanSol.Multiplayer;
 using TMPro;
 using UnityEditor;
@@ -16,6 +17,8 @@ namespace LastJumpCrew.ParkHanSol.Editor
             "Assets/02. ParkHanSol_TeamLeader_Build & Multi";
         private const string LobbyPrefabPath = RootFolder +
             "/03. Prefab/UI/PHS_NetworkStartLobbyUI.prefab";
+        private const string BaseLobbyPrefabPath = RootFolder +
+            "/03. Prefab/UI/ParkHanSol_StartLobbyUI.prefab";
         private const string RoomEntryPrefabPath = RootFolder +
             "/03. Prefab/UI/PHS_NetworkRoomListEntry.prefab";
         private const string CustomizationFrontendPrefabPath = RootFolder +
@@ -28,6 +31,7 @@ namespace LastJumpCrew.ParkHanSol.Editor
         {
             var errors = new List<string>();
             ValidateLobbyPrefab(errors);
+            ValidateLobbyPanelStateTransitions(errors);
             ValidateRoomEntry(errors);
             ValidateCustomizationLayout(errors);
             ValidateLobbyScene(errors);
@@ -48,7 +52,250 @@ namespace LastJumpCrew.ParkHanSol.Editor
                 "PHS_ROOM_BROWSER_RECOVERY_VALIDATION_PASS " +
                 "browser=1 panels=4 prefab_refs=20 scene_room_service=1 " +
                 "preserved_create_join=2 customize_tutorial_vertical_orange=1 " +
+                "lobby_panel_state_transitions=2 " +
                 "assets01_modified=0");
+        }
+
+        private static void ValidateLobbyPanelStateTransitions(
+            ICollection<string> errors)
+        {
+            foreach (var prefabPath in new[]
+                     {
+                         BaseLobbyPrefabPath,
+                         LobbyPrefabPath
+                     })
+            {
+                ValidateLobbyPanelStateTransitions(prefabPath, errors);
+            }
+        }
+
+        private static void ValidateLobbyPanelStateTransitions(
+            string prefabPath,
+            ICollection<string> errors)
+        {
+            if (AssetDatabase.LoadAssetAtPath<GameObject>(prefabPath) == null)
+            {
+                errors.Add(
+                    $"reason=lobby_panel_state_prefab_missing path={prefabPath}");
+                return;
+            }
+
+            var root = PrefabUtility.LoadPrefabContents(prefabPath);
+            if (root == null)
+            {
+                errors.Add(
+                    $"reason=lobby_panel_state_prefab_missing path={prefabPath}");
+                return;
+            }
+
+            try
+            {
+                var controllers = root.GetComponentsInChildren<
+                    ParkHanSolLobbyMenuController>(true);
+                Require(
+                    controllers.Length == 1,
+                    $"reason=lobby_panel_state_controller_count path={prefabPath} actual={controllers.Length}",
+                    errors);
+                if (controllers.Length != 1)
+                {
+                    return;
+                }
+
+                var controller = controllers[0];
+                var serialized = new SerializedObject(controller);
+                var startPanel = GetGameObjectReference(serialized, "startPanel");
+                var settingsPanel = GetGameObjectReference(serialized, "settingsPanel");
+                var settingsLeftMenu = GetGameObjectReference(
+                    serialized,
+                    "settingsLeftMenu");
+                var settingsApplyButton = GetGameObjectReference(
+                    serialized,
+                    "settingsApplyButton");
+                Require(
+                    startPanel != null
+                    && settingsPanel != null
+                    && settingsLeftMenu != null
+                    && settingsApplyButton != null,
+                    $"reason=lobby_panel_state_reference_missing path={prefabPath}",
+                    errors);
+                if (startPanel == null
+                    || settingsPanel == null
+                    || settingsLeftMenu == null
+                    || settingsApplyButton == null)
+                {
+                    return;
+                }
+
+                if (!InvokeControllerStateMethod(
+                        controller,
+                        "ShowStartImmediate",
+                        prefabPath,
+                        errors))
+                {
+                    return;
+                }
+
+                ValidateTransitionPanelState(
+                    startPanel,
+                    expectedVisible: true,
+                    expectedInteractive: true,
+                    requireInactive: false,
+                    $"start_return_start_panel path={prefabPath}",
+                    errors);
+                ValidateTransitionPanelState(
+                    settingsPanel,
+                    expectedVisible: false,
+                    expectedInteractive: false,
+                    requireInactive: true,
+                    $"start_return_settings_panel path={prefabPath}",
+                    errors);
+                Require(
+                    !settingsLeftMenu.activeSelf
+                    && !settingsApplyButton.activeSelf,
+                    $"reason=start_return_settings_auxiliary_active path={prefabPath}",
+                    errors);
+
+                if (!InvokeControllerStateMethod(
+                        controller,
+                        "ShowSettings",
+                        prefabPath,
+                        errors,
+                        true))
+                {
+                    return;
+                }
+
+                ValidateTransitionPanelState(
+                    startPanel,
+                    expectedVisible: false,
+                    expectedInteractive: false,
+                    requireInactive: true,
+                    $"settings_entry_start_panel path={prefabPath}",
+                    errors);
+                ValidateTransitionPanelState(
+                    settingsPanel,
+                    expectedVisible: true,
+                    expectedInteractive: true,
+                    requireInactive: false,
+                    $"settings_entry_settings_panel path={prefabPath}",
+                    errors);
+                Require(
+                    settingsLeftMenu.activeSelf
+                    && settingsApplyButton.activeSelf,
+                    $"reason=settings_entry_auxiliary_inactive path={prefabPath}",
+                    errors);
+
+                InvokeControllerStateMethod(
+                    controller,
+                    "ShowStartImmediate",
+                    prefabPath,
+                    errors);
+            }
+            finally
+            {
+                PrefabUtility.UnloadPrefabContents(root);
+            }
+        }
+
+        private static GameObject GetGameObjectReference(
+            SerializedObject serialized,
+            string propertyName)
+        {
+            return serialized.FindProperty(propertyName)?.objectReferenceValue
+                as GameObject;
+        }
+
+        private static bool InvokeControllerStateMethod(
+            ParkHanSolLobbyMenuController controller,
+            string methodName,
+            string prefabPath,
+            ICollection<string> errors,
+            params object[] arguments)
+        {
+            var method = typeof(ParkHanSolLobbyMenuController).GetMethod(
+                methodName,
+                BindingFlags.Instance | BindingFlags.NonPublic);
+            if (method == null)
+            {
+                errors.Add(
+                    $"reason=lobby_panel_state_method_missing path={prefabPath} method={methodName}");
+                return false;
+            }
+
+            try
+            {
+                method.Invoke(controller, arguments);
+                return true;
+            }
+            catch (TargetInvocationException exception)
+            {
+                errors.Add(
+                    $"reason=lobby_panel_state_method_failed path={prefabPath} " +
+                    $"method={methodName} exception={exception.InnerException?.GetType().Name ?? exception.GetType().Name}");
+                return false;
+            }
+        }
+
+        private static void ValidateTransitionPanelState(
+            GameObject panel,
+            bool expectedVisible,
+            bool? expectedInteractive,
+            bool requireInactive,
+            string label,
+            ICollection<string> errors)
+        {
+            var transition = panel.GetComponent<ParkHanSolLobbyPanelTransition>();
+            if (transition == null)
+            {
+                Require(
+                    panel.activeSelf == expectedVisible,
+                    $"reason={label}_active_invalid expected={expectedVisible} actual={panel.activeSelf}",
+                    errors);
+                return;
+            }
+
+            var targetVisibleField = typeof(ParkHanSolLobbyPanelTransition)
+                .GetField(
+                    "targetVisible",
+                    BindingFlags.Instance | BindingFlags.NonPublic);
+            Require(
+                targetVisibleField != null,
+                $"reason={label}_transition_target_field_missing",
+                errors);
+            if (targetVisibleField != null)
+            {
+                var actualTarget = (bool)targetVisibleField.GetValue(transition);
+                Require(
+                    actualTarget == expectedVisible,
+                    $"reason={label}_transition_target_invalid expected={expectedVisible} actual={actualTarget}",
+                    errors);
+            }
+
+            Require(
+                !expectedVisible || panel.activeSelf,
+                $"reason={label}_visible_panel_inactive",
+                errors);
+            Require(
+                !requireInactive || !panel.activeSelf,
+                $"reason={label}_hidden_panel_active",
+                errors);
+
+            var canvasGroup = panel.GetComponent<CanvasGroup>();
+            Require(
+                canvasGroup != null,
+                $"reason={label}_canvas_group_missing",
+                errors);
+            if (canvasGroup == null || !expectedInteractive.HasValue)
+            {
+                return;
+            }
+
+            Require(
+                canvasGroup.interactable == expectedInteractive.Value
+                && canvasGroup.blocksRaycasts == expectedInteractive.Value,
+                $"reason={label}_interaction_invalid expected={expectedInteractive.Value} " +
+                $"interactable={canvasGroup.interactable} blocksRaycasts={canvasGroup.blocksRaycasts}",
+                errors);
         }
 
         private static void ValidateLobbyPrefab(ICollection<string> errors)

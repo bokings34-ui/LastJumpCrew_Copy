@@ -8,6 +8,7 @@ namespace LastJumpCrew.ParkHanSol.Editor
 {
     public static class PHSItemInteractionAudioAuthoring
     {
+        private const int PositionedVoiceLimit = 3;
         private const string Root =
             "Assets/02. ParkHanSol_TeamLeader_Build & Multi";
         private const string AudioRoot = Root + "/06. Audio/NetworkGenerated";
@@ -110,13 +111,16 @@ namespace LastJumpCrew.ParkHanSol.Editor
             source.playOnAwake = false;
             source.loop = false;
             source.spatialBlend = spatial ? 1f : 0f;
-            source.rolloffMode = AudioRolloffMode.Linear;
+            source.dopplerLevel = 0f;
+            source.rolloffMode = AudioRolloffMode.Logarithmic;
             source.minDistance = 1f;
             source.maxDistance = 20f;
 
             var emitter = GetOrAddSingle<NetworkAudioCueEmitter>(gameObject);
             var serialized = new SerializedObject(emitter);
             serialized.FindProperty("audioSource").objectReferenceValue = source;
+            serialized.FindProperty("positionedVoiceLimit").intValue =
+                PositionedVoiceLimit;
             var array = serialized.FindProperty("cueBindings");
             array.arraySize = bindings.Count;
             for (var index = 0; index < bindings.Count; index++)
