@@ -15,10 +15,12 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
 
         [Header("Knockback")]
 
-        [SerializeField, Min(0f)] //³Ê¹« °­ÇÑ ÈûÀÌ µé¾î¿ÔÀ» ¶§ ³¯¾Æ°¡´Â ÃÖ´ë Á¦ÇÑ°ª
+        [SerializeField, Min(0f)] //ë„ˆë¬´ ê°•í•œ íž˜ì´ ë“¤ì–´ì™”ì„ ë•Œ ë‚ ì•„ê°€ëŠ” ìµœëŒ€ ì œí•œê°’
         private float maximumKnockbackForce = 8f;
 
-        public bool CanReceiveKnockback => playerController != null;
+        public bool CanReceiveKnockback => playerController != null
+            && (!IsSpawned || IsServer);
+        public uint AppliedCount { get; private set; }
 
         private void Awake()
         {
@@ -31,19 +33,27 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
         {
             if (!CanReceiveKnockback)
             {
+                Debug.LogError(
+                    $"PHS_PLAYER_KNOCKBACK_FAILED " +
+                    $"reason=server_or_controller player={name}",
+                    this);
                 return;
             }
-            if (direction.sqrMagnitude <= 0.001f)//¹æÇâÀÌ 0ÀÌ¸é Á¤»óÀûÀÎ ³Ë¹é ¹æÇâÀ» °è»êÇÒ ¼ö ¾ø¾î¼­ Áß´ÜÇÏ±â
+            if (direction.sqrMagnitude <= 0.001f)//ë°©í–¥ì´ 0ì´ë©´ ì •ìƒì ì¸ ë„‰ë°± ë°©í–¥ì„ ê³„ì‚°í•  ìˆ˜ ì—†ì–´ì„œ ì¤‘ë‹¨í•˜ê¸°
             {
                 return;
             }
-            var clampedFore = Mathf.Clamp(force, 0f, maximumKnockbackForce); //Àß¸øµÈ Å«°ªÀÌ µé¾î°¡µµ ÃÖ´ë°ª±îÁö¸¸ Çã¿ë
+            var clampedFore = Mathf.Clamp(force, 0f, maximumKnockbackForce); //ìž˜ëª»ëœ í°ê°’ì´ ë“¤ì–´ê°€ë„ ìµœëŒ€ê°’ê¹Œì§€ë§Œ í—ˆìš©
 
             var knockbackVelocity = direction.normalized * clampedFore;
 
             playerController.ApplyExternalVelocity(knockbackVelocity);
-
-
+            AppliedCount++;
+            Debug.Log(
+                $"PHS_PLAYER_KNOCKBACK_APPLIED player={name} " +
+                $"force={clampedFore:F2} direction={direction.normalized} " +
+                $"attacker={(attacker != null ? attacker.name : "null")}",
+                this);
         }
         private void Reset()
         {

@@ -4,6 +4,7 @@ using LastJumpCrew.ParkHanSol.Multiplayer.ShipAccidents;
 using Unity.Netcode;
 using UnityEngine;
 using UnityEngine.InputSystem;
+using UnityEngine.SceneManagement;
 
 namespace LastJumpCrew.ParkHanSol.Multiplayer.Maps
 {
@@ -14,6 +15,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Maps
         [SerializeField] private PHSHandheldShipMapView firstPersonView;
         [SerializeField] private PHSHandheldShipMapView worldView;
         [SerializeField, Min(0.02f)] private float refreshIntervalSeconds = 0.08f;
+        [SerializeField, Min(0.1f)] private float coordinatorBindTimeoutSeconds = 5f;
 
         private readonly NetworkVariable<bool> mapVisible = new(
             false,
@@ -26,6 +28,8 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Maps
         private bool layoutErrorLogged;
         private bool eventCoordinatorErrorLogged;
         private bool accidentCoordinatorErrorLogged;
+        private string observedScenePath;
+        private float coordinatorBindDeadline;
 
         public override void OnNetworkSpawn()
         {
@@ -41,6 +45,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Maps
 
             mapVisible.OnValueChanged += HandleVisibilityChanged;
             requestedVisible = mapVisible.Value;
+            ResetCoordinatorBindWindow();
             ApplyVisibility(mapVisible.Value);
         }
 
@@ -106,6 +111,12 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Maps
 
         private void RefreshVisibleMap()
         {
+            var activeScenePath = SceneManager.GetActiveScene().path;
+            if (activeScenePath != observedScenePath)
+            {
+                ResetCoordinatorBindWindow();
+            }
+
             var layout = PHSShipMapWorldLayout.Instance;
             if (layout == null || !layout.isActiveAndEnabled)
             {
@@ -132,6 +143,19 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Maps
             {
                 worldView.Render(markers);
             }
+        }
+
+        private void ResetCoordinatorBindWindow()
+        {
+            observedScenePath = SceneManager.GetActiveScene().path;
+            coordinatorBindDeadline = Time.unscaledTime + coordinatorBindTimeoutSeconds;
+            eventCoordinatorErrorLogged = false;
+            accidentCoordinatorErrorLogged = false;
+        }
+
+        private bool IsCoordinatorBindPending()
+        {
+            return Time.unscaledTime < coordinatorBindDeadline;
         }
 
         private void AppendPlayerMarkers(PHSShipMapWorldLayout layout)
@@ -166,6 +190,11 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Maps
             var coordinator = NetworkEventCoordinator.Instance;
             if (coordinator == null || !coordinator.IsSpawned)
             {
+                if (IsCoordinatorBindPending())
+                {
+                    return;
+                }
+
                 if (!eventCoordinatorErrorLogged)
                 {
                     eventCoordinatorErrorLogged = true;
@@ -193,6 +222,11 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Maps
             var coordinator = PHSNetworkShipAccidentCoordinator.Instance;
             if (coordinator == null || !coordinator.IsSpawned)
             {
+                if (IsCoordinatorBindPending())
+                {
+                    return;
+                }
+
                 if (!accidentCoordinatorErrorLogged)
                 {
                     accidentCoordinatorErrorLogged = true;

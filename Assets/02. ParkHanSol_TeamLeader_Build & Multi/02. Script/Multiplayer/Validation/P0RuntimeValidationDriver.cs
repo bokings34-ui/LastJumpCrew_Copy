@@ -3,6 +3,7 @@ using System.Collections;
 using System.Collections.Generic;
 using System.Linq;
 using System.Reflection;
+using LastJumpCrew.Common;
 using LastJumpCrew.ParkHanSol.Interaction;
 using LastJumpCrew.ParkHanSol.Items;
 using LastJumpCrew.ParkHanSol.Multiplayer.Events;
@@ -423,6 +424,17 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Validation
 
                 yield return RunRemoteOwnedThrownItemValidation(itemData, true);
                 if (scenarioFinished) yield break;
+
+                if (string.Equals(
+                        itemData.ItemId,
+                        "battery_pack",
+                        StringComparison.Ordinal))
+                {
+                    yield return RunRemoteOwnedThrownItemValidation(
+                        itemData,
+                        false);
+                    if (scenarioFinished) yield break;
+                }
             }
 
             Pass($"item_network_lifecycle peers={expectedClientCount} items={itemIds.Length}");
@@ -3948,11 +3960,24 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Validation
 
                     var durabilityState = usedBatteryNetworkObject
                         .GetComponent<NetworkUtilityItemDurabilityState>();
+                    var batteryImpact = usedBatteryNetworkObject
+                        .GetComponent<BatteryThrownImpact>();
                     if (durabilityState == null
-                        || durabilityState.CurrentDurability != 0
-                        || usedBatteryNetworkObject.GetComponent<BatteryThrownImpact>() == null)
+                        || durabilityState.CurrentDurability != expectedDurability
+                        || batteryImpact == null
+                        || batteryImpact.WasAttackThrow
+                        || batteryImpact.HasExploded)
                     {
                         Fail("remote_battery_primary_use_contract_invalid");
+                        yield break;
+                    }
+
+                    yield return new WaitForSecondsRealtime(0.5f);
+                    if (!usedBatteryNetworkObject.IsSpawned
+                        || durabilityState.CurrentDurability != expectedDurability
+                        || batteryImpact.HasExploded)
+                    {
+                        Fail("remote_battery_safe_place_exploded");
                         yield break;
                     }
 
@@ -3960,8 +3985,8 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Validation
                     usedBatteryNetworkObject.Despawn(true);
                     activeRemoteItemClientId = ulong.MaxValue;
                     Debug.Log(
-                        $"PHS_ITEM_REMOTE_PRIMARY_USE_OK client={remoteClientId} " +
-                        $"item={itemData.ItemId} durability=0 " +
+                        $"PHS_ITEM_BATTERY_SAFE_USE_OK client={remoteClientId} " +
+                        $"item={itemData.ItemId} durability={expectedDurability} " +
                         $"networkObjectId={usedBatteryNetworkObjectId}",
                         this);
                     yield break;
@@ -3979,6 +4004,49 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Validation
                     $"PHS_ITEM_REMOTE_PRIMARY_USE_OK client={remoteClientId} " +
                     $"item={itemData.ItemId} durability={remoteRecord.CurrentDurability}",
                     this);
+            }
+
+            var isBatteryThrow = string.Equals(
+                itemData.ItemId,
+                "battery_pack",
+                StringComparison.Ordinal);
+            NetworkObject batteryReactionTarget = null;
+            Vector3 batteryReactionTargetOriginalPosition = default;
+            StatusEffectController batteryStatusReceiver = null;
+            NetworkPlayerKnockbackReceiver batteryKnockbackReceiver = null;
+            uint batteryKnockbackCountBefore = 0;
+            if (isBatteryThrow)
+            {
+                var remoteCombat = remoteClient.PlayerObject
+                    .GetComponent<NetworkPlayerCombatController>();
+                batteryReactionTarget = NetworkManager.ConnectedClients[
+                    NetworkManager.ServerClientId].PlayerObject;
+                batteryStatusReceiver = batteryReactionTarget == null
+                    ? null
+                    : batteryReactionTarget.GetComponent<StatusEffectController>();
+                batteryKnockbackReceiver = batteryReactionTarget == null
+                    ? null
+                    : batteryReactionTarget
+                        .GetComponent<NetworkPlayerKnockbackReceiver>();
+                if (remoteCombat == null
+                    || remoteCombat.GeneralThrowOrigin == null
+                    || batteryReactionTarget == null
+                    || batteryStatusReceiver == null
+                    || batteryKnockbackReceiver == null)
+                {
+                    Fail("battery_player_reaction_setup_missing");
+                    yield break;
+                }
+
+                batteryReactionTargetOriginalPosition =
+                    batteryReactionTarget.transform.position;
+                batteryKnockbackCountBefore =
+                    batteryKnockbackReceiver.AppliedCount;
+                SetPlayerPosition(
+                    batteryReactionTarget,
+                    remoteClient.PlayerObject.transform.position
+                    + remoteCombat.GeneralThrowOrigin.forward * 1.5f);
+                yield return new WaitForSecondsRealtime(0.25f);
             }
 
             var knownNetworkObjectIds = NetworkManager.SpawnManager.SpawnedObjects.Keys.ToHashSet();
@@ -4014,6 +4082,36 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Validation
                 10f,
                 "remote_item_throw_not_committed");
             if (scenarioFinished) yield break;
+
+            if (isBatteryThrow)
+            {
+                var batteryImpact = remoteThrownNetworkObject
+                    .GetComponent<BatteryThrownImpact>();
+                if (batteryImpact == null || !batteryImpact.WasAttackThrow)
+                {
+                    Fail("battery_attack_throw_not_armed");
+                    yield break;
+                }
+
+                yield return WaitFor(
+                    () => batteryImpact.HasExploded
+                        && batteryStatusReceiver.IsShocked
+                        && batteryKnockbackReceiver.AppliedCount
+                            > batteryKnockbackCountBefore,
+                    5f,
+                    "battery_player_reaction_timeout");
+                if (scenarioFinished) yield break;
+
+                SetPlayerPosition(
+                    batteryReactionTarget,
+                    batteryReactionTargetOriginalPosition);
+                Debug.Log(
+                    $"PHS_P0_BATTERY_PLAYER_REACTION_OK " +
+                    $"target={batteryReactionTarget.name} " +
+                    $"shocked={batteryStatusReceiver.IsShocked} " +
+                    $"knockbacks={batteryKnockbackReceiver.AppliedCount}",
+                    this);
+            }
 
             thrownItemReports.Clear();
             var throwProbeToken = ++activeProbeToken;
@@ -5306,7 +5404,23 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Validation
                         localCombatController.RequestExtinguisherSpray();
                         break;
                     case "battery_pack":
-                        localCombatController.RequestBatteryThrow();
+                        var heldItemComponent =
+                            ((LastJumpCrew.Common.IItemHolder)holder).CurrentItem
+                            as Component;
+                        var batteryUse = heldItemComponent == null
+                            ? null
+                            : heldItemComponent
+                                .GetComponents<MonoBehaviour>()
+                                .OfType<IUsableItem>()
+                                .FirstOrDefault();
+                        if (batteryUse == null
+                            || !batteryUse.CanUse(holder, null))
+                        {
+                            issued = false;
+                            break;
+                        }
+
+                        batteryUse.Use(holder, null);
                         break;
                     default:
                         issued = false;

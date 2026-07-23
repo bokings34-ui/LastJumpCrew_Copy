@@ -26,11 +26,11 @@ namespace LastJumpCrew.ParkHanSol.Editor
     public static class PHS0715IntegrationValidator
     {
         private const string LobbyScenePath =
-            "Assets/02. ParkHanSol_TeamLeader_Build & Multi/01. Scene/0715/ParkHanSol_LobbyScene.unity";
+            "Assets/01. MainGame/01. MainScene/Beta/ParkHanSol_LobbyScene.unity";
         private const string MapScenePath =
-            "Assets/02. ParkHanSol_TeamLeader_Build & Multi/01. Scene/0715/PHS_Map_ver1.unity";
+            "Assets/01. MainGame/01. MainScene/Beta/PHS_Map_ver1.unity";
         private const string ShopScenePath =
-            "Assets/02. ParkHanSol_TeamLeader_Build & Multi/01. Scene/0715/PHS_ExteriorShopScene.unity";
+            "Assets/01. MainGame/01. MainScene/Beta/PHS_ExteriorShopScene.unity";
         private const string FeatureInspectionScenePath =
             "Assets/02. ParkHanSol_TeamLeader_Build & Multi/01. Scene/test/PHS_FeatureInspectionScene.unity";
         private const string MapSceneName = "PHS_Map_ver1";
@@ -2026,6 +2026,26 @@ namespace LastJumpCrew.ParkHanSol.Editor
                     serializedCombat,
                     "extinguisherSprayEffectRoot",
                     "player_extinguisher_feedback_missing",
+                    errors);
+            }
+            Require(
+                prefab.GetComponent<NetworkPlayerKnockbackReceiver>() != null,
+                "player_knockback_receiver_missing",
+                errors);
+            var statusEffectController =
+                prefab.GetComponent<StatusEffectController>();
+            Require(
+                statusEffectController != null,
+                "player_status_effect_receiver_missing",
+                errors);
+            if (statusEffectController != null)
+            {
+                var serializedStatus =
+                    new SerializedObject(statusEffectController);
+                RequireObject(
+                    serializedStatus,
+                    "electricShockEffectRoot",
+                    "player_electric_shock_effect_missing",
                     errors);
             }
             Require(prefab.GetComponent<NetworkPlayerItemRecord>() != null, "player_item_record_missing", errors);

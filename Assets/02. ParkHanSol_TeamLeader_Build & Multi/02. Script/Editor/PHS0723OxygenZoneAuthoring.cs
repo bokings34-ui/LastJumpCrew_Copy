@@ -16,6 +16,8 @@ namespace LastJumpCrew.ParkHanSol.EditorTools
             "PHS_OxygenDeprivationZone";
         private const string RepairPointName =
             "RepairPoint";
+        private const string NoPlayerInteractLayerName =
+            "NoPlayerInteract";
 
         [MenuItem("Tools/ParkHanSol/Author 0723 Oxygen Zones")]
         public static void AuthorRuntimePrefab()
@@ -105,6 +107,16 @@ namespace LastJumpCrew.ParkHanSol.EditorTools
                             $"PHS_OXYGEN_PREFAB_VALIDATION_FAILED " +
                             $"reason=zone_count room={room.RoomId} " +
                             $"count={roomZones.Length}");
+                    }
+
+                    var expectedLayer = LayerMask.NameToLayer(
+                        NoPlayerInteractLayerName);
+                    if (expectedLayer < 0
+                        || roomZones[0].gameObject.layer != expectedLayer)
+                    {
+                        throw new InvalidOperationException(
+                            $"PHS_OXYGEN_PREFAB_VALIDATION_FAILED " +
+                            $"reason=interaction_layer_invalid room={room.RoomId}");
                     }
                 }
 
@@ -207,6 +219,16 @@ namespace LastJumpCrew.ParkHanSol.EditorTools
             }
 
             var zoneTransform = zone.transform;
+            var noPlayerInteractLayer = LayerMask.NameToLayer(
+                NoPlayerInteractLayerName);
+            if (noPlayerInteractLayer < 0)
+            {
+                throw new InvalidOperationException(
+                    "PHS_OXYGEN_AUTHORING_FAILED " +
+                    "reason=no_player_interact_layer_missing");
+            }
+
+            zone.gameObject.layer = noPlayerInteractLayer;
             zoneTransform.localPosition = new Vector3(
                 pointBounds.center.x,
                 2f,

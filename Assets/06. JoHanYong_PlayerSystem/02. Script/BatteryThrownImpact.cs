@@ -22,6 +22,9 @@ namespace LastJumpCrew.ParkHanSol.Items
         [SerializeField, Min(0f)]
         private float electricShockDuration = 2f;
 
+        [SerializeField, Min(0f)]
+        private float playerKnockbackForce = 4f;
+
         [Header("Impact Visual Effect")]
         [SerializeField] private GameObject lightningBallEffectPrefab;
         [SerializeField] private GameObject lightningRingEffectPrefab;
@@ -33,6 +36,9 @@ namespace LastJumpCrew.ParkHanSol.Items
         private int attackDamage;
         private bool isAttackThrow;
         private bool hasExploded;
+
+        public bool WasAttackThrow => isAttackThrow;
+        public bool HasExploded => hasExploded;
 
         private void Awake()
         {
@@ -104,7 +110,10 @@ namespace LastJumpCrew.ParkHanSol.Items
 
                 var targetRoot = hitCollider.transform.root.gameObject;
                 if (!processedTargets.Add(targetRoot)
-                    || !TryApplyBatteryEffect(targetRoot, out var reaction))
+                    || !TryApplyBatteryEffect(
+                        targetRoot,
+                        center,
+                        out var reaction))
                 {
                     continue;
                 }
@@ -219,7 +228,10 @@ namespace LastJumpCrew.ParkHanSol.Items
             return false;
         }
 
-        private bool TryApplyBatteryEffect(GameObject target, out string reaction)
+        private bool TryApplyBatteryEffect(
+            GameObject target,
+            Vector3 explosionCenter,
+            out string reaction)
         {
             reaction = null;
             if (target == null)
@@ -234,19 +246,54 @@ namespace LastJumpCrew.ParkHanSol.Items
 
             if (playerTarget)
             {
-                if (effectReceiver == null
-                    || !effectReceiver.CanReceiveStatusEffect(
-                        StatusEffectType.ElectricShok))
+                var playerShockApplied = effectReceiver != null
+                    && effectReceiver.CanReceiveStatusEffect(
+                        StatusEffectType.ElectricShok);
+                if (playerShockApplied)
                 {
+                    effectReceiver.ApplyStatusEffect(
+                        StatusEffectType.ElectricShok,
+                        electricShockDuration,
+                        attacker);
+                }
+
+                var knockbackable = target.GetComponentInParent<IKnockbackable>();
+                var playerKnockbackApplied = knockbackable != null
+                    && knockbackable.CanReceiveKnockback;
+                if (playerKnockbackApplied)
+                {
+                    var direction = target.transform.position - explosionCenter;
+                    if (direction.sqrMagnitude <= 0.001f)
+                    {
+                        direction = Vector3.up;
+                    }
+
+                    direction = (direction.normalized + Vector3.up * 0.2f)
+                        .normalized;
+                    knockbackable.ApplyKnockback(
+                        direction,
+                        playerKnockbackForce,
+                        attacker);
+                }
+
+                if (!playerShockApplied && !playerKnockbackApplied)
+                {
+                    Debug.LogError(
+                        $"PHS_BATTERY_PLAYER_REACTION_FAILED " +
+                        $"reason=receivers_missing target={target.name}",
+                        target);
                     return false;
                 }
 
-                effectReceiver.ApplyStatusEffect(
-                    StatusEffectType.ElectricShok,
-                    electricShockDuration,
-                    attacker);
-                Debug.Log($"PHS_BATTERY_PLAYER_SHOCKED target={target.name}", target);
-                reaction = "player_shock";
+                reaction = playerShockApplied && playerKnockbackApplied
+                    ? "player_shock_and_knockback"
+                    : playerShockApplied
+                        ? "player_shock"
+                        : "player_knockback";
+                Debug.Log(
+                    $"PHS_BATTERY_PLAYER_REACTED target={target.name} " +
+                    $"reaction={reaction}",
+                    target);
                 return true;
             }
 

@@ -105,6 +105,8 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
 
         private float nextGeneralThrowTime;
 
+        public Transform GeneralThrowOrigin => generalThrowOrigin;
+
 
 
 
@@ -388,7 +390,21 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
             }
             var throwForce = Mathf.Clamp(requestedForce, minimumThrowForce, maximumThrowForce);
 
-            if(!itemHolder.TryCreateThrownItem(throwPosition, Quaternion.LookRotation(direction), out var thrownItem)) //현재 손 아이템의 DroppedPrefab을 생성
+            var isBatteryThrow = itemHolder.IsHoldingItem(batteryItemId);
+            GameObject thrownItem;
+            var batteryDamage = 0;
+            var created = isBatteryThrow
+                ? itemHolder.TryCreateThrownItem(
+                    throwPosition,
+                    Quaternion.LookRotation(direction),
+                    UtilityItemActionKind.BatteryDischarge,
+                    out thrownItem,
+                    out batteryDamage)
+                : itemHolder.TryCreateThrownItem(
+                    throwPosition,
+                    Quaternion.LookRotation(direction),
+                    out thrownItem);
+            if (!created) //현재 손 아이템의 DroppedPrefab을 생성
             {
                 return;
             }
@@ -403,6 +419,21 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
             }
             body.isKinematic = false;
             body.detectCollisions = true;
+
+            if (isBatteryThrow)
+            {
+                var batteryImpact = thrownItem.GetComponent<BatteryThrownImpact>();
+                if (batteryImpact == null)
+                {
+                    Debug.LogError(
+                        $"PHS_BATTERY_THROW_FAILED reason=impact_missing item={thrownItem.name}",
+                        thrownItem);
+                    RemoveFailedThrownObject(thrownItem);
+                    return;
+                }
+
+                batteryImpact.InitializeAttackThrow(gameObject, batteryDamage);
+            }
 
             //카메라 방향으로 계산된 힘 만큼 날린다.
             body.linearVelocity = direction * throwForce;

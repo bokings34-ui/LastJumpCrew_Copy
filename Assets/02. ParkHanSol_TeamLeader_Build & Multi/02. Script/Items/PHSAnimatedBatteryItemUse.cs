@@ -9,7 +9,7 @@ namespace LastJumpCrew.ParkHanSol.Items
         public bool CanUse(IItemHolder holder, IInteractable target)
         {
             return holder is Component holderComponent
-                && holderComponent.GetComponent<NetworkPlayerCombatController>() != null
+                && holder.HasItem
                 && holderComponent.GetComponent<PHSNetworkItemUseActionController>() != null;
         }
 
@@ -21,9 +21,8 @@ namespace LastJumpCrew.ParkHanSol.Items
                 return;
             }
 
-            var combat = holderComponent.GetComponent<NetworkPlayerCombatController>();
             var action = holderComponent.GetComponent<PHSNetworkItemUseActionController>();
-            if (combat == null || action == null)
+            if (action == null)
             {
                 Debug.LogError(
                     $"PHS_BATTERY_USE_FAILED reason=action_contract_missing holder={holderComponent.name}",
@@ -33,7 +32,11 @@ namespace LastJumpCrew.ParkHanSol.Items
 
             action.TryBeginImpactAction(
                 PHSItemUseActionKind.Battery,
-                combat.RequestBatteryThrow);
+                () =>
+                {
+                    holder.Drop();
+                    Debug.Log("PHS_BATTERY_PLACED_FROM_USE", this);
+                });
         }
     }
 }
