@@ -13,7 +13,7 @@ using SM;
 - EnemySpawn_Bundle.prefab
   - EnemyPool (Enemy 인스턴스 재사용 관리)
   - EnemySpawnSetting (스폰 그룹 목록, 자식으로 Spawn Point Transform 등록)
-- PlayerAttackEnemy.prefab, DeviceAttackEnemy.prefab (실제 스폰 대상, EnemyPool이 참조)
+- Enemy_AT_Device.prefab, Enemy_AT_Player.prefab (실제 스폰 대상, EnemyPool이 참조)
 - EnemySpawnDataSO (밸런스 데이터)
 
 ## 발생 트리거 (GameManager 계층 담당)
