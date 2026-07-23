@@ -104,6 +104,63 @@ namespace LastJumpCrew.ParkHanSol.Items
             isUsing = true;
             nextUsableTime = Time.time + cooldown;
 
+            if (user is Component userComponent)
+            {
+                var actionController =
+                    userComponent.GetComponent<PHSNetworkItemUseActionController>();
+                if (actionController == null)
+                {
+                    Debug.LogError(
+                        $"PHS_ITEM_USE_FAILED reason=action_controller_missing item={name}",
+                        this);
+                    EndUse();
+                    return;
+                }
+
+                if (!actionController.TryBeginVisualAction(
+                        PHSItemUseActionKind.Generic,
+                        Mathf.Max(0.05f, useDuration)))
+                {
+                    EndUse();
+                    return;
+                }
+
+                var feedbackController =
+                    userComponent.GetComponent<PHSNetworkItemUseFeedbackController>();
+                if (feedbackController == null)
+                {
+                    Debug.LogError(
+                        $"PHS_ITEM_USE_FAILED reason=feedback_controller_missing item={name}",
+                        this);
+                    EndUse();
+                    return;
+                }
+
+                if (target is Component targetComponent)
+                {
+                    var origin = userComponent.transform.position;
+                    var targetPosition = targetComponent.transform.position;
+                    var direction = targetPosition - origin;
+                    feedbackController.RequestOwnerFeedback(
+                        PHSItemUseFeedbackShape.Cast,
+                        origin,
+                        direction,
+                        0.15f,
+                        Mathf.Max(0.1f, direction.magnitude),
+                        new[] { targetPosition });
+                }
+                else
+                {
+                    feedbackController.RequestOwnerFeedback(
+                        PHSItemUseFeedbackShape.Sphere,
+                        userComponent.transform.position,
+                        userComponent.transform.forward,
+                        0.75f,
+                        0f,
+                        System.Array.Empty<Vector3>());
+                }
+            }
+
             OnUseStarted(user, target);
 
             if (!isActiveAndEnabled || !gameObject.activeInHierarchy)

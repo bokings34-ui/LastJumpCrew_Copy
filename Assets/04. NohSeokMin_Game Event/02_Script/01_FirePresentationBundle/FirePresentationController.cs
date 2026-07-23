@@ -4,7 +4,7 @@ using DG.Tweening;
 namespace SM
 {
     // Presentation-only. 서버 상태/피해/확산 판정 없음. Collider/NetworkObject 없음.
-    // TuriShader(Mesh + Material + Light) 기반. _Verticalcut으로 나타남/사라짐, 
+    // TuriShader(Mesh + Material + Light) 기반. _Verticalcut으로 나타남/사라짐,
     // _TurbulenceSpeed + HDR Color로 강도 표현.
     public class FirePresentationController : MonoBehaviour
     {
@@ -47,11 +47,12 @@ namespace SM
         private Sequence _activeSequence;
         private FireIntensity _currentIntensity;
         private bool _isActive;
+        private bool _isInitialized;
+        private Vector3 _baseMeshScale;
 
         private void Awake()
         {
-            // 공유 Material을 직접 건드리면 다른 화재 인스턴스에도 영향이 가므로 반드시 인스턴스화
-            _materialInstance = fireMeshRenderer.material;
+            EnsureInitialized();
         }
 
         // ---- 외부 진입점 (박한솔님 Runtime이 호출) ----
@@ -97,7 +98,7 @@ namespace SM
             _activeSequence = DOTween.Sequence();
             _activeSequence.Join(DOTween.To(() => fireLight.intensity, v => fireLight.intensity = v, target.lightIntensity, intensityTransitionDuration));
             _activeSequence.Join(DOTween.To(() => fireLight.range, v => fireLight.range = v, target.lightRange, intensityTransitionDuration));
-            _activeSequence.Join(fireMeshRenderer.transform.DOScale(target.meshScale, intensityTransitionDuration));
+            _activeSequence.Join(fireMeshRenderer.transform.DOScale(_baseMeshScale * target.meshScale, intensityTransitionDuration));
             _activeSequence.Join(DOTween.To(
                 () => _materialInstance.GetFloat(TurbulenceSpeedId),
                 v => _materialInstance.SetFloat(TurbulenceSpeedId, v),
@@ -130,6 +131,7 @@ namespace SM
         // 재사용(풀링) 대비 완전 초기화
         public void ResetPresentation()
         {
+            EnsureInitialized();
             KillActiveTween();
 
             fireAudio.Stop();
@@ -138,7 +140,7 @@ namespace SM
             fireLight.enabled = false;
             fireLight.intensity = 0f;
 
-            fireMeshRenderer.transform.localScale = Vector3.one;
+            fireMeshRenderer.transform.localScale = _baseMeshScale;
             _materialInstance.SetFloat(VerticalCutId, 1f); // 완전히 안 보이는 상태로 초기화
             _materialInstance.SetFloat(TurbulenceSpeedId, 1f);
 
@@ -168,7 +170,7 @@ namespace SM
         {
             fireLight.intensity = settings.lightIntensity;
             fireLight.range = settings.lightRange;
-            fireMeshRenderer.transform.localScale = Vector3.one * settings.meshScale;
+            fireMeshRenderer.transform.localScale = _baseMeshScale * settings.meshScale;
             _materialInstance.SetFloat(TurbulenceSpeedId, settings.turbulenceSpeed);
             _materialInstance.SetFloat(VerticalCutId, 0f); // 완전히 보이는 상태
             _materialInstance.SetColor(ColorOutId, settings.colorOut);
@@ -188,10 +190,11 @@ namespace SM
 
         private void EnsureInitialized()
         {
-            if (_materialInstance == null)
-            {
-                _materialInstance = fireMeshRenderer.material;
-            }
+            if (_isInitialized) return;
+
+            _baseMeshScale = fireMeshRenderer.transform.localScale;
+            _materialInstance = fireMeshRenderer.material;
+            _isInitialized = true;
         }
 
         private void OnDestroy()

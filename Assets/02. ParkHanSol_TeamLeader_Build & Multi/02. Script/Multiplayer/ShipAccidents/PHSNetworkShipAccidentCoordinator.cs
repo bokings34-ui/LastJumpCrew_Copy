@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using Unity.Collections;
 using Unity.Netcode;
 using UnityEngine;
+using LastJumpCrew.ParkHanSol.Items;
 using LastJumpCrew.ParkHanSol.Multiplayer.Incidents.Fire;
 
 namespace LastJumpCrew.ParkHanSol.Multiplayer.ShipAccidents
@@ -27,7 +28,11 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.ShipAccidents
             NetworkVariableWritePermission.Server);
         private readonly Dictionary<string, PHSShipAccidentAnchor> anchorsById = new(StringComparer.Ordinal);
         private readonly Dictionary<uint, double> nextDamageTimes = new();
-        private readonly Dictionary<(ulong ClientId, uint ItemRevision), uint> repairRequestSequences = new();
+        private readonly HashSet<string> desiredPresentationAnchorIds =
+            new(StringComparer.Ordinal);
+        private readonly Dictionary<
+            (ulong ClientId, ulong PlayerNetworkObjectId),
+            uint> repairRequestSequences = new();
 
         private PHSMapShipAccidentWeight[] configuredEntries = Array.Empty<PHSMapShipAccidentWeight>();
         private float intervalMinSeconds;
@@ -397,6 +402,44 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.ShipAccidents
             return true;
         }
 
+        public bool TryGetSingleActiveAccidentServer(
+            PHSShipAccidentId accidentId,
+            out uint accidentInstanceId,
+            out string reason)
+        {
+            accidentInstanceId = 0U;
+            if (!CanExecuteServerCommand(out reason))
+            {
+                return false;
+            }
+
+            foreach (var snapshot in activeAccidents)
+            {
+                if (snapshot.AccidentId != accidentId)
+                {
+                    continue;
+                }
+
+                if (accidentInstanceId != 0U)
+                {
+                    reason = $"duplicate_active_accident:{accidentId}";
+                    accidentInstanceId = 0U;
+                    return false;
+                }
+
+                accidentInstanceId = snapshot.InstanceId;
+            }
+
+            if (accidentInstanceId == 0U)
+            {
+                reason = $"active_accident_missing:{accidentId}";
+                return false;
+            }
+
+            reason = null;
+            return true;
+        }
+
         public bool TryTerminateAccidentServer(
             uint accidentInstanceId,
             string cause,
@@ -445,12 +488,20 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.ShipAccidents
             }
 
             var index = FindSnapshotIndex(accidentInstanceId);
-            return index >= 0
-                && (activeAccidents[index].AccidentId
-                        != PHSShipAccidentId.Fire
-                    || fireCoordinator == null
-                    || !fireCoordinator.IsManagingAccident(
-                        accidentInstanceId));
+            if (index < 0)
+            {
+                return false;
+            }
+
+            var accidentId = activeAccidents[index].AccidentId;
+            if (accidentId == PHSShipAccidentId.PowerFailure)
+            {
+                return false;
+            }
+
+            return accidentId != PHSShipAccidentId.Fire
+                || fireCoordinator == null
+                || !fireCoordinator.IsManagingAccident(accidentInstanceId);
         }
 
         public bool TrySetMaintenancePausedServer(bool paused, out string reason)
@@ -609,7 +660,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.ShipAccidents
             {
                 Debug.LogWarning(
                     $"PHS_SHIP_ACCIDENT_REPAIR_REJECTED " +
-                    $"reason=specialized_fire_suppression_required " +
+                    $"reason=specialized_resolution_required " +
                     $"instance={accidentInstanceId}",
                     this);
                 return false;
@@ -638,7 +689,10 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.ShipAccidents
             }
 
             var itemRecord = client.PlayerObject.GetComponent<NetworkPlayerItemRecord>();
+            var itemLifecycle =
+                client.PlayerObject.GetComponent<NetworkPlayerItemLifecycle>();
             if (itemRecord == null
+                || itemLifecycle == null
                 || itemRecord.OwnerClientId != senderClientId
                 || itemRecord.HeldItemId != expectedItemId
                 || itemRecord.Revision != expectedItemRevision
@@ -648,7 +702,23 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.ShipAccidents
                 return false;
             }
 
-            var sequenceKey = (senderClientId, expectedItemRevision);
+            if (!TryGetActionKind(
+                    definition.Id,
+                    out var actionKind)
+                || !itemLifecycle.TryResolveHeldItemActionServer(
+                    expectedItemId,
+                    expectedItemRevision,
+                    actionKind,
+                    out var actionProfile))
+            {
+                Debug.LogWarning(
+                    $"PHS_SHIP_ACCIDENT_REPAIR_REJECTED reason=item_profile_mismatch client={senderClientId} instance={accidentInstanceId} accident={definition.Id}",
+                    this);
+                return false;
+            }
+
+            var sequenceKey =
+                (senderClientId, itemRecord.NetworkObjectId);
             if (repairRequestSequences.TryGetValue(sequenceKey, out var previousSequence)
                 && requestSequence <= previousSequence)
             {
@@ -665,7 +735,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.ShipAccidents
 
             var nextProgress = Mathf.Min(
                 snapshot.RequiredRepairProgress,
-                snapshot.RepairProgress + definition.RepairProgressPerUse);
+                snapshot.RepairProgress + actionProfile.Amount);
             var completesRepair = nextProgress >= snapshot.RequiredRepairProgress;
             if (completesRepair)
             {
@@ -675,14 +745,39 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.ShipAccidents
                     return false;
                 }
 
+                if (!itemLifecycle.TryCommitHeldItemActionServer(
+                        expectedItemId,
+                        expectedItemRevision,
+                        actionProfile))
+                {
+                    Debug.LogError(
+                        $"PHS_SHIP_ACCIDENT_REPAIR_INVARIANT_FAILED reason=durability_commit client={senderClientId} instance={accidentInstanceId}",
+                        this);
+                    return false;
+                }
+
                 repairRequestSequences[sequenceKey] = requestSequence;
                 activeAccidents.RemoveAt(index);
                 nextDamageTimes.Remove(accidentInstanceId);
                 Debug.Log(
                     $"PHS_SHIP_ACCIDENT_RESOLVED instance={accidentInstanceId} accident={definition.Id} client={senderClientId} shipHp={shipSystemsState.CurrentShipHp}",
                     this);
+                Debug.Log(
+                    $"PHS_ITEM_TARGET_REACTION item={expectedItemId} target={anchor.name} reaction=repair_complete result=accepted progress={snapshot.RepairProgress}->{nextProgress}/{snapshot.RequiredRepairProgress} instance={accidentInstanceId}",
+                    anchor);
                 NotifyServerAccidentFinished(accidentInstanceId, definition.Id, true);
                 return true;
+            }
+
+            if (!itemLifecycle.TryCommitHeldItemActionServer(
+                    expectedItemId,
+                    expectedItemRevision,
+                    actionProfile))
+            {
+                Debug.LogError(
+                    $"PHS_SHIP_ACCIDENT_REPAIR_INVARIANT_FAILED reason=durability_commit client={senderClientId} instance={accidentInstanceId}",
+                    this);
+                return false;
             }
 
             repairRequestSequences[sequenceKey] = requestSequence;
@@ -693,7 +788,33 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.ShipAccidents
                 nextProgress,
                 snapshot.RequiredRepairProgress,
                 snapshot.Revision + 1U);
+            Debug.Log(
+                $"PHS_ITEM_TARGET_REACTION item={expectedItemId} target={anchor.name} reaction=repair_progress result=accepted progress={snapshot.RepairProgress}->{nextProgress}/{snapshot.RequiredRepairProgress} instance={accidentInstanceId}",
+                anchor);
             return true;
+        }
+
+        private static bool TryGetActionKind(
+            PHSShipAccidentId accidentId,
+            out UtilityItemActionKind actionKind)
+        {
+            actionKind = accidentId switch
+            {
+                PHSShipAccidentId.PowerFailure =>
+                    UtilityItemActionKind.PowerRestore,
+                PHSShipAccidentId.DeviceFailure =>
+                    UtilityItemActionKind.DeviceRepair,
+                PHSShipAccidentId.HullBreach =>
+                    UtilityItemActionKind.HullBreachRepair,
+                PHSShipAccidentId.SteamLeak =>
+                    UtilityItemActionKind.SteamLeakRepair,
+                PHSShipAccidentId.OxygenFailure =>
+                    UtilityItemActionKind.OxygenGeneratorRepair,
+                PHSShipAccidentId.GravityGeneratorFailure =>
+                    UtilityItemActionKind.GravityGeneratorRepair,
+                _ => UtilityItemActionKind.None
+            };
+            return actionKind != UtilityItemActionKind.None;
         }
 
         private void ApplyPeriodicDamage()
@@ -817,7 +938,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.ShipAccidents
 
             if (module.CurrentHp >= module.MaximumHp)
             {
-                return TryRestoreGravityIfNeeded(definition, out reason);
+                return TryRestoreOperationalStateIfNeeded(definition, out reason);
             }
 
             if (!shipSystemsState.TryRepairModule(
@@ -828,13 +949,25 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.ShipAccidents
                 return false;
             }
 
-            return TryRestoreGravityIfNeeded(definition, out reason);
+            return TryRestoreOperationalStateIfNeeded(definition, out reason);
         }
 
-        private bool TryRestoreGravityIfNeeded(
+        private bool TryRestoreOperationalStateIfNeeded(
             PHSShipAccidentDefinitionSO definition,
             out string reason)
         {
+            if (definition.TargetModule == NetworkShipModuleId.Power)
+            {
+                if (shipSystemsState.IsPowerEnabled
+                    && shipSystemsState.IsGravityEnabled)
+                {
+                    reason = null;
+                    return true;
+                }
+
+                return shipSystemsState.TryRestorePowerWithBattery(out reason);
+            }
+
             if (definition.TargetModule != NetworkShipModuleId.Gravity)
             {
                 reason = null;
@@ -975,14 +1108,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.ShipAccidents
 
         private void RefreshPresentations()
         {
-            foreach (var anchor in anchors)
-            {
-                if (anchor != null)
-                {
-                    anchor.ClearSnapshot();
-                }
-            }
-
+            desiredPresentationAnchorIds.Clear();
             foreach (var snapshot in activeAccidents)
             {
                 if (!anchorsById.TryGetValue(snapshot.AnchorId.ToString(), out var anchor)
@@ -994,7 +1120,18 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.ShipAccidents
                     continue;
                 }
 
+                desiredPresentationAnchorIds.Add(anchor.AnchorId);
                 anchor.ApplySnapshot(snapshot, definition);
+            }
+
+            foreach (var anchor in anchors)
+            {
+                if (anchor != null
+                    && anchor.AccidentInstanceId != 0U
+                    && !desiredPresentationAnchorIds.Contains(anchor.AnchorId))
+                {
+                    anchor.ClearSnapshot();
+                }
             }
         }
 

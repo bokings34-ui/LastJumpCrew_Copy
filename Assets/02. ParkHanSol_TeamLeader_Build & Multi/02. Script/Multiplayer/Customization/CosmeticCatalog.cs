@@ -12,10 +12,30 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Customization
     public sealed class CosmeticCatalog : ScriptableObject
     {
         [SerializeField] private List<CosmeticItemData> items = new List<CosmeticItemData>();
+        [SerializeField] private Color32[] allowedBodyColors = Array.Empty<Color32>();
 
         private Dictionary<string, CosmeticItemData> itemsById;
 
         public IReadOnlyList<CosmeticItemData> Items => items;
+        public IReadOnlyList<Color32> AllowedBodyColors => allowedBodyColors;
+
+        public bool IsBodyColorAllowed(Color32 color)
+        {
+            if (color.a != byte.MaxValue || allowedBodyColors == null)
+            {
+                return false;
+            }
+
+            for (var index = 0; index < allowedBodyColors.Length; index++)
+            {
+                if (allowedBodyColors[index].Equals(color))
+                {
+                    return true;
+                }
+            }
+
+            return false;
+        }
 
         public bool TryGetItem(string itemId, out CosmeticItemData item)
         {
@@ -40,6 +60,10 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Customization
         private void OnValidate()
         {
             itemsById = null;
+            if (allowedBodyColors == null || allowedBodyColors.Length == 0)
+            {
+                Debug.LogError($"[{nameof(CosmeticCatalog)}] Allowed body color palette is empty on catalog '{name}'.", this);
+            }
         }
 
         private void EnsureLookup()

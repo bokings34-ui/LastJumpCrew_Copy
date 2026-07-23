@@ -242,6 +242,7 @@ namespace LastJumpCrew.ParkHanSol.Interaction
             }
 
             var saleRevision = itemRecord.Revision;
+            var saleDurability = itemRecord.CurrentDurability;
             var saleKey = $"debris_sale:held:{senderClientId}:{saleRevision}";
             if (!completedNetworkSales.Add(saleKey))
             {
@@ -262,7 +263,10 @@ namespace LastJumpCrew.ParkHanSol.Interaction
                     senderClientId,
                     out var creditReason))
             {
-                if (!itemRecord.TrySetHeldItemServer(itemId, itemRecord.Revision))
+                if (!itemRecord.TrySetHeldItemServer(
+                        itemId,
+                        saleDurability,
+                        itemRecord.Revision))
                 {
                     Debug.LogError(
                         $"PHS_DEBRIS_SELL_INVARIANT_FAILED reason=record_restore_failed zone={name} owner={senderClientId} item={itemId} saleRevision={saleRevision}",

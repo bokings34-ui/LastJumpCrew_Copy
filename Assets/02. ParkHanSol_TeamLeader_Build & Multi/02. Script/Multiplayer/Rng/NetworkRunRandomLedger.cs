@@ -216,6 +216,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
                 || stream == NetworkRunRandomStream.ExternalThreat
                 || stream == NetworkRunRandomStream.InternalAccident
                 || stream == NetworkRunRandomStream.InternalAccidentAnchor
+                || stream == NetworkRunRandomStream.IncidentConsequence
                 || stream == NetworkRunRandomStream.DebrisLayout
                 || stream == NetworkRunRandomStream.DebrisRecycle
                 || stream == NetworkRunRandomStream.ShopStock
