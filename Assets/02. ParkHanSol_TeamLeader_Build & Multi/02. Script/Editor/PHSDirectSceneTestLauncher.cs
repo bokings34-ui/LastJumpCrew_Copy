@@ -20,6 +20,8 @@ namespace LastJumpCrew.ParkHanSol.Editor
             "Assets/02. ParkHanSol_TeamLeader_Build & Multi/01. Scene/test/PHS_FeatureInspectionScene.unity";
         private const string PlayMenuPath =
             "Tools/ParkHanSol/Scene Test/Play Current Scene As Local Host _F6";
+        private const string MainLoopValidationMenuPath =
+            "Tools/ParkHanSol/Scene Test/Run Main Loop Validation";
         private const string PendingTargetSceneKey = "PHS.DirectSceneTest.PendingTargetScene";
         private const string AutoLaunchQueuedKey = "PHS.DirectSceneTest.AutoLaunchQueued";
         private const string AutoLaunchTargetSceneKey = "PHS.DirectSceneTest.AutoLaunchTargetScene";
@@ -81,6 +83,47 @@ namespace LastJumpCrew.ParkHanSol.Editor
 
             Debug.Log($"PHS_DIRECT_SCENE_TEST_QUEUED target={targetScene.path}");
             EditorApplication.EnterPlaymode();
+        }
+
+        [MenuItem(MainLoopValidationMenuPath)]
+        public static void RunMainLoopValidation()
+        {
+            if (EditorApplication.isPlayingOrWillChangePlaymode)
+            {
+                Debug.LogError(
+                    "PHS_EDITOR_LOOP_VALIDATION_FAILED reason=play_mode_active");
+                return;
+            }
+
+            var lobbyScene = AssetDatabase.LoadAssetAtPath<SceneAsset>(LobbyScenePath);
+            if (lobbyScene == null)
+            {
+                Debug.LogError(
+                    $"PHS_EDITOR_LOOP_VALIDATION_FAILED reason=lobby_scene_missing path={LobbyScenePath}");
+                return;
+            }
+
+            var openedScene = EditorSceneManager.OpenScene(
+                LobbyScenePath,
+                OpenSceneMode.Single);
+            if (!openedScene.IsValid() || !openedScene.isLoaded)
+            {
+                Debug.LogError(
+                    $"PHS_EDITOR_LOOP_VALIDATION_FAILED reason=lobby_scene_open_failed path={LobbyScenePath}");
+                return;
+            }
+
+            StorePreviousPlayModeStartScene();
+            EditorSceneManager.playModeStartScene = lobbyScene;
+            Debug.Log(
+                $"PHS_EDITOR_LOOP_VALIDATION_QUEUED scene={LobbyScenePath}");
+            EditorApplication.EnterPlaymode();
+        }
+
+        [MenuItem(MainLoopValidationMenuPath, true)]
+        private static bool ValidateRunMainLoopValidation()
+        {
+            return !EditorApplication.isPlayingOrWillChangePlaymode;
         }
 
         [MenuItem(PlayMenuPath, true)]

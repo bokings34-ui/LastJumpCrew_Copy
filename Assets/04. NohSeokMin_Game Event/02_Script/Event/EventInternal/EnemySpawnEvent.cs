@@ -25,16 +25,25 @@ namespace SM
             _effectRuntimeBridge = Context?.RuntimeBridge as IEventEffectRuntimeBridge;
             _effectInstanceIds.Clear();
 
-            var point = ShipSpawnPointConfig.Instance.GetRandomPoint();
+            var spawnSetting = EnemySpawnSetting.Peek();
+            if (spawnSetting == null)
+            {
+                Debug.LogError(
+                    $"<color=lime>[{SpawnData.EventName}]</color> EnemySpawnSetting 참조가 씬에 없어 발생 취소.");
+                OnFail();
+                return;
+            }
 
-            if (point == null)
+            var spawnGroup = spawnSetting.GetRandomPoint();
+
+            if (spawnGroup == null || spawnGroup.spawnPoint == null)
             {
                 Debug.LogWarning($"<color=lime>[{SpawnData.EventName}]</color> 사용 가능한 스폰 포인트가 없어 발생 취소.");
                 OnFail();
                 return;
             }
 
-            _spawnPoint = point.transform;
+            _spawnPoint = spawnGroup.spawnPoint;
             _chosenPrefab = PickRandomPrefab();
 
             if (_chosenPrefab == null)
