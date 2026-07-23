@@ -46,18 +46,14 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
         [Header("Comfort Zero Gravity")]
         [SerializeField, Range(0.1f, 1f)] private float zeroGravityPrecisionMultiplier = 0.45f;
         [Header("Zero Gravity Thruster Audio")]
-        [SerializeField] private AudioSource thrusterAudioSource;
-        [SerializeField] private AudioClip thrusterAudioClip;
-        [SerializeField, Range(0f, 1f)] private float thrusterAudioVolume = 0.65f;
-        [SerializeField, Min(0.1f)] private float thrusterAudioAttackSpeed = 12f;
-        [SerializeField, Min(0.1f)] private float thrusterAudioReleaseSpeed = 2.5f;
+        [SerializeField] private NetworkPlayerThrusterAudio thrusterAudio;
         [SerializeField] private ParkHanSolPlayHudMockPresenter playHudPresenter;
         [Header("Input")]
         [SerializeField] private PlayerControlInput playerControlInput;
-        public const string MouseSensitivityPreferenceKey = "PHS_MouseSensitivity";
+        public const string MouseSensitivityPreferenceKey = NetworkPlayerOptionsStore.MouseSensitivityPreferenceKey;
         public const float DefaultMouseSensitivity = 0.6f;
-        public const float MinimumMouseSensitivity = 0.05f;
-        public const float MaximumMouseSensitivity = 5f;
+        public const float MinimumMouseSensitivity = NetworkPlayerOptionsStore.MinimumMouseSensitivity;
+        public const float MaximumMouseSensitivity = NetworkPlayerOptionsStore.MaximumMouseSensitivity;
 
         [SerializeField, Range(MinimumMouseSensitivity, MaximumMouseSensitivity)] private float mouseSensitivity = DefaultMouseSensitivity;
         [SerializeField] private Transform cameraRoot;
@@ -83,6 +79,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
         private bool pauseInputBlocked;
         private bool lifeInputBlocked;
         private bool warpInputBlocked;
+        private bool resultInputBlocked;
         private bool autoMoveEnabled;
         private float autoMoveSeconds;
         private float autoMoveEndTime;
@@ -124,17 +121,12 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
 
         public static float GetSavedMouseSensitivity(float fallback = DefaultMouseSensitivity)
         {
-            return Mathf.Clamp(
-                PlayerPrefs.GetFloat(MouseSensitivityPreferenceKey, fallback),
-                MinimumMouseSensitivity,
-                MaximumMouseSensitivity);
+            return NetworkPlayerOptionsStore.Shared.GetMouseSensitivity(fallback);
         }
 
         public static void SaveMouseSensitivity(float value)
         {
-            PlayerPrefs.SetFloat(
-                MouseSensitivityPreferenceKey,
-                Mathf.Clamp(value, MinimumMouseSensitivity, MaximumMouseSensitivity));
+            NetworkPlayerOptionsStore.Shared.SetMouseSensitivity(value);
         }
 
         public void ApplyGravityState(GravityState gravityState)
@@ -1214,6 +1206,22 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
             return true;
         }
 
+        public void SetResultInputBlocked(bool blocked)
+        {
+            if (IsSpawned && !IsOwner)
+            {
+                return;
+            }
+
+            resultInputBlocked = blocked;
+            if (blocked)
+            {
+                HasMoveInput = false;
+                IsRunning = false;
+                UpdateLocalThrusterFeedback(false);
+            }
+        }
+
         [ServerRpc]
         private void RequestGameplaySpawnPointServerRpc(
             string sceneName,
@@ -1449,41 +1457,22 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
                 && gravityMode != NetworkPlayerGravityMode.ShipGravity
                 && GetThrusterFuel() > 0f;
 
-            if (thrusterAudioSource == null || thrusterAudioClip == null)
+            if (thrusterAudio == null)
             {
                 if (!thrusterAudioReferenceErrorLogged)
                 {
                     thrusterAudioReferenceErrorLogged = true;
-                    Debug.LogError($"PHS_THRUSTER_AUDIO_SETUP_FAILED reason=audio_reference_missing player={name}");
+                    Debug.LogError(
+                        $"PHS_THRUSTER_AUDIO_SETUP_FAILED reason=thruster_audio_missing player={name}",
+                        this);
                 }
 
                 return;
             }
 
-            thrusterAudioSource.clip = thrusterAudioClip;
-            thrusterAudioSource.loop = true;
-            thrusterAudioSource.spatialBlend = 0f;
-            if (isLocalThrusterActive && !thrusterAudioSource.isPlaying)
-            {
-                thrusterAudioSource.volume = 0f;
-                thrusterAudioSource.Play();
-            }
-
-            var targetVolume = isLocalThrusterActive ? thrusterAudioVolume : 0f;
-            var fadeSpeed = isLocalThrusterActive
-                ? thrusterAudioAttackSpeed
-                : thrusterAudioReleaseSpeed;
-            thrusterAudioSource.volume = Mathf.MoveTowards(
-                thrusterAudioSource.volume,
-                targetVolume,
-                fadeSpeed * Time.deltaTime);
-
-            if (!isLocalThrusterActive
-                && thrusterAudioSource.isPlaying
-                && thrusterAudioSource.volume <= 0.001f)
-            {
-                thrusterAudioSource.Stop();
-            }
+            thrusterAudio.SetThrusterActive(
+                isLocalThrusterActive,
+                Time.deltaTime);
         }
 
         private float GetThrusterCameraShake()
@@ -1500,9 +1489,9 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
         private void StopThrusterAudio()
         {
             isLocalThrusterActive = false;
-            if (thrusterAudioSource != null && thrusterAudioSource.isPlaying)
+            if (thrusterAudio != null)
             {
-                thrusterAudioSource.Stop();
+                thrusterAudio.StopImmediate();
             }
         }
 
@@ -1515,16 +1504,26 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
 
         private bool CanProcessLocalInput()
         {
+            if (NetworkRunRestartCoordinator.Instance != null
+                && NetworkRunRestartCoordinator.Instance.BlocksRun)
+            {
+                return false;
+            }
+
             if (!IsSpawned)
             {
-                return !pauseInputBlocked && !lifeInputBlocked && !warpInputBlocked;
+                return !pauseInputBlocked
+                    && !lifeInputBlocked
+                    && !warpInputBlocked
+                    && !resultInputBlocked;
             }
 
             return IsOwner
                 && gameplayInputEnabled
                 && !pauseInputBlocked
                 && !lifeInputBlocked
-                && !warpInputBlocked;
+                && !warpInputBlocked
+                && !resultInputBlocked;
         }
 
         private float ReadVerticalMove()

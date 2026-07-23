@@ -27,6 +27,10 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
     {
         bool TryApplyShipDamage(int amount, out string reason);
         bool TryApplyShipDamage(int amount, string cause, out string reason);
+        bool TryDestroyShip(
+            GameOverReason gameOverReason,
+            string cause,
+            out string reason);
         bool TryApplyModuleDamage(
             NetworkShipModuleId moduleId,
             int amount,

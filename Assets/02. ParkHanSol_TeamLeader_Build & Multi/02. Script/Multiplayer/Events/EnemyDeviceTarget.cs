@@ -18,9 +18,12 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Events
         private bool[] initialRendererStates;
         private int currentHealth;
         private bool isRegistered;
+        private PHSNetworkShipAccidentCoordinator boundAccidentCoordinator;
+        private uint activeBreakdownAccidentInstanceId;
 
         public Transform Transform => transform;
         public bool IsAlive => currentHealth > 0;
+        public bool IsBroken => !IsAlive;
 
         private void Awake()
         {
@@ -47,6 +50,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Events
 
         private void OnDisable()
         {
+            UnbindAccidentCoordinator();
             Unregister();
         }
 
@@ -70,16 +74,22 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Events
             }
 
             Unregister();
-            SetVisualsAlive(false);
-            TriggerDestructionAccident();
-            Debug.Log($"PHS_ENEMY_DEVICE_DESTROYED target={name} attacker={attacker?.name ?? "unknown"}", this);
+            if (!TryTriggerBreakdownAccident())
+            {
+                return;
+            }
+
+            Debug.Log($"PHS_ENEMY_DEVICE_BROKEN target={name} attacker={attacker?.name ?? "unknown"}", this);
         }
 
-        private void TriggerDestructionAccident()
+        private bool TryTriggerBreakdownAccident()
         {
             if (destructionAccident == PHSShipAccidentId.None)
             {
-                return;
+                Debug.LogError(
+                    $"PHS_ENEMY_DEVICE_BREAKDOWN_FAILED target={name} reason=accident_not_configured",
+                    this);
+                return false;
             }
 
             var coordinator = PHSNetworkShipAccidentCoordinator.Instance;
@@ -92,14 +102,69 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Events
                     out instanceId,
                     out reason))
             {
-                Debug.LogWarning(
+                Debug.LogError(
                     $"PHS_ENEMY_DEVICE_ACCIDENT_FAILED target={name} accident={destructionAccident} reason={reason}",
+                    this);
+                return false;
+            }
+
+            BindAccidentCoordinator(coordinator, instanceId);
+            Debug.Log(
+                $"PHS_ENEMY_DEVICE_ACCIDENT_STARTED target={name} accident={destructionAccident} instance={instanceId}",
+                this);
+            return true;
+        }
+
+        private void BindAccidentCoordinator(
+            PHSNetworkShipAccidentCoordinator coordinator,
+            uint accidentInstanceId)
+        {
+            UnbindAccidentCoordinator();
+            boundAccidentCoordinator = coordinator;
+            activeBreakdownAccidentInstanceId = accidentInstanceId;
+            boundAccidentCoordinator.ServerAccidentFinished += HandleServerAccidentFinished;
+        }
+
+        private void UnbindAccidentCoordinator()
+        {
+            if (boundAccidentCoordinator != null)
+            {
+                boundAccidentCoordinator.ServerAccidentFinished -= HandleServerAccidentFinished;
+            }
+
+            boundAccidentCoordinator = null;
+            activeBreakdownAccidentInstanceId = 0U;
+        }
+
+        private void HandleServerAccidentFinished(
+            uint accidentInstanceId,
+            PHSShipAccidentId accidentId,
+            bool resolved)
+        {
+            if (accidentInstanceId != activeBreakdownAccidentInstanceId)
+            {
+                return;
+            }
+
+            UnbindAccidentCoordinator();
+            if (!resolved)
+            {
+                Debug.LogWarning(
+                    $"PHS_ENEMY_DEVICE_REPAIR_FAILED target={name} accident={accidentId} instance={accidentInstanceId}",
                     this);
                 return;
             }
 
+            currentHealth = maximumHealth;
+            SetVisualsAlive(true);
+            if (isActiveAndEnabled && !isRegistered)
+            {
+                DeviceRegistry.Instance.Register(this);
+                isRegistered = true;
+            }
+
             Debug.Log(
-                $"PHS_ENEMY_DEVICE_ACCIDENT_STARTED target={name} accident={destructionAccident} instance={instanceId}",
+                $"PHS_ENEMY_DEVICE_REPAIRED target={name} accident={accidentId} instance={accidentInstanceId}",
                 this);
         }
 

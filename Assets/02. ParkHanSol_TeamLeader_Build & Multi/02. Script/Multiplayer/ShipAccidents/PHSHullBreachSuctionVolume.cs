@@ -13,6 +13,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.ShipAccidents
         [SerializeField, Min(0f)] private float stopDistance = 0.85f;
         [SerializeField, Min(0.1f)] private float pullAcceleration = 36f;
         [SerializeField, Min(0.1f)] private float maximumPullSpeed = 3.2f;
+        [SerializeField, Min(0.1f)] private float pullActiveDuration = 5f;
         [SerializeField] private LayerMask playerLayers;
         [SerializeField] private LayerMask obstructionLayers;
 
@@ -21,9 +22,11 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.ShipAccidents
         private readonly HashSet<ulong> loggedPlayerIds = new();
         private bool isConfigurationValid;
         private bool overlapCapacityErrorLogged;
+        private float elapsedSinceEnabled;
 
         private void OnEnable()
         {
+            elapsedSinceEnabled = 0f;
             isConfigurationValid = ValidateConfiguration();
         }
 
@@ -32,6 +35,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.ShipAccidents
             processedPlayers.Clear();
             loggedPlayerIds.Clear();
             overlapCapacityErrorLogged = false;
+            elapsedSinceEnabled = 0f;
         }
 
         private void Update()
@@ -49,10 +53,23 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.ShipAccidents
                 return;
             }
 
-            ApplySuction(Time.deltaTime);
+            elapsedSinceEnabled += Time.deltaTime;
+            var currentMaximumPullSpeed = GetCurrentMaximumPullSpeed();
+            if (currentMaximumPullSpeed <= 0f)
+            {
+                return;
+            }
+
+            ApplySuction(Time.deltaTime, currentMaximumPullSpeed);
         }
 
-        private void ApplySuction(float deltaTime)
+        private float GetCurrentMaximumPullSpeed()
+        {
+            var progress = elapsedSinceEnabled / pullActiveDuration;
+            return Mathf.Lerp(maximumPullSpeed, 0f, progress);
+        }
+
+        private void ApplySuction(float deltaTime, float currentMaximumPullSpeed)
         {
             var centerPosition = suctionCenter.position;
             var hitCount = Physics.OverlapSphereNonAlloc(
@@ -108,7 +125,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.ShipAccidents
                 player.ApplyGrapplePull(
                     centerPosition,
                     pullAcceleration,
-                    maximumPullSpeed,
+                    currentMaximumPullSpeed,
                     stopDistance,
                     deltaTime);
 
@@ -145,6 +162,14 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.ShipAccidents
             {
                 Debug.LogError(
                     $"PHS_HULL_SUCTION_SETUP_FAILED reason=invalid_distances radius={pullRadius:F2} stop={stopDistance:F2}",
+                    this);
+                return false;
+            }
+
+            if (pullActiveDuration <= 0f)
+            {
+                Debug.LogError(
+                    $"PHS_HULL_SUCTION_SETUP_FAILED reason=invalid_duration duration={pullActiveDuration:F2}",
                     this);
                 return false;
             }

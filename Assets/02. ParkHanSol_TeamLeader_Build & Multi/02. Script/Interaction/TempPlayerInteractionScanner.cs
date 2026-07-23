@@ -40,6 +40,10 @@ namespace LastJumpCrew.ParkHanSol.Interaction
         // 현재 바라보는 일반 상호작용 대상의 외곽선 glow다.
         private InteractableFocusGlow focusedGlow;
 
+        private int cachedInteractionHitFrame = -1;
+        private bool hasCachedInteractionHit;
+        private RaycastHit cachedInteractionHit;
+
         [Header("Drop And Throw Input")]
         [SerializeField, Min(0.1f)] private float throwHoldThreshold = 0.4f;
         [SerializeField] private NetworkPlayerCombatController combatController;
@@ -100,6 +104,7 @@ namespace LastJumpCrew.ParkHanSol.Interaction
         private void OnDisable()
         {
             isHoldingRightButton = false;
+            InvalidateInteractionHitCache();
             ClearToolBoxSlotFocus();
             ClearInteractableFocusGlow();
             ClearInteractionPrompt();
@@ -152,6 +157,7 @@ namespace LastJumpCrew.ParkHanSol.Interaction
             }
 
             usableItem.Use(commonItemHolder, target);
+            InvalidateInteractionHitCache();
         }
 
         private bool TryInteractWithFocusedToolBoxSlot()
@@ -176,6 +182,7 @@ namespace LastJumpCrew.ParkHanSol.Interaction
             }
 
             focusedToolBoxSlot.Interact(itemHolder);
+            InvalidateInteractionHitCache();
             return true;
         }
 
@@ -217,8 +224,7 @@ namespace LastJumpCrew.ParkHanSol.Interaction
                 return;
             }
 
-            var ray = new Ray(interactionCamera.transform.position, interactionCamera.transform.forward);
-            if (!Physics.Raycast(ray, out var hit, interactDistance, interactableLayers, QueryTriggerInteraction.Collide))
+            if (!TryGetExternalInteractionHit(out var hit))
             {
                 Debug.LogWarning($"PHS_TEMP_INTERACT_TARGET_MISSING player={name}");
                 return;
@@ -238,6 +244,7 @@ namespace LastJumpCrew.ParkHanSol.Interaction
             }
 
             interactable.Interact(itemHolder);
+            InvalidateInteractionHitCache();
         }
 
         private bool TryGetCommonInteractableTarget(out CommonInteraction.IInteractable interactable)
@@ -249,8 +256,7 @@ namespace LastJumpCrew.ParkHanSol.Interaction
                 return false;
             }
 
-            var ray = new Ray(interactionCamera.transform.position, interactionCamera.transform.forward);
-            if (!Physics.Raycast(ray, out var hit, interactDistance, interactableLayers, QueryTriggerInteraction.Collide))
+            if (!TryGetExternalInteractionHit(out var hit))
             {
                 return false;
             }
@@ -273,8 +279,7 @@ namespace LastJumpCrew.ParkHanSol.Interaction
                 return;
             }
 
-            var ray = new Ray(interactionCamera.transform.position, interactionCamera.transform.forward);
-            if (!Physics.Raycast(ray, out var hit, interactDistance, interactableLayers, QueryTriggerInteraction.Collide))
+            if (!TryGetExternalInteractionHit(out var hit))
             {
                 ClearToolBoxSlotFocus();
                 return;
@@ -313,8 +318,7 @@ namespace LastJumpCrew.ParkHanSol.Interaction
                 return;
             }
 
-            var ray = new Ray(interactionCamera.transform.position, interactionCamera.transform.forward);
-            if (!Physics.Raycast(ray, out var hit, interactDistance, interactableLayers, QueryTriggerInteraction.Collide))
+            if (!TryGetExternalInteractionHit(out var hit))
             {
                 ClearInteractableFocusGlow();
                 ClearInteractionPrompt();
@@ -352,6 +356,62 @@ namespace LastJumpCrew.ParkHanSol.Interaction
 
             focusedGlow.SetFocused(false);
             focusedGlow = null;
+        }
+
+        private bool TryGetExternalInteractionHit(out RaycastHit hit)
+        {
+            if (cachedInteractionHitFrame == Time.frameCount)
+            {
+                hit = cachedInteractionHit;
+                return hasCachedInteractionHit;
+            }
+
+            cachedInteractionHitFrame = Time.frameCount;
+            hasCachedInteractionHit = false;
+            cachedInteractionHit = default;
+
+            var ray = new Ray(
+                interactionCamera.transform.position,
+                interactionCamera.transform.forward);
+            var hits = Physics.RaycastAll(
+                ray,
+                interactDistance,
+                interactableLayers,
+                QueryTriggerInteraction.Collide);
+            var nearestDistance = float.PositiveInfinity;
+            foreach (var candidate in hits)
+            {
+                if (candidate.collider == null)
+                {
+                    continue;
+                }
+
+                var candidateTransform = candidate.collider.transform;
+                if (candidateTransform == transform
+                    || candidateTransform.IsChildOf(transform))
+                {
+                    continue;
+                }
+
+                if (candidate.distance >= nearestDistance)
+                {
+                    continue;
+                }
+
+                nearestDistance = candidate.distance;
+                cachedInteractionHit = candidate;
+                hasCachedInteractionHit = true;
+            }
+
+            hit = cachedInteractionHit;
+            return hasCachedInteractionHit;
+        }
+
+        private void InvalidateInteractionHitCache()
+        {
+            cachedInteractionHitFrame = -1;
+            hasCachedInteractionHit = false;
+            cachedInteractionHit = default;
         }
 
         private void ClearInteractionPrompt()

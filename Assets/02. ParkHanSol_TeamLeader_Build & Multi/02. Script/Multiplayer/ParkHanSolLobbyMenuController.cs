@@ -54,6 +54,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
         [SerializeField] private ParkHanSolGameSettingsController gameSettingsController;
 
         private SettingsReturnTarget settingsReturnTarget = SettingsReturnTarget.Start;
+        private bool ownsLegacyMasterVolumeSlider;
 
         private void Awake()
         {
@@ -68,7 +69,10 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
             Bind(roomStartGameButton, StartGame);
             Bind(settingsBackButton, CloseSettingsWithoutSave);
 
-            if (masterVolumeSlider != null)
+            ownsLegacyMasterVolumeSlider =
+                masterVolumeSlider != null
+                && gameSettingsController == null;
+            if (ownsLegacyMasterVolumeSlider)
             {
                 masterVolumeSlider.onValueChanged.AddListener(SetMasterVolume);
                 masterVolumeSlider.value = AudioListener.volume;
@@ -109,7 +113,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
             Unbind(roomStartGameButton, StartGame);
             Unbind(settingsBackButton, CloseSettingsWithoutSave);
 
-            if (masterVolumeSlider != null)
+            if (ownsLegacyMasterVolumeSlider)
             {
                 masterVolumeSlider.onValueChanged.RemoveListener(SetMasterVolume);
             }
@@ -149,15 +153,15 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
             ShowSettings();
         }
 
-        private void ShowSettings()
+        private void ShowSettings(bool immediate = false)
         {
-            SetPanel(startPanel, false);
-            SetPanel(lobbyPanel, false);
-            SetPanel(roomPanel, false);
-            SetPanel(settingsPanel, true);
-            SetPanel(settingsLeftMenu, true);
-            SetPanel(settingsApplyButton, true);
-            SetPanel(sessionPanel, false);
+            SetPanel(startPanel, false, immediate);
+            SetPanel(lobbyPanel, false, immediate);
+            SetPanel(roomPanel, false, immediate);
+            SetPanel(settingsPanel, true, immediate);
+            SetPanel(settingsLeftMenu, true, immediate);
+            SetPanel(settingsApplyButton, true, immediate);
+            SetPanel(sessionPanel, false, immediate);
         }
 
         private void CloseSettingsWithoutSave()
