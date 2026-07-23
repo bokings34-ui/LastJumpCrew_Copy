@@ -1,5 +1,5 @@
 fileFormatVersion: 2
-guid: 3e1eb4d8cc1637142a7b84028e699406
+guid: 272a141bcee45aa49969e2d9178bb13e
 ModelImporter:
   serializedVersion: 24501
   internalIDToNameTable: []
@@ -7,8 +7,13 @@ ModelImporter:
   - first:
       type: UnityEngine:Material
       assembly: UnityEngine.CoreModule
-      name: tripo_node_84b42509-6a7f-48d9-852a-2f16f6d3a1b6_material
-    second: {fileID: 2100000, guid: b4156902117330b49bc523fd2184d63d, type: 2}
+      name: Mat_Turret_Body
+    second: {fileID: 2100000, guid: 1712545f113c3bc47afd262e42d8d30c, type: 2}
+  - first:
+      type: UnityEngine:Material
+      assembly: UnityEngine.CoreModule
+      name: Mat_Turret_Screen
+    second: {fileID: 2100000, guid: 8e198c69f5c49c04380258be1cc81d2c, type: 2}
   materials:
     materialImportMode: 2
     materialName: 0
