@@ -22,7 +22,7 @@ namespace LastJumpCrew.ParkHanSol.Editor
     public static class PHS0719IncidentLocationAuthoring
     {
         private const string MapScenePath =
-            "Assets/02. ParkHanSol_TeamLeader_Build & Multi/01. Scene/0715/PHS_Map_ver1.unity";
+            "Assets/01. MainGame/01. MainScene/Beta/PHS_Map_ver1.unity";
         private const string RuntimeRootName = "PHS_Map_Runtime";
         private const string LayoutRootName = "PHS_IncidentLayout";
         private const float ZoneHeight = 2.5f;
@@ -245,7 +245,12 @@ namespace LastJumpCrew.ParkHanSol.Editor
         {
             var firePresentationPrefab =
                 PHS0720FirePresentationAuthoring
-                    .EnsurePresentationPrefab();
+                    .LoadTeamPresentationPrefab();
+            if (firePresentationPrefab == null)
+            {
+                throw new InvalidOperationException(
+                    "incident_authoring_team_fire_presentation_missing");
+            }
             var runtimeRoot = FindUniqueNamedTransform(
                 mapScene,
                 RuntimeRootName);

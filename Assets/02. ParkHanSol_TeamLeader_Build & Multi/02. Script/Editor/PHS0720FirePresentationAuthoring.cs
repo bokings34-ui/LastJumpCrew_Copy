@@ -2,6 +2,7 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using LastJumpCrew.ParkHanSol.Multiplayer.Incidents.Fire;
 using UnityEditor;
 using UnityEngine;
 using UnityEngine.Rendering;
@@ -14,6 +15,10 @@ namespace LastJumpCrew.ParkHanSol.Editor
             "Assets/02. ParkHanSol_TeamLeader_Build & Multi/" +
             "03. Prefab/Props/Prefabs/IncidentFire/" +
             "PHS_FirePatchPresentation.prefab";
+        public const string TeamPresentationPrefabPath =
+            "Assets/02. ParkHanSol_TeamLeader_Build & Multi/" +
+            "03. Prefab/Props/Prefabs/IncidentFire/" +
+            "PHS_TeamFirePatchPresentation.prefab";
 
         private const string AssetFolder =
             "Assets/02. ParkHanSol_TeamLeader_Build & Multi/" +
@@ -123,6 +128,14 @@ namespace LastJumpCrew.ParkHanSol.Editor
                 return false;
             }
 
+            if (string.Equals(
+                    AssetDatabase.GetAssetPath(prefab),
+                    TeamPresentationPrefabPath,
+                    StringComparison.Ordinal))
+            {
+                return ValidateTeamPresentationPrefab(prefab, out reason);
+            }
+
             if (!string.Equals(
                     AssetDatabase.GetAssetPath(prefab),
                     PresentationPrefabPath,
@@ -203,6 +216,57 @@ namespace LastJumpCrew.ParkHanSol.Editor
                 {
                     reason =
                         $"missing_script_found:{child.name}";
+                    return false;
+                }
+            }
+
+            reason = null;
+            return true;
+        }
+
+        public static GameObject LoadTeamPresentationPrefab()
+        {
+            return AssetDatabase.LoadAssetAtPath<GameObject>(
+                TeamPresentationPrefabPath);
+        }
+
+        private static bool ValidateTeamPresentationPrefab(
+            GameObject prefab,
+            out string reason)
+        {
+            var adapters = prefab.GetComponentsInChildren<
+                PHSTeamFirePatchPresentationAdapter>(true);
+            if (adapters.Length != 1)
+            {
+                reason = $"team_adapter_count_invalid:{adapters.Length}";
+                return false;
+            }
+
+            if (!adapters[0].TryValidate(out var adapterReason))
+            {
+                reason = $"team_adapter_invalid:{adapterReason}";
+                return false;
+            }
+
+            if (prefab.GetComponentInChildren<Collider>(true) != null
+                || prefab.GetComponentInChildren<Rigidbody>(true) != null
+                || prefab.GetComponentInChildren<
+                    Unity.Netcode.NetworkObject>(true) != null
+                || prefab.GetComponentInChildren<
+                    Unity.Netcode.NetworkBehaviour>(true) != null)
+            {
+                reason = "gameplay_or_network_component_found";
+                return false;
+            }
+
+            foreach (var child in
+                     prefab.GetComponentsInChildren<Transform>(true))
+            {
+                if (GameObjectUtility
+                        .GetMonoBehavioursWithMissingScriptCount(
+                            child.gameObject) > 0)
+                {
+                    reason = $"missing_script_found:{child.name}";
                     return false;
                 }
             }
