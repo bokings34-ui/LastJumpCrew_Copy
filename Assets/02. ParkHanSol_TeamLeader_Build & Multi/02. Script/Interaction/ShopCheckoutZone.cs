@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using LastJumpCrew.ParkHanSol.Items;
+using LastJumpCrew.ParkHanSol.Multiplayer.Audio;
 using LastJumpCrew.ParkHanSol.Shop;
 using TMPro;
 using Unity.Collections;
@@ -33,6 +34,7 @@ namespace LastJumpCrew.ParkHanSol.Interaction
         [SerializeField] private string pricePrefix = "TOTAL";
         [SerializeField] private ShopCatalogSO catalog;
         [SerializeField] private MonoBehaviour purchaseServiceSource;
+        [SerializeField] private MonoBehaviour audioCuePlayerSource;
         [SerializeField, Min(0.1f)] private float statusDuration = 2f;
         [SerializeField] private GameObject teleportEffectPrefab;
         [SerializeField] private Transform teleportEffectAnchor;
@@ -43,6 +45,7 @@ namespace LastJumpCrew.ParkHanSol.Interaction
         private readonly HashSet<UtilityItemObject> checkoutItems = new();
         private IShopPurchaseService purchaseService;
         private INetworkShopPurchaseReceiptService networkPurchaseReceiptService;
+        private INetworkAudioCuePlayer audioCuePlayer;
         private bool checkoutPending;
         private int lastDisplayedPrice = -1;
         private int lastDisplayedCredits = -1;
@@ -57,6 +60,13 @@ namespace LastJumpCrew.ParkHanSol.Interaction
             purchaseService = purchaseServiceSource as IShopPurchaseService;
             networkPurchaseReceiptService =
                 purchaseServiceSource as INetworkShopPurchaseReceiptService;
+            audioCuePlayer = audioCuePlayerSource as INetworkAudioCuePlayer;
+            if (audioCuePlayer == null)
+            {
+                Debug.LogError(
+                    $"PHS_SHOP_AUDIO_SETUP_FAILED reason=cue_player_missing zone={name}",
+                    this);
+            }
             ValidateSetup();
             RefreshPriceText(true);
         }
@@ -193,6 +203,7 @@ namespace LastJumpCrew.ParkHanSol.Interaction
                     _ => "PURCHASE FAILED"
                 };
                 ShowTemporaryStatus(status, true);
+                PlayAudioCue(NetworkAudioCue.ShopFailure);
                 return;
             }
 
@@ -212,6 +223,7 @@ namespace LastJumpCrew.ParkHanSol.Interaction
 
             Debug.Log($"PHS_SHOP_CHECKOUT_COMPLETED zone={name} totalPrice={result.TotalPrice} itemCount={result.PurchasedCount}");
             ShowTemporaryStatus($"PAID {result.TotalPrice} CR\nSHIP DELIVERY");
+            PlayAudioCue(NetworkAudioCue.ShopSuccess);
         }
 
         private bool RequestNetworkCheckout(
@@ -464,6 +476,7 @@ namespace LastJumpCrew.ParkHanSol.Interaction
                     _ => "PURCHASE FAILED"
                 };
                 ShowTemporaryStatus(status, true);
+                PlayAudioCue(NetworkAudioCue.ShopFailure);
                 return;
             }
 
@@ -478,6 +491,26 @@ namespace LastJumpCrew.ParkHanSol.Interaction
         private void PlayCheckoutTeleportEffectClientRpc()
         {
             PlayCheckoutTeleportEffect();
+            PlayAudioCue(NetworkAudioCue.ShopSuccess);
+        }
+
+        private void PlayAudioCue(NetworkAudioCue cue)
+        {
+            if (audioCuePlayer == null)
+            {
+                Debug.LogError(
+                    $"PHS_SHOP_AUDIO_PLAY_FAILED reason=cue_player_missing zone={name} cue={cue}",
+                    this);
+                return;
+            }
+
+            if (!audioCuePlayer.TryPlay(cue, out var reason)
+                && reason != "cue_cooldown")
+            {
+                Debug.LogError(
+                    $"PHS_SHOP_AUDIO_PLAY_FAILED reason={reason} zone={name} cue={cue}",
+                    this);
+            }
         }
 
         private ShopPurchaseResult RejectNetworkCompletion(

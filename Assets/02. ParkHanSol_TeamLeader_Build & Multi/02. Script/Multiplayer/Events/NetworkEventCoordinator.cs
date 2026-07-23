@@ -207,7 +207,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Events
 
             var itemId = itemRecord.HeldItemId;
             var itemRevision = itemRecord.Revision;
-            if (itemId != target.RequiredItemId || requestSequence == 0U)
+            if (string.IsNullOrWhiteSpace(itemId) || requestSequence == 0U)
             {
                 Debug.LogWarning(
                     $"PHS_EVENT_REPAIR_REQUEST_REJECTED reason=local_contract item={itemId} required={target.RequiredItemId} sequence={requestSequence}",
@@ -909,7 +909,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Events
                 return RejectRepair("target_inactive", eventInstanceId, effectInstanceId, senderClientId);
             }
 
-            if (string.IsNullOrEmpty(expectedItemId) || expectedItemId != target.RequiredItemId)
+            if (string.IsNullOrEmpty(expectedItemId))
             {
                 return RejectRepair("item_contract", eventInstanceId, effectInstanceId, senderClientId);
             }
@@ -934,7 +934,9 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Events
                 return RejectRepair("item_record_mismatch", eventInstanceId, effectInstanceId, senderClientId);
             }
 
-            if (!TryGetActionKind(target.EffectKind, out var actionKind)
+            if (!UtilityItemRepairActionResolver.TryResolve(
+                    target.EffectKind,
+                    out var actionKind)
                 || !itemLifecycle.TryResolveHeldItemActionServer(
                     expectedItemId,
                     expectedItemRevision,
@@ -963,7 +965,13 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Events
                 return RejectRepair("distance", eventInstanceId, effectInstanceId, senderClientId);
             }
 
-            if (!target.TryApplyRepairStep(actionProfile.Amount))
+            var appliedAmount =
+                UtilityItemRepairActionResolver.IsInstantCompleteItem(
+                    expectedItemId,
+                    actionKind)
+                    ? float.MaxValue
+                    : actionProfile.Amount;
+            if (!target.TryApplyRepairStep(appliedAmount))
             {
                 return RejectRepair("apply_failed", eventInstanceId, effectInstanceId, senderClientId);
             }
@@ -981,25 +989,16 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Events
 
             repairRequestSequences[sequenceKey] = requestSequence;
 
+            var feedback =
+                client.PlayerObject.GetComponent<PHSNetworkItemUseFeedbackController>();
+            feedback?.PublishConfirmedTargetImpactServer(
+                actionKind,
+                target.RepairPosition);
+
             Debug.Log(
-                $"PHS_EVENT_REPAIR_APPLIED event={eventInstanceId} effect={effectInstanceId} client={senderClientId} item={expectedItemId} amount={actionProfile.Amount} cost={actionProfile.DurabilityCost} revision={expectedItemRevision}->{itemRecord.Revision} sequence={requestSequence} distance={distance:F3} complete={target.IsRepairComplete}",
+                $"PHS_EVENT_REPAIR_APPLIED event={eventInstanceId} effect={effectInstanceId} client={senderClientId} item={expectedItemId} amount={appliedAmount} configuredAmount={actionProfile.Amount} cost={actionProfile.DurabilityCost} revision={expectedItemRevision}->{itemRecord.Revision} sequence={requestSequence} distance={distance:F3} complete={target.IsRepairComplete}",
                 this);
             return true;
-        }
-
-        private static bool TryGetActionKind(
-            EventEffectKind effectKind,
-            out UtilityItemActionKind actionKind)
-        {
-            actionKind = effectKind switch
-            {
-                EventEffectKind.Fire =>
-                    UtilityItemActionKind.FireSuppression,
-                EventEffectKind.OxygenLeak =>
-                    UtilityItemActionKind.OxygenLeakRepair,
-                _ => UtilityItemActionKind.None
-            };
-            return actionKind != UtilityItemActionKind.None;
         }
 
         private bool RejectRepair(

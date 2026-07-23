@@ -6,8 +6,6 @@ using TMPro;
 using UnityEditor;
 using UnityEditor.SceneManagement;
 using UnityEngine;
-using UnityEngine.EventSystems;
-using UnityEngine.InputSystem.UI;
 using UnityEngine.SceneManagement;
 using UnityEngine.UI;
 
@@ -51,6 +49,7 @@ namespace LastJumpCrew.ParkHanSol.Editor
         [MenuItem("Tools/ParkHanSol/BEAVER/Author Network Tutorial")]
         public static void Author()
         {
+            RequireTutorialSceneNotLoaded();
             RequireAsset<GameObject>(SourcePlayerPrefabPath);
             RequireAsset<GameObject>(NetworkPlayHudPrefabPath);
             RequireAsset<GameObject>(WrenchPrefabPath);
@@ -72,14 +71,10 @@ namespace LastJumpCrew.ParkHanSol.Editor
 
         private static void CreateTutorialPlayerPrefab()
         {
-            AssetDatabase.DeleteAsset(TutorialPlayerPrefabPath);
-            if (!AssetDatabase.CopyAsset(
-                    SourcePlayerPrefabPath,
-                    TutorialPlayerPrefabPath))
-            {
-                throw new InvalidOperationException(
-                    "PHS_NETWORK_TUTORIAL_AUTHORING_FAILED reason=player_copy_failed");
-            }
+            CopyPrefabPreservingGuid(
+                SourcePlayerPrefabPath,
+                TutorialPlayerPrefabPath,
+                "PHS_NetworkTutorialPlayer");
 
             var root = PrefabUtility.LoadPrefabContents(TutorialPlayerPrefabPath);
             try
@@ -115,8 +110,7 @@ namespace LastJumpCrew.ParkHanSol.Editor
 
         private static void CreateInteractionStationPrefab()
         {
-            AssetDatabase.DeleteAsset(StationPrefabPath);
-            CopyPrefabWithNewGuid(
+            CopyPrefabPreservingGuid(
                 ShopWorkstationSourcePrefabPath,
                 StationPrefabPath,
                 "PHS_NetworkTutorialInteractionStation");
@@ -145,31 +139,33 @@ namespace LastJumpCrew.ParkHanSol.Editor
 
         private static void CreateModularEnvironmentPrefabs()
         {
-            CopyPrefabWithNewGuid(
+            CopyPrefabPreservingGuid(
                 ShopWallSourcePrefabPath,
                 TutorialWallPrefabPath,
                 "PHS_NetworkTutorialWall");
-            CopyPrefabWithNewGuid(
+            CopyPrefabPreservingGuid(
                 ShopDoorSourcePrefabPath,
                 TutorialDoorPrefabPath,
                 "PHS_NetworkTutorialDoor");
-            CopyPrefabWithNewGuid(
+            CopyPrefabPreservingGuid(
                 ShopDisplayDeskSourcePrefabPath,
                 TutorialDisplayDeskPrefabPath,
                 "PHS_NetworkTutorialDisplayDesk");
         }
 
-        private static void CopyPrefabWithNewGuid(
+        private static void CopyPrefabPreservingGuid(
             string sourcePath,
             string targetPath,
             string rootName)
         {
             if (AssetDatabase.LoadAssetAtPath<GameObject>(targetPath) != null)
             {
-                return;
+                FileUtil.ReplaceFile(sourcePath, targetPath);
+                AssetDatabase.ImportAsset(
+                    targetPath,
+                    ImportAssetOptions.ForceSynchronousImport);
             }
-
-            if (!AssetDatabase.CopyAsset(sourcePath, targetPath))
+            else if (!AssetDatabase.CopyAsset(sourcePath, targetPath))
             {
                 throw new InvalidOperationException(
                     $"PHS_NETWORK_TUTORIAL_AUTHORING_FAILED reason=prefab_copy_failed source={sourcePath} target={targetPath}");
@@ -189,6 +185,7 @@ namespace LastJumpCrew.ParkHanSol.Editor
 
         private static void CreateScene()
         {
+            RequireTutorialSceneNotLoaded();
             var previousActiveScene = SceneManager.GetActiveScene();
             var tutorialScene = EditorSceneManager.NewScene(
                 NewSceneSetup.EmptyScene,
@@ -226,6 +223,7 @@ namespace LastJumpCrew.ParkHanSol.Editor
                     NetworkPlayHudPrefabPath,
                     tutorialScene,
                     Vector3.zero);
+                RemoveTutorialOnlyVoiceHudBinding(playHud);
                 playHud.name = "PHS_NetworkPlayHudUI";
                 var hudPresenter = RequireSingle<ParkHanSolPlayHudMockPresenter>(
                     playHud);
@@ -252,7 +250,7 @@ namespace LastJumpCrew.ParkHanSol.Editor
                 stationSerialized.FindProperty("tutorialDirector").objectReferenceValue = director;
                 stationSerialized.ApplyModifiedPropertiesWithoutUndo();
 
-                CreateEventSystem(tutorialScene);
+                RequireTutorialSceneNotLoaded();
                 if (!EditorSceneManager.SaveScene(tutorialScene, ScenePath))
                 {
                     throw new InvalidOperationException(
@@ -267,6 +265,22 @@ namespace LastJumpCrew.ParkHanSol.Editor
                 }
 
                 EditorSceneManager.CloseScene(tutorialScene, true);
+            }
+        }
+
+        private static void RequireTutorialSceneNotLoaded()
+        {
+            for (var index = 0; index < SceneManager.sceneCount; index++)
+            {
+                var scene = SceneManager.GetSceneAt(index);
+                if (scene.isLoaded && string.Equals(
+                        scene.path,
+                        ScenePath,
+                        StringComparison.Ordinal))
+                {
+                    throw new InvalidOperationException(
+                        "PHS_NETWORK_TUTORIAL_AUTHORING_FAILED reason=tutorial_scene_already_loaded");
+                }
             }
         }
 
@@ -475,6 +489,12 @@ namespace LastJumpCrew.ParkHanSol.Editor
                 presenter);
         }
 
+        private static void RemoveTutorialOnlyVoiceHudBinding(GameObject playHud)
+        {
+            var binder = RequireSingle<ParkHanSolSpeakingPlayerHudBinder>(playHud);
+            UnityEngine.Object.DestroyImmediate(binder);
+        }
+
         private static void SetObjectReference(
             UnityEngine.Object target,
             string propertyName,
@@ -490,15 +510,6 @@ namespace LastJumpCrew.ParkHanSol.Editor
 
             property.objectReferenceValue = value;
             serialized.ApplyModifiedPropertiesWithoutUndo();
-        }
-
-        private static void CreateEventSystem(Scene scene)
-        {
-            var eventSystem = new GameObject(
-                "PHS_NetworkTutorialEventSystem",
-                typeof(EventSystem),
-                typeof(InputSystemUIInputModule));
-            SceneManager.MoveGameObjectToScene(eventSystem, scene);
         }
 
         private static GameObject CreateCube(

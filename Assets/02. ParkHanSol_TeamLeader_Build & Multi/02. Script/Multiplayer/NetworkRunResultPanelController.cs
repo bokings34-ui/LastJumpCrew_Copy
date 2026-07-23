@@ -1,5 +1,6 @@
 using Unity.Netcode;
 using UnityEngine;
+using LastJumpCrew.ParkHanSol.Multiplayer.Audio;
 
 namespace LastJumpCrew.ParkHanSol.Multiplayer
 {
@@ -9,6 +10,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
 
         [SerializeField] private NetworkPlayerController playerController;
         [SerializeField] private NetworkRunResultPanelView panelView;
+        [SerializeField] private MonoBehaviour audioCuePlayerSource;
         [SerializeField] private string lobbySceneName = "ParkHanSol_LobbyScene";
 
         private readonly INetworkSessionExitService sessionExitService =
@@ -16,10 +18,13 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
         private NetworkRunFlowCoordinator runFlow;
         private NetworkRunEconomyLedger economy;
         private NetworkRunRestartCoordinator restart;
+        private INetworkAudioCuePlayer audioCuePlayer;
         private bool isRootAvailabilitySubscribed;
         private bool isShowing;
         private bool isExiting;
         private bool isRestarting;
+        private bool restartFailureCuePlayed;
+        private NetworkRunPhase? lastResultCuePhase;
 
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
         private static void ResetStatics()
@@ -34,6 +39,14 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
             {
                 panelView?.SetVisible(false);
                 return;
+            }
+
+            audioCuePlayer = audioCuePlayerSource as INetworkAudioCuePlayer;
+            if (audioCuePlayer == null)
+            {
+                Debug.LogError(
+                    $"PHS_RUN_RESULT_AUDIO_SETUP_FAILED reason=cue_player_missing player={name}",
+                    this);
             }
 
             if (playerController == null
@@ -197,6 +210,14 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
                 runFlow.CompletedShopCycleCount,
                 economy.Credits);
             panelView.SetVisible(true);
+            if (lastResultCuePhase != phase)
+            {
+                lastResultCuePhase = phase;
+                PlayAudioCue(
+                    phase == NetworkRunPhase.Clear
+                        ? NetworkAudioCue.RunClear
+                        : NetworkAudioCue.RunGameOver);
+            }
             isShowing = true;
             IsLocalResultVisible = true;
             RefreshRestartControls();
@@ -233,6 +254,8 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
             }
 
             isRestarting = true;
+            restartFailureCuePlayed = false;
+            PlayAudioCue(NetworkAudioCue.RestartRequested);
             panelView.SetRestartPending();
             if (!restart.TryRequestRestart(out reason))
             {
@@ -263,6 +286,12 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
                     string.IsNullOrWhiteSpace(restart?.LastFailureReason)
                         ? "restart_state_failed"
                         : restart.LastFailureReason);
+                return;
+            }
+
+            if (current == NetworkRunRestartState.Completed)
+            {
+                PlayAudioCue(NetworkAudioCue.RestartSucceeded);
             }
         }
 
@@ -309,7 +338,31 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
         {
             reason = string.IsNullOrWhiteSpace(reason) ? "unknown" : reason;
             panelView.SetRestartFailed(reason);
+            if (!restartFailureCuePlayed)
+            {
+                restartFailureCuePlayed = true;
+                PlayAudioCue(NetworkAudioCue.RestartFailed);
+            }
             Debug.LogError($"PHS_RUN_RESULT_RESTART_FAILED reason={reason}", this);
+        }
+
+        private void PlayAudioCue(NetworkAudioCue cue)
+        {
+            if (audioCuePlayer == null)
+            {
+                Debug.LogError(
+                    $"PHS_RUN_RESULT_AUDIO_PLAY_FAILED reason=cue_player_missing player={name} cue={cue}",
+                    this);
+                return;
+            }
+
+            if (!audioCuePlayer.TryPlay(cue, out var reason)
+                && reason != "cue_cooldown")
+            {
+                Debug.LogError(
+                    $"PHS_RUN_RESULT_AUDIO_PLAY_FAILED reason={reason} player={name} cue={cue}",
+                    this);
+            }
         }
 
         private async void ReturnToLobby()

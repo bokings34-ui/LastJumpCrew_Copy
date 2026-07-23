@@ -1,11 +1,16 @@
 namespace LastJumpCrew.ParkHanSol.Items
 {
     // Tripo 소화기 사용 기능이다. 실제 소화 판정은 여기에 추가한다.
-    public sealed class TripoFireExtinguisherUsableItem : UtilityItemUseBehaviour
+    public sealed class TripoFireExtinguisherUsableItem :
+        ProfiledRepairUsableItem
     {
-        protected override void OnUseStarted(LastJumpCrew.Common.IItemHolder user, LastJumpCrew.Common.IInteractable target)
+        protected override string ExpectedItemId =>
+            "tripo_fire_extinguisher";
+
+        protected override bool SupportsAction(
+            UtilityItemActionKind actionKind)
         {
-            UnityEngine.Debug.Log($"PHS_TRIPO_FIRE_EXTINGUISHER_USED item={name}");
+            return actionKind == UtilityItemActionKind.FireSuppression;
         }
     }
 }

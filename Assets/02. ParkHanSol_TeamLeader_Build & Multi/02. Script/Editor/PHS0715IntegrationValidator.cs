@@ -4,6 +4,8 @@ using System.Linq;
 using LastJumpCrew.ParkHanSol.Interaction;
 using LastJumpCrew.ParkHanSol.Items;
 using LastJumpCrew.ParkHanSol.Multiplayer;
+using LastJumpCrew.ParkHanSol.Multiplayer.Audio;
+using LastJumpCrew.ParkHanSol.Multiplayer.Customization;
 using LastJumpCrew.ParkHanSol.Multiplayer.Events;
 using LastJumpCrew.ParkHanSol.Multiplayer.Events.MiniGames;
 using LastJumpCrew.ParkHanSol.Multiplayer.Events.MiniGames.Runtime;
@@ -21,6 +23,9 @@ using UnityEditor;
 using UnityEditor.SceneManagement;
 using UnityEngine;
 using UnityEngine.AI;
+using UnityEngine.EventSystems;
+using UnityEngine.InputSystem.UI;
+using UnityEngine.UI;
 
 namespace LastJumpCrew.ParkHanSol.Editor
 {
@@ -28,8 +33,18 @@ namespace LastJumpCrew.ParkHanSol.Editor
     {
         private const string LobbyScenePath =
             "Assets/02. ParkHanSol_TeamLeader_Build & Multi/01. Scene/BEAVER_2026/ParkHanSol_LobbyScene.unity";
+        private const string LobbyCustomizationFrontendPrefabPath =
+            "Assets/02. ParkHanSol_TeamLeader_Build & Multi/03. Prefab/UI/Customization/PHS_NetworkLobbyCustomizationFrontend.prefab";
+        private const string LobbyCustomizationPreviewPrefabPath =
+            "Assets/02. ParkHanSol_TeamLeader_Build & Multi/03. Prefab/Customization/PHS_NetworkLobbyCustomizationPreviewRig.prefab";
         private const string TutorialScenePath =
             "Assets/02. ParkHanSol_TeamLeader_Build & Multi/01. Scene/BEAVER_2026/Tutorial/PHS_NetworkTutorialScene.unity";
+        private const string TutorialWallPrefabPath =
+            "Assets/02. ParkHanSol_TeamLeader_Build & Multi/03. Prefab/Tutorial/PHS_NetworkTutorialWall.prefab";
+        private const string TutorialPlayerPrefabPath =
+            "Assets/02. ParkHanSol_TeamLeader_Build & Multi/03. Prefab/Tutorial/PHS_NetworkTutorialPlayer.prefab";
+        private const string TutorialGrappleTargetName =
+            "PHS_NetworkTutorialGrappleTarget";
         private const string MapScenePath =
             "Assets/02. ParkHanSol_TeamLeader_Build & Multi/01. Scene/BEAVER_2026/PHS_Map_ver1.unity";
         private const string ShopScenePath =
@@ -46,6 +61,8 @@ namespace LastJumpCrew.ParkHanSol.Editor
             "Assets/02. ParkHanSol_TeamLeader_Build & Multi/03. Prefab/Props/Prefabs/ShopCheckoutCounter/PHS_DebrisSellStation.prefab";
         private const string PlayHudPrefabPath =
             "Assets/02. ParkHanSol_TeamLeader_Build & Multi/03. Prefab/UI/ParkHanSol_PlayHudUI.prefab";
+        private const string NetworkPlayHudPrefabPath =
+            "Assets/02. ParkHanSol_TeamLeader_Build & Multi/03. Prefab/UI/PHS_NetworkPlayHudUI.prefab";
         private const string PlayerPrefabPath =
             "Assets/02. ParkHanSol_TeamLeader_Build & Multi/03. Prefab/PlayerPrefab/PHS_CuteWhiteGhost_Player.prefab";
         private const string RunSessionRootPrefabPath =
@@ -54,6 +71,22 @@ namespace LastJumpCrew.ParkHanSol.Editor
             "Assets/01. MainGame/02. Final_Prefab/PHS_ShipRuntime.prefab";
         private const string TradeStationPrefabPath =
             "Assets/01. MainGame/02. Final_Prefab/02. Prefab_SeoBoGyeong_Game Economy/TradeStation.prefab";
+        private const string NetworkShopCheckoutCounterPrefabPath =
+            "Assets/02. ParkHanSol_TeamLeader_Build & Multi/03. Prefab/Shop/PHS_NetworkShopCheckoutCounter.prefab";
+        private const string NetworkRunResultPanelPrefabPath =
+            "Assets/02. ParkHanSol_TeamLeader_Build & Multi/03. Prefab/UI/PHS_NetworkRunResultPanel.prefab";
+        private const string NetworkGeneratedAudioFolder =
+            "Assets/02. ParkHanSol_TeamLeader_Build & Multi/06. Audio/NetworkGenerated";
+        private const string BatteryShockAudioPath =
+            NetworkGeneratedAudioFolder + "/PHS_Item_Battery_Shock.wav";
+        private static readonly HashSet<string>
+            LegacyHeldNetworkObjectAllowedPaths = new(StringComparer.Ordinal)
+            {
+                "Assets/02. ParkHanSol_TeamLeader_Build & Multi/03. Prefab/Props/Prefabs/Items/ShopUpgrades/Held/PHS_HookPowerUpgrade_Held.prefab",
+                "Assets/02. ParkHanSol_TeamLeader_Build & Multi/03. Prefab/Props/Prefabs/Items/ShopUpgrades/Held/PHS_ShipHpRestore_Held.prefab",
+                "Assets/02. ParkHanSol_TeamLeader_Build & Multi/03. Prefab/Props/Prefabs/Items/ShopUpgrades/Held/PHS_ShipMaxHpUpgrade_Held.prefab",
+                "Assets/02. ParkHanSol_TeamLeader_Build & Multi/03. Prefab/Props/Prefabs/Items/ShopUpgrades/Held/PHS_ThrusterDurationUpgrade_Held.prefab"
+            };
         private const string ShopDisplayDeskPrefabPath =
             "Assets/02. ParkHanSol_TeamLeader_Build & Multi/03. Prefab/Shop/PHS_ShopDisplayDesk_Shared.prefab";
         private const string EventPresentationPrefabFolder =
@@ -536,10 +569,13 @@ namespace LastJumpCrew.ParkHanSol.Editor
                 ValidateShopScene(errors);
                 ValidateShopPresentationPrefabs(errors);
                 ValidateUtilityItemCatalog(errors);
+                ValidateUtilityItemFunctionContracts(errors);
                 ValidateSellStationPrefab(errors);
                 ValidatePlayHudPrefab(errors);
                 ValidatePlayerPrefab(errors);
                 ValidateRunSessionRootPrefab(errors);
+                ValidateNetworkAudioAssets(errors);
+                ValidateNetworkAudioPrefabs(errors);
                 ValidateShipRuntimePrefab(errors);
                 ValidateEventPresentationPrefabs(errors);
             }
@@ -589,6 +625,10 @@ namespace LastJumpCrew.ParkHanSol.Editor
         private static void ValidateLobbyScene(ICollection<string> errors)
         {
             OpenAndValidateScene(LobbyScenePath, errors);
+            var lobbyMenu = FindOne<ParkHanSolLobbyMenuController>(
+                "lobby_menu_controller",
+                errors);
+            ValidateLobbyCustomization(lobbyMenu, errors);
             ValidateNoSceneOwnedStageClock("lobby", errors);
             ValidateNoSceneOwnedEconomyLedger("lobby", errors);
             ValidateNoSceneOwnedRandomLedger("lobby", errors);
@@ -606,6 +646,19 @@ namespace LastJumpCrew.ParkHanSol.Editor
                 networkManager.NetworkConfig != null && networkManager.NetworkConfig.PlayerPrefab != null,
                 "lobby_player_prefab_missing",
                 errors);
+            var runtimePlayerPrefab = networkManager.NetworkConfig?.PlayerPrefab;
+            if (runtimePlayerPrefab != null)
+            {
+                Require(
+                    AssetDatabase.GetAssetPath(runtimePlayerPrefab) == PlayerPrefabPath,
+                    $"lobby_player_prefab_invalid expected={PlayerPrefabPath} " +
+                    $"actual={AssetDatabase.GetAssetPath(runtimePlayerPrefab)}",
+                    errors);
+                ValidatePlayerCollisionLayer(
+                    runtimePlayerPrefab,
+                    "lobby_runtime_player",
+                    errors);
+            }
             ValidateLobbyNetworkPrefabRegistration(networkManager, errors);
             var rootBootstrap = FindOne<NetworkRunSessionRootBootstrap>(
                 "lobby_run_session_root_bootstrap",
@@ -627,12 +680,393 @@ namespace LastJumpCrew.ParkHanSol.Editor
                     errors);
             }
 
-            FindOne<MultiplayerRoomService>("lobby_room_service", errors);
+            var roomService = FindOne<MultiplayerRoomService>(
+                "lobby_room_service",
+                errors);
+            var voiceChatSession = FindOne<ProximityVoiceChatSession>(
+                "lobby_voice_chat_session",
+                errors);
+            if (lobbyMenu != null)
+            {
+                RequireSerializedReferenceEquals(
+                    lobbyMenu,
+                    "roomService",
+                    roomService,
+                    "lobby_menu_room_service_reference_invalid",
+                    errors);
+                RequireSerializedReferenceEquals(
+                    lobbyMenu,
+                    "voiceChatSession",
+                    voiceChatSession,
+                    "lobby_menu_voice_chat_reference_invalid",
+                    errors);
+            }
+
+            var playerList = FindOne<NetworkLobbyPlayerListPresenter>(
+                "lobby_player_list_presenter",
+                errors);
+            if (playerList != null)
+            {
+                RequireSerializedReferenceEquals(
+                    playerList,
+                    "roomService",
+                    roomService,
+                    "lobby_player_list_room_service_reference_invalid",
+                    errors);
+                RequireSerializedReferenceEquals(
+                    playerList,
+                    "networkManager",
+                    networkManager,
+                    "lobby_player_list_network_manager_reference_invalid",
+                    errors);
+            }
+        }
+
+        private static void ValidateLobbyCustomization(
+            ParkHanSolLobbyMenuController lobbyMenu,
+            ICollection<string> errors)
+        {
+            var scene = UnityEngine.SceneManagement.SceneManager.GetActiveScene();
+            var sceneTransforms = scene.GetRootGameObjects()
+                .SelectMany(root => root.GetComponentsInChildren<Transform>(true))
+                .ToArray();
+            var frontendObjects = sceneTransforms
+                .Where(transform =>
+                    transform.name == "PHS_NetworkLobbyCustomizationFrontend")
+                .Select(transform => transform.gameObject)
+                .ToArray();
+            var frontendControllers = scene.GetRootGameObjects()
+                .SelectMany(root => root.GetComponentsInChildren<
+                    NetworkLobbyCustomizationFrontendController>(true))
+                .ToArray();
+            var previewObjects = sceneTransforms
+                .Where(transform =>
+                    transform.name == "PHS_NetworkLobbyCustomizationPreviewRig")
+                .Select(transform => transform.gameObject)
+                .ToArray();
+            var legacyPanels = sceneTransforms.Count(transform =>
+                transform.name == "PHS_LobbyCustomizationPanel");
+            var startPanel = lobbyMenu == null
+                ? null
+                : new SerializedObject(lobbyMenu)
+                    .FindProperty("startPanel")
+                    ?.objectReferenceValue as GameObject;
+
+            Require(
+                frontendObjects.Length == 1,
+                $"lobby_customization_frontend_count_invalid actual={frontendObjects.Length}",
+                errors);
+            Require(
+                frontendControllers.Length == 1,
+                $"lobby_customization_frontend_controller_scene_count_invalid actual={frontendControllers.Length}",
+                errors);
+            Require(
+                previewObjects.Length == 1,
+                $"lobby_customization_preview_count_invalid actual={previewObjects.Length}",
+                errors);
+            Require(
+                legacyPanels == 0,
+                $"lobby_legacy_customization_panel_must_be_absent actual={legacyPanels}",
+                errors);
+            Require(
+                startPanel != null,
+                "lobby_customization_start_panel_reference_missing",
+                errors);
+
+            if (frontendObjects.Length == 1)
+            {
+                Require(
+                    frontendControllers.Length == 1
+                    && frontendControllers[0].gameObject == frontendObjects[0],
+                    "lobby_customization_frontend_owner_invalid",
+                    errors);
+                Require(
+                    startPanel != null
+                    && frontendObjects[0].transform.parent
+                        == startPanel.transform,
+                    "lobby_customization_frontend_start_panel_parent_invalid",
+                    errors);
+                ValidateLobbyCustomizationFrontend(frontendObjects[0], errors);
+            }
+
+            if (previewObjects.Length == 1)
+            {
+                ValidateLobbyCustomizationPreview(previewObjects[0], errors);
+            }
+
+            var trainingControllers = scene.GetRootGameObjects()
+                .SelectMany(root => root.GetComponentsInChildren<
+                    LobbyTrainingSceneButtonController>(true))
+                .ToArray();
+            Require(
+                trainingControllers.Length == 1,
+                $"lobby_training_controller_count_invalid actual={trainingControllers.Length}",
+                errors);
+            if (trainingControllers.Length == 1)
+            {
+                var serializedTraining = new SerializedObject(
+                    trainingControllers[0]);
+                RequireObject(
+                    serializedTraining,
+                    "trainingButton",
+                    "lobby_training_button_missing",
+                    errors);
+                RequireObject(
+                    serializedTraining,
+                    "statusLabel",
+                    "lobby_training_status_label_missing",
+                    errors);
+            }
+        }
+
+        private static void ValidateLobbyCustomizationFrontend(
+            GameObject frontendObject,
+            ICollection<string> errors)
+        {
+            var sourcePath = PrefabUtility
+                .GetPrefabAssetPathOfNearestInstanceRoot(frontendObject);
+            Require(
+                sourcePath == LobbyCustomizationFrontendPrefabPath,
+                $"lobby_customization_frontend_prefab_invalid actual={sourcePath}",
+                errors);
+
+            var controllers = frontendObject.GetComponents<
+                NetworkLobbyCustomizationFrontendController>();
+            Require(
+                controllers.Length == 1,
+                $"lobby_customization_frontend_controller_count_invalid actual={controllers.Length}",
+                errors);
+            if (controllers.Length != 1)
+            {
+                return;
+            }
+
+            var serialized = new SerializedObject(controllers[0]);
+            var requiredReferences = new[]
+            {
+                "catalog",
+                "panelRoot",
+                "openButton",
+                "closeButton",
+                "creditsLabel",
+                "statusLabel",
+                "previewPresenter",
+                "lobbyEventSystem",
+                "applyColorButton",
+                "unequipHeadButton",
+                "unequipBackButton",
+                "resetPreviewButton"
+            };
+            var missingReferenceCount = requiredReferences.Count(propertyName =>
+            {
+                var property = serialized.FindProperty(propertyName);
+                return property == null || property.objectReferenceValue == null;
+            });
+            Require(
+                missingReferenceCount == 0,
+                $"lobby_customization_frontend_reference_missing count={missingReferenceCount}",
+                errors);
+
+            var blockedLobbyMenuButtons = serialized.FindProperty(
+                "blockedLobbyMenuButtons");
+            Require(
+                blockedLobbyMenuButtons != null
+                && blockedLobbyMenuButtons.arraySize == 4,
+                $"lobby_customization_blocked_menu_button_count_invalid actual={(blockedLobbyMenuButtons == null ? -1 : blockedLobbyMenuButtons.arraySize)}",
+                errors);
+            if (blockedLobbyMenuButtons != null
+                && blockedLobbyMenuButtons.arraySize == 4)
+            {
+                var blockedButtons = new HashSet<UnityEngine.Object>();
+                var missingBlockedButtonCount = 0;
+                for (var index = 0;
+                     index < blockedLobbyMenuButtons.arraySize;
+                     index++)
+                {
+                    var button = blockedLobbyMenuButtons
+                        .GetArrayElementAtIndex(index)
+                        .objectReferenceValue;
+                    if (button == null || !blockedButtons.Add(button))
+                    {
+                        missingBlockedButtonCount++;
+                    }
+                }
+
+                Require(
+                    missingBlockedButtonCount == 0,
+                    $"lobby_customization_blocked_menu_button_reference_invalid count={missingBlockedButtonCount}",
+                    errors);
+            }
+
+            var itemRows = serialized.FindProperty("itemRows");
+            Require(
+                itemRows != null && itemRows.arraySize == 6,
+                $"lobby_customization_item_row_count_invalid actual={(itemRows == null ? -1 : itemRows.arraySize)}",
+                errors);
+            if (itemRows != null && itemRows.arraySize == 6)
+            {
+                var missingItemRowReferences = 0;
+                for (var index = 0; index < itemRows.arraySize; index++)
+                {
+                    var row = itemRows.GetArrayElementAtIndex(index);
+                    missingItemRowReferences += CountMissingRelativeReferences(
+                        row,
+                        "item",
+                        "previewButton",
+                        "itemLabel",
+                        "priceLabel",
+                        "actionButton",
+                        "actionLabel");
+                }
+
+                Require(
+                    missingItemRowReferences == 0,
+                    $"lobby_customization_item_row_reference_missing count={missingItemRowReferences}",
+                    errors);
+            }
+
+            var colorButtons = serialized.FindProperty("colorButtons");
+            Require(
+                colorButtons != null && colorButtons.arraySize == 6,
+                $"lobby_customization_color_button_count_invalid actual={(colorButtons == null ? -1 : colorButtons.arraySize)}",
+                errors);
+            if (colorButtons != null && colorButtons.arraySize == 6)
+            {
+                var missingColorReferences = 0;
+                for (var index = 0; index < colorButtons.arraySize; index++)
+                {
+                    missingColorReferences += CountMissingRelativeReferences(
+                        colorButtons.GetArrayElementAtIndex(index),
+                        "button",
+                        "swatch");
+                }
+
+                Require(
+                    missingColorReferences == 0,
+                    $"lobby_customization_color_reference_missing count={missingColorReferences}",
+                    errors);
+            }
+
+            var presenter = serialized.FindProperty("previewPresenter")
+                ?.objectReferenceValue as LobbyCustomizationPreviewPresenter;
+            if (presenter != null)
+            {
+                ValidateLobbyCustomizationRenderTexture(presenter, errors);
+            }
+        }
+
+        private static void ValidateLobbyCustomizationPreview(
+            GameObject previewObject,
+            ICollection<string> errors)
+        {
+            var sourcePath = PrefabUtility
+                .GetPrefabAssetPathOfNearestInstanceRoot(previewObject);
+            Require(
+                sourcePath == LobbyCustomizationPreviewPrefabPath,
+                $"lobby_customization_preview_prefab_invalid actual={sourcePath}",
+                errors);
+
+            var previewPrefab = AssetDatabase.LoadAssetAtPath<GameObject>(
+                LobbyCustomizationPreviewPrefabPath);
+            Require(
+                previewPrefab != null,
+                "lobby_customization_preview_prefab_missing",
+                errors);
+            if (previewPrefab == null)
+            {
+                return;
+            }
+
+            var networkObjectCount = previewPrefab
+                .GetComponentsInChildren<NetworkObject>(true).Length;
+            var networkBehaviourCount = previewPrefab
+                .GetComponentsInChildren<NetworkBehaviour>(true).Length;
+            Require(
+                networkObjectCount == 0,
+                $"lobby_customization_preview_network_object_count_invalid actual={networkObjectCount}",
+                errors);
+            Require(
+                networkBehaviourCount == 0,
+                $"lobby_customization_preview_network_behaviour_count_invalid actual={networkBehaviourCount}",
+                errors);
+        }
+
+        private static void ValidateLobbyCustomizationRenderTexture(
+            LobbyCustomizationPreviewPresenter presenter,
+            ICollection<string> errors)
+        {
+            var serialized = new SerializedObject(presenter);
+            var requiredReferences = new[]
+            {
+                "previewRigRoot",
+                "rotationRoot",
+                "bodyRenderer",
+                "headSlot",
+                "backSlot",
+                "previewCamera",
+                "previewImage"
+            };
+            var missingReferenceCount = requiredReferences.Count(propertyName =>
+            {
+                var property = serialized.FindProperty(propertyName);
+                return property == null || property.objectReferenceValue == null;
+            });
+            Require(
+                missingReferenceCount == 0,
+                $"lobby_customization_preview_reference_missing count={missingReferenceCount}",
+                errors);
+
+            var camera = serialized.FindProperty("previewCamera")
+                ?.objectReferenceValue as Camera;
+            var rawImage = serialized.FindProperty("previewImage")
+                ?.objectReferenceValue as RawImage;
+            Require(
+                camera != null,
+                "lobby_customization_preview_camera_missing",
+                errors);
+            Require(
+                rawImage != null,
+                "lobby_customization_preview_raw_image_missing",
+                errors);
+            if (camera == null || rawImage == null)
+            {
+                return;
+            }
+
+            var renderTexture = camera.targetTexture;
+            Require(
+                renderTexture != null,
+                "lobby_customization_render_texture_missing",
+                errors);
+            Require(
+                renderTexture != null
+                && renderTexture.width == 1024
+                && renderTexture.height == 1024,
+                $"lobby_customization_render_texture_size_invalid actual={(renderTexture == null ? "null" : $"{renderTexture.width}x{renderTexture.height}")}",
+                errors);
+            Require(
+                renderTexture != null && rawImage.texture == renderTexture,
+                "lobby_customization_render_texture_binding_invalid",
+                errors);
+        }
+
+        private static int CountMissingRelativeReferences(
+            SerializedProperty parent,
+            params string[] propertyNames)
+        {
+            return propertyNames.Count(propertyName =>
+            {
+                var property = parent.FindPropertyRelative(propertyName);
+                return property == null || property.objectReferenceValue == null;
+            });
         }
 
         private static void ValidateTutorialScene(ICollection<string> errors)
         {
             OpenAndValidateScene(TutorialScenePath, errors);
+            ValidateTutorialGrappleTarget(errors);
+            ValidateTutorialEventSystem(errors);
+            ValidateTutorialVoiceOwnership(errors);
             var director = FindOne<NetworkTutorialDirector>(
                 "tutorial_director",
                 errors);
@@ -672,6 +1106,7 @@ namespace LastJumpCrew.ParkHanSol.Editor
                 "returnToLobbyButton",
                 "tutorial_return_button_missing",
                 errors);
+            ValidateTutorialAudioWiring(director, errors);
 
             var station = FindOne<NetworkTutorialInteractionStation>(
                 "tutorial_interaction_station",
@@ -684,6 +1119,136 @@ namespace LastJumpCrew.ParkHanSol.Editor
                     "tutorial_station_director_missing",
                     errors);
             }
+        }
+
+        private static void ValidateTutorialVoiceOwnership(
+            ICollection<string> errors)
+        {
+            var speakingHudBinders = UnityEngine.Object.FindObjectsByType<
+                ParkHanSolSpeakingPlayerHudBinder>(
+                FindObjectsInactive.Include,
+                FindObjectsSortMode.None);
+            Require(
+                speakingHudBinders.Length == 0,
+                $"tutorial_speaking_hud_binder_must_be_absent actual={speakingHudBinders.Length}",
+                errors);
+
+            var voiceChatSessions = UnityEngine.Object.FindObjectsByType<
+                ProximityVoiceChatSession>(
+                FindObjectsInactive.Include,
+                FindObjectsSortMode.None);
+            Require(
+                voiceChatSessions.Length == 0,
+                $"tutorial_voice_session_must_be_absent actual={voiceChatSessions.Length}",
+                errors);
+        }
+
+        private static void ValidateTutorialEventSystem(
+            ICollection<string> errors)
+        {
+            var eventSystems = UnityEngine.Object.FindObjectsByType<EventSystem>(
+                FindObjectsInactive.Include,
+                FindObjectsSortMode.None);
+            Require(
+                eventSystems.Length == 1,
+                $"tutorial_event_system_count_invalid actual={eventSystems.Length}",
+                errors);
+            Require(
+                eventSystems.Count(eventSystem => eventSystem.isActiveAndEnabled) == 1,
+                $"tutorial_event_system_active_count_invalid actual={eventSystems.Count(eventSystem => eventSystem.isActiveAndEnabled)}",
+                errors);
+            if (eventSystems.Length != 1)
+            {
+                return;
+            }
+
+            var eventSystem = eventSystems[0];
+            var prefabPath = PrefabUtility.GetPrefabAssetPathOfNearestInstanceRoot(
+                eventSystem.gameObject);
+            Require(
+                prefabPath == NetworkPlayHudPrefabPath,
+                $"tutorial_event_system_prefab_invalid actual={prefabPath}",
+                errors);
+
+            var inputModules =
+                eventSystem.GetComponents<InputSystemUIInputModule>();
+            Require(
+                inputModules.Length == 1,
+                $"tutorial_input_system_ui_module_count_invalid actual={inputModules.Length}",
+                errors);
+            Require(
+                inputModules.Count(inputModule => inputModule.isActiveAndEnabled) == 1,
+                $"tutorial_input_system_ui_module_active_count_invalid actual={inputModules.Count(inputModule => inputModule.isActiveAndEnabled)}",
+                errors);
+        }
+
+        private static void ValidateTutorialGrappleTarget(
+            ICollection<string> errors)
+        {
+            var targets = UnityEngine.SceneManagement.SceneManager
+                .GetActiveScene()
+                .GetRootGameObjects()
+                .SelectMany(root => root.GetComponentsInChildren<Transform>(true))
+                .Where(transform => transform.name == TutorialGrappleTargetName)
+                .Select(transform => transform.gameObject)
+                .ToArray();
+            Require(
+                targets.Length == 1,
+                $"tutorial_grapple_target_count_invalid actual={targets.Length}",
+                errors);
+            if (targets.Length != 1)
+            {
+                return;
+            }
+
+            var target = targets[0];
+            var prefabStatus = PrefabUtility.GetPrefabInstanceStatus(target);
+            Require(
+                PrefabUtility.IsPartOfPrefabInstance(target),
+                "tutorial_grapple_target_prefab_instance_missing",
+                errors);
+            Require(
+                prefabStatus == PrefabInstanceStatus.Connected,
+                $"tutorial_grapple_target_prefab_source_broken status={prefabStatus}",
+                errors);
+
+            var source = PrefabUtility.GetCorrespondingObjectFromSource(target);
+            Require(
+                source != null,
+                "tutorial_grapple_target_prefab_source_missing",
+                errors);
+            var prefabPath = PrefabUtility.GetPrefabAssetPathOfNearestInstanceRoot(
+                target);
+            Require(
+                prefabPath == TutorialWallPrefabPath,
+                $"tutorial_grapple_target_prefab_invalid actual={prefabPath}",
+                errors);
+
+            var renderers = target.GetComponentsInChildren<Renderer>(true);
+            Require(
+                renderers.Length > 0,
+                "tutorial_grapple_target_renderer_missing",
+                errors);
+            var materials = renderers
+                .SelectMany(renderer => renderer.sharedMaterials)
+                .ToArray();
+            Require(
+                materials.Length > 0,
+                "tutorial_grapple_target_materials_missing",
+                errors);
+            var nullMaterialCount = materials.Count(material => material == null);
+            Require(
+                nullMaterialCount == 0,
+                $"tutorial_grapple_target_material_missing count={nullMaterialCount}",
+                errors);
+            var invalidShaderCount = materials.Count(
+                material => material != null
+                    && (material.shader == null
+                        || material.shader.name != "Universal Render Pipeline/Lit"));
+            Require(
+                invalidShaderCount == 0,
+                $"tutorial_grapple_target_shader_invalid count={invalidShaderCount}",
+                errors);
         }
 
         private static void ValidateLobbyNetworkPrefabRegistration(
@@ -1296,7 +1861,8 @@ namespace LastJumpCrew.ParkHanSol.Editor
                 var stationRoot = PrefabUtility.GetOutermostPrefabInstanceRoot(checkoutZone.gameObject);
                 Require(
                     stationRoot != null &&
-                    PrefabUtility.GetPrefabAssetPathOfNearestInstanceRoot(stationRoot) == TradeStationPrefabPath,
+                    PrefabUtility.GetPrefabAssetPathOfNearestInstanceRoot(stationRoot) ==
+                    NetworkShopCheckoutCounterPrefabPath,
                     "shop_trade_station_prefab_invalid",
                     errors);
                 var serializedZone = new SerializedObject(checkoutZone);
@@ -2039,6 +2605,7 @@ namespace LastJumpCrew.ParkHanSol.Editor
                 return;
             }
 
+            ValidatePlayerCollisionLayer(prefab, "player", errors);
             Require(prefab.GetComponent<NetworkObject>() != null, "player_network_object_missing", errors);
             Require(prefab.GetComponent<NetworkPlayerController>() != null, "player_controller_missing", errors);
             var playerLifeState = prefab.GetComponent<NetworkPlayerLifeState>();
@@ -2207,6 +2774,60 @@ namespace LastJumpCrew.ParkHanSol.Editor
                 AssetDatabase.GetAssetPath(itemData.DroppedPrefab) == expectedDroppedPath,
                 $"{label}_dropped_prefab_invalid",
                 errors);
+
+            if (label == "battery")
+            {
+                var impact = itemData.DroppedPrefab == null
+                    ? null
+                    : itemData.DroppedPrefab.GetComponent<BatteryThrownImpact>();
+                Require(impact != null, "battery_thrown_impact_missing", errors);
+                if (impact != null)
+                {
+                    var playerLayer = LayerMask.NameToLayer("Player");
+                    var targetMask = new SerializedObject(impact)
+                        .FindProperty("targetLayers")?.intValue ?? 0;
+                    Require(
+                        playerLayer >= 0 && (targetMask & (1 << playerLayer)) != 0,
+                        $"battery_target_mask_missing_player mask={targetMask}",
+                        errors);
+                }
+            }
+        }
+
+        private static void ValidatePlayerCollisionLayer(
+            GameObject prefab,
+            string label,
+            ICollection<string> errors)
+        {
+            var playerLayer = LayerMask.NameToLayer("Player");
+            Require(playerLayer >= 0, "player_layer_missing", errors);
+            Require(
+                prefab.layer == playerLayer,
+                $"{label}_collision_layer_invalid expected=Player({playerLayer}) " +
+                $"actual={LayerMask.LayerToName(prefab.layer)}({prefab.layer})",
+                errors);
+            var controller = prefab.GetComponent<CharacterController>();
+            Require(
+                controller != null && controller.gameObject == prefab,
+                $"{label}_root_character_controller_missing",
+                errors);
+            Require(
+                controller != null && controller.enabled,
+                $"{label}_root_character_controller_disabled",
+                errors);
+            if (playerLayer >= 0)
+            {
+                Require(
+                    !Physics.GetIgnoreLayerCollision(playerLayer, 0),
+                    $"{label}_player_default_collision_disabled",
+                    errors);
+                var shipWallLayer = LayerMask.NameToLayer("ShipWall");
+                Require(
+                    shipWallLayer < 0
+                    || !Physics.GetIgnoreLayerCollision(playerLayer, shipWallLayer),
+                    $"{label}_player_ship_wall_collision_disabled",
+                    errors);
+            }
         }
 
         private static void ValidateShipRuntimePrefab(ICollection<string> errors)
@@ -2424,7 +3045,9 @@ namespace LastJumpCrew.ParkHanSol.Editor
                     typeof(NetworkRunEconomyLedger),
                     typeof(NetworkRunRandomLedger),
                     typeof(NetworkRunIncidentLedger),
-                    typeof(NetworkShopTransitionVoteCoordinator)
+                    typeof(NetworkShopTransitionVoteCoordinator),
+                    typeof(NetworkRunRestartCoordinator),
+                    typeof(PHSNetworkFoamCoordinator)
                 };
                 Require(
                     networkBehaviours.Length == expectedBehaviourTypes.Length,
@@ -2496,6 +3119,565 @@ namespace LastJumpCrew.ParkHanSol.Editor
             {
                 PrefabUtility.UnloadPrefabContents(prefab);
             }
+        }
+
+        private static void ValidateNetworkAudioAssets(
+            ICollection<string> errors)
+        {
+            var expectedPaths = GetExpectedNetworkAudioClipPaths()
+                .Values
+                .Append(BatteryShockAudioPath)
+                .ToHashSet(StringComparer.Ordinal);
+            var actualPaths = AssetDatabase.FindAssets(
+                    "t:AudioClip",
+                    new[] { NetworkGeneratedAudioFolder })
+                .Select(AssetDatabase.GUIDToAssetPath)
+                .ToHashSet(StringComparer.Ordinal);
+
+            Require(
+                actualPaths.SetEquals(expectedPaths),
+                $"network_audio_generated_assets_invalid expected={expectedPaths.Count} " +
+                $"actual={actualPaths.Count} missing={string.Join(",", expectedPaths.Except(actualPaths))} " +
+                $"extra={string.Join(",", actualPaths.Except(expectedPaths))}",
+                errors);
+            foreach (var path in expectedPaths)
+            {
+                Require(
+                    AssetDatabase.LoadAssetAtPath<AudioClip>(path) != null,
+                    $"network_audio_generated_clip_missing path={path}",
+                    errors);
+            }
+
+            var authoredAssetPaths = new[]
+            {
+                PlayerPrefabPath,
+                TutorialPlayerPrefabPath,
+                NetworkShopCheckoutCounterPrefabPath,
+                RunSessionRootPrefabPath,
+                NetworkRunResultPanelPrefabPath,
+                TutorialScenePath
+            };
+            var forbiddenReferences = AssetDatabase
+                .GetDependencies(authoredAssetPaths, true)
+                .Where(path => path.EndsWith(
+                    "/Sound_Fire.mp3",
+                    StringComparison.OrdinalIgnoreCase))
+                .ToArray();
+            Require(
+                forbiddenReferences.Length == 0,
+                $"network_audio_forbidden_sound_fire_reference_count_invalid " +
+                $"expected=0 actual={forbiddenReferences.Length} " +
+                $"paths={string.Join(",", forbiddenReferences)}",
+                errors);
+        }
+
+        private static void ValidateNetworkAudioPrefabs(
+            ICollection<string> errors)
+        {
+            var clips = GetExpectedNetworkAudioClipPaths();
+            ValidatePlayerAudioPrefab(
+                PlayerPrefabPath,
+                false,
+                clips,
+                errors);
+            ValidatePlayerAudioPrefab(
+                TutorialPlayerPrefabPath,
+                true,
+                clips,
+                errors);
+
+            var resultPrefab = AssetDatabase.LoadAssetAtPath<GameObject>(
+                NetworkRunResultPanelPrefabPath);
+            Require(
+                resultPrefab != null,
+                $"network_audio_result_prefab_missing path={NetworkRunResultPanelPrefabPath}",
+                errors);
+            if (resultPrefab != null)
+            {
+                Require(
+                    resultPrefab.GetComponentsInChildren<NetworkAudioCueEmitter>(true).Length == 1,
+                    "network_audio_result_emitter_count_invalid expected=1",
+                    errors);
+                ValidateNamedAudioEmitter(
+                    resultPrefab,
+                    "PHS_NetworkRunResultAudio",
+                    new Dictionary<NetworkAudioCue, string>
+                    {
+                        { NetworkAudioCue.RunClear, clips[NetworkAudioCue.RunClear] },
+                        { NetworkAudioCue.RunGameOver, clips[NetworkAudioCue.RunGameOver] },
+                        { NetworkAudioCue.RestartRequested, clips[NetworkAudioCue.RestartRequested] },
+                        { NetworkAudioCue.RestartSucceeded, clips[NetworkAudioCue.RestartSucceeded] },
+                        { NetworkAudioCue.RestartFailed, clips[NetworkAudioCue.RestartFailed] }
+                    },
+                    "network_audio_result",
+                    errors);
+            }
+
+            var shopPrefab = AssetDatabase.LoadAssetAtPath<GameObject>(
+                NetworkShopCheckoutCounterPrefabPath);
+            Require(
+                shopPrefab != null,
+                $"network_audio_shop_prefab_missing path={NetworkShopCheckoutCounterPrefabPath}",
+                errors);
+            if (shopPrefab != null)
+            {
+                Require(
+                    shopPrefab.GetComponentsInChildren<NetworkAudioCueEmitter>(true).Length == 1,
+                    "network_audio_shop_emitter_count_invalid expected=1",
+                    errors);
+                var emitter = ValidateNamedAudioEmitter(
+                    shopPrefab,
+                    "PHS_NetworkShopAudio",
+                    new Dictionary<NetworkAudioCue, string>
+                    {
+                        { NetworkAudioCue.ShopSuccess, clips[NetworkAudioCue.ShopSuccess] },
+                        { NetworkAudioCue.ShopFailure, clips[NetworkAudioCue.ShopFailure] }
+                    },
+                    "network_audio_shop",
+                    errors);
+                var checkoutZones = shopPrefab.GetComponentsInChildren<ShopCheckoutZone>(true);
+                Require(
+                    checkoutZones.Length == 1,
+                    $"network_audio_shop_zone_count_invalid expected=1 actual={checkoutZones.Length}",
+                    errors);
+                if (checkoutZones.Length == 1)
+                {
+                    RequireSerializedReferenceEquals(
+                        checkoutZones[0],
+                        "audioCuePlayerSource",
+                        emitter,
+                        "network_audio_shop_player_reference_invalid",
+                        errors);
+                }
+            }
+
+            var runRoot = AssetDatabase.LoadAssetAtPath<GameObject>(
+                RunSessionRootPrefabPath);
+            Require(
+                runRoot != null,
+                $"network_audio_run_root_prefab_missing path={RunSessionRootPrefabPath}",
+                errors);
+            if (runRoot != null)
+            {
+                Require(
+                    runRoot.GetComponentsInChildren<NetworkAudioCueEmitter>(true).Length == 1,
+                    "network_audio_run_root_emitter_count_invalid expected=1",
+                    errors);
+                var emitter = ValidateNamedAudioEmitter(
+                    runRoot,
+                    "PHS_NetworkWarningAudio",
+                    new Dictionary<NetworkAudioCue, string>
+                    {
+                        { NetworkAudioCue.Warning, clips[NetworkAudioCue.Warning] }
+                    },
+                    "network_audio_warning",
+                    errors);
+                var presenters = runRoot.GetComponentsInChildren<NetworkRunWarningAudioPresenter>(true);
+                Require(
+                    presenters.Length == 1 && presenters[0].gameObject == runRoot,
+                    $"network_audio_warning_presenter_count_or_owner_invalid " +
+                    $"expected=1 actual={presenters.Length}",
+                    errors);
+                if (presenters.Length == 1)
+                {
+                    RequireSerializedReferenceEquals(
+                        presenters[0],
+                        "incidentLedger",
+                        runRoot.GetComponent<NetworkRunIncidentLedger>(),
+                        "network_audio_warning_incident_ledger_reference_invalid",
+                        errors);
+                    RequireSerializedReferenceEquals(
+                        presenters[0],
+                        "stageClock",
+                        runRoot.GetComponent<NetworkRunStageClock>(),
+                        "network_audio_warning_stage_clock_reference_invalid",
+                        errors);
+                    RequireSerializedReferenceEquals(
+                        presenters[0],
+                        "cuePlayerSource",
+                        emitter,
+                        "network_audio_warning_player_reference_invalid",
+                        errors);
+                }
+            }
+        }
+
+        private static void ValidatePlayerAudioPrefab(
+            string path,
+            bool includeTutorialCompletion,
+            IReadOnlyDictionary<NetworkAudioCue, string> clips,
+            ICollection<string> errors)
+        {
+            var label = includeTutorialCompletion
+                ? "network_audio_tutorial_player"
+                : "network_audio_player";
+            var prefab = AssetDatabase.LoadAssetAtPath<GameObject>(path);
+            Require(prefab != null, $"{label}_prefab_missing path={path}", errors);
+            if (prefab == null)
+            {
+                return;
+            }
+
+            const int expectedEmitterCount = 5;
+            Require(
+                prefab.GetComponentsInChildren<NetworkAudioCueEmitter>(true).Length
+                    == expectedEmitterCount,
+                $"{label}_emitter_count_invalid expected={expectedEmitterCount}",
+                errors);
+            var interactionOwnerEmitters = prefab
+                .GetComponentsInChildren<NetworkAudioCueEmitter>(true)
+                .Where(emitter => emitter.name == "PHS_ItemInteractionAudio_2D")
+                .ToArray();
+            var interactionWorldEmitters = prefab
+                .GetComponentsInChildren<NetworkAudioCueEmitter>(true)
+                .Where(emitter => emitter.name == "PHS_ItemInteractionAudio_3D")
+                .ToArray();
+            Require(
+                interactionOwnerEmitters.Length == 1,
+                $"{label}_interaction_owner_emitter_count_invalid expected=1 actual={interactionOwnerEmitters.Length}",
+                errors);
+            Require(
+                interactionWorldEmitters.Length == 1,
+                $"{label}_interaction_world_emitter_count_invalid expected=1 actual={interactionWorldEmitters.Length}",
+                errors);
+
+            var interactionRelays = prefab.GetComponentsInChildren<
+                PHSNetworkItemInteractionAudioRelay>(true);
+            Require(
+                interactionRelays.Length == 1
+                && interactionRelays[0].gameObject == prefab,
+                $"{label}_interaction_relay_count_or_owner_invalid expected=1 actual={interactionRelays.Length}",
+                errors);
+            if (interactionRelays.Length == 1)
+            {
+                RequireSerializedReferenceEquals(
+                    interactionRelays[0],
+                    "ownerCuePlayerSource",
+                    interactionOwnerEmitters.Length == 1
+                        ? interactionOwnerEmitters[0]
+                        : null,
+                    $"{label}_interaction_owner_emitter_reference_invalid",
+                    errors);
+                RequireSerializedReferenceEquals(
+                    interactionRelays[0],
+                    "worldCuePlayerSource",
+                    interactionWorldEmitters.Length == 1
+                        ? interactionWorldEmitters[0]
+                        : null,
+                    $"{label}_interaction_world_emitter_reference_invalid",
+                    errors);
+            }
+
+            var itemCues = new Dictionary<NetworkAudioCue, string>
+            {
+                { NetworkAudioCue.ItemPickup, clips[NetworkAudioCue.ItemPickup] },
+                { NetworkAudioCue.ItemSwap, clips[NetworkAudioCue.ItemSwap] },
+                { NetworkAudioCue.ItemDrop, clips[NetworkAudioCue.ItemDrop] }
+            };
+            var ownerEmitter = ValidateNamedAudioEmitter(
+                prefab,
+                "PHS_NetworkItemAudio_2D",
+                itemCues,
+                $"{label}_item_2d",
+                errors);
+            var worldEmitter = ValidateNamedAudioEmitter(
+                prefab,
+                "PHS_NetworkItemAudio_3D",
+                itemCues,
+                $"{label}_item_3d",
+                errors);
+
+            var feedbacks = prefab.GetComponentsInChildren<NetworkPlayerItemAudioFeedback>(true);
+            Require(
+                feedbacks.Length == 1 && feedbacks[0].gameObject == prefab,
+                $"{label}_feedback_count_or_owner_invalid expected=1 actual={feedbacks.Length}",
+                errors);
+            if (feedbacks.Length == 1)
+            {
+                RequireSerializedReferenceEquals(
+                    feedbacks[0],
+                    "itemRecord",
+                    prefab.GetComponent<NetworkPlayerItemRecord>(),
+                    $"{label}_item_record_reference_invalid",
+                    errors);
+                RequireSerializedReferenceEquals(
+                    feedbacks[0],
+                    "networkObject",
+                    prefab.GetComponent<NetworkObject>(),
+                    $"{label}_network_object_reference_invalid",
+                    errors);
+                RequireSerializedReferenceEquals(
+                    feedbacks[0],
+                    "ownerCuePlayerSource",
+                    ownerEmitter,
+                    $"{label}_owner_player_reference_invalid",
+                    errors);
+                RequireSerializedReferenceEquals(
+                    feedbacks[0],
+                    "worldCuePlayerSource",
+                    worldEmitter,
+                    $"{label}_world_player_reference_invalid",
+                    errors);
+            }
+
+            ValidateElectricShockAudio(prefab, label, errors);
+
+            if (includeTutorialCompletion)
+            {
+                ValidateNamedAudioEmitter(
+                    prefab,
+                    "PHS_NetworkTutorialCompletionAudio",
+                    new Dictionary<NetworkAudioCue, string>
+                    {
+                        { NetworkAudioCue.TutorialComplete, clips[NetworkAudioCue.TutorialComplete] }
+                    },
+                    "network_audio_tutorial_completion",
+                    errors);
+                return;
+            }
+
+            var resultEmitter = FindNamedAudioEmitter(
+                prefab,
+                "PHS_NetworkRunResultAudio");
+            var resultControllers = prefab.GetComponentsInChildren<NetworkRunResultPanelController>(true);
+            Require(
+                resultControllers.Length == 1,
+                $"network_audio_result_controller_count_invalid expected=1 actual={resultControllers.Length}",
+                errors);
+            if (resultControllers.Length == 1)
+            {
+                RequireSerializedReferenceEquals(
+                    resultControllers[0],
+                    "audioCuePlayerSource",
+                    resultEmitter,
+                    "network_audio_result_player_reference_invalid",
+                    errors);
+            }
+        }
+
+        private static void ValidateElectricShockAudio(
+            GameObject prefab,
+            string label,
+            ICollection<string> errors)
+        {
+            var status = prefab.GetComponent<StatusEffectController>();
+            var effectRoot = status == null
+                ? null
+                : new SerializedObject(status)
+                    .FindProperty("electricShockEffectRoot")
+                    ?.objectReferenceValue as GameObject;
+            var sources = effectRoot == null
+                ? Array.Empty<AudioSource>()
+                : effectRoot.GetComponentsInChildren<AudioSource>(true);
+            var source = sources.Length == 1 ? sources[0] : null;
+            Require(
+                status != null && effectRoot != null,
+                $"{label}_electric_shock_effect_reference_invalid",
+                errors);
+            Require(
+                source != null
+                && source.gameObject == effectRoot
+                && source.enabled
+                && source.clip == AssetDatabase.LoadAssetAtPath<AudioClip>(
+                    BatteryShockAudioPath)
+                && !source.playOnAwake
+                && !source.loop
+                && Mathf.Approximately(source.volume, 0.65f)
+                && Mathf.Approximately(source.spatialBlend, 1f)
+                && Mathf.Approximately(source.dopplerLevel, 0f)
+                && source.rolloffMode == AudioRolloffMode.Logarithmic
+                && Mathf.Approximately(source.minDistance, 1f)
+                && Mathf.Approximately(source.maxDistance, 15f),
+                $"{label}_electric_shock_audio_contract_invalid " +
+                $"expectedSources=1 actual={sources.Length}",
+                errors);
+        }
+
+        private static void ValidateTutorialAudioWiring(
+            NetworkTutorialDirector director,
+            ICollection<string> errors)
+        {
+            var emitters = UnityEngine.Object.FindObjectsByType<NetworkAudioCueEmitter>(
+                    FindObjectsInactive.Include,
+                    FindObjectsSortMode.None)
+                .Where(emitter => emitter.name == "PHS_NetworkTutorialCompletionAudio")
+                .ToArray();
+            Require(
+                emitters.Length == 1,
+                $"tutorial_audio_completion_emitter_count_invalid expected=1 actual={emitters.Length}",
+                errors);
+            var emitter = emitters.Length == 1 ? emitters[0] : null;
+            if (emitter != null)
+            {
+                ValidateAudioEmitterObject(
+                    emitter.gameObject,
+                    new Dictionary<NetworkAudioCue, string>
+                    {
+                        {
+                            NetworkAudioCue.TutorialComplete,
+                            GetExpectedNetworkAudioClipPaths()[NetworkAudioCue.TutorialComplete]
+                        }
+                    },
+                    "tutorial_audio_completion",
+                    errors);
+            }
+
+            RequireSerializedReferenceEquals(
+                director,
+                "audioCuePlayerSource",
+                emitter,
+                "tutorial_audio_player_reference_invalid",
+                errors);
+        }
+
+        private static NetworkAudioCueEmitter ValidateNamedAudioEmitter(
+            GameObject root,
+            string objectName,
+            IReadOnlyDictionary<NetworkAudioCue, string> expectedBindings,
+            string label,
+            ICollection<string> errors)
+        {
+            var matchingTransforms = root.GetComponentsInChildren<Transform>(true)
+                .Where(transform => transform.name == objectName)
+                .ToArray();
+            Require(
+                matchingTransforms.Length == 1,
+                $"{label}_object_count_invalid expected=1 actual={matchingTransforms.Length}",
+                errors);
+            return matchingTransforms.Length == 1
+                ? ValidateAudioEmitterObject(
+                    matchingTransforms[0].gameObject,
+                    expectedBindings,
+                    label,
+                    errors)
+                : null;
+        }
+
+        private static NetworkAudioCueEmitter FindNamedAudioEmitter(
+            GameObject root,
+            string objectName)
+        {
+            return root.GetComponentsInChildren<NetworkAudioCueEmitter>(true)
+                .FirstOrDefault(emitter => emitter.name == objectName);
+        }
+
+        private static NetworkAudioCueEmitter ValidateAudioEmitterObject(
+            GameObject gameObject,
+            IReadOnlyDictionary<NetworkAudioCue, string> expectedBindings,
+            string label,
+            ICollection<string> errors)
+        {
+            var sources = gameObject.GetComponents<AudioSource>();
+            var emitters = gameObject.GetComponents<NetworkAudioCueEmitter>();
+            Require(
+                sources.Length == 1,
+                $"{label}_audio_source_count_invalid expected=1 actual={sources.Length}",
+                errors);
+            Require(
+                emitters.Length == 1,
+                $"{label}_emitter_count_invalid expected=1 actual={emitters.Length}",
+                errors);
+            if (emitters.Length != 1)
+            {
+                return null;
+            }
+
+            var emitter = emitters[0];
+            var serializedEmitter = new SerializedObject(emitter);
+            Require(
+                sources.Length == 1
+                && serializedEmitter.FindProperty("audioSource")?.objectReferenceValue
+                    == sources[0],
+                $"{label}_audio_source_reference_invalid",
+                errors);
+            var bindings = serializedEmitter.FindProperty("cueBindings");
+            Require(
+                bindings != null
+                && bindings.isArray
+                && bindings.arraySize == expectedBindings.Count,
+                $"{label}_binding_count_invalid expected={expectedBindings.Count} " +
+                $"actual={(bindings != null && bindings.isArray ? bindings.arraySize : -1)}",
+                errors);
+            if (bindings == null || !bindings.isArray)
+            {
+                return emitter;
+            }
+
+            var observedCues = new HashSet<NetworkAudioCue>();
+            for (var index = 0; index < bindings.arraySize; index++)
+            {
+                var binding = bindings.GetArrayElementAtIndex(index);
+                var cueValue = binding.FindPropertyRelative("cue")?.intValue ?? -1;
+                var cue = (NetworkAudioCue)cueValue;
+                var clip = binding.FindPropertyRelative("clip")?.objectReferenceValue as AudioClip;
+                Require(
+                    observedCues.Add(cue),
+                    $"{label}_binding_duplicate cue={cueValue}",
+                    errors);
+                Require(
+                    expectedBindings.TryGetValue(cue, out var expectedPath),
+                    $"{label}_binding_unexpected cue={cueValue}",
+                    errors);
+                Require(
+                    clip != null
+                    && expectedPath != null
+                    && AssetDatabase.GetAssetPath(clip) == expectedPath,
+                    $"{label}_binding_clip_invalid cue={cueValue} " +
+                    $"actual={AssetDatabase.GetAssetPath(clip)}",
+                    errors);
+            }
+
+            Require(
+                observedCues.SetEquals(expectedBindings.Keys),
+                $"{label}_binding_cues_invalid",
+                errors);
+            return emitter;
+        }
+
+        private static void RequireSerializedReferenceEquals(
+            UnityEngine.Object target,
+            string propertyName,
+            UnityEngine.Object expected,
+            string error,
+            ICollection<string> errors)
+        {
+            var property = new SerializedObject(target).FindProperty(propertyName);
+            Require(
+                expected != null
+                && property != null
+                && property.objectReferenceValue == expected,
+                error,
+                errors);
+        }
+
+        private static IReadOnlyDictionary<NetworkAudioCue, string>
+            GetExpectedNetworkAudioClipPaths()
+        {
+            return new Dictionary<NetworkAudioCue, string>
+            {
+                { NetworkAudioCue.ItemPickup, $"{NetworkGeneratedAudioFolder}/PHS_Network_Item_Pickup.wav" },
+                { NetworkAudioCue.ItemDrop, $"{NetworkGeneratedAudioFolder}/PHS_Network_Item_Drop.wav" },
+                { NetworkAudioCue.ItemSwap, $"{NetworkGeneratedAudioFolder}/PHS_Network_Item_Swap.wav" },
+                { NetworkAudioCue.ShopSuccess, $"{NetworkGeneratedAudioFolder}/PHS_Network_Shop_Success.wav" },
+                { NetworkAudioCue.ShopFailure, $"{NetworkGeneratedAudioFolder}/PHS_Network_Shop_Fail.wav" },
+                { NetworkAudioCue.Warning, $"{NetworkGeneratedAudioFolder}/PHS_Network_Warning.wav" },
+                { NetworkAudioCue.RunClear, $"{NetworkGeneratedAudioFolder}/PHS_Network_Clear.wav" },
+                { NetworkAudioCue.RunGameOver, $"{NetworkGeneratedAudioFolder}/PHS_Network_GameOver.wav" },
+                { NetworkAudioCue.RestartRequested, $"{NetworkGeneratedAudioFolder}/PHS_Network_UI_Click.wav" },
+                { NetworkAudioCue.RestartSucceeded, $"{NetworkGeneratedAudioFolder}/PHS_Network_Restart_Success.wav" },
+                { NetworkAudioCue.RestartFailed, $"{NetworkGeneratedAudioFolder}/PHS_Network_Restart_Fail.wav" },
+                { NetworkAudioCue.TutorialComplete, $"{NetworkGeneratedAudioFolder}/PHS_Network_TutorialComplete.wav" },
+                { NetworkAudioCue.WrenchImpact, $"{NetworkGeneratedAudioFolder}/PHS_Item_Wrench_Impact.wav" },
+                { NetworkAudioCue.RepairComplete, $"{NetworkGeneratedAudioFolder}/PHS_Item_Repair_Complete.wav" },
+                { NetworkAudioCue.ExtinguisherSpray, $"{NetworkGeneratedAudioFolder}/PHS_Item_Extinguisher_Spray.wav" },
+                { NetworkAudioCue.ExtinguishComplete, $"{NetworkGeneratedAudioFolder}/PHS_Item_Extinguish_Complete.wav" },
+                { NetworkAudioCue.BatteryInstall, $"{NetworkGeneratedAudioFolder}/PHS_Item_Battery_Install.wav" },
+                { NetworkAudioCue.FoamShot, $"{NetworkGeneratedAudioFolder}/PHS_Item_Foam_Shot.wav" },
+                { NetworkAudioCue.FoamAttach, $"{NetworkGeneratedAudioFolder}/PHS_Item_Foam_Attach.wav" },
+                { NetworkAudioCue.FoamHarden, $"{NetworkGeneratedAudioFolder}/PHS_Item_Foam_Harden.wav" },
+                { NetworkAudioCue.FoamSealComplete, $"{NetworkGeneratedAudioFolder}/PHS_Item_Foam_Seal_Complete.wav" },
+                { NetworkAudioCue.FoamFireComplete, $"{NetworkGeneratedAudioFolder}/PHS_Item_Foam_Fire_Complete.wav" }
+            };
         }
 
         private static void ValidateEventPresentationPrefabs(ICollection<string> errors)
@@ -2919,8 +4101,9 @@ namespace LastJumpCrew.ParkHanSol.Editor
                     heldPrefab.GetComponent<UtilityItemObject>() != null,
                     $"shop_held_utility_item_missing offer={offerId} path={heldPath}",
                     errors);
-                Require(
-                    heldPrefab.GetComponentsInChildren<NetworkObject>(true).Length == 0,
+                ValidateHeldNetworkObjectAllowance(
+                    heldPrefab,
+                    heldPath,
                     $"shop_held_network_object_present offer={offerId} path={heldPath}",
                     errors);
                 Require(
@@ -3030,8 +4213,9 @@ namespace LastJumpCrew.ParkHanSol.Editor
                         heldPrefab.GetComponent<UtilityItemObject>() != null,
                         $"utility_held_item_missing item={itemId} path={heldPath}",
                         errors);
-                    Require(
-                        heldPrefab.GetComponentsInChildren<NetworkObject>(true).Length == 0,
+                    ValidateHeldNetworkObjectAllowance(
+                        heldPrefab,
+                        heldPath,
                         $"utility_held_network_object_present item={itemId} path={heldPath}",
                         errors);
                     Require(
@@ -3088,6 +4272,284 @@ namespace LastJumpCrew.ParkHanSol.Editor
                     $"utility_dropped_network_hash_duplicate item={itemId} hash={hash} path={droppedPath}",
                     errors);
             }
+        }
+
+        private static void ValidateHeldNetworkObjectAllowance(
+            GameObject heldPrefab,
+            string heldPath,
+            string error,
+            ICollection<string> errors)
+        {
+            var networkObjectCount = heldPrefab
+                .GetComponentsInChildren<NetworkObject>(true)
+                .Length;
+            Require(
+                networkObjectCount == 0
+                || networkObjectCount == 1
+                && LegacyHeldNetworkObjectAllowedPaths.Contains(heldPath),
+                $"{error} count={networkObjectCount}",
+                errors);
+        }
+
+        private static void ValidateUtilityItemFunctionContracts(
+            ICollection<string> errors)
+        {
+            const string dataRoot =
+                "Assets/02. ParkHanSol_TeamLeader_Build & Multi/04. Data/UtilityItems";
+            const string prefabRoot =
+                "Assets/02. ParkHanSol_TeamLeader_Build & Multi/03. Prefab/Props/Prefabs/Items";
+
+            ValidateUtilityItemFunctionContract(
+                $"{dataRoot}/ParkHanSol_AutoRepairKitItemPrefabData.asset",
+                "auto_repair_kit",
+                typeof(AutoRepairKitUsableItem),
+                typeof(AutoRepairKitUsableItem),
+                $"{prefabRoot}/Held/ParkHanSol_AutoRepairKit_Held.prefab",
+                $"{prefabRoot}/ParkHanSol_AutoRepairKit.prefab",
+                true,
+                1,
+                UtilityItemUpgradeEffect.None,
+                0f,
+                errors,
+                ExpectedProfile(UtilityItemActionKind.DeviceRepair, 1, 1),
+                ExpectedProfile(UtilityItemActionKind.HullBreachRepair, 1, 1),
+                ExpectedProfile(UtilityItemActionKind.SteamLeakRepair, 1, 1),
+                ExpectedProfile(UtilityItemActionKind.OxygenLeakRepair, 1, 1),
+                ExpectedProfile(UtilityItemActionKind.OxygenGeneratorRepair, 1, 1),
+                ExpectedProfile(UtilityItemActionKind.GravityGeneratorRepair, 1, 1));
+            ValidateUtilityItemFunctionContract(
+                $"{dataRoot}/ParkHanSol_FuturisticAdjustableWrenchItemPrefabData.asset",
+                "futuristic_adjustable_wrench",
+                typeof(PHSWrenchFamilyUsableItem),
+                typeof(FuturisticAdjustableWrenchUsableItem),
+                $"{prefabRoot}/Held/ParkHanSol_FuturisticAdjustableWrench_Held.prefab",
+                $"{prefabRoot}/ParkHanSol_FuturisticAdjustableWrench.prefab",
+                true,
+                150,
+                UtilityItemUpgradeEffect.None,
+                0f,
+                errors,
+                ExpectedProfile(UtilityItemActionKind.DeviceRepair, 40, 1),
+                ExpectedProfile(UtilityItemActionKind.HullBreachRepair, 40, 1),
+                ExpectedProfile(UtilityItemActionKind.SteamLeakRepair, 40, 1),
+                ExpectedProfile(UtilityItemActionKind.OxygenLeakRepair, 40, 1),
+                ExpectedProfile(UtilityItemActionKind.OxygenGeneratorRepair, 40, 1),
+                ExpectedProfile(UtilityItemActionKind.GravityGeneratorRepair, 40, 1));
+            ValidateUtilityItemFunctionContract(
+                $"{dataRoot}/ParkHanSol_TripoFireExtinguisherItemPrefabData.asset",
+                "tripo_fire_extinguisher",
+                typeof(PHSFireExtinguisherFamilyUsableItem),
+                typeof(TripoFireExtinguisherUsableItem),
+                $"{prefabRoot}/Held/ParkHanSol_TripoFireExtinguisher_Held.prefab",
+                $"{prefabRoot}/ParkHanSol_TripoFireExtinguisher.prefab",
+                true,
+                150,
+                UtilityItemUpgradeEffect.None,
+                0f,
+                errors,
+                ExpectedProfile(UtilityItemActionKind.FireSuppression, 70, 1));
+        }
+
+        private static void ValidateUtilityItemFunctionContract(
+            string dataPath,
+            string expectedItemId,
+            Type expectedHeldUsableType,
+            Type expectedDroppedUsableType,
+            string expectedHeldPath,
+            string expectedDroppedPath,
+            bool expectedDurability,
+            int expectedMaxDurability,
+            UtilityItemUpgradeEffect expectedUpgradeEffect,
+            float expectedUpgradeAmount,
+            ICollection<string> errors,
+            params UtilityItemActionProfileExpectation[] expectedProfiles)
+        {
+            var itemData = AssetDatabase.LoadAssetAtPath<UtilityItemPrefabData>(
+                dataPath);
+            Require(
+                itemData != null,
+                $"utility_function_data_missing item={expectedItemId} path={dataPath}",
+                errors);
+            if (itemData == null)
+            {
+                return;
+            }
+
+            Require(
+                itemData.ItemId == expectedItemId,
+                $"utility_function_item_id_invalid expected={expectedItemId} actual={itemData.ItemId}",
+                errors);
+            Require(
+                itemData.HasDurability == expectedDurability,
+                $"utility_function_durability_flag_invalid item={expectedItemId} expected={expectedDurability}",
+                errors);
+            Require(
+                !expectedDurability
+                || itemData.MaxDurability == expectedMaxDurability,
+                $"utility_function_max_durability_invalid item={expectedItemId} expected={expectedMaxDurability} actual={itemData.MaxDurability}",
+                errors);
+            Require(
+                typeof(ProfiledRepairUsableItem).IsAssignableFrom(
+                    expectedDroppedUsableType),
+                $"utility_function_online_request_contract_invalid item={expectedItemId}",
+                errors);
+            var expectsInstantCompletion =
+                expectedItemId == "auto_repair_kit";
+            Require(
+                expectedProfiles.All(profile =>
+                    UtilityItemRepairActionResolver.IsInstantCompleteItem(
+                        expectedItemId,
+                        profile.ActionKind)
+                    == expectsInstantCompletion),
+                $"utility_function_server_completion_contract_invalid item={expectedItemId}",
+                errors);
+            Require(
+                itemData.UpgradeEffect == expectedUpgradeEffect
+                && Mathf.Approximately(
+                    itemData.UpgradeAmount,
+                    expectedUpgradeAmount),
+                $"utility_function_upgrade_invalid item={expectedItemId} " +
+                $"expected={expectedUpgradeEffect}:{expectedUpgradeAmount} " +
+                $"actual={itemData.UpgradeEffect}:{itemData.UpgradeAmount}",
+                errors);
+
+            var profiles = itemData.ActionProfiles;
+            Require(
+                profiles != null
+                && profiles.Count == expectedProfiles.Length,
+                $"utility_function_profile_count_invalid item={expectedItemId} " +
+                $"expected={expectedProfiles.Length} actual={profiles?.Count ?? -1}",
+                errors);
+            if (profiles != null)
+            {
+                var comparableCount = Math.Min(
+                    profiles.Count,
+                    expectedProfiles.Length);
+                for (var index = 0; index < comparableCount; index++)
+                {
+                    var actual = profiles[index];
+                    var expected = expectedProfiles[index];
+                    Require(
+                        actual.ActionKind == expected.ActionKind
+                        && actual.Amount == expected.Amount
+                        && actual.DurabilityCost == expected.DurabilityCost,
+                        $"utility_function_profile_invalid item={expectedItemId} " +
+                        $"index={index} expected={expected.ActionKind}:{expected.Amount}:{expected.DurabilityCost} " +
+                        $"actual={actual.ActionKind}:{actual.Amount}:{actual.DurabilityCost}",
+                        errors);
+                }
+
+                Require(
+                    profiles.Select(profile => profile.ActionKind).Distinct().Count()
+                        == profiles.Count,
+                    $"utility_function_profile_duplicate item={expectedItemId}",
+                    errors);
+                Require(
+                    profiles.All(profile => profile.IsValid),
+                    $"utility_function_profile_invalid_entry item={expectedItemId}",
+                    errors);
+            }
+
+            var heldPrefab = itemData.HeldPrefab;
+            var droppedPrefab = itemData.DroppedPrefab;
+            Require(
+                AssetDatabase.GetAssetPath(heldPrefab) == expectedHeldPath,
+                $"utility_function_held_path_invalid item={expectedItemId}",
+                errors);
+            Require(
+                AssetDatabase.GetAssetPath(droppedPrefab) == expectedDroppedPath,
+                $"utility_function_dropped_path_invalid item={expectedItemId}",
+                errors);
+            ValidateUtilityItemFunctionPrefab(
+                heldPrefab,
+                itemData,
+                expectedHeldUsableType,
+                false,
+                expectedItemId,
+                errors);
+            ValidateUtilityItemFunctionPrefab(
+                droppedPrefab,
+                itemData,
+                expectedDroppedUsableType,
+                expectedDurability,
+                expectedItemId,
+                errors);
+        }
+
+        private static void ValidateUtilityItemFunctionPrefab(
+            GameObject prefab,
+            UtilityItemPrefabData expectedItemData,
+            Type expectedUsableType,
+            bool expectDurabilityState,
+            string itemId,
+            ICollection<string> errors)
+        {
+            if (prefab == null)
+            {
+                return;
+            }
+
+            var itemObjects = prefab.GetComponents<UtilityItemObject>();
+            Require(
+                itemObjects.Length == 1
+                && itemObjects[0].ItemPrefabData == expectedItemData,
+                $"utility_function_item_object_invalid item={itemId} prefab={prefab.name}",
+                errors);
+            Require(
+                prefab.GetComponents(expectedUsableType).Length == 1,
+                $"utility_function_usable_component_invalid item={itemId} " +
+                $"expected={expectedUsableType.Name} prefab={prefab.name}",
+                errors);
+
+            var durabilityStates = prefab.GetComponentsInChildren<
+                NetworkUtilityItemDurabilityState>(true);
+            var expectedStateCount = expectDurabilityState ? 1 : 0;
+            Require(
+                durabilityStates.Length == expectedStateCount,
+                $"utility_function_durability_state_count_invalid item={itemId} " +
+                $"expected={expectedStateCount} actual={durabilityStates.Length} prefab={prefab.name}",
+                errors);
+            if (expectDurabilityState && durabilityStates.Length == 1)
+            {
+                Require(
+                    durabilityStates[0].gameObject == prefab,
+                    $"utility_function_durability_state_owner_invalid item={itemId}",
+                    errors);
+                RequireSerializedReferenceEquals(
+                    durabilityStates[0],
+                    "itemObject",
+                    itemObjects.Length == 1 ? itemObjects[0] : null,
+                    $"utility_function_durability_item_reference_invalid item={itemId}",
+                    errors);
+            }
+        }
+
+        private static UtilityItemActionProfileExpectation ExpectedProfile(
+            UtilityItemActionKind actionKind,
+            int amount,
+            int durabilityCost)
+        {
+            return new UtilityItemActionProfileExpectation(
+                actionKind,
+                amount,
+                durabilityCost);
+        }
+
+        private readonly struct UtilityItemActionProfileExpectation
+        {
+            public UtilityItemActionProfileExpectation(
+                UtilityItemActionKind actionKind,
+                int amount,
+                int durabilityCost)
+            {
+                ActionKind = actionKind;
+                Amount = amount;
+                DurabilityCost = durabilityCost;
+            }
+
+            public UtilityItemActionKind ActionKind { get; }
+            public int Amount { get; }
+            public int DurabilityCost { get; }
         }
 
         private static void ValidateSceneSellZones(string sceneLabel, ICollection<string> errors)

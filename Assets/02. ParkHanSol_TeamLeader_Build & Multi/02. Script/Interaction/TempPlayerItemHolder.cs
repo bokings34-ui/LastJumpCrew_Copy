@@ -66,6 +66,14 @@ namespace LastJumpCrew.ParkHanSol.Interaction
         public Transform HeldPresentationTransform => heldItemInstance == null
             ? null
             : heldItemInstance.transform;
+        public Vector3 DropPosition
+        {
+            get
+            {
+                var source = dropPoint == null ? transform : dropPoint;
+                return source.TransformPoint(droppedLocalOffset);
+            }
+        }
         LastJumpCrew.Common.IHoldableItem LastJumpCrew.Common.IItemHolder.CurrentItem => currentItemObject;
         public bool HasItem => IsNetworkSessionActive() && networkItemRecord != null && networkItemRecord.IsSpawned
             ? !string.IsNullOrEmpty(networkItemRecord.HeldItemId)

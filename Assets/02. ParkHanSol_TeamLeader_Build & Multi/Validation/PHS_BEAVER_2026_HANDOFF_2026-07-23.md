@@ -2,10 +2,28 @@
 
 작성 시각: 2026-07-23 19:30 KST  
 작업 브랜치: `codex/beaver-2026-item-swap`  
-프로젝트: `F:\unity\LastJumpCrew`  
+프로젝트: `E:\UNITY\LastJumpCrew`
 Unity: `6000.5.2f1`, StandaloneWindows64  
 제출 페이지: https://beaverrocks.com/creator  
 제출 마감: 2026-07-27 18:00 KST
+
+## 최신 체크포인트 — 2026-07-23 23:35 KST
+
+- 이 절이 아래의 19:30 중간 체크포인트보다 최신이다.
+- Unity Editor `6000.5.2f1`은 Play/compile 중이 아니며, 마지막 검증 뒤 Console Error는 0이다. Build Settings는 Lobby → Tutorial → Map → Shop 4개를 유지한다.
+- Lobby의 `CUSTOMIZE`와 `TRAINING`은 `START`/`SETTINGS`와 같은 세로 열에 배치했고, 메인 Lobby의 주황 계열 색으로 통일했다.
+- 수동 Room Browser는 Create/List/Refresh/Password/Join 4개 패널, prefab-local 참조 20개, scene `roomService` 참조를 복구했다. 전용 validator는 PASS했고 기존 Create/Join 및 Customize/Training 배치는 보존됐다.
+- 첫 수동 2-process 클릭 시도는 smoke 증거로 채택하지 않는다. 재시도에서 exact LastJumpCrew PID/HWND와 정상 `LAST JUMP CREW` START 화면을 확인해 wrong scene/overlay는 기각했다. START 클릭 직전 사용자 입력 충돌이 감지돼 Shadowverse를 보호하고 중단했다. 재시도 profile 이름도 30자를 넘어 초기화가 거부됐으므로 다음 수동 smoke는 짧은 고유 profile로 다시 실행한다.
+- 자동 수리 키트는 수리 계열 공통 기능을 사용하며 즉시 완료, 최대 내구도/소모량 1이다. 렌치/미래형 렌치, 소화기/Tripo, 배터리 계열은 각 family 기능을 공유하고 수치만 다르다. 미래형 캐니스터는 이번 기능 배정에서 제외했다.
+- Foam GLOO는 서버 권위 투사체의 비행 → 부착 → 경화 → 용해 상태를 동기화한다. 화재 4발, 함선 구멍 6발, 표면 폼 3발 기준이며 late join/상한/정리 계약을 validator로 확인했다.
+- Foam dropped prefab의 내구도 state 누락을 수정했다. 최신 Full P0에서 host throw, remote pickup/throw, peer 동기화, 내구도 100을 통과했다.
+- 아이템 상호작용용 생성 WAV는 총 23개다. item cue validator는 11개 cue와 owner 2D/world 3D를 확인했고, 배터리 shock 3D AudioSource는 main/tutorial player prefab 양쪽에 연결했다. 실제 청감 QA와 정적 wiring PASS는 구분한다.
+- `PHS_FOAM_GLOO_VALIDATION_PASS`, `PHS_ROOM_BROWSER_RECOVERY_VALIDATION_PASS`, `PHS_ITEM_INTERACTION_AUDIO_VALIDATION_PASSED`, `PHS_0715_VALIDATE_OK errors=0 scenes=4 prefabs=11`을 확인했다.
+- Item 전용 온라인 P0는 `Artifacts/OnlineItemP0_20260723_2259_final`에서 `peers=2 items=3` PASS했다.
+- 최신 Full 온라인 P0는 `Artifacts/OnlineFullP0_20260723_232541`에서 `peers=2`, `zones=9`, `shopCycles=3`, `runPhase=Clear` PASS했다. Host/Client는 서로 다른 `-phsProfile`과 PlayerId를 사용했다.
+- 최종 Development build는 386 files / 400,016,106 bytes, tree SHA256 `DA0A83289B0B0AC26E9AAA683B2D663E0990EC301136F0DD15761F68A42E5BCE`다.
+- 최종 Release build는 239 files / 326,571,297 bytes, tree SHA256 `26519FE1F79EFE3502ECE73F44C9323ECABC8AC05DBBAAC63F32D0DFB5F43F47`다. Release Assembly-CSharp SHA256은 `2A15DFB0BC6E3EB129977D138F1A5B822E1F81CE74A0361C7261802F60CC8CA3`다.
+- 깨진 팀원 프리팹/`Assets/06`은 사용자 지시에 따라 제외했다. Git stage/commit/push는 하지 않았다. MCP/Artifacts/사용자·팀 변경을 보존하고 승인된 PHS 범위만 별도로 stage해야 한다.
 
 ## 1. 현재 체크포인트
 

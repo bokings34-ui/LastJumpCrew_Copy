@@ -1,0 +1,128 @@
+Mono path[0] = 'E:/UNITY/LastJumpCrew/Builds/PHS0717Validation/LastJumpCrew_Data/Managed'
+Mono config path = 'E:/UNITY/LastJumpCrew/Builds/PHS0717Validation/MonoBleedingEdge/etc'
+CodeReloadManager initialized
+Found 1 interfaces on host : 0) 172.30.1.7
+Player connection [35924]  Target information:
+
+Player connection [35924]  * "[IP] 172.30.1.7 [Port] 55000 [Flags] 2 [Guid] 2911130286 [EditorId] 2512859468 [Version] 1048832 [Id] WindowsPlayer(2,hansolcom) [Debug] 0 [PackageName] WindowsPlayer [ProjectName] LastJumpCrew" 
+
+Player connection [35924] Started UDP target info broadcast (1) on [225.0.0.222:54997].
+
+Input System module state changed to: Initialized.
+[Physics::Module] Initialized fallback backend.
+[Physics::Module] Id: 0xdecafbad
+Initialize engine version: 6000.5.2f1 (eb73d3b415a1)
+[Subsystems] Discovering subsystems at path E:/UNITY/LastJumpCrew/Builds/PHS0717Validation/LastJumpCrew_Data/UnitySubsystems
+[D3D12 Device Filter] Vendor Name: NVIDIA
+[D3D12 Device Filter] Device Name: NVIDIA GeForce RTX 4080
+[D3D12 Device Filter] Driver Version: 32.0.15.7283
+[D3D12 Device Filter] Feature Level: 12.2
+[D3D12 Device Filter] Graphics Memory: 16050 MB
+[D3D12 Device Filter] Processor Count: 24
+[D3D12 Device Filter] Device Type: Discrete
+GfxDevice: creating device client; kGfxThreadingModeSplitJobs
+d3d12: failed to query info queue interface (0x80004002).
+Direct3D:
+    Version:         Direct3D 12 [level 12.2]
+    Renderer:        NVIDIA GeForce RTX 4080 (ID=0x2704)
+    Vendor:          NVIDIA
+    VRAM:            16050 MB
+    App VRAM Budget: 15282 MB
+    Driver:          32.0.15.7283
+Begin MonoManager ReloadAssembly
+- Finished resetting the current domain, in  0.057 seconds
+[Physics::Module] Selected backend.
+[Physics::Module] Name: PhysX
+[Physics::Module] Id: 0xf2b8ea05
+[Physics::Module] SDK Version: 4.1.2
+[Physics::Module] Integration Version: 1.0.0
+[Physics::Module] Threading Mode: Multi-Threaded
+<RI> Initializing input.
+Using Windows.Gaming.Input
+UnloadTime: 1.903500 ms
+PHS_DEBRIS_STREAM_READY stream=PHS_LobbyDebrisStream mode=local total=10 generated=0
+UnityEngine.Debug:ExtractStackTraceNoAlloc (byte*,int,string)
+UnityEngine.StackTraceUtility:ExtractStackTrace () (at C:/build/output/unity/unity/Runtime/Export/Scripting/StackTrace.cs:35)
+UnityEngine.DebugLogHandler:Internal_Log (UnityEngine.LogType,UnityEngine.LogOption,string,UnityEngine.Object)
+UnityEngine.DebugLogHandler:LogFormat (UnityEngine.LogType,UnityEngine.Object,string,object[]) (at C:/build/output/unity/unity/Runtime/Export/Logging/DebugLogHandler.cs:9)
+UnityEngine.Logger:Log (UnityEngine.LogType,object,UnityEngine.Object) (at C:/build/output/unity/unity/Runtime/Export/Logging/Logger.cs:66)
+UnityEngine.Debug:Log (object,UnityEngine.Object) (at C:/build/output/unity/unity/Runtime/Export/Debug/Debug.bindings.cs:128)
+LastJumpCrew.ParkHanSol.Multiplayer.PHSRandomDebrisStream:InitializeSimulation () (at E:/UNITY/LastJumpCrew/Assets/02. ParkHanSol_TeamLeader_Build & Multi/02. Script/Multiplayer/PHSRandomDebrisStream.cs:158)
+LastJumpCrew.ParkHanSol.Multiplayer.PHSRandomDebrisStream:Awake () (at E:/UNITY/LastJumpCrew/Assets/02. ParkHanSol_TeamLeader_Build & Multi/02. Script/Multiplayer/PHSRandomDebrisStream.cs:76)
+
+(Filename: C:/build/output/unity/unity/Runtime/Export/Debug/Debug.bindings.cs Line: 128)
+
+[DataManager] Init 완료 — Items 8 / Tools 8 / Zones 0
+UnityEngine.Debug:ExtractStackTraceNoAlloc (byte*,int,string)
+UnityEngine.StackTraceUtility:ExtractStackTrace () (at C:/build/output/unity/unity/Runtime/Export/Scripting/StackTrace.cs:35)
+UnityEngine.DebugLogHandler:Internal_Log (UnityEngine.LogType,UnityEngine.LogOption,string,UnityEngine.Object)
+UnityEngine.DebugLogHandler:LogFormat (UnityEngine.LogType,UnityEngine.Object,string,object[]) (at C:/build/output/unity/unity/Runtime/Export/Logging/DebugLogHandler.cs:9)
+UnityEngine.Logger:Log (UnityEngine.LogType,object) (at C:/build/output/unity/unity/Runtime/Export/Logging/Logger.cs:60)
+UnityEngine.Debug:Log (object) (at C:/build/output/unity/unity/Runtime/Export/Debug/Debug.bindings.cs:123)
+LastJumpCrew.SeoBoGyeong.DataManager:Init () (at E:/UNITY/LastJumpCrew/Assets/03. SeoBoGyeong_Game Economy/02. Script/DataManager.cs:37)
+LastJumpCrew.SeoBoGyeong.GameCore:Init () (at E:/UNITY/LastJumpCrew/Assets/03. SeoBoGyeong_Game Economy/02. Script/GameCore.cs:66)
+LastJumpCrew.SeoBoGyeong.GameCore:Awake () (at E:/UNITY/LastJumpCrew/Assets/03. SeoBoGyeong_Game Economy/02. Script/GameCore.cs:47)
+
+(Filename: C:/build/output/unity/unity/Runtime/Export/Debug/Debug.bindings.cs Line: 123)
+
+PHS_ROOM_OPERATION_FAILED operation=initialize exception=AuthenticationException sessionError=none message=Invalid profile name. The profile may only contain alphanumeric values, '-', '_', and must be no longer than 30 characters.
+UnityEngine.Debug:ExtractStackTraceNoAlloc (byte*,int,string)
+UnityEngine.StackTraceUtility:ExtractStackTrace () (at C:/build/output/unity/unity/Runtime/Export/Scripting/StackTrace.cs:35)
+UnityEngine.DebugLogHandler:Internal_Log (UnityEngine.LogType,UnityEngine.LogOption,string,UnityEngine.Object)
+UnityEngine.DebugLogHandler:LogFormat (UnityEngine.LogType,UnityEngine.Object,string,object[]) (at C:/build/output/unity/unity/Runtime/Export/Logging/DebugLogHandler.cs:9)
+UnityEngine.Logger:Log (UnityEngine.LogType,object) (at C:/build/output/unity/unity/Runtime/Export/Logging/Logger.cs:60)
+UnityEngine.Debug:LogError (object) (at C:/build/output/unity/unity/Runtime/Export/Debug/Debug.bindings.cs:151)
+LastJumpCrew.ParkHanSol.Multiplayer.MultiplayerRoomService:ReportFailure (string,System.Exception) (at E:/UNITY/LastJumpCrew/Assets/02. ParkHanSol_TeamLeader_Build & Multi/02. Script/Multiplayer/MultiplayerRoomService.cs:521)
+LastJumpCrew.ParkHanSol.Multiplayer.MultiplayerRoomService/<InitializeServicesAsync>d__38:MoveNext () (at E:/UNITY/LastJumpCrew/Assets/02. ParkHanSol_TeamLeader_Build & Multi/02. Script/Multiplayer/MultiplayerRoomService.cs:330)
+System.Runtime.CompilerServices.AsyncTaskMethodBuilder`1<bool>:Start<LastJumpCrew.ParkHanSol.Multiplayer.MultiplayerRoomService/<InitializeServicesAsync>d__38> (LastJumpCrew.ParkHanSol.Multiplayer.MultiplayerRoomService/<InitializeServicesAsync>d__38&)
+LastJumpCrew.ParkHanSol.Multiplayer.MultiplayerRoomService:InitializeServicesAsync ()
+LastJumpCrew.ParkHanSol.Multiplayer.MultiplayerRoomService/<CreateRoomAsync>d__33:MoveNext () (at E:/UNITY/LastJumpCrew/Assets/02. ParkHanSol_TeamLeader_Build & Multi/02. Script/Multiplayer/MultiplayerRoomService.cs:120)
+System.Runtime.CompilerServices.AsyncTaskMethodBuilder`1<bool>:Start<LastJumpCrew.ParkHanSol.Multiplayer.MultiplayerRoomService/<CreateRoomAsync>d__33> (LastJumpCrew.ParkHanSol.Multiplayer.MultiplayerRoomService/<CreateRoomAsync>d__33&)
+LastJumpCrew.ParkHanSol.Multiplayer.MultiplayerRoomService:CreateRoomAsync (string,int,string)
+LastJumpCrew.ParkHanSol.Multiplayer.MultiplayerRoomBrowser/<CreateRoom>d__30:MoveNext () (at E:/UNITY/LastJumpCrew/Assets/02. ParkHanSol_TeamLeader_Build & Multi/02. Script/Multiplayer/MultiplayerRoomBrowser.cs:196)
+System.Runtime.CompilerServices.AsyncVoidMethodBuilder:Start<LastJumpCrew.ParkHanSol.Multiplayer.MultiplayerRoomBrowser/<CreateRoom>d__30> (LastJumpCrew.ParkHanSol.Multiplayer.MultiplayerRoomBrowser/<CreateRoom>d__30&)
+LastJumpCrew.ParkHanSol.Multiplayer.MultiplayerRoomBrowser:CreateRoom ()
+UnityEngine.Events.InvokableCall:Invoke () (at C:/build/output/unity/unity/Runtime/Export/UnityEvent/UnityEvent.cs:181)
+UnityEngine.Events.UnityEvent:Invoke () (at C:/build/output/unity/unity/artifacts/generated/UnityEvent/UnityEvent_0.cs:59)
+UnityEngine.UI.Button:Press () (at ./Library/PackageCache/com.unity.ugui@3d1ea40b73ef/Runtime/UGUI/UI/Core/Button.cs:71)
+UnityEngine.UI.Button:OnPointerClick (UnityEngine.EventSystems.PointerEventData) (at ./Library/PackageCache/com.unity.ugui@3d1ea40b73ef/Runtime/UGUI/UI/Core/Button.cs:115)
+UnityEngine.EventSystems.ExecuteEvents:Execute (UnityEngine.EventSystems.IPointerClickHandler,UnityEngine.EventSystems.BaseEventData) (at ./Library/PackageCache/com.unity.ugui@3d1ea40b73ef/Runtime/UGUI/EventSystem/ExecuteEvents.cs:57)
+UnityEngine.EventSystems.ExecuteEvents:Execute<UnityEngine.EventSystems.IPointerClickHandler> (UnityEngine.GameObject,UnityEngine.EventSystems.BaseEventData,UnityEngine.EventSystems.ExecuteEvents/EventFunction`1<UnityEngine.EventSystems.IPointerClickHandler>) (at ./Library/PackageCache/com.unity.ugui@3d1ea40b73ef/Runtime/UGUI/EventSystem/ExecuteEvents.cs:272)
+UnityEngine.InputSystem.UI.InputSystemUIInputModule:ProcessPointerButton (UnityEngine.InputSystem.UI.PointerModel/ButtonState&,UnityEngine.EventSystems.PointerEventData) (at ./Library/PackageCache/com.unity.inputsystem@21a28c3a6c83/InputSystem/Plugins/UI/InputSystemUIInputModule.cs:731)
+UnityEngine.InputSystem.UI.InputSystemUIInputModule:ProcessPointer (UnityEngine.InputSystem.UI.PointerModel&) (at ./Library/PackageCache/com.unity.inputsystem@21a28c3a6c83/InputSystem/Plugins/UI/InputSystemUIInputModule.cs:490)
+UnityEngine.InputSystem.UI.InputSystemUIInputModule:Process () (at ./Library/PackageCache/com.unity.inputsystem@21a28c3a6c83/InputSystem/Plugins/UI/InputSystemUIInputModule.cs:2404)
+UnityEngine.EventSystems.EventSystem:Update () (at ./Library/PackageCache/com.unity.ugui@3d1ea40b73ef/Runtime/UGUI/EventSystem/EventSystem.cs:516)
+
+(Filename: C:/build/output/unity/unity/Runtime/Export/Debug/Debug.bindings.cs Line: 151)
+
+MultiplayerRoomBrowser operation failed: initialize_failed
+UnityEngine.Debug:ExtractStackTraceNoAlloc (byte*,int,string)
+UnityEngine.StackTraceUtility:ExtractStackTrace () (at C:/build/output/unity/unity/Runtime/Export/Scripting/StackTrace.cs:35)
+UnityEngine.DebugLogHandler:Internal_Log (UnityEngine.LogType,UnityEngine.LogOption,string,UnityEngine.Object)
+UnityEngine.DebugLogHandler:LogFormat (UnityEngine.LogType,UnityEngine.Object,string,object[]) (at C:/build/output/unity/unity/Runtime/Export/Logging/DebugLogHandler.cs:9)
+UnityEngine.Logger:Log (UnityEngine.LogType,object,UnityEngine.Object) (at C:/build/output/unity/unity/Runtime/Export/Logging/Logger.cs:66)
+UnityEngine.Debug:LogError (object,UnityEngine.Object) (at C:/build/output/unity/unity/Runtime/Export/Debug/Debug.bindings.cs:154)
+LastJumpCrew.ParkHanSol.Multiplayer.MultiplayerRoomBrowser:HandleOperationFailed (string) (at E:/UNITY/LastJumpCrew/Assets/02. ParkHanSol_TeamLeader_Build & Multi/02. Script/Multiplayer/MultiplayerRoomBrowser.cs:269)
+LastJumpCrew.ParkHanSol.Multiplayer.MultiplayerRoomService:ReportFailure (string,System.Exception) (at E:/UNITY/LastJumpCrew/Assets/02. ParkHanSol_TeamLeader_Build & Multi/02. Script/Multiplayer/MultiplayerRoomService.cs:523)
+LastJumpCrew.ParkHanSol.Multiplayer.MultiplayerRoomService/<InitializeServicesAsync>d__38:MoveNext () (at E:/UNITY/LastJumpCrew/Assets/02. ParkHanSol_TeamLeader_Build & Multi/02. Script/Multiplayer/MultiplayerRoomService.cs:330)
+System.Runtime.CompilerServices.AsyncTaskMethodBuilder`1<bool>:Start<LastJumpCrew.ParkHanSol.Multiplayer.MultiplayerRoomService/<InitializeServicesAsync>d__38> (LastJumpCrew.ParkHanSol.Multiplayer.MultiplayerRoomService/<InitializeServicesAsync>d__38&)
+LastJumpCrew.ParkHanSol.Multiplayer.MultiplayerRoomService:InitializeServicesAsync ()
+LastJumpCrew.ParkHanSol.Multiplayer.MultiplayerRoomService/<CreateRoomAsync>d__33:MoveNext () (at E:/UNITY/LastJumpCrew/Assets/02. ParkHanSol_TeamLeader_Build & Multi/02. Script/Multiplayer/MultiplayerRoomService.cs:120)
+System.Runtime.CompilerServices.AsyncTaskMethodBuilder`1<bool>:Start<LastJumpCrew.ParkHanSol.Multiplayer.MultiplayerRoomService/<CreateRoomAsync>d__33> (LastJumpCrew.ParkHanSol.Multiplayer.MultiplayerRoomService/<CreateRoomAsync>d__33&)
+LastJumpCrew.ParkHanSol.Multiplayer.MultiplayerRoomService:CreateRoomAsync (string,int,string)
+LastJumpCrew.ParkHanSol.Multiplayer.MultiplayerRoomBrowser/<CreateRoom>d__30:MoveNext () (at E:/UNITY/LastJumpCrew/Assets/02. ParkHanSol_TeamLeader_Build & Multi/02. Script/Multiplayer/MultiplayerRoomBrowser.cs:196)
+System.Runtime.CompilerServices.AsyncVoidMethodBuilder:Start<LastJumpCrew.ParkHanSol.Multiplayer.MultiplayerRoomBrowser/<CreateRoom>d__30> (LastJumpCrew.ParkHanSol.Multiplayer.MultiplayerRoomBrowser/<CreateRoom>d__30&)
+LastJumpCrew.ParkHanSol.Multiplayer.MultiplayerRoomBrowser:CreateRoom ()
+UnityEngine.Events.InvokableCall:Invoke () (at C:/build/output/unity/unity/Runtime/Export/UnityEvent/UnityEvent.cs:181)
+UnityEngine.Events.UnityEvent:Invoke () (at C:/build/output/unity/unity/artifacts/generated/UnityEvent/UnityEvent_0.cs:59)
+UnityEngine.UI.Button:Press () (at ./Library/PackageCache/com.unity.ugui@3d1ea40b73ef/Runtime/UGUI/UI/Core/Button.cs:71)
+UnityEngine.UI.Button:OnPointerClick (UnityEngine.EventSystems.PointerEventData) (at ./Library/PackageCache/com.unity.ugui@3d1ea40b73ef/Runtime/UGUI/UI/Core/Button.cs:115)
+UnityEngine.EventSystems.ExecuteEvents:Execute (UnityEngine.EventSystems.IPointerClickHandler,UnityEngine.EventSystems.BaseEventData) (at ./Library/PackageCache/com.unity.ugui@3d1ea40b73ef/Runtime/UGUI/EventSystem/ExecuteEvents.cs:57)
+UnityEngine.EventSystems.ExecuteEvents:Execute<UnityEngine.EventSystems.IPointerClickHandler> (UnityEngine.GameObject,UnityEngine.EventSystems.BaseEventData,UnityEngine.EventSystems.ExecuteEvents/EventFunction`1<UnityEngine.EventSystems.IPointerClickHandler>) (at ./Library/PackageCache/com.unity.ugui@3d1ea40b73ef/Runtime/UGUI/EventSystem/ExecuteEvents.cs:272)
+UnityEngine.InputSystem.UI.InputSystemUIInputModule:ProcessPointerButton (UnityEngine.InputSystem.UI.PointerModel/ButtonState&,UnityEngine.EventSystems.PointerEventData) (at ./Library/PackageCache/com.unity.inputsystem@21a28c3a6c83/InputSystem/Plugins/UI/InputSystemUIInputModule.cs:731)
+UnityEngine.InputSystem.UI.InputSystemUIInputModule:ProcessPointer (UnityEngine.InputSystem.UI.PointerModel&) (at ./Library/PackageCache/com.unity.inputsystem@21a28c3a6c83/InputSystem/Plugins/UI/InputSystemUIInputModule.cs:490)
+UnityEngine.InputSystem.UI.InputSystemUIInputModule:Process () (at ./Library/PackageCache/com.unity.inputsystem@21a28c3a6c83/InputSystem/Plugins/UI/InputSystemUIInputModule.cs:2404)
+UnityEngine.EventSystems.EventSystem:Update () (at ./Library/PackageCache/com.unity.ugui@3d1ea40b73ef/Runtime/UGUI/EventSystem/EventSystem.cs:516)
+
+(Filename: C:/build/output/unity/unity/Runtime/Export/Debug/Debug.bindings.cs Line: 154)
+

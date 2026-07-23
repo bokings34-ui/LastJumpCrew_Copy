@@ -1,6 +1,7 @@
 using System.Collections;
 using LastJumpCrew.ParkHanSol.Multiplayer.Maps;
 using TMPro;
+using Unity.Netcode;
 using UnityEngine;
 
 namespace LastJumpCrew.ParkHanSol.Multiplayer
@@ -72,6 +73,16 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
         {
             if (!setupValid || runFlowCoordinator != null)
             {
+                return;
+            }
+
+            var networkManager = NetworkManager.Singleton;
+            if (networkManager == null
+                || !networkManager.IsListening
+                || networkManager.ShutdownInProgress)
+            {
+                bindStartedAtTime = Time.unscaledTime;
+                bindErrorLogged = false;
                 return;
             }
 
@@ -178,6 +189,16 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
         {
             if (runFlowCoordinator == null)
             {
+                var networkManager = NetworkManager.Singleton;
+                if (networkManager == null
+                    || !networkManager.IsListening
+                    || networkManager.ShutdownInProgress)
+                {
+                    bindStartedAtTime = Time.unscaledTime;
+                    bindErrorLogged = false;
+                    return;
+                }
+
                 runFlowCoordinator = NetworkRunFlowCoordinator.Instance;
             }
 

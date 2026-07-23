@@ -4115,13 +4115,16 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Validation
 
             thrownItemReports.Clear();
             var throwProbeToken = ++activeProbeToken;
+            var expectedThrownDurability = isBatteryThrow
+                ? 0
+                : expectedDurability;
             ProbeRemoteThrownItemClientRpc(
                 throwProbeToken,
                 remoteClientId,
                 remoteThrownNetworkObject.NetworkObjectId,
                 itemData.ItemId,
                 itemData.HasDurability,
-                expectedDurability);
+                expectedThrownDurability);
             yield return WaitFor(
                 () => thrownItemReports.Count >= expectedClientCount,
                 10f,
@@ -4141,7 +4144,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Validation
                 $"PHS_P0_REMOTE_ITEM_OWNERSHIP_OK client={remoteClientId} " +
                 $"item={itemData.ItemId} pickupNetworkObjectId={pickupNetworkObjectId} " +
                 $"thrownNetworkObjectId={thrownNetworkObjectId} peers={thrownItemReports.Count} " +
-                $"heldVisualNetworkObjects=0 durability={expectedDurability} " +
+                $"heldVisualNetworkObjects=0 durability={expectedThrownDurability} " +
                 $"recordRevision={remoteRecord.Revision}",
                 this);
         }

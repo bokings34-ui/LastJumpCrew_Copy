@@ -1,4 +1,5 @@
 using LastJumpCrew.ParkHanSol.Interaction;
+using LastJumpCrew.ParkHanSol.Multiplayer.Audio;
 using TMPro;
 using UnityEngine;
 using UnityEngine.UI;
@@ -25,6 +26,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Tutorial
         [SerializeField] private TMP_Text instructionText;
         [SerializeField] private GameObject completionPanel;
         [SerializeField] private Button returnToLobbyButton;
+        [SerializeField] private MonoBehaviour audioCuePlayerSource;
         [SerializeField] private string lobbySceneName = "ParkHanSol_LobbyScene";
         [SerializeField, Min(1f)] private float movementDistance = 3f;
 
@@ -35,12 +37,22 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Tutorial
         private bool swapArmed;
         private string swapBaselineItemId;
         private bool isExiting;
+        private bool tutorialCompleteCuePlayed;
+        private INetworkAudioCuePlayer audioCuePlayer;
 
         public bool IsWaitingForInteraction =>
             currentStep == TutorialStep.Interaction;
 
         private void Awake()
         {
+            audioCuePlayer = audioCuePlayerSource as INetworkAudioCuePlayer;
+            if (audioCuePlayer == null)
+            {
+                Debug.LogError(
+                    $"PHS_NETWORK_TUTORIAL_AUDIO_SETUP_FAILED reason=cue_player_missing director={name}",
+                    this);
+            }
+
             if (playerController == null
                 || grappleController == null
                 || itemHolder == null
@@ -177,10 +189,34 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Tutorial
             }
 
             completionPanel.SetActive(true);
+            if (!tutorialCompleteCuePlayed)
+            {
+                tutorialCompleteCuePlayed = true;
+                PlayAudioCue(NetworkAudioCue.TutorialComplete);
+            }
             playerController.SetResultInputBlocked(true);
             Cursor.lockState = CursorLockMode.None;
             Cursor.visible = true;
             Debug.Log("PHS_NETWORK_TUTORIAL_COMPLETE");
+        }
+
+        private void PlayAudioCue(NetworkAudioCue cue)
+        {
+            if (audioCuePlayer == null)
+            {
+                Debug.LogError(
+                    $"PHS_NETWORK_TUTORIAL_AUDIO_PLAY_FAILED reason=cue_player_missing director={name} cue={cue}",
+                    this);
+                return;
+            }
+
+            if (!audioCuePlayer.TryPlay(cue, out var reason)
+                && reason != "cue_cooldown")
+            {
+                Debug.LogError(
+                    $"PHS_NETWORK_TUTORIAL_AUDIO_PLAY_FAILED reason={reason} director={name} cue={cue}",
+                    this);
+            }
         }
 
         private async void ReturnToLobby()

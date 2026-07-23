@@ -1,33 +1,44 @@
 namespace LastJumpCrew.ParkHanSol.Items
 {
     using LastJumpCrew.Common;
-    using LastJumpCrew.ParkHanSol.Multiplayer.ShipAccidents;
+    using UnityEngine;
 
-    public sealed class FoamSealantGunUsableItem : UtilityItemUseBehaviour
+    public sealed class FoamSealantGunUsableItem :
+        MonoBehaviour,
+        IUsableItem,
+        IContinuousUsableItem
     {
-        protected override bool CanUseItem(IItemHolder user, IInteractable target)
+        public bool CanUse(IItemHolder user, IInteractable target)
         {
             return user != null
                 && user.HasItem
                 && user.CurrentItem != null
-                && user.CurrentItem.ItemId == "foam_sealant_gun"
-                && TryGetTarget<IShipAccidentRepairTarget>(target, out var repairTarget)
-                && repairTarget.RequiredItemId == "foam_sealant_gun"
-                && repairTarget.CanInteract(user);
+                && user.CurrentItem.ItemId
+                    == PHSNetworkFoamCoordinator.FoamItemId
+                && TryGetController(user, out var controller)
+                && controller.CanRequestFire;
         }
 
-        protected override void OnUseFinished(IItemHolder user, IInteractable target)
+        public void Use(IItemHolder user, IInteractable target)
         {
-            if (!TryGetTarget<PHSShipAccidentAnchor>(target, out var anchor)
-                || !anchor.RequestRepair(user))
+            if (!CanUse(user, target))
             {
-                UnityEngine.Debug.LogWarning(
-                    $"PHS_FOAM_SEALANT_REPAIR_FAILED reason=target_or_request item={name}",
-                    this);
                 return;
             }
 
-            UnityEngine.Debug.Log($"PHS_FOAM_SEALANT_REPAIR_SENT item={name}", this);
+            TryGetController(user, out var controller);
+            controller.TryRequestFire();
+        }
+
+        private static bool TryGetController(
+            IItemHolder user,
+            out PHSNetworkFoamGunController controller)
+        {
+            var userComponent = user as Component;
+            controller = userComponent == null
+                ? null
+                : userComponent.GetComponent<PHSNetworkFoamGunController>();
+            return controller != null;
         }
     }
 }
