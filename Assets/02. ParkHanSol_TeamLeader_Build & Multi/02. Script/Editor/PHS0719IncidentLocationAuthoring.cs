@@ -1003,10 +1003,6 @@ namespace LastJumpCrew.ParkHanSol.Editor
             SetFloat(serializedFireZone, "damageTickSeconds", 1f);
             SetInt(serializedFireZone, "baseDamagePerTick", 2);
             SetInt(serializedFireZone, "damageableLayers", ~0);
-            SetInt(
-                serializedFireZone,
-                "suppressionHeatPerHit",
-                35);
             SetFloat(
                 serializedFireZone,
                 "containmentGraceSeconds",

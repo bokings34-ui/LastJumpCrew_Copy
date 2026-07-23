@@ -21,7 +21,6 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Incidents.Fire
         float BaseSpreadChance { get; }
         float DamageTickSeconds { get; }
         int BaseDamagePerTick { get; }
-        ushort SuppressionHeatPerHit { get; }
         float ContainmentGraceSeconds { get; }
         LayerMask DamageableLayers { get; }
         GameObject PatchPresentationPrefab { get; }

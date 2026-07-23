@@ -15,7 +15,6 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.ShipAccidents
         [Header("Repair Contract")]
         [SerializeField] private string requiredItemId;
         [SerializeField, Min(1)] private int requiredRepairProgress = 100;
-        [SerializeField, Min(1)] private int repairProgressPerUse = 20;
         [SerializeField, Min(0)] private int moduleRepairOnResolve;
 
         [Header("Ship Impact")]
@@ -32,7 +31,6 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.ShipAccidents
         public GameObject PresentationPrefab => presentationPrefab;
         public string RequiredItemId => requiredItemId;
         public int RequiredRepairProgress => requiredRepairProgress;
-        public int RepairProgressPerUse => repairProgressPerUse;
         public int ModuleRepairOnResolve => moduleRepairOnResolve;
         public NetworkShipModuleId TargetModule => targetModule;
         public int InitialModuleDamage => initialModuleDamage;
@@ -70,7 +68,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.ShipAccidents
                 return false;
             }
 
-            if (requiredRepairProgress <= 0 || repairProgressPerUse <= 0)
+            if (requiredRepairProgress <= 0)
             {
                 reason = "repair_progress_not_positive";
                 return false;

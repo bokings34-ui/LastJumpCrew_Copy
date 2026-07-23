@@ -1,4 +1,5 @@
 using LastJumpCrew.Common;
+using LastJumpCrew.ParkHanSol.Multiplayer;
 using UnityEngine;
 
 namespace SM
@@ -22,5 +23,9 @@ namespace SM
     {
         bool RegisterRepairTarget(IEventRepairableEffect target);
         void UnregisterRepairTarget(ulong eventInstanceId, uint effectInstanceId);
+        bool RequestEffectRepair(
+            IEventRepairTargetHandle target,
+            NetworkPlayerItemRecord itemRecord,
+            uint requestSequence);
     }
 }

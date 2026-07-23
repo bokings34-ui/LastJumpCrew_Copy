@@ -19,12 +19,14 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
     {
         private const double UnitDoubleFromUInt64 =
             1d / 9007199254740992d;
+        private const double ConsequenceAvailabilityRetrySeconds = 0.25d;
 
         [Header("Inspector References")]
         [SerializeField] private NetworkEventCoordinator eventCoordinator;
         [SerializeField] private PHSNetworkShipAccidentCoordinator accidentCoordinator;
         [SerializeField] private PHSNetworkFireCoordinator fireCoordinator;
         [SerializeField] private PHSShipIncidentLayout incidentLayout;
+        [SerializeField] private PHSIncidentConsequenceSelector consequenceSelector;
         [Tooltip("Migration only. Disable after the authored Incident Layout is wired.")]
         [SerializeField] private bool allowLegacyLocationFallback = true;
         [SerializeField] private ShipRoom[] rooms = Array.Empty<ShipRoom>();
@@ -43,6 +45,9 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
             pendingEventCompletions = new();
         private readonly Dictionary<uint, AccidentCompletion>
             pendingAccidentCompletions = new();
+        private readonly List<ulong> pendingConsequenceParentCommandIds = new();
+        private readonly HashSet<ulong>
+            availabilityBlockedConsequenceParentCommandIds = new();
 
         private ShipRoom[] configuredRooms = Array.Empty<ShipRoom>();
         private NetworkRunSessionRoot runSessionRoot;
@@ -52,6 +57,8 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
         private ulong spawningAccidentCommandId;
         private string eventTerminationCause;
         private string accidentTerminationCause;
+        private uint observedConsequenceRetryRevision;
+        private double nextConsequenceAvailabilityRetryTime;
 
         private readonly struct EventCompletion
         {
@@ -188,6 +195,9 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
 
             pendingEventCompletions.Clear();
             pendingAccidentCompletions.Clear();
+            pendingConsequenceParentCommandIds.Clear();
+            availabilityBlockedConsequenceParentCommandIds.Clear();
+            nextConsequenceAvailabilityRetryTime = 0d;
             eventContentIds.Clear();
             accidentContentIds.Clear();
             spawningEventCommandId = 0UL;
@@ -233,6 +243,10 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
             {
                 accidentCoordinator.ServerAccidentFinished -= HandleAccidentFinished;
             }
+
+            pendingConsequenceParentCommandIds.Clear();
+            availabilityBlockedConsequenceParentCommandIds.Clear();
+            nextConsequenceAvailabilityRetryTime = 0d;
         }
 
         private void Update()
@@ -254,6 +268,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
             }
 
             RetryPendingRuntimeCompletions();
+            RetryPendingConsequences();
             CopyCurrentPendingCommands();
             foreach (var command in pendingCommands)
             {
@@ -536,6 +551,14 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
                     out var managedLocationId,
                     out var anchorResolveReason))
             {
+                if (command.SourceKind
+                        == NetworkRunIncidentSourceKind.Consequence
+                    && anchorResolveReason
+                        == "compatible_layout_location_unavailable")
+                {
+                    return;
+                }
+
                 Debug.LogWarning(
                     $"PHS_INCIDENT_CONSUME_FAILED command={command.CommandId} " +
                     $"reason=target_unavailable detail={anchorResolveReason}",
@@ -842,6 +865,13 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
                         this);
                     return;
                 }
+
+                if (!completion.Succeeded)
+                {
+                    TryReserveOrQueueConsequence(
+                        commandId,
+                        completion.EventId);
+                }
             }
 
             TryFinalizeEventRuntimeTracking(runtimeInstanceId, commandId);
@@ -1016,6 +1046,132 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
                     }
                 }
             }
+        }
+
+        private void TryReserveOrQueueConsequence(
+            ulong parentCommandId,
+            EventId eventId)
+        {
+            if (consequenceSelector.TryRequestForFailedExternalEventServer(
+                    parentCommandId,
+                    out var consequenceCommand,
+                    out var reason))
+            {
+                pendingConsequenceParentCommandIds.Remove(parentCommandId);
+                availabilityBlockedConsequenceParentCommandIds.Remove(
+                    parentCommandId);
+                Debug.Log(
+                    $"PHS_INCIDENT_CONSEQUENCE_RESERVED parent={parentCommandId} " +
+                    $"command={consequenceCommand.CommandId} " +
+                    $"content={consequenceCommand.ContentId}",
+                    this);
+                return;
+            }
+
+            if (IsTransientConsequenceFailure(reason))
+            {
+                if (!pendingConsequenceParentCommandIds.Contains(parentCommandId))
+                {
+                    pendingConsequenceParentCommandIds.Add(parentCommandId);
+                    observedConsequenceRetryRevision =
+                        incidentLedger == null
+                            ? 0U
+                            : incidentLedger.Snapshot.Revision;
+                    Debug.LogWarning(
+                        $"PHS_INCIDENT_CONSEQUENCE_QUEUED parent={parentCommandId} " +
+                        $"event={eventId} reason={reason}",
+                        this);
+                }
+
+                if (reason == "eligible_internal_consequence_unavailable")
+                {
+                    availabilityBlockedConsequenceParentCommandIds.Add(
+                        parentCommandId);
+                    nextConsequenceAvailabilityRetryTime =
+                        runSessionRoot.NetworkManager.ServerTime.Time
+                        + ConsequenceAvailabilityRetrySeconds;
+                }
+                else
+                {
+                    availabilityBlockedConsequenceParentCommandIds.Remove(
+                        parentCommandId);
+                }
+
+                return;
+            }
+
+            pendingConsequenceParentCommandIds.Remove(parentCommandId);
+            availabilityBlockedConsequenceParentCommandIds.Remove(
+                parentCommandId);
+            Debug.LogError(
+                $"PHS_INCIDENT_CONSEQUENCE_FAILED parent={parentCommandId} " +
+                $"event={eventId} reason={reason}",
+                this);
+        }
+
+        private void RetryPendingConsequences()
+        {
+            if (pendingConsequenceParentCommandIds.Count == 0
+                || incidentLedger == null)
+            {
+                return;
+            }
+
+            var currentRevision = incidentLedger.Snapshot.Revision;
+            var revisionChanged =
+                currentRevision != observedConsequenceRetryRevision;
+            var currentTime = runSessionRoot.NetworkManager.ServerTime.Time;
+            var availabilityRetryDue =
+                availabilityBlockedConsequenceParentCommandIds.Count > 0
+                && currentTime >= nextConsequenceAvailabilityRetryTime;
+            if (!revisionChanged && !availabilityRetryDue)
+            {
+                return;
+            }
+
+            observedConsequenceRetryRevision = currentRevision;
+            if (availabilityRetryDue)
+            {
+                nextConsequenceAvailabilityRetryTime =
+                    currentTime + ConsequenceAvailabilityRetrySeconds;
+            }
+
+            var pendingParents =
+                new List<ulong>(pendingConsequenceParentCommandIds);
+            foreach (var parentCommandId in pendingParents)
+            {
+                if (!revisionChanged
+                    && !availabilityBlockedConsequenceParentCommandIds.Contains(
+                        parentCommandId))
+                {
+                    continue;
+                }
+
+                if (!incidentLedger.TryGetCommand(
+                        parentCommandId,
+                        out var parentCommand))
+                {
+                    pendingConsequenceParentCommandIds.Remove(parentCommandId);
+                    availabilityBlockedConsequenceParentCommandIds.Remove(
+                        parentCommandId);
+                    Debug.LogError(
+                        $"PHS_INCIDENT_CONSEQUENCE_FAILED parent={parentCommandId} " +
+                        $"reason=parent_command_missing_during_retry",
+                        this);
+                    continue;
+                }
+
+                TryReserveOrQueueConsequence(
+                    parentCommandId,
+                    (EventId)parentCommand.ContentId);
+            }
+        }
+
+        private static bool IsTransientConsequenceFailure(string reason)
+        {
+            return reason == "internal_command_cap_reached"
+                || reason == "incident_pressure_capacity_exceeded"
+                || reason == "eligible_internal_consequence_unavailable";
         }
 
         private bool TryFinalizeEventRuntimeTracking(
@@ -1579,6 +1735,26 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
                 Debug.LogError(
                     "PHS_INCIDENT_CONSUMER_SETUP_FAILED " +
                     "reason=fire_coordinator_missing",
+                    this);
+                return false;
+            }
+
+            if (consequenceSelector == null)
+            {
+                Debug.LogError(
+                    $"PHS_INCIDENT_CONSUMER_SETUP_FAILED " +
+                    $"reason=consequence_selector_missing",
+                    this);
+                return false;
+            }
+
+            if (!consequenceSelector.TryValidateReferences(
+                    out var consequenceReason))
+            {
+                Debug.LogError(
+                    $"PHS_INCIDENT_CONSUMER_SETUP_FAILED " +
+                    $"reason=consequence_selector_invalid " +
+                    $"detail={consequenceReason}",
                     this);
                 return false;
             }

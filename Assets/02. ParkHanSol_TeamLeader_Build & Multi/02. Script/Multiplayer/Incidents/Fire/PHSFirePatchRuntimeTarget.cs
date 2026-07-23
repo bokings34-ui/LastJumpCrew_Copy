@@ -25,7 +25,13 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Incidents.Fire
         [SerializeField] private Light fireLight;
 
         private readonly List<GameObject> presentationInstances = new();
+        private readonly List<PHSTeamFirePatchPresentationAdapter>
+            presentationAdapters = new();
         private readonly Dictionary<ushort, GameObject> spreadBridgeInstances =
+            new();
+        private readonly Dictionary<
+            ushort,
+            PHSTeamFirePatchPresentationAdapter> spreadBridgeAdapters =
             new();
         private PHSNetworkFireCoordinator owner;
         private string locationId = string.Empty;
@@ -202,6 +208,9 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Incidents.Fire
                     false);
                 instance.SetActive(false);
                 presentationInstances.Add(instance);
+                presentationAdapters.Add(
+                    instance.GetComponent<
+                        PHSTeamFirePatchPresentationAdapter>());
             }
         }
 
@@ -228,8 +237,17 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Incidents.Fire
                     // scale, rather than a hard 1/2/3 socket toggle, makes a
                     // patch read as a growing flame area.
                     instance.SetActive(IsActive);
+                    if (index < presentationAdapters.Count
+                        && presentationAdapters[index] != null)
+                    {
+                        presentationAdapters[index].ApplyState(
+                            intensity,
+                            index == 0);
+                    }
+
                     var variation = index == 1 ? 1f : 0.9f;
-                    instance.transform.localScale = Vector3.one
+                    instance.transform.localScale =
+                        presentationPrefab.transform.localScale
                         * coverageScale
                         * intensityScale
                         * growScale
@@ -314,15 +332,31 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Incidents.Fire
                         presentationPrefab,
                         patch.PresentationRoot,
                         false);
+                    bridge.SetActive(false);
                     bridge.name =
                         $"PHS_FireSpreadBridge_{patch.PatchId}_{neighbor.PatchId}";
                     spreadBridgeInstances[neighbor.PatchId] = bridge;
+                    spreadBridgeAdapters[neighbor.PatchId] =
+                        bridge.GetComponent<
+                            PHSTeamFirePatchPresentationAdapter>();
                 }
 
+                var wasActive = bridge.activeSelf;
                 bridge.SetActive(isNeighborBurning);
                 if (!isNeighborBurning)
                 {
                     continue;
+                }
+
+                if (!wasActive
+                    && spreadBridgeAdapters.TryGetValue(
+                        neighbor.PatchId,
+                        out var bridgeAdapter)
+                    && bridgeAdapter != null)
+                {
+                    bridgeAdapter.ApplyState(
+                        PHSFireIntensity.Small,
+                        false);
                 }
 
                 var start = patch.PresentationRoot.position;
@@ -331,7 +365,9 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Incidents.Fire
                 var bridgeScale = Mathf.Max(
                     0.85f,
                     Vector3.Distance(start, end) * 0.32f);
-                bridge.transform.localScale = Vector3.one * bridgeScale;
+                bridge.transform.localScale =
+                    presentationPrefab.transform.localScale
+                    * bridgeScale;
             }
         }
 
@@ -357,6 +393,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Incidents.Fire
             }
 
             spreadBridgeInstances.Clear();
+            spreadBridgeAdapters.Clear();
         }
 
         private void CacheLightState()
@@ -386,6 +423,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Incidents.Fire
             }
 
             presentationInstances.Clear();
+            presentationAdapters.Clear();
         }
     }
 }

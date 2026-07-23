@@ -18,6 +18,8 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
         [SerializeField] private GameObject warpVisualRoot;
         [SerializeField] private GameObject warpStatusCardRoot;
         [SerializeField] private TMP_Text warpStatusText;
+        [SerializeField] private GameObject safeZoneStatusRoot;
+        [SerializeField] private TMP_Text safeZoneStatusText;
         [SerializeField, Min(0.05f)] private float fadeSeconds = 0.35f;
 
         [Header("Environment")]
@@ -94,6 +96,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
             transitionCanvasGroup.blocksRaycasts = true;
             transitionCanvasGroup.interactable = false;
             warpVisualRoot.SetActive(true);
+            HideSafeZoneStatus();
             ShowWarpStatusCard("WARP IN PROGRESS");
             ApplySkybox(warpSkybox);
             transitionRoutine = StartCoroutine(FadeCanvas(transitionCanvasGroup.alpha, 1f));
@@ -112,6 +115,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
             transitionCanvasGroup.blocksRaycasts = true;
             transitionCanvasGroup.interactable = false;
             warpVisualRoot.SetActive(true);
+            HideSafeZoneStatus();
             ShowWarpStatusCard("ARRIVING");
             ApplySkybox(arrivalSkybox);
             transitionRoutine = StartCoroutine(PlayArrival());
@@ -224,6 +228,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
             yield return FadeCanvas(transitionCanvasGroup.alpha, 0f);
             warpVisualRoot.SetActive(false);
             HideWarpStatusCard();
+            HideSafeZoneStatus();
             transitionCanvasGroup.blocksRaycasts = false;
             SetPlayerInputBlocked(false);
             transitionRoutine = null;
@@ -290,7 +295,9 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
             transitionCanvasGroup.blocksRaycasts = false;
             transitionCanvasGroup.interactable = false;
             warpVisualRoot.SetActive(false);
-            ShowWarpStatusCard("WARP MAINTENANCE\nSELECT NEXT DESTINATION");
+            HideWarpStatusCard();
+            safeZoneStatusText.text = "안전구역";
+            safeZoneStatusRoot.SetActive(true);
             ApplySkybox(warpSkybox);
             SetPlayerInputBlocked(false);
         }
@@ -304,6 +311,11 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
         private void HideWarpStatusCard()
         {
             warpStatusCardRoot.SetActive(false);
+        }
+
+        private void HideSafeZoneStatus()
+        {
+            safeZoneStatusRoot.SetActive(false);
         }
 
         private bool RequireSetup(string operation)
@@ -324,6 +336,8 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
             valid &= RequireReference(warpVisualRoot, nameof(warpVisualRoot));
             valid &= RequireReference(warpStatusCardRoot, nameof(warpStatusCardRoot));
             valid &= RequireReference(warpStatusText, nameof(warpStatusText));
+            valid &= RequireReference(safeZoneStatusRoot, nameof(safeZoneStatusRoot));
+            valid &= RequireReference(safeZoneStatusText, nameof(safeZoneStatusText));
             valid &= RequireReference(normalSkybox, nameof(normalSkybox));
             valid &= RequireReference(warpSkybox, nameof(warpSkybox));
             valid &= RequireReference(arrivalSkybox, nameof(arrivalSkybox));

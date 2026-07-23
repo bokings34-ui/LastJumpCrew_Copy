@@ -19,6 +19,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Events
     public sealed class PHSNetworkEventHudBinder : MonoBehaviour
     {
         [SerializeField] private MonoBehaviour eventHudViewSource;
+        [SerializeField] private bool enableLegacyShipMapInput;
         [SerializeField] private PHSShipMapInputMode shipMapInputMode = PHSShipMapInputMode.Hold;
         [SerializeField, Min(0.25f)] private float terminalMessageSeconds = 2f;
         [SerializeField, Min(0.05f)] private float bindRetrySeconds = 0.25f;
@@ -299,6 +300,12 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Events
 
         private void UpdateMapInput()
         {
+            if (!enableLegacyShipMapInput)
+            {
+                eventHudView.SetShipMapVisible(false);
+                return;
+            }
+
             var keyboard = Keyboard.current;
             if (keyboard == null)
             {
