@@ -9,7 +9,7 @@ namespace SM
         [SerializeField] private List<Transform> fireSpawnPoints = new List<Transform>();
 
         public string RoomId { get { return roomId; } }
-        public IReadOnlyList<Transform> FireSpawnPoints { get { return fireSpawnPoints; } }
+        public List<Transform> FireSpawnPoints { get { return fireSpawnPoints; } }
 
         private void OnEnable()
         {

@@ -12,6 +12,7 @@ namespace LastJumpCrew.ParkHanSol.Shop
         bool IsReady { get; }
         bool IsShopVisitRequired { get; }
         bool CanEnterShop(out string reason);
+        bool CanCompleteShop(out string reason);
         bool TryCompleteShop(out string reason);
     }
 }

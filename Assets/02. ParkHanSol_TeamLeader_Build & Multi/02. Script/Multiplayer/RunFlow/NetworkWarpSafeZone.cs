@@ -9,9 +9,55 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
         [SerializeField] private BoxCollider safeTrigger;
         private bool setupErrorLogged;
 
+        public static NetworkWarpSafeZone Instance { get; private set; }
+
+        [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
+        private static void ResetStatics()
+        {
+            Instance = null;
+        }
+
         private void Awake()
         {
+            if (Instance != null && Instance != this)
+            {
+                Debug.LogError($"PHS_WARP_SAFE_ZONE_SETUP_FAILED reason=duplicate_zone current={name} existing={Instance.name}", this);
+                enabled = false;
+                return;
+            }
+
+            Instance = this;
             ValidateSetup();
+        }
+
+        private void OnDestroy()
+        {
+            if (Instance == this)
+            {
+                Instance = null;
+            }
+        }
+
+        public bool TryGetArrivalPose(int slot, out Vector3 position, out Quaternion rotation)
+        {
+            position = default;
+            rotation = default;
+            if (!ValidateSetup())
+            {
+                return false;
+            }
+
+            const int columns = 4;
+            const float spacing = 2f;
+            var column = slot % columns;
+            var row = slot / columns;
+            var localPosition = new Vector3(
+                safeTrigger.center.x + (column - 1.5f) * spacing,
+                0.05f,
+                safeTrigger.center.z + (row - 0.5f) * spacing);
+            position = transform.TransformPoint(localPosition);
+            rotation = transform.rotation;
+            return true;
         }
 
         private void OnTriggerEnter(Collider other)

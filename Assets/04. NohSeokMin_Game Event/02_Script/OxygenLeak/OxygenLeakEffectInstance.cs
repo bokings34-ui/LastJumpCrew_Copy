@@ -3,11 +3,19 @@ using System;
 using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.AI;
+using LastJumpCrew.ParkHanSol.Multiplayer;
 
 namespace SM
 {
-    public class OxygenLeakEffectInstance : MonoBehaviour, IInteractable, IRequireHeldItem
+    public class OxygenLeakEffectInstance :
+        MonoBehaviour,
+        IInteractable,
+        IRequireHeldItem,
+        IEventRepairableEffect,
+        IUtilityAttackTarget
     {
+        private const string WrenchItemId = "wrench";
+
         [Header("벽 무시 레이어 설정")]
         [SerializeField] private LayerMask _wallLayerMask;
 
@@ -24,8 +32,15 @@ namespace SM
         private float _repairProgress;
         private float _damageTimer;
         private float _elapsedSinceSpawn;
+        private IEventRepairRuntimeBridge _repairRuntimeBridge;
+        private bool _hazardHandledExternally;
 
         public bool IsSealed { get; private set; }
+        public ulong EventInstanceId { get; private set; }
+        public uint EffectInstanceId { get; private set; }
+        public EventEffectKind EffectKind => EventEffectKind.OxygenLeak;
+        public Vector3 RepairPosition => transform.position;
+        public bool IsRepairComplete => IsSealed;
         public event Action<OxygenLeakEffectInstance> OnSealed;
 
         private struct PullTarget
@@ -37,7 +52,9 @@ namespace SM
         private readonly Dictionary<Transform, PullTarget> _targetsInRange
             = new Dictionary<Transform, PullTarget>();
 
-        public void Activate(OxygenLeakEventDataSO data)
+        public void Activate(
+            OxygenLeakEventDataSO data,
+            bool hazardHandledExternally)
         {
             _outerPullRadius = data.outerPullRadius;
             _innerDamageRadius = data.innerDamageRadius;
@@ -49,6 +66,7 @@ namespace SM
             _repairProgress = 0f;
             _damageTimer = 0f;
             _elapsedSinceSpawn = 0f;
+            _hazardHandledExternally = hazardHandledExternally;
             IsSealed = false;
 
             gameObject.SetActive(true);
@@ -56,13 +74,52 @@ namespace SM
 
         public void Deactivate()
         {
+            UnbindRepairTarget();
             _targetsInRange.Clear();
+            _hazardHandledExternally = false;
             gameObject.SetActive(false);
+        }
+
+        public bool BindRepairTarget(
+            ulong eventInstanceId,
+            uint effectInstanceId,
+            IEventRepairRuntimeBridge repairRuntimeBridge)
+        {
+            UnbindRepairTarget();
+            if (eventInstanceId == 0UL || effectInstanceId == 0U || repairRuntimeBridge == null)
+            {
+                return false;
+            }
+
+            EventInstanceId = eventInstanceId;
+            EffectInstanceId = effectInstanceId;
+            _repairRuntimeBridge = repairRuntimeBridge;
+            if (_repairRuntimeBridge.RegisterRepairTarget(this))
+            {
+                return true;
+            }
+
+            EventInstanceId = 0UL;
+            EffectInstanceId = 0U;
+            _repairRuntimeBridge = null;
+            return false;
+        }
+
+        public void UnbindRepairTarget()
+        {
+            if (_repairRuntimeBridge != null && EventInstanceId != 0UL && EffectInstanceId != 0U)
+            {
+                _repairRuntimeBridge.UnregisterRepairTarget(EventInstanceId, EffectInstanceId);
+            }
+
+            EventInstanceId = 0UL;
+            EffectInstanceId = 0U;
+            _repairRuntimeBridge = null;
         }
 
         private void Update()
         {
-            if (IsSealed) return;
+            if (IsSealed || _hazardHandledExternally) return;
 
             _elapsedSinceSpawn += Time.deltaTime;
 
@@ -156,7 +213,7 @@ namespace SM
 
         // ___________ IRequireHeldItem ___________
 
-        public string RequiredItemId { get { return ItemType.Wrench.ToString(); } }
+        public string RequiredItemId { get { return WrenchItemId; } }
 
         public bool IsRequirementMet(IItemHolder itemHolder)
         {
@@ -177,6 +234,40 @@ namespace SM
         }
 
         // __________ 플레이어가 수리할 때 호출하는 함수 ____________
+        public bool TryResolveUtilityAttack(in UtilityAttackHit hit)
+        {
+            if (IsSealed
+                || hit.ItemId != RequiredItemId
+                || hit.Attacker == null
+                || hit.RequestSequence == 0U
+                || _repairRuntimeBridge == null)
+            {
+                return false;
+            }
+
+            var itemRecord =
+                hit.Attacker.GetComponentInParent<NetworkPlayerItemRecord>();
+            if (itemRecord == null)
+            {
+                itemRecord =
+                    hit.Attacker.GetComponentInChildren<
+                        NetworkPlayerItemRecord>(true);
+            }
+
+            if (itemRecord == null)
+            {
+                Debug.LogError(
+                    $"PHS_EVENT_REPAIR_REQUEST_REJECTED reason=item_record_missing target={name}",
+                    this);
+                return false;
+            }
+
+            return _repairRuntimeBridge.RequestEffectRepair(
+                this,
+                itemRecord,
+                hit.RequestSequence);
+        }
+
         public void ApplyRepair(float amount)
         {
             if (IsSealed) return;
@@ -188,6 +279,17 @@ namespace SM
                 IsSealed = true;
                 OnSealed?.Invoke(this);
             }
+        }
+
+        public bool TryApplyRepairStep(float amount)
+        {
+            if (IsSealed || amount <= 0f)
+            {
+                return false;
+            }
+
+            ApplyRepair(amount);
+            return true;
         }
 
         private void OnDrawGizmosSelected()

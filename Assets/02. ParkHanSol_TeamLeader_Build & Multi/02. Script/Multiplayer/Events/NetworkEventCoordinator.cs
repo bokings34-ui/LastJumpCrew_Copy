@@ -3,6 +3,9 @@ using System.Collections;
 using System.Collections.Generic;
 using LastJumpCrew.Common;
 using LastJumpCrew.ParkHanSol.Interaction;
+using LastJumpCrew.ParkHanSol.Items;
+using LastJumpCrew.ParkHanSol.Multiplayer.Events.MiniGames;
+using LastJumpCrew.ParkHanSol.Multiplayer.Events.MiniGames.Runtime;
 using SM;
 using Unity.Collections;
 using Unity.Netcode;
@@ -21,7 +24,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Events
     {
         [Header("Event Domain References")]
         [SerializeField] private EventManager eventManager;
-        [SerializeField] private EventScheduler eventScheduler;
+        [SerializeField] private PHSNetworkEventScheduler eventScheduler;
         [SerializeField] private RoomRegistry roomRegistry;
 
         [Header("Client Effect Presentation")]
@@ -32,7 +35,6 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Events
         [SerializeField, Min(0.05f)] private float terminalSnapshotRetentionSeconds = 0.25f;
         [SerializeField, Min(0.05f)] private float effectRemovalSnapshotRetentionSeconds = 0.25f;
         [SerializeField, Min(0.1f)] private float serverRepairDistance = 3f;
-        [SerializeField, Min(0.01f)] private float serverRepairStep = 1f;
 
         [Header("Server Ship Impact")]
         [SerializeField, Min(1)] private int fireHullDamagePerEffect = 2;
@@ -50,10 +52,13 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Events
         private readonly Dictionary<ulong, NetworkEventLifecycleSnapshot> snapshotCache = new();
         private readonly Dictionary<uint, NetworkEventEffectSnapshot> effectSnapshotCache = new();
         private readonly Dictionary<uint, IEventRepairableEffect> repairTargets = new();
-        private readonly Dictionary<(ulong ClientId, uint ItemRevision), uint> repairRequestSequences = new();
+        private readonly Dictionary<
+            (ulong ClientId, ulong PlayerNetworkObjectId),
+            uint> repairRequestSequences = new();
         private readonly List<uint> effectRemovalBuffer = new();
 
         private bool setupValid;
+        private bool suppressTerminalShipImpact;
         private ulong nextEventInstanceId;
         private uint nextEffectInstanceId;
 
@@ -63,8 +68,19 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Events
         public int SnapshotCount => lifecycleSnapshots.Count;
         public int EffectSnapshotCount => effectSnapshots.Count;
 
+        public NetworkEventLifecycleSnapshot GetLifecycleSnapshotAt(int index)
+        {
+            if (index < 0 || index >= lifecycleSnapshots.Count)
+            {
+                throw new ArgumentOutOfRangeException(nameof(index));
+            }
+
+            return lifecycleSnapshots[index];
+        }
+
         public event Action LifecycleSnapshotsChanged;
         public event Action EffectSnapshotsChanged;
+        public event Action<ulong, EventId, bool> ServerEventFinished;
 
         private void Awake()
         {
@@ -201,16 +217,13 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Events
 
             if (IsServer)
             {
-                var localClientId = NetworkManager != null
-                    ? NetworkManager.LocalClientId
-                    : Unity.Netcode.NetworkManager.ServerClientId;
                 return TryApplyEffectRepairServer(
                     target.EventInstanceId,
                     target.EffectInstanceId,
                     itemId,
                     itemRevision,
                     requestSequence,
-                    localClientId);
+                    itemRecord.OwnerClientId);
             }
 
             RequestEffectRepairServerRpc(
@@ -360,6 +373,44 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Events
         {
             instanceId = 0UL;
 
+            if (!CanSpawnEventServer(eventId))
+            {
+                return false;
+            }
+
+            var room = roomRegistry.GetRandomRoom();
+            if (room == null)
+            {
+                Debug.LogWarning($"PHS_EVENT_SERVER_SPAWN_REJECTED reason=room_missing event={eventId}", this);
+                return false;
+            }
+
+            return TrySpawnEventInRoomServer(eventId, room, out instanceId);
+        }
+
+        public bool TrySpawnEventServer(
+            EventId eventId,
+            ShipRoom room,
+            out ulong instanceId)
+        {
+            instanceId = 0UL;
+
+            if (!CanSpawnEventServer(eventId))
+            {
+                return false;
+            }
+
+            if (room == null)
+            {
+                Debug.LogWarning($"PHS_EVENT_SERVER_SPAWN_REJECTED reason=room_missing event={eventId}", this);
+                return false;
+            }
+
+            return TrySpawnEventInRoomServer(eventId, room, out instanceId);
+        }
+
+        private bool CanSpawnEventServer(EventId eventId)
+        {
             if (!IsAuthoritative)
             {
                 Debug.LogWarning($"PHS_EVENT_SERVER_SPAWN_REJECTED reason=not_server event={eventId}", this);
@@ -378,13 +429,14 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Events
                 return false;
             }
 
-            var room = roomRegistry.GetRandomRoom();
-            if (room == null)
-            {
-                Debug.LogWarning($"PHS_EVENT_SERVER_SPAWN_REJECTED reason=room_missing event={eventId}", this);
-                return false;
-            }
+            return true;
+        }
 
+        private bool TrySpawnEventInRoomServer(
+            EventId eventId,
+            IRoom room,
+            out ulong instanceId)
+        {
             var accepted = eventManager.TrySpawnEvent(eventId, room, out instanceId);
             Debug.Log(
                 $"PHS_EVENT_SERVER_SPAWN_RESULT accepted={accepted} instance={instanceId} event={eventId} room={room.RoomId}",
@@ -426,13 +478,16 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Events
                 return false;
             }
 
-            if (eventScheduler != null)
-            {
-                eventScheduler.ForceClearAll();
-            }
-            else
+            eventScheduler?.ResetScheduler();
+            var previousSuppression = suppressTerminalShipImpact;
+            suppressTerminalShipImpact = true;
+            try
             {
                 eventManager.ForceClearAll();
+            }
+            finally
+            {
+                suppressTerminalShipImpact = previousSuppression;
             }
 
             Debug.Log("PHS_EVENT_TERMINATE_ALL_SERVER_COMPLETED", this);
@@ -739,6 +794,19 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Events
                 return;
             }
 
+            if (!suppressTerminalShipImpact)
+            {
+                ApplyTerminalShipImpact(instanceId, eventId, success);
+            }
+            else
+            {
+                Debug.Log(
+                    $"PHS_EVENT_TERMINAL_IMPACT_SUPPRESSED " +
+                    $"reason=forced_termination instance={instanceId} " +
+                    $"event={eventId}",
+                    this);
+            }
+
             RemoveActiveEffectsForEvent(instanceId);
 
             var terminalState = state == EventState.Resolve || state == EventState.Fail
@@ -755,6 +823,31 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Events
                 $"PHS_EVENT_LIFECYCLE_FINISHED instance={instanceId} event={eventId} success={success} revision={revision}",
                 this);
             StartCoroutine(RemoveTerminalSnapshotAfterDelay(instanceId, revision));
+            NotifyServerEventFinished(instanceId, eventId, success);
+        }
+
+        private void NotifyServerEventFinished(
+            ulong instanceId,
+            EventId eventId,
+            bool success)
+        {
+            var handlers = ServerEventFinished;
+            if (handlers == null)
+            {
+                return;
+            }
+
+            foreach (Action<ulong, EventId, bool> handler in handlers.GetInvocationList())
+            {
+                try
+                {
+                    handler(instanceId, eventId, success);
+                }
+                catch (Exception exception)
+                {
+                    Debug.LogException(exception, this);
+                }
+            }
         }
 
         [ServerRpc(RequireOwnership = false)]
@@ -829,7 +922,10 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Events
             }
 
             var itemRecord = client.PlayerObject.GetComponent<NetworkPlayerItemRecord>();
+            var itemLifecycle =
+                client.PlayerObject.GetComponent<NetworkPlayerItemLifecycle>();
             if (itemRecord == null
+                || itemLifecycle == null
                 || !itemRecord.IsSpawned
                 || itemRecord.OwnerClientId != senderClientId
                 || itemRecord.HeldItemId != expectedItemId
@@ -838,7 +934,22 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Events
                 return RejectRepair("item_record_mismatch", eventInstanceId, effectInstanceId, senderClientId);
             }
 
-            var sequenceKey = (senderClientId, expectedItemRevision);
+            if (!TryGetActionKind(target.EffectKind, out var actionKind)
+                || !itemLifecycle.TryResolveHeldItemActionServer(
+                    expectedItemId,
+                    expectedItemRevision,
+                    actionKind,
+                    out var actionProfile))
+            {
+                return RejectRepair(
+                    "item_profile_mismatch",
+                    eventInstanceId,
+                    effectInstanceId,
+                    senderClientId);
+            }
+
+            var sequenceKey =
+                (senderClientId, itemRecord.NetworkObjectId);
             if (requestSequence == 0U
                 || repairRequestSequences.TryGetValue(sequenceKey, out var previousSequence)
                 && requestSequence <= previousSequence)
@@ -852,16 +963,43 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Events
                 return RejectRepair("distance", eventInstanceId, effectInstanceId, senderClientId);
             }
 
-            repairRequestSequences[sequenceKey] = requestSequence;
-            if (!target.TryApplyRepairStep(serverRepairStep))
+            if (!target.TryApplyRepairStep(actionProfile.Amount))
             {
                 return RejectRepair("apply_failed", eventInstanceId, effectInstanceId, senderClientId);
             }
 
+            if (!itemLifecycle.TryCommitHeldItemActionServer(
+                    expectedItemId,
+                    expectedItemRevision,
+                    actionProfile))
+            {
+                Debug.LogError(
+                    $"PHS_EVENT_REPAIR_INVARIANT_FAILED reason=durability_commit event={eventInstanceId} effect={effectInstanceId} client={senderClientId}",
+                    this);
+                return false;
+            }
+
+            repairRequestSequences[sequenceKey] = requestSequence;
+
             Debug.Log(
-                $"PHS_EVENT_REPAIR_APPLIED event={eventInstanceId} effect={effectInstanceId} client={senderClientId} item={expectedItemId} revision={expectedItemRevision} sequence={requestSequence} distance={distance:F3} complete={target.IsRepairComplete}",
+                $"PHS_EVENT_REPAIR_APPLIED event={eventInstanceId} effect={effectInstanceId} client={senderClientId} item={expectedItemId} amount={actionProfile.Amount} cost={actionProfile.DurabilityCost} revision={expectedItemRevision}->{itemRecord.Revision} sequence={requestSequence} distance={distance:F3} complete={target.IsRepairComplete}",
                 this);
             return true;
+        }
+
+        private static bool TryGetActionKind(
+            EventEffectKind effectKind,
+            out UtilityItemActionKind actionKind)
+        {
+            actionKind = effectKind switch
+            {
+                EventEffectKind.Fire =>
+                    UtilityItemActionKind.FireSuppression,
+                EventEffectKind.OxygenLeak =>
+                    UtilityItemActionKind.OxygenLeakRepair,
+                _ => UtilityItemActionKind.None
+            };
+            return actionKind != UtilityItemActionKind.None;
         }
 
         private bool RejectRepair(
@@ -943,15 +1081,17 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Events
             const float maximumResultDistance = 4f;
             var maximumResultDistanceSquared = maximumResultDistance * maximumResultDistance;
             var playerPosition = client.PlayerObject.transform.position;
-            var terminals = FindObjectsByType<MiniGameTerminal>(
+            var terminals = FindObjectsByType<PHSFinalMiniGameTerminal>(
                 FindObjectsInactive.Exclude,
                 FindObjectsSortMode.None);
 
             foreach (var terminal in terminals)
             {
                 if (terminal != null
-                    && terminal.miniGameType == miniGameType
-                    && (terminal.transform.position - playerPosition).sqrMagnitude
+                    && terminal.IsConfigured
+                    && terminal.ConfiguredEventId == eventId
+                    && terminal.ConfiguredMiniGameType == miniGameType
+                    && (terminal.WorldPosition - playerPosition).sqrMagnitude
                     <= maximumResultDistanceSquared)
                 {
                     rejectionReason = string.Empty;
@@ -963,18 +1103,60 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Events
             return false;
         }
 
-        private static bool TryGetMiniGameType(EventId eventId, out MiniGameType miniGameType)
+        private void ApplyTerminalShipImpact(
+            ulong eventInstanceId,
+            EventId eventId,
+            bool success)
+        {
+            if (eventId != EventId.EmpAttack
+                && eventId != EventId.MeteorAttack
+                && eventId != EventId.EnemyScout)
+            {
+                return;
+            }
+
+            var shipSystems = NetworkShipSystemsState.Instance;
+            if (shipSystems == null)
+            {
+                Debug.LogError(
+                    $"PHS_EVENT_TERMINAL_IMPACT_FAILED reason=ship_systems_missing instance={eventInstanceId} event={eventId}",
+                    this);
+                return;
+            }
+
+            var impactSink = shipSystems.GetComponent<IShipEventImpactSink>();
+            if (impactSink == null)
+            {
+                Debug.LogError(
+                    $"PHS_EVENT_TERMINAL_IMPACT_FAILED reason=impact_sink_missing instance={eventInstanceId} event={eventId}",
+                    shipSystems);
+                return;
+            }
+
+            if (!impactSink.TryApplyTerminalImpact(
+                    eventInstanceId,
+                    eventId,
+                    success,
+                    out var reason))
+            {
+                Debug.LogError(
+                    $"PHS_EVENT_TERMINAL_IMPACT_FAILED reason={reason} instance={eventInstanceId} event={eventId}",
+                    shipSystems);
+            }
+        }
+
+        private static bool TryGetMiniGameType(EventId eventId, out PHSMiniGameType miniGameType)
         {
             switch (eventId)
             {
                 case EventId.EmpAttack:
-                    miniGameType = MiniGameType.WireFix;
+                    miniGameType = PHSMiniGameType.WireFix;
                     return true;
                 case EventId.MeteorAttack:
-                    miniGameType = MiniGameType.Cannon;
+                    miniGameType = PHSMiniGameType.Cannon;
                     return true;
                 case EventId.EnemyScout:
-                    miniGameType = MiniGameType.PowerSync;
+                    miniGameType = PHSMiniGameType.PowerSync;
                     return true;
                 default:
                     miniGameType = default;

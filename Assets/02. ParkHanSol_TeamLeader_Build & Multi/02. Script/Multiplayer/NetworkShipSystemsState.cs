@@ -11,7 +11,9 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
     public sealed class NetworkShipSystemsState :
         NetworkBehaviour,
         IShipSystemsState,
-        IShipSystemsCommands
+        IShipSystemsCommands,
+        IShipDockRepairCommands,
+        IShipDockUpgradeCommands
     {
         [Header("Ship Defaults")]
         [SerializeField, Min(1)] private int maximumShipHp = 100;
@@ -203,6 +205,74 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
                 ReportShipDestroyed();
             }
 
+            return true;
+        }
+
+        public bool TryRestoreShipDurabilityAtDock(int amount, out string reason)
+        {
+            if (!RequireServer(out reason))
+            {
+                return false;
+            }
+
+            if (amount <= 0)
+            {
+                reason = "positive_repair_required";
+                return false;
+            }
+
+            if (!IsShipAlive)
+            {
+                reason = "ship_destroyed";
+                return false;
+            }
+
+            if (synchronizedCurrentShipHp.Value >= synchronizedMaximumShipHp.Value)
+            {
+                reason = "ship_durability_full";
+                return false;
+            }
+
+            var previousHp = synchronizedCurrentShipHp.Value;
+            synchronizedCurrentShipHp.Value = Mathf.Min(
+                synchronizedMaximumShipHp.Value,
+                previousHp + amount);
+            IncrementRevision();
+            reason = null;
+            Debug.Log(
+                $"PHS_SHIP_DOCK_REPAIR_APPLIED amount={synchronizedCurrentShipHp.Value - previousHp} hp={CurrentShipHp}/{MaximumShipHp} revision={Revision}",
+                this);
+            return true;
+        }
+
+        public bool TryIncreaseMaximumShipHpAtDock(int amount, out string reason)
+        {
+            if (!RequireServer(out reason))
+            {
+                return false;
+            }
+
+            if (amount <= 0)
+            {
+                reason = "positive_maximum_increase_required";
+                return false;
+            }
+
+            if (!IsShipAlive)
+            {
+                reason = "ship_destroyed";
+                return false;
+            }
+
+            synchronizedMaximumShipHp.Value = checked(synchronizedMaximumShipHp.Value + amount);
+            synchronizedCurrentShipHp.Value = Mathf.Min(
+                synchronizedMaximumShipHp.Value,
+                synchronizedCurrentShipHp.Value + amount);
+            IncrementRevision();
+            reason = null;
+            Debug.Log(
+                $"PHS_SHIP_MAXIMUM_HP_INCREASED amount={amount} hp={CurrentShipHp}/{MaximumShipHp} revision={Revision}",
+                this);
             return true;
         }
 
@@ -424,6 +494,38 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
             return true;
         }
 
+        public bool TryRestoreGravityAfterRepair(out string reason)
+        {
+            if (!RequireServer(out reason))
+            {
+                return false;
+            }
+
+            if (!synchronizedPowerEnabled.Value)
+            {
+                reason = "power_required";
+                return false;
+            }
+
+            if (!CanOperateModule(NetworkShipModuleId.Gravity))
+            {
+                reason = "gravity_module_unavailable";
+                return false;
+            }
+
+            if (synchronizedGravityEnabled.Value)
+            {
+                reason = null;
+                return true;
+            }
+
+            synchronizedGravityEnabled.Value = true;
+            IncrementRevision();
+            reason = null;
+            Debug.Log($"PHS_SHIP_GRAVITY_RESTORED source=repair revision={Revision}", this);
+            return true;
+        }
+
         private void InitializeServerState()
         {
             maximumShipHp = Mathf.Max(1, maximumShipHp);
@@ -492,6 +594,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
             {
                 synchronizedPowerEnabled.Value = false;
                 synchronizedGravityEnabled.Value = false;
+                synchronizedBatteryInstalled.Value = false;
                 return;
             }
 

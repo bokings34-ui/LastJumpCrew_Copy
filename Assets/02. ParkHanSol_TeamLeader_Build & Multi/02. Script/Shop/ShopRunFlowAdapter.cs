@@ -44,7 +44,9 @@ namespace LastJumpCrew.ParkHanSol.Shop
             var isFinalShop = networkRunFlow != null
                 && networkRunFlow.IsFinalShopPending
                 && state.Phase == GamePhase.GameClear;
-            if (state.Phase != GamePhase.Shop && !isFinalShop)
+            var isWarpSafeShop = networkRunFlow != null
+                && networkRunFlow.Phase == NetworkRunPhase.WarpSafe;
+            if (state.Phase != GamePhase.Shop && !isFinalShop && !isWarpSafeShop)
             {
                 reason = $"phase_{state.Phase}";
                 return false;
@@ -56,9 +58,8 @@ namespace LastJumpCrew.ParkHanSol.Shop
 
         public bool TryCompleteShop(out string reason)
         {
-            if (!IsReady)
+            if (!CanCompleteShop(out reason))
             {
-                reason = "run_flow_not_ready";
                 return false;
             }
 
@@ -70,7 +71,7 @@ namespace LastJumpCrew.ParkHanSol.Shop
 
             // 메인 씬에서 직접 방문한 상점은 진행 상태를 바꾸지 않고 돌아간다.
             // 정규 상점 회차(GamePhase.Shop)만 CloseShop 명령으로 다음 구역 선택 단계에 진입한다.
-            if (state.Phase == GamePhase.ZoneSelect)
+            if (state.Phase == GamePhase.ZoneSelect || state.Phase == GamePhase.Play)
             {
                 reason = null;
                 Debug.Log($"PHS_SHOP_RUN_FLOW_DIRECT_RETURN adapter={name}");
@@ -93,6 +94,39 @@ namespace LastJumpCrew.ParkHanSol.Shop
 
             reason = null;
             Debug.Log($"PHS_SHOP_RUN_FLOW_CLOSED adapter={name} clearedZones={state.ClearedZoneCount}");
+            return true;
+        }
+
+        public bool CanCompleteShop(out string reason)
+        {
+            if (!IsReady)
+            {
+                reason = "run_flow_not_ready";
+                return false;
+            }
+
+            var networkRunFlow = NetworkRunFlowCoordinator.Instance;
+            if (networkRunFlow != null && networkRunFlow.IsFinalShopPending)
+            {
+                if (state.Phase != GamePhase.GameClear)
+                {
+                    reason = $"phase_{state.Phase}";
+                    return false;
+                }
+
+                reason = null;
+                return true;
+            }
+
+            if (state.Phase != GamePhase.Shop
+                && state.Phase != GamePhase.ZoneSelect
+                && state.Phase != GamePhase.Play)
+            {
+                reason = $"phase_{state.Phase}";
+                return false;
+            }
+
+            reason = null;
             return true;
         }
     }

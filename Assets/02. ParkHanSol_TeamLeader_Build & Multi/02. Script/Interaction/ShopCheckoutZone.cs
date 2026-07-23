@@ -2,12 +2,14 @@ using System.Collections.Generic;
 using LastJumpCrew.ParkHanSol.Items;
 using LastJumpCrew.ParkHanSol.Shop;
 using TMPro;
+using Unity.Netcode;
 using UnityEngine;
 
 namespace LastJumpCrew.ParkHanSol.Interaction
 {
     /// <summary>Calculates physical shop items from ShopProductData and queues paid items for ship delivery.</summary>
-    public sealed class ShopCheckoutZone : MonoBehaviour
+    [RequireComponent(typeof(NetworkObject))]
+    public sealed class ShopCheckoutZone : NetworkBehaviour
     {
         private readonly struct CheckoutEntry
         {
@@ -23,10 +25,15 @@ namespace LastJumpCrew.ParkHanSol.Interaction
 
         [SerializeField] private BoxCollider checkoutTrigger;
         [SerializeField] private TMP_Text priceText;
+        [SerializeField] private TMP_Text purchaseUnavailableText;
         [SerializeField] private string pricePrefix = "TOTAL";
         [SerializeField] private ShopCatalogSO catalog;
         [SerializeField] private MonoBehaviour purchaseServiceSource;
         [SerializeField, Min(0.1f)] private float statusDuration = 2f;
+        [SerializeField] private GameObject teleportEffectPrefab;
+        [SerializeField] private Transform teleportEffectAnchor;
+        [SerializeField, Min(0.01f)] private float teleportEffectScale = 0.1f;
+        [SerializeField, Min(0.1f)] private float teleportEffectDuration = 3.2f;
 
         private readonly HashSet<UtilityItemObject> checkoutItems = new();
         private IShopPurchaseService purchaseService;
@@ -35,6 +42,7 @@ namespace LastJumpCrew.ParkHanSol.Interaction
         private int lastDisplayedCredits = -1;
         private string temporaryStatus;
         private float temporaryStatusUntil;
+        private bool temporaryPurchaseUnavailable;
 
         public int CurrentTotalPrice => CalculateTotalPrice();
 
@@ -105,7 +113,7 @@ namespace LastJumpCrew.ParkHanSol.Interaction
 
             if (!ValidateSetup())
             {
-                ShowTemporaryStatus("CHECKOUT ERROR");
+                ShowTemporaryStatus("CHECKOUT ERROR", true);
                 return false;
             }
 
@@ -113,14 +121,14 @@ namespace LastJumpCrew.ParkHanSol.Interaction
             var entries = new List<CheckoutEntry>();
             if (!BuildCheckoutSnapshot(entries, out var totalPrice, true) || totalPrice <= 0)
             {
-                ShowTemporaryStatus("NO SHOP ITEMS");
+                ShowTemporaryStatus("NO SHOP ITEMS", true);
                 return false;
             }
 
             var availableCredits = purchaseService.AvailableCredits;
             if (totalPrice > availableCredits)
             {
-                ShowTemporaryStatus($"NOT ENOUGH CR\nNEED {totalPrice} / HAVE {availableCredits}");
+                ShowTemporaryStatus($"NOT ENOUGH CR\nNEED {totalPrice} / HAVE {availableCredits}", true);
                 return false;
             }
 
@@ -157,21 +165,148 @@ namespace LastJumpCrew.ParkHanSol.Interaction
                     "out_of_stock" => "ITEM SOLD OUT",
                     _ => "PURCHASE FAILED"
                 };
-                ShowTemporaryStatus(status);
+                ShowTemporaryStatus(status, true);
                 return;
             }
 
             foreach (var entry in entries)
             {
                 checkoutItems.Remove(entry.ItemObject);
-                if (entry.ItemObject != null)
-                {
-                    Destroy(entry.ItemObject.gameObject);
-                }
             }
+
+            CompletePurchasedItems(entries);
 
             Debug.Log($"PHS_SHOP_CHECKOUT_COMPLETED zone={name} totalPrice={result.TotalPrice} itemCount={result.PurchasedCount}");
             ShowTemporaryStatus($"PAID {result.TotalPrice} CR\nSHIP DELIVERY");
+        }
+
+        private void CompletePurchasedItems(IReadOnlyList<CheckoutEntry> entries)
+        {
+            if (entries == null || entries.Count == 0)
+            {
+                return;
+            }
+
+            if (NetworkManager.Singleton == null || !NetworkManager.Singleton.IsListening)
+            {
+                PlayCheckoutTeleportEffect();
+                foreach (var entry in entries)
+                {
+                    if (entry.ItemObject == null)
+                    {
+                        continue;
+                    }
+
+                    Destroy(entry.ItemObject.gameObject);
+                }
+
+                return;
+            }
+
+            var itemReferences = new NetworkObjectReference[entries.Count];
+            for (var index = 0; index < entries.Count; index++)
+            {
+                var itemObject = entries[index].ItemObject;
+                if (itemObject == null ||
+                    !itemObject.TryGetComponent<NetworkObject>(out var itemNetworkObject) ||
+                    !itemNetworkObject.IsSpawned)
+                {
+                    Debug.LogError(
+                        $"PHS_SHOP_CHECKOUT_NETWORK_FAILED reason=item_network_object_missing zone={name} item={itemObject?.name}",
+                        this);
+                    return;
+                }
+
+                itemReferences[index] = new NetworkObjectReference(itemNetworkObject);
+            }
+
+            if (!IsSpawned)
+            {
+                Debug.LogError($"PHS_SHOP_CHECKOUT_NETWORK_FAILED reason=checkout_zone_not_spawned zone={name}", this);
+                return;
+            }
+
+            if (IsServer)
+            {
+                CompletePurchasedItemsServer(itemReferences);
+                return;
+            }
+
+            CompletePurchasedItemsServerRpc(itemReferences);
+        }
+
+        [ServerRpc(RequireOwnership = false)]
+        private void CompletePurchasedItemsServerRpc(NetworkObjectReference[] itemReferences)
+        {
+            CompletePurchasedItemsServer(itemReferences);
+        }
+
+        private void CompletePurchasedItemsServer(NetworkObjectReference[] itemReferences)
+        {
+            if (itemReferences == null || itemReferences.Length == 0)
+            {
+                Debug.LogError($"PHS_SHOP_CHECKOUT_NETWORK_FAILED reason=item_references_missing zone={name}", this);
+                return;
+            }
+
+            for (var index = 0; index < itemReferences.Length; index++)
+            {
+                if (!itemReferences[index].TryGet(out var itemNetworkObject) ||
+                    itemNetworkObject == null ||
+                    !itemNetworkObject.IsSpawned ||
+                    itemNetworkObject.GetComponent<UtilityItemObject>() == null)
+                {
+                    Debug.LogError($"PHS_SHOP_CHECKOUT_NETWORK_FAILED reason=item_reference_invalid zone={name} index={index}", this);
+                    return;
+                }
+
+            }
+
+            PlayCheckoutTeleportEffectClientRpc();
+            foreach (var itemReference in itemReferences)
+            {
+                if (itemReference.TryGet(out var itemNetworkObject) && itemNetworkObject != null && itemNetworkObject.IsSpawned)
+                {
+                    itemNetworkObject.Despawn(true);
+                }
+            }
+        }
+
+        [ClientRpc]
+        private void PlayCheckoutTeleportEffectClientRpc()
+        {
+            PlayCheckoutTeleportEffect();
+        }
+
+        private void PlayCheckoutTeleportEffect()
+        {
+            if (teleportEffectAnchor == null)
+            {
+                Debug.LogError($"PHS_SHOP_CHECKOUT_EFFECT_FAILED reason=teleport_effect_anchor_missing zone={name}", this);
+                return;
+            }
+
+            PlayTeleportEffect(teleportEffectAnchor.position);
+        }
+
+        private void PlayTeleportEffect(Vector3 position)
+        {
+            if (teleportEffectPrefab == null)
+            {
+                Debug.LogError($"PHS_SHOP_CHECKOUT_EFFECT_FAILED reason=teleport_effect_missing zone={name}", this);
+                return;
+            }
+
+            var effectInstance = Instantiate(teleportEffectPrefab, position, Quaternion.identity);
+            effectInstance.transform.localScale = Vector3.one * teleportEffectScale;
+            foreach (var particleSystem in effectInstance.GetComponentsInChildren<ParticleSystem>(true))
+            {
+                var main = particleSystem.main;
+                main.scalingMode = ParticleSystemScalingMode.Hierarchy;
+                particleSystem.Play(true);
+            }
+
+            Destroy(effectInstance, teleportEffectDuration);
         }
 
         private bool BuildCheckoutSnapshot(List<CheckoutEntry> entries, out int totalPrice, bool shouldLog)
@@ -241,12 +376,17 @@ namespace LastJumpCrew.ParkHanSol.Interaction
             if (!string.IsNullOrEmpty(temporaryStatus) && Time.unscaledTime < temporaryStatusUntil)
             {
                 priceText.text = temporaryStatus;
+                SetPurchaseUnavailable(temporaryPurchaseUnavailable);
                 return;
             }
 
             temporaryStatus = string.Empty;
+            temporaryPurchaseUnavailable = false;
             var totalPrice = CalculateTotalPrice();
             var availableCredits = purchaseService?.AvailableCredits ?? -1;
+            SetPurchaseUnavailable(totalPrice > 0 &&
+                availableCredits >= 0 &&
+                totalPrice > availableCredits);
             if (!force &&
                 totalPrice == lastDisplayedPrice &&
                 availableCredits == lastDisplayedCredits)
@@ -263,13 +403,24 @@ namespace LastJumpCrew.ParkHanSol.Interaction
                     : $"{pricePrefix} ${totalPrice}";
         }
 
-        private void ShowTemporaryStatus(string message)
+        private void ShowTemporaryStatus(string message, bool showPurchaseUnavailable = false)
         {
             temporaryStatus = message;
             temporaryStatusUntil = Time.unscaledTime + statusDuration;
+            temporaryPurchaseUnavailable = showPurchaseUnavailable;
             lastDisplayedPrice = -1;
             lastDisplayedCredits = -1;
             RefreshPriceText(true);
+        }
+
+        private void SetPurchaseUnavailable(bool isVisible)
+        {
+            if (purchaseUnavailableText == null)
+            {
+                return;
+            }
+
+            purchaseUnavailableText.gameObject.SetActive(isVisible);
         }
 
         private bool ValidateSetup()
@@ -289,6 +440,12 @@ namespace LastJumpCrew.ParkHanSol.Interaction
             if (purchaseService == null)
             {
                 Debug.LogError($"PHS_SHOP_CHECKOUT_SETUP_FAILED reason=purchase_service_missing zone={name}");
+                isValid = false;
+            }
+
+            if (purchaseUnavailableText == null)
+            {
+                Debug.LogError($"PHS_SHOP_CHECKOUT_SETUP_FAILED reason=purchase_unavailable_text_missing zone={name}");
                 isValid = false;
             }
 

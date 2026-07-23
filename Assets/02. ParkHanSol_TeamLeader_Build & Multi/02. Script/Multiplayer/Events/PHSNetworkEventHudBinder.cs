@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Text;
 using SM;
+using LastJumpCrew.ParkHanSol.Multiplayer.Maps;
 using UnityEngine;
 using UnityEngine.InputSystem;
 
@@ -18,9 +19,11 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Events
     public sealed class PHSNetworkEventHudBinder : MonoBehaviour
     {
         [SerializeField] private MonoBehaviour eventHudViewSource;
+        [SerializeField] private bool enableLegacyShipMapInput;
         [SerializeField] private PHSShipMapInputMode shipMapInputMode = PHSShipMapInputMode.Hold;
         [SerializeField, Min(0.25f)] private float terminalMessageSeconds = 2f;
         [SerializeField, Min(0.05f)] private float bindRetrySeconds = 0.25f;
+        [SerializeField, Min(0.1f)] private float currentMapMessageSeconds = 3f;
 
         private readonly List<NetworkEventLifecycleSnapshot> snapshotBuffer = new();
         private readonly List<NetworkEventLifecycleSnapshot> activeSnapshots = new();
@@ -28,6 +31,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Events
 
         private INetworkEventHudView eventHudView;
         private NetworkEventCoordinator boundCoordinator;
+        private PHSMapRuntimeContext boundMapRuntimeContext;
         private NetworkEventLifecycleSnapshot terminalSnapshot;
         private bool hasTerminalSnapshot;
         private bool toggleMapVisible;
@@ -69,12 +73,15 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Events
             }
 
             eventHudView.HideOffline();
+            TryBindMapRuntimeContext();
             TryBindCoordinator();
         }
 
         private void OnDisable()
         {
             UnbindCoordinator();
+            UnbindMapRuntimeContext();
+            eventHudView?.ClearCurrentMap();
             eventHudView?.HideOffline();
         }
 
@@ -83,6 +90,11 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Events
             if (eventHudView == null || !eventHudView.IsConfigured)
             {
                 return;
+            }
+
+            if (boundMapRuntimeContext == null)
+            {
+                TryBindMapRuntimeContext();
             }
 
             if (boundCoordinator == null || !boundCoordinator.IsSpawned ||
@@ -144,6 +156,40 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Events
             roomViewModels.Clear();
             hasTerminalSnapshot = false;
             toggleMapVisible = false;
+        }
+
+        private void TryBindMapRuntimeContext()
+        {
+            var runtimeContext = FindFirstObjectByType<PHSMapRuntimeContext>(FindObjectsInactive.Include);
+            if (runtimeContext == null || runtimeContext == boundMapRuntimeContext)
+            {
+                return;
+            }
+
+            UnbindMapRuntimeContext();
+            boundMapRuntimeContext = runtimeContext;
+            boundMapRuntimeContext.CurrentProfileChanged += HandleCurrentProfileChanged;
+            if (boundMapRuntimeContext.CurrentProfile != null)
+            {
+                HandleCurrentProfileChanged(boundMapRuntimeContext.CurrentProfile);
+            }
+        }
+
+        private void UnbindMapRuntimeContext()
+        {
+            if (boundMapRuntimeContext != null)
+            {
+                boundMapRuntimeContext.CurrentProfileChanged -= HandleCurrentProfileChanged;
+                boundMapRuntimeContext = null;
+            }
+        }
+
+        private void HandleCurrentProfileChanged(PHSMapProfileSO profile)
+        {
+            if (profile != null)
+            {
+                eventHudView.ShowCurrentMap(profile.DisplayName, currentMapMessageSeconds);
+            }
         }
 
         private void RefreshFromCoordinator()
@@ -254,6 +300,12 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Events
 
         private void UpdateMapInput()
         {
+            if (!enableLegacyShipMapInput)
+            {
+                eventHudView.SetShipMapVisible(false);
+                return;
+            }
+
             var keyboard = Keyboard.current;
             if (keyboard == null)
             {

@@ -1,6 +1,7 @@
 using DG.Tweening;
 using TMPro;
 using UnityEngine;
+using UnityEngine.SceneManagement;
 using UnityEngine.Serialization;
 
 namespace LastJumpCrew.ParkHanSol.Multiplayer
@@ -15,6 +16,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
         [SerializeField] private ParkHanSolHudTextMotion warpMotion;
         [SerializeField] private ParkHanSolHudTextMotion shipHpMotion;
         [SerializeField] private ParkHanSolHudTimerMotion timerMotion;
+        [SerializeField] private GameObject boostGaugeRoot;
 
         [Header("Held Item")]
         [SerializeField] private RectTransform heldItemRoot;
@@ -38,7 +40,10 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
         [Header("Timing")]
         [SerializeField, Min(0.01f)] private float showDuration = 0.16f;
         [SerializeField, Min(0.01f)] private float hideDuration = 0.12f;
-        [SerializeField, Min(1f)] private float timeLimitTotalSeconds = 600f;
+        [SerializeField, Min(1f)] private float timeLimitTotalSeconds = 300f;
+        [SerializeField, Min(0.1f)] private float economyChangeVisibleSeconds = 2.5f;
+
+        private const string ShopSceneName = "PHS_ExteriorShopScene";
 
         private int previousHealth;
         private int previousBoost;
@@ -56,6 +61,8 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
         private bool isGravityWarningVisible;
         private bool isHazardWarningVisible;
         private bool isWarningPanelVisible;
+        private bool isEconomyVisible;
+        private float economyVisibleUntil;
         private string defaultGravityWarningText;
         private Vector2 interactionPromptShownPosition;
         private Vector2 gravityWarningShownPosition;
@@ -86,6 +93,25 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
             ClearRespawnStatus();
         }
 
+        private void OnEnable()
+        {
+            SceneManager.activeSceneChanged += HandleActiveSceneChanged;
+            RefreshEconomyVisibility();
+        }
+
+        private void OnDisable()
+        {
+            SceneManager.activeSceneChanged -= HandleActiveSceneChanged;
+        }
+
+        private void Update()
+        {
+            if (!IsShopScene() && isEconomyVisible && Time.unscaledTime >= economyVisibleUntil)
+            {
+                SetEconomyVisible(false);
+            }
+        }
+
         public void SetVitals(int health, int maxHealth, int stamina, int maxStamina)
         {
             var safeMaxHealth = Mathf.Max(1, maxHealth);
@@ -107,13 +133,25 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
             PlayValueFeedback(boostMotion, hasBoost, previousBoost, currentFuel, false);
             previousBoost = currentFuel;
             hasBoost = true;
+
+            var shouldShow = currentFuel < safeMaxFuel;
+            if (boostMotion != null)
+            {
+                boostMotion.gameObject.SetActive(shouldShow);
+            }
+
+            if (boostGaugeRoot != null)
+            {
+                boostGaugeRoot.SetActive(shouldShow);
+            }
         }
 
         public void SetEconomy(int money, int bank)
         {
             bankMotion?.SetValue($"${bank:N0}", 1f);
 
-            if (hasEconomy && bank != previousBank)
+            var valueChanged = hasEconomy && bank != previousBank;
+            if (valueChanged)
             {
                 if (bank > previousBank) bankMotion?.PlayIncreaseFeedback();
                 else bankMotion?.PlayDecreaseFeedback();
@@ -121,6 +159,53 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
 
             previousBank = bank;
             hasEconomy = true;
+
+            if (IsShopScene())
+            {
+                SetEconomyVisible(true);
+                return;
+            }
+
+            if (valueChanged)
+            {
+                economyVisibleUntil = Time.unscaledTime + economyChangeVisibleSeconds;
+                SetEconomyVisible(true);
+                return;
+            }
+
+            if (isEconomyVisible && Time.unscaledTime < economyVisibleUntil)
+            {
+                return;
+            }
+
+            SetEconomyVisible(false);
+        }
+
+        private void HandleActiveSceneChanged(Scene _, Scene __)
+        {
+            RefreshEconomyVisibility();
+        }
+
+        private void RefreshEconomyVisibility()
+        {
+            SetEconomyVisible(IsShopScene());
+        }
+
+        private void SetEconomyVisible(bool visible)
+        {
+            isEconomyVisible = visible;
+            if (bankMotion != null)
+            {
+                bankMotion.gameObject.SetActive(visible);
+            }
+        }
+
+        private static bool IsShopScene()
+        {
+            return string.Equals(
+                SceneManager.GetActiveScene().name,
+                ShopSceneName,
+                System.StringComparison.Ordinal);
         }
 
         public void SetWarpGauge(float normalizedValue)

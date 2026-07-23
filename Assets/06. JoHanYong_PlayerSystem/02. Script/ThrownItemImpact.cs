@@ -8,7 +8,7 @@ namespace LastJumpCrew.ParkHanSol.Items
     [RequireComponent(typeof(Rigidbody))]
     [RequireComponent(typeof(Collider))]
     //우클릭으로 버리는 일반 아이템의 충돌 처리
-    public sealed class ThorwnItemImpact : NetworkBehaviour
+    public sealed class ThrownItemImpact : NetworkBehaviour
     {
         [Header("Knockback")]
         [SerializeField, Min(0f)]
@@ -25,7 +25,7 @@ namespace LastJumpCrew.ParkHanSol.Items
 
         private bool isThrown; //아이템 투척 했는지 
 
-        public void InitialzeThrow(GameObject throwAttacker)
+        public void InitializeThrow(GameObject throwAttacker)
         {
             if (!IsServer)//충돌 판정 + 넉백 적용은 서버 담당
             {
@@ -38,7 +38,7 @@ namespace LastJumpCrew.ParkHanSol.Items
 
             Debug.Log($"PHS_THROW_IMPACT_READY " + $"item={name}");
         }
-        private void OnCillisionEnter(Collision collision)
+        private void OnCollisionEnter(Collision collision)
         {
             if (!IsServer || !isThrown)
             {

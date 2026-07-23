@@ -70,13 +70,25 @@ crashlytics-build.properties
 
 # Unity MCP local install artifacts
 /[Aa]ssets/02. ParkHanSol_TeamLeader_Build & Multi/MCPForUnityLocal/
+/[Aa]ssets/02. ParkHanSol_TeamLeader_Build & Multi/MCPForUnityLocal.meta
 /[Aa]ssets/02. ParkHanSol_TeamLeader_Build & Multi/MCPPackages~/
+/[Aa]ssets/02. ParkHanSol_TeamLeader_Build & Multi/MCPPackages~.meta
 /[Pp]ackages/com.anklebreaker.unity-mcp/
 /[Ll]ibrary/MCPForUnity/
 /[Ll]ibrary/[Pp]ackage[Cc]ache/com.anklebreaker.unity-mcp*/
+/.codex/
+/.codex.json
+/.codex.toml
+/.mcp.json
+/mcp.json
 /ProjectSettings/Packages/com.unity.services.vivox
 ProjectSettings/Packages/com.unity.services.vivox/Settings.json
 
 # Ignore assets and packages
 /[Aa]ssets/04. NohSeokMin_Game Event/06_IgnoreAssets/
 /[Aa]ssets/04. NohSeokMin_Game Event/06_IgnoreAssets.meta
+
+/Assets/05. TakHyunJae_Map & MiniGame/06. MyAsset/
+# Ignore test Import Object
+/[Aa]ssets/03. SeoBoGyeong_Game Economy/99. Test/
+/[Aa]ssets/03. SeoBoGyeong_Game Economy/99. Test.meta

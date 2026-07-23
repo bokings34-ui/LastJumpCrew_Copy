@@ -1,7 +1,7 @@
 using UnityEngine;
-using UnityEngine.InputSystem;
 using Unity.Netcode;
 using LastJumpCrew.ParkHanSol.Multiplayer;
+using LastJumpCrew.ParkHanSol.Multiplayer.Input;
 using CommonInteraction = LastJumpCrew.Common;
 
 namespace LastJumpCrew.ParkHanSol.Interaction
@@ -20,6 +20,7 @@ namespace LastJumpCrew.ParkHanSol.Interaction
         // 상호작용 대상 레이어 필터다. Trigger도 감지한다.
         [SerializeField] private LayerMask interactableLayers = ~0;
         [SerializeField] private ParkHanSolPlayHudMockPresenter playHudPresenter;
+        [SerializeField] private PlayerControlInput playerControlInput;
 
         // 같은 오브젝트에 붙은 아이템 보유 컴포넌트다.
         private IItemHolder itemHolder;
@@ -40,15 +41,11 @@ namespace LastJumpCrew.ParkHanSol.Interaction
         private InteractableFocusGlow focusedGlow;
 
         [Header("Drop And Throw Input")]
-        [SerializeField, Min(0.1f)]
-        private float throwHoldThreshold = 0.4f; //해당 시간보다 짧게 누르면 일반 내려놓기/ 그 이상은 투척
-        private float rightButtonPressedTime; //우클릭 누르기 시작한 시간
-        private bool isHoldingRightButton; //우클릭 누르고 있는 기록
-        [SerializeField]
-        private NetworkPlayerCombatController combatController; //길게 누른 우클릭 투척 시 서버 요청하기 위한 컨트롤러
+        [SerializeField, Min(0.1f)] private float throwHoldThreshold = 0.4f;
+        [SerializeField] private NetworkPlayerCombatController combatController;
 
-
-        
+        private float rightButtonPressedTime;
+        private bool isHoldingRightButton;
 
         private void Awake()
         {
@@ -57,11 +54,20 @@ namespace LastJumpCrew.ParkHanSol.Interaction
             networkObject = GetComponent<NetworkObject>();
 
 
+
             if(combatController == null)
             {
                 combatController = GetComponent<NetworkPlayerCombatController>();
             }
             playerController = GetComponent<NetworkPlayerController>();
+
+
+            playerController = GetComponent<NetworkPlayerController>();
+            combatController ??= GetComponent<NetworkPlayerCombatController>();
+            if (playerControlInput == null)
+            {
+                Debug.LogError($"PHS_PLAYER_INPUT_SETUP_FAILED reason=control_input_reference_missing player={name}", this);
+            }
 
         }
 
@@ -70,6 +76,7 @@ namespace LastJumpCrew.ParkHanSol.Interaction
             // 네트워크 스폰 후 소유자가 아니면 입력/초점 표시를 하지 않는다.
             if (networkObject != null && networkObject.IsSpawned && !networkObject.IsOwner)
             {
+                isHoldingRightButton = false;
                 ClearToolBoxSlotFocus();
                 ClearInteractionPrompt();
                 return;
@@ -77,6 +84,7 @@ namespace LastJumpCrew.ParkHanSol.Interaction
 
             if (playerController != null && !playerController.CanAcceptLocalInput)
             {
+                isHoldingRightButton = false;
                 ClearToolBoxSlotFocus();
                 ClearInteractableFocusGlow();
                 ClearInteractionPrompt();
@@ -86,23 +94,23 @@ namespace LastJumpCrew.ParkHanSol.Interaction
             RefreshToolBoxSlotFocus();
             RefreshInteractableFocusGlow();
 
-            if (Keyboard.current != null && Keyboard.current.fKey.wasPressedThisFrame)
-            {
-                TryInteract();
-            }
-
-            if (Mouse.current == null)
+            if (playerControlInput == null)
             {
                 return;
             }
 
-            ProcessHeldItemUseInput(); //좌클릭 입력을 현재 손 아이템의 사용방식의 맞게 처리하기
+            if (playerControlInput.InteractPressedThisFrame)
+            {
+                TryInteract();
+            }
 
-            ProcessDropOrThrowInput(); //우클릭 입력 우클릭 누른 시간의 따른 내려놓기 or 투척 처리
+            ProcessHeldItemUseInput();
+            ProcessDropOrThrowInput();
         }
 
         private void OnDisable()
         {
+            isHoldingRightButton = false;
             ClearToolBoxSlotFocus();
             ClearInteractableFocusGlow();
             ClearInteractionPrompt();
@@ -357,105 +365,80 @@ namespace LastJumpCrew.ParkHanSol.Interaction
             focusedGlow = null;
         }
 
-        private void ProcessHeldItemUseInput() //손 아이템의 사용 방식을 확인하여 좌클릭 입력 처리
-        {
-            if (Mouse.current == null)
-            {
-                return;
-            }
-            if (commonItemHolder == null)
-            {
-                return;
-            }
-
-            var heldItem = commonItemHolder.CurrentItem;
-
-            //빈손이라면 사용할 아이템 없음
-            if (heldItem == null)
-            {
-                return;
-            }
-            if (!TryGetUsableItem(heldItem, out var usableItem))
-            {
-                return;
-            }
-            //IContinusUsableItem을 함께 구현한 아이템인지 검사
-            var isContinuousItem = usableItem is CommonInteraction.IContinuousUsableItem;
-
-            //지속 아이템
-            if (isContinuousItem)
-            {
-                if (Mouse.current.leftButton.isPressed)
-                {
-                    TryUseHeldItem();
-                }
-                return;
-            }
-            //일반 아이템
-            if (!Mouse.current.leftButton.wasPressedThisFrame) //렌치같은 아이템 좌클릭 누른 순간에만 한번 사용
-            {
-                return;
-            }
-            if (TryInteractWithFocusedToolBoxSlot()) //아이템 공격보다 상호작용을 우선
-            {
-                return;
-            }
-            TryUseHeldItem();
-        }
-
-
         private void ClearInteractionPrompt()
         {
             playHudPresenter?.SetInteractionPrompt(string.Empty, string.Empty);
         }
-        private void ProcessDropOrThrowInput()
+
+        private void ProcessHeldItemUseInput()
         {
-            if (Mouse.current == null)
+            if (playerControlInput == null)
             {
                 return;
             }
-            if (Mouse.current.rightButton.wasPressedThisFrame) //우클릭 누른 시각만 기록
+
+            if (playerControlInput.UsePressedThisFrame && TryInteractWithFocusedToolBoxSlot())
+            {
+                return;
+            }
+
+            var heldItem = commonItemHolder?.CurrentItem;
+            if (heldItem == null || !TryGetUsableItem(heldItem, out var usableItem))
+            {
+                return;
+            }
+
+            if (usableItem is CommonInteraction.IContinuousUsableItem)
+            {
+                if (playerControlInput.UsePressed)
+                {
+                    TryUseHeldItem();
+                }
+
+                return;
+            }
+
+            if (playerControlInput.UsePressedThisFrame)
+            {
+                TryUseHeldItem();
+            }
+        }
+
+        private void ProcessDropOrThrowInput()
+        {
+            if (playerControlInput == null)
+            {
+                return;
+            }
+
+            if (playerControlInput.DropPressedThisFrame)
             {
                 rightButtonPressedTime = Time.time;
                 isHoldingRightButton = true;
-
                 return;
             }
 
-            if (!Mouse.current.rightButton.wasReleasedThisFrame) //떼지 않으면 결과를 결정하지 않음
+            if (!playerControlInput.DropReleasedThisFrame || !isHoldingRightButton)
             {
                 return;
             }
-            if (!isHoldingRightButton) //누른 기록이 없으면 무시
-            {
-                return;
-            }
+
             isHoldingRightButton = false;
-
             var heldDuration = Time.time - rightButtonPressedTime;
-
             if (heldDuration < throwHoldThreshold)
             {
-                if (commonItemHolder == null)
-                {
-                    Debug.LogWarning($"PHS_ITEM_PLACE_FAILED " + $"reason=item_holder_missing " + $"player={name}");
-
-                    return;
-                }
                 PlaceHeldItem();
-
-                Debug.Log($"PHS_ITEM_SHORT_DROP " + $"player={name} " + $"duration={heldDuration:F2}");
                 return;
-
-
             }
-            if (combatController == null) //최소 시간 이상으로 누르면 투척을 요청
+
+            if (combatController == null)
             {
-                Debug.LogError($"PHS_ITEM_THROW_FAILED " + $"reason=combat_controller_missing " + $"player={name}");
+                Debug.LogError($"PHS_ITEM_THROW_FAILED reason=combat_controller_missing player={name}");
                 return;
             }
+
             combatController.RequestThrowHeldItem(heldDuration);
-            Debug.Log($"PHS_ITEM_LONG_THROW_REQUESTED " + $"player={name} " + $"duration={heldDuration:F2}");
         }
+        
     }
 }
