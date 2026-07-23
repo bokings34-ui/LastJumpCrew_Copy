@@ -2,6 +2,20 @@
 
 이 문서는 프로젝트의 원활한 협업과 파일 충돌 방지를 위한 운영 가이드입니다.
 
+## 최신 BEAVER 2026 Closeout — 2026-07-24
+
+- 현재 브랜치: `codex/beaver-2026-daily-pr`.
+- Draft Pull Request: [#71](https://github.com/hyunje0609-sudo/LastJumpCrew/pull/71).
+- 문서 업데이트 전 코드·자산 기준선: `d89a16f4`.
+- 최신 통합 gate: `PHS_0715_VALIDATE_OK errors=0 scenes=4 prefabs=11`.
+- Build Settings: Lobby → Tutorial → Map → Shop, 4개 씬.
+- 게임오버 통합 전 Development build와 Relay Host 1 + Client 1 P0는 통과했다. 게임오버 통합 후에는 authoring과 통합 validator만 통과했으며, Host+Client 전체 시퀀스와 restart driver는 다시 실행하지 않았다.
+- 사운드 정적 wiring은 foundation 23 clips/item 11 waves로 PASS했다. 실제 청감과 최종 믹스, 현재 fire loop에 연결된 `Sound_Fire.mp3`의 라이선스 확인은 남았다.
+- Solar Flare presentation-only prefab은 정적 validator를 통과했지만 EventId가 미배정되어 online binding은 차단 상태다.
+- 상세 source-of-truth: `Assets/02. ParkHanSol_TeamLeader_Build & Multi/Validation/PHS_BEAVER_2026_CLOSEOUT_2026-07-24.md`.
+
+아래 PR #40/#52와 0715 검증 수치는 날짜별 작업 이력이며 현재 PR #71의 상태가 아니다.
+
 ---
 
 ## 📂 1. 폴더 구조 및 작업 영역

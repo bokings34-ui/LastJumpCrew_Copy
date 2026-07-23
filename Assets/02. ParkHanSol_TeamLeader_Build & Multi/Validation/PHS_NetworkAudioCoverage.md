@@ -1,17 +1,26 @@
 # PHS Network Audio Coverage
 
-정적 감사 기준: 2026-07-23. Unity Editor 재생/프리팹 저장 없이 코드, YAML, AudioClip만 확인했다.
+최신 기준: 2026-07-24. 정적 import, mixer, prefab/scene wiring validator 결과와 실제 청감 QA를 분리해서 기록한다.
 
 ## 현재 결론
 
-- 프로젝트 전체 오디오 파일은 2개뿐이다.
-  - `03. Audio/PHS_ZeroGravityThruster_CC0.ogg`: CC0 출처 문서 있음. 현재 플레이어 thruster loop에 연결됨.
-  - `04. NohSeokMin_Game Event/99_Resource/Sound_Fire.mp3`: 라이선스/출처 문서 없음. 출품 빌드 사용 보류.
-- 실제 연결된 완성 cue는 zero-G thruster loop 1개뿐이다.
-- fire presentation은 `AudioSource` 참조는 있으나 clip이 비어 있다.
-- mini-game base는 `clickClip/successClip/failClip` 필드가 있으나 확인된 씬의 clip은 비어 있다.
-- 이동, 갈고리, 아이템, 상점, 런 전환, 결과, UI, 튜토리얼, BGM/ambient cue는 전부 미구현이다.
-- 팀 원본은 변경하지 않는다. 아래 `대상`은 전부 ParkHanSol owned copy 또는 신규 `PHS_Network*` 프리팹이다.
+- `Assets/02. ParkHanSol_TeamLeader_Build & Multi/06. Audio/` 아래 PHS media는 27개다: WAV 24, OGG 2, MP3 1.
+- `NetworkGenerated/`에는 자체 생성 WAV 23개가 있다.
+- Game audio foundation validator는 `clips=23`, `pcm_adpcm=true`, `preload=true`, `mixer=4groups`, `sources=routed`, `priority=tiered`, `headroom=true`, `fire=loop_3d_sfx`, `settings=2`로 PASS했다.
+- Item audio validator는 `waves=11`, `players=2`, `owner2D=true`, `world3D=true`, `shock3D=true`로 PASS했다.
+- 위 PASS는 import 설정과 정적 wiring 증거다. 실제 청감, 장시간 동시발음, loop 종료, Host/Client 전체 경로와 최종 믹스는 아직 완료로 판정하지 않는다.
+- 팀원 `Assets/04. NohSeokMin_Game Event/99_Resource/Sound_Fire.mp3`는 현재 fire 3D loop에 연결돼 있다. 라이선스·출처 문서가 확인되지 않았으므로 출품 전 문서 확보 또는 교체가 필요하다.
+
+## 2026-07-24 정적 wiring 상태
+
+| 영역 | 현재 증거 | 판정 |
+|---|---|---|
+| Generated foundation | 23 clip, 4 mixer groups, preload/compression, priority/headroom | 정적 PASS |
+| Item interaction | pickup/drop/swap 및 도구 cue 11개, owner 2D/world 3D | 정적 PASS |
+| Battery shock | main/tutorial player prefab의 3D AudioSource | 정적 PASS |
+| Fire presentation | 3D loop SFX와 voice 제한 | 정적 PASS |
+| 설정 | Master/UI/SFX/Ambient parameter와 Lobby 설정 prefab 2개 연결 | 정적 PASS |
+| 실제 청감·최종 믹스 | 사람 청취 및 장시간 Host/Client 세션 증거 없음 | Pending |
 
 ## 재생 규칙
 
@@ -22,7 +31,9 @@
 - 경보/BGM: 2D, 경보 동시발음 1, BGM 동시발음 1. 중요한 결과 cue가 재생될 때 ducking 적용 대상이다.
 - clip 누락/AudioSource 누락은 fallback하지 않고 `PHS_NETWORK_AUDIO_*_FAILED` Error를 남긴다.
 
-## 커버리지 매트릭스
+## 2026-07-23 구현 전 감사 매트릭스
+
+아래 표는 구현 전 누락 위치를 찾기 위해 작성한 역사 기준이다. 각 행의 `현재=없음`을 2026-07-24 현재 상태로 해석하지 않는다. 최신 판정은 위 정적 wiring 표와 실제 실행 로그를 우선한다.
 
 | 우선 | 영역 / cue | 현재 | 정확한 트리거 후보 | 기존 clip 후보 | 공간 / 음량 / 동시발음 | 대상 owned copy |
 |---|---|---|---|---|---|---|
@@ -73,7 +84,7 @@
 | P2 | 상점 ambient | 없음 | shop phase/scene 동안 | 없음 → 자체 제작/CC0 필요 | 2D/3D hybrid, 0.25, loop 1 | 신규 RunAudioRoot / owned shop environment copy |
 | P2 | 결과 UI hover | 없음 | 결과 패널 버튼 hover/click | 로비 UI cue 재사용 가능(신규 확보 후) | 2D, 0.45, UI 동시 최대 4 | NetworkRunResultPanel copy |
 
-## P0 구현 순서
+## 2026-07-23 P0 구현 계획 기록
 
 1. `06. Audio/NetworkGenerated/`에 아래 recipe로 PCM WAV를 생성하고 Unity asset으로 import한다. Runtime `AudioClip.Create`는 사용하지 않는다.
 2. 공용 `INetworkAudioCuePlayer` + 명시적 `AudioSource`/clip 슬롯을 가진 `NetworkAudioCueEmitter` 작성.
@@ -84,7 +95,7 @@
 7. result panel과 tutorial completion에 2D cue 연결.
 8. 생성 recipe, 샘플레이트, 채널, 정규화 peak와 자체생성 사실을 `PHS_NetworkGeneratedAudio_README.md`에 기록한다.
 
-## 자체 생성 WAV 초안
+## 자체 생성 WAV recipe 기준
 
 전부 44.1 kHz, mono, PCM 16-bit, peak -3 dBFS 이하. seed를 고정해 재생성 결과를 동일하게 만든다.
 
@@ -108,11 +119,11 @@
 | `PHS_Network_Warp.wav` | 1.20s | 90→780 Hz layered sine sweep + filtered noise | warp 출발/도착 pitch 변형 |
 | `PHS_Network_AmbientLoop.wav` | 8.0s | 48/73 Hz sine bed + 고정 seed low-pass noise, 양끝 equal-power crossfade | 함선 ambient 후보 |
 
-## 검증 기준
+## 남은 실행 검증
 
-- Host/Client 각각 lobby → gameplay → shop → Clear/GameOver에서 Audio 관련 Error 0.
-- 동일 입력 연타 시 voice 폭증 없음. loop가 상태 종료/씬 전환 뒤 남지 않음.
-- 원격 플레이어 동작은 3D 감쇠되고 UI/결과/경보는 거리 영향 없음.
-- 옵션의 master/SFX/UI/BGM 볼륨을 바꿀 때 해당 그룹만 변경됨.
-- 라이선스 문서 없는 `Sound_Fire.mp3`는 출품 빌드에서 참조 0.
-- 팀 원본 prefab/scene hash 변화 0. ParkHanSol owned copy만 저장.
+- Host/Client 각각 Lobby → gameplay → shop → Clear/GameOver에서 cue가 한 번씩 올바른 위치에서 재생되는지 청취한다.
+- 동일 입력 연타 시 voice 폭증이 없는지, loop가 상태 종료와 씬 전환 뒤 남지 않는지 확인한다.
+- 원격 플레이어 동작은 3D 감쇠되고 UI/결과/경보는 거리 영향을 받지 않는지 확인한다.
+- Master/UI/SFX/Ambient 볼륨 변경이 의도한 mixer group에만 적용되는지 청취한다.
+- 라이선스 문서 없는 `Sound_Fire.mp3`는 출품 전 출처 문서를 확보하거나 라이선스가 확인된 clip으로 교체한다.
+- 현재 PR은 `Assets/01` 공용 prefab 3개와 `Assets/04` Fire prefab 1개를 변경한다. 팀 원본 hash 변화 0은 현재 완료 조건으로 주장하지 않는다.

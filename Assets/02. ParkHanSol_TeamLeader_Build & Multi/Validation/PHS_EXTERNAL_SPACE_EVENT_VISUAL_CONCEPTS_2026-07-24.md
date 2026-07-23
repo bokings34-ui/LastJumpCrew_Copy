@@ -1,9 +1,12 @@
 # PHS 외부 우주 이벤트 시각 연출 설계
 
 - 작성일: 2026-07-24
-- 상태: 구현 전 설계 감사
+- 최초 상태: 구현 전 설계 감사
+- 현재 상태: Solar Flare presentation-only vertical slice 구현 완료. 전용 interface/binder/view, prefab, telegraph/active/resolve/fail audio를 연결했고 authoring과 prefab validator를 통과했다.
+- 온라인 상태: `eventId=0` 미배정. validator 결과는 `online_binding=blocked_event_id_unassigned`이며 `Assets/04` 담당자 합의 전 실제 online route는 완료로 보지 않는다.
+- 미검증: Host+Client phase 동기화, late join, resolve/fail, warp/map transition 정리, 실제 청감·시각 QA.
 - 범위: 외부 우주 이벤트 연출, 온라인 권위, VFX/SFX, 정리 계약
-- 이번 작업: 문서만 작성. 코드, 씬, 프리팹, `Assets/04. NohSeokMin_Game Event/`는 수정하지 않음.
+- 최초 문서 작성 작업은 코드, 씬, 프리팹, `Assets/04. NohSeokMin_Game Event/`를 수정하지 않았다. 이후 PHS 소유 presentation slice를 구현했으며 `Assets/04` EventId/factory는 수정하지 않았다.
 
 ## 1. 목표
 

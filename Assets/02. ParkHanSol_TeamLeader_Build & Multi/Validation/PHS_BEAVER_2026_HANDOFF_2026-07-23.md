@@ -1,5 +1,8 @@
 # LastJumpCrew BEAVER 2026 작업 인계서
 
+> [!IMPORTANT]
+> 이 문서는 2026-07-23 체크포인트 기록이며 최신 source-of-truth가 아니다. 현재 기준은 같은 폴더의 `PHS_BEAVER_2026_CLOSEOUT_2026-07-24.md`를 사용한다. 현재 브랜치는 `codex/beaver-2026-daily-pr`, PR은 `#71`, 문서 업데이트 전 코드·자산 기준선은 `d89a16f4`다. 아래의 브랜치, 미구현 목록, 빌드 해시와 다음 작업 순서는 역사 기록으로만 본다.
+
 작성 시각: 2026-07-23 19:30 KST  
 작업 브랜치: `codex/beaver-2026-item-swap`  
 프로젝트: `E:\UNITY\LastJumpCrew`
