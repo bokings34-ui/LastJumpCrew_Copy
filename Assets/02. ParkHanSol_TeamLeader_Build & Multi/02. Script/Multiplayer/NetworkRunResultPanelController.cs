@@ -18,6 +18,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
         private NetworkRunFlowCoordinator runFlow;
         private NetworkRunEconomyLedger economy;
         private NetworkRunRestartCoordinator restart;
+        private NetworkGameOverSequenceCoordinator gameOverSequence;
         private INetworkAudioCuePlayer audioCuePlayer;
         private bool isRootAvailabilitySubscribed;
         private bool isShowing;
@@ -143,7 +144,8 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
             if (runSessionRoot == null
                 || runSessionRoot.RunFlow == null
                 || runSessionRoot.Economy == null
-                || runSessionRoot.Restart == null)
+                || runSessionRoot.Restart == null
+                || runSessionRoot.GameOverSequence == null)
             {
                 Debug.LogError(
                     $"PHS_RUN_RESULT_BIND_FAILED reason=run_state_missing player={name}",
@@ -157,8 +159,10 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
                 runFlow = runSessionRoot.RunFlow;
                 economy = runSessionRoot.Economy;
                 restart = runSessionRoot.Restart;
+                gameOverSequence = runSessionRoot.GameOverSequence;
                 runFlow.PhaseChanged += HandlePhaseChanged;
                 restart.RestartStateChanged += HandleRestartStateChanged;
+                gameOverSequence.SequenceChanged += HandleGameOverSequenceChanged;
             }
 
             RefreshForPhase(runFlow.Phase);
@@ -176,9 +180,15 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
                 restart.RestartStateChanged -= HandleRestartStateChanged;
             }
 
+            if (gameOverSequence != null)
+            {
+                gameOverSequence.SequenceChanged -= HandleGameOverSequenceChanged;
+            }
+
             runFlow = null;
             economy = null;
             restart = null;
+            gameOverSequence = null;
         }
 
         private void HandlePhaseChanged(
@@ -204,6 +214,17 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
                 return;
             }
 
+            if (phase == NetworkRunPhase.GameOver
+                && gameOverSequence != null
+                && gameOverSequence.State != NetworkGameOverSequenceState.Completed)
+            {
+                panelView.SetVisible(false);
+                isShowing = false;
+                IsLocalResultVisible = false;
+                playerController.SetResultInputBlocked(true);
+                return;
+            }
+
             panelView.SetResult(
                 phase,
                 runFlow.ClearedZoneCount,
@@ -224,6 +245,27 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
             playerController.SetResultInputBlocked(true);
             Cursor.lockState = CursorLockMode.None;
             Cursor.visible = true;
+        }
+
+        private void HandleGameOverSequenceChanged(
+            NetworkGameOverSequenceSnapshot previous,
+            NetworkGameOverSequenceSnapshot current)
+        {
+            if (current.State == NetworkGameOverSequenceState.Idle)
+            {
+                panelView.SetVisible(false);
+                isShowing = false;
+                IsLocalResultVisible = false;
+                lastResultCuePhase = null;
+                return;
+            }
+
+            if (current.State == NetworkGameOverSequenceState.Completed
+                && runFlow != null
+                && runFlow.Phase == NetworkRunPhase.GameOver)
+            {
+                RefreshForPhase(NetworkRunPhase.GameOver);
+            }
         }
 
         private void RestartRun()

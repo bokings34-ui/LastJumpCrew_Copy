@@ -8,6 +8,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
     [DisallowMultipleComponent]
     [RequireComponent(typeof(NetworkObject))]
     [RequireComponent(typeof(NetworkRunFlowCoordinator))]
+    [RequireComponent(typeof(NetworkGameOverSequenceCoordinator))]
     public sealed class NetworkRunRestartCoordinator :
         NetworkBehaviour,
         INetworkRunRestartService
@@ -26,6 +27,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
             NetworkVariableWritePermission.Server);
 
         private NetworkRunFlowCoordinator runFlow;
+        private NetworkGameOverSequenceCoordinator gameOverSequence;
 
         public static NetworkRunRestartCoordinator Instance { get; private set; }
 
@@ -49,6 +51,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
         private void Awake()
         {
             runFlow = GetComponent<NetworkRunFlowCoordinator>();
+            gameOverSequence = GetComponent<NetworkGameOverSequenceCoordinator>();
         }
 
         public override void OnNetworkSpawn()
@@ -144,6 +147,14 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
         internal void BeginCommitServer(uint restartEpoch)
         {
             RequireServerStateMutation();
+            var resetReason = "coordinator_missing";
+            if (gameOverSequence == null
+                || !gameOverSequence.TryResetServer(out resetReason))
+            {
+                throw new InvalidOperationException(
+                    $"Game-over sequence reset failed: {resetReason}");
+            }
+
             synchronizedRestartEpoch.Value = restartEpoch;
             synchronizedRestartState.Value = NetworkRunRestartState.Committing;
         }
