@@ -43,8 +43,13 @@ EventManager.Instance.SpawnEvent(EventId.PowerOff, targetRoom, onFinishedCallbac
 NotifyPowerRestored() — 배터리 재장착을 감지한 담당 시스템이 직접 호출해야
 이벤트가 정상 종료됩니다. 자동 타이머로 종료되지 않습니다.
 
-이 이벤트 인스턴스를 어떻게 참조해서 NotifyPowerRestored()를 호출할지는
-담당 매니저(네트워크) 쪽 방식에 맞춰 연결이 필요합니다.
+호출 방법 (EventManager.GetActiveEvent(EventId) 메서드 추가됨):
+
+var evt = EventManager.Instance.GetActiveEvent(EventId.PowerOff) as PowerOffEvent;
+evt?.NotifyPowerRestored();
+
+이 조회 메서드는 로컬 테스트를 위해 EventManager에 추가한 것으로,
+병합 시 담당 팀원의 네트워크 인프라 방식과 조율이 필요할 수 있습니다.
 
 ## 의존성
 스폰 포인트, Pool, 아이템 상호작용 없음.
