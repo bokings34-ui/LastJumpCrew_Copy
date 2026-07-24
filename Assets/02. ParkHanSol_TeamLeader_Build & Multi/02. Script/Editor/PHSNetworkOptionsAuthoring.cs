@@ -45,6 +45,14 @@ public static class PHSNetworkOptionsAuthoring
             return;
         }
 
+        if (AssetDatabase.LoadAssetAtPath<GameObject>(NetworkLobbyUi) != null)
+        {
+            Debug.LogError(
+                "PHS_NETWORK_OPTIONS_AUTHOR_FAILED reason=direct_prefab_source_exists " +
+                "message=edit_PHS_NetworkStartLobbyUI_directly");
+            return;
+        }
+
         CopyWithNewGuid(OriginalLobbyUi, NetworkLobbyUi);
         CopyWithNewGuid(OriginalPlayHud, NetworkPlayHud);
         ConfigureLobbyUi();

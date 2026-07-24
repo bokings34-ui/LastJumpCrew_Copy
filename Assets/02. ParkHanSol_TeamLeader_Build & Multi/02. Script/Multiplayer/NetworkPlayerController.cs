@@ -45,6 +45,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
         [SerializeField, Min(1f)] private float cameraMaxRotationSpeed = 420f;
         [Header("Comfort Zero Gravity")]
         [SerializeField, Range(0.1f, 1f)] private float zeroGravityPrecisionMultiplier = 0.45f;
+        [SerializeField, Range(0f, 1f)] private float zeroGravityFloorSlideNormalDot = 0.55f;
         [Header("Zero Gravity Thruster Audio")]
         [SerializeField] private NetworkPlayerThrusterAudio thrusterAudio;
         [SerializeField] private ParkHanSolPlayHudMockPresenter playHudPresenter;
@@ -1424,13 +1425,21 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
             }
 
             var normal = surfaceNormal.normalized;
-            if (Vector3.Dot(zeroGravityVelocity, normal) >= -0.1f)
+            var incomingNormalSpeed = Vector3.Dot(zeroGravityVelocity, normal);
+            if (incomingNormalSpeed >= -0.1f)
             {
                 return;
             }
 
-            zeroGravityVelocity = Vector3.Reflect(zeroGravityVelocity, normal)
-                * zeroGravityCollisionRestitution;
+            var tangentialVelocity = zeroGravityVelocity - normal * incomingNormalSpeed;
+            if (Vector3.Dot(normal, transform.up) >= zeroGravityFloorSlideNormalDot)
+            {
+                zeroGravityVelocity = tangentialVelocity;
+                return;
+            }
+
+            var reflectedNormalVelocity = -normal * incomingNormalSpeed * zeroGravityCollisionRestitution;
+            zeroGravityVelocity = tangentialVelocity + reflectedNormalVelocity;
         }
 
         private void RotatePlayer(float yawInput, float deltaTime)

@@ -6,7 +6,8 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Customization
     public interface INetworkLobbyCustomizationService
     {
         CosmeticCatalog Catalog { get; }
-        PersonalLobbyCustomizationCreditsWallet PersonalCreditsWallet { get; }
+        int CurrentCredits { get; }
+        string CreditsFailureReason { get; }
         bool IsProfileReady { get; }
         string ProfileFailureReason { get; }
         string EquippedHeadId { get; }

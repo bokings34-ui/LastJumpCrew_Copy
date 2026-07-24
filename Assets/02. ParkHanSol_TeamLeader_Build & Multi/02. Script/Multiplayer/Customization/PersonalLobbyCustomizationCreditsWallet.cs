@@ -12,7 +12,8 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
     /// </summary>
     public sealed class PersonalLobbyCustomizationCreditsWallet : NetworkBehaviour
     {
-        private const string PreferenceKey = "PHS_PersonalLobbyCustomizationCredits_v1";
+        private const string PreferenceKey =
+            Customization.LobbyCustomizationProfileKeys.Credits;
 
         [Header("Lobby Customization Credits")]
         [SerializeField, Min(0)] private int startingCredits = 300;

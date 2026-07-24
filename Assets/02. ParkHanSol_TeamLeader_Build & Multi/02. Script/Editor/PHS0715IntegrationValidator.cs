@@ -77,8 +77,10 @@ namespace LastJumpCrew.ParkHanSol.Editor
             "Assets/02. ParkHanSol_TeamLeader_Build & Multi/03. Prefab/UI/PHS_NetworkRunResultPanel.prefab";
         private const string NetworkGeneratedAudioFolder =
             "Assets/02. ParkHanSol_TeamLeader_Build & Multi/06. Audio/NetworkGenerated";
+        private const string NetworkCuratedAudioFolder =
+            PHSCuratedAssetSfxAuthoring.AudioRoot;
         private const string BatteryShockAudioPath =
-            NetworkGeneratedAudioFolder + "/PHS_Item_Battery_Shock.wav";
+            PHSCuratedAssetSfxAuthoring.BatteryShockPath;
         private static readonly HashSet<string>
             LegacyHeldNetworkObjectAllowedPaths = new(StringComparer.Ordinal)
             {
@@ -851,7 +853,6 @@ namespace LastJumpCrew.ParkHanSol.Editor
                 "creditsLabel",
                 "statusLabel",
                 "previewPresenter",
-                "lobbyEventSystem",
                 "applyColorButton",
                 "unequipHeadButton",
                 "unequipBackButton",
@@ -3047,7 +3048,8 @@ namespace LastJumpCrew.ParkHanSol.Editor
                     typeof(NetworkRunIncidentLedger),
                     typeof(NetworkShopTransitionVoteCoordinator),
                     typeof(NetworkRunRestartCoordinator),
-                    typeof(PHSNetworkFoamCoordinator)
+                    typeof(PHSNetworkFoamCoordinator),
+                    typeof(NetworkGameOverSequenceCoordinator)
                 };
                 Require(
                     networkBehaviours.Length == expectedBehaviourTypes.Length,
@@ -3127,16 +3129,19 @@ namespace LastJumpCrew.ParkHanSol.Editor
             var expectedPaths = GetExpectedNetworkAudioClipPaths()
                 .Values
                 .Append(BatteryShockAudioPath)
+                .Append(PHSCuratedAssetSfxAuthoring.DoorOpenPath)
+                .Append(PHSCuratedAssetSfxAuthoring.UiConfirmPath)
+                .Append(PHSCuratedAssetSfxAuthoring.SpaceEngineLoopPath)
                 .ToHashSet(StringComparer.Ordinal);
             var actualPaths = AssetDatabase.FindAssets(
                     "t:AudioClip",
-                    new[] { NetworkGeneratedAudioFolder })
+                    new[] { NetworkCuratedAudioFolder })
                 .Select(AssetDatabase.GUIDToAssetPath)
                 .ToHashSet(StringComparer.Ordinal);
 
             Require(
                 actualPaths.SetEquals(expectedPaths),
-                $"network_audio_generated_assets_invalid expected={expectedPaths.Count} " +
+                $"network_audio_curated_assets_invalid expected={expectedPaths.Count} " +
                 $"actual={actualPaths.Count} missing={string.Join(",", expectedPaths.Except(actualPaths))} " +
                 $"extra={string.Join(",", actualPaths.Except(expectedPaths))}",
                 errors);
@@ -3144,7 +3149,7 @@ namespace LastJumpCrew.ParkHanSol.Editor
             {
                 Require(
                     AssetDatabase.LoadAssetAtPath<AudioClip>(path) != null,
-                    $"network_audio_generated_clip_missing path={path}",
+                    $"network_audio_curated_clip_missing path={path}",
                     errors);
             }
 
@@ -3168,6 +3173,17 @@ namespace LastJumpCrew.ParkHanSol.Editor
                 $"network_audio_forbidden_sound_fire_reference_count_invalid " +
                 $"expected=0 actual={forbiddenReferences.Length} " +
                 $"paths={string.Join(",", forbiddenReferences)}",
+                errors);
+            var generatedReferences = AssetDatabase
+                .GetDependencies(authoredAssetPaths, true)
+                .Where(path => path.StartsWith(
+                    NetworkGeneratedAudioFolder + "/",
+                    StringComparison.Ordinal))
+                .ToArray();
+            Require(
+                generatedReferences.Length == 0,
+                $"network_audio_generated_reference_count_invalid expected=0 " +
+                $"actual={generatedReferences.Length} paths={string.Join(",", generatedReferences)}",
                 errors);
         }
 
@@ -3260,15 +3276,16 @@ namespace LastJumpCrew.ParkHanSol.Editor
             if (runRoot != null)
             {
                 Require(
-                    runRoot.GetComponentsInChildren<NetworkAudioCueEmitter>(true).Length == 1,
-                    "network_audio_run_root_emitter_count_invalid expected=1",
+                    runRoot.GetComponentsInChildren<NetworkAudioCueEmitter>(true).Length == 2,
+                    "network_audio_run_root_emitter_count_invalid expected=2",
                     errors);
                 var emitter = ValidateNamedAudioEmitter(
                     runRoot,
                     "PHS_NetworkWarningAudio",
                     new Dictionary<NetworkAudioCue, string>
                     {
-                        { NetworkAudioCue.Warning, clips[NetworkAudioCue.Warning] }
+                        { NetworkAudioCue.Warning, clips[NetworkAudioCue.Warning] },
+                        { NetworkAudioCue.AccidentAppeared, clips[NetworkAudioCue.AccidentAppeared] }
                     },
                     "network_audio_warning",
                     errors);
@@ -3318,7 +3335,7 @@ namespace LastJumpCrew.ParkHanSol.Editor
                 return;
             }
 
-            const int expectedEmitterCount = 5;
+            var expectedEmitterCount = includeTutorialCompletion ? 5 : 6;
             Require(
                 prefab.GetComponentsInChildren<NetworkAudioCueEmitter>(true).Length
                     == expectedEmitterCount,
@@ -3374,16 +3391,31 @@ namespace LastJumpCrew.ParkHanSol.Editor
                 { NetworkAudioCue.ItemSwap, clips[NetworkAudioCue.ItemSwap] },
                 { NetworkAudioCue.ItemDrop, clips[NetworkAudioCue.ItemDrop] }
             };
+            var ownerCues = new Dictionary<NetworkAudioCue, string>(itemCues)
+            {
+                { NetworkAudioCue.FootstepWalk, clips[NetworkAudioCue.FootstepWalk] },
+                { NetworkAudioCue.FootstepRun, clips[NetworkAudioCue.FootstepRun] },
+                { NetworkAudioCue.PlayerJump, clips[NetworkAudioCue.PlayerJump] },
+                { NetworkAudioCue.VendingInteraction, clips[NetworkAudioCue.VendingInteraction] },
+                { NetworkAudioCue.InteractionFocus, clips[NetworkAudioCue.InteractionFocus] },
+                { NetworkAudioCue.OptionsSaved, clips[NetworkAudioCue.OptionsSaved] }
+            };
+            var worldCues = new Dictionary<NetworkAudioCue, string>(itemCues)
+            {
+                { NetworkAudioCue.FootstepWalk, clips[NetworkAudioCue.FootstepWalk] },
+                { NetworkAudioCue.FootstepRun, clips[NetworkAudioCue.FootstepRun] },
+                { NetworkAudioCue.PlayerJump, clips[NetworkAudioCue.PlayerJump] }
+            };
             var ownerEmitter = ValidateNamedAudioEmitter(
                 prefab,
                 "PHS_NetworkItemAudio_2D",
-                itemCues,
+                ownerCues,
                 $"{label}_item_2d",
                 errors);
             var worldEmitter = ValidateNamedAudioEmitter(
                 prefab,
                 "PHS_NetworkItemAudio_3D",
-                itemCues,
+                worldCues,
                 $"{label}_item_3d",
                 errors);
 
@@ -3655,28 +3687,39 @@ namespace LastJumpCrew.ParkHanSol.Editor
         {
             return new Dictionary<NetworkAudioCue, string>
             {
-                { NetworkAudioCue.ItemPickup, $"{NetworkGeneratedAudioFolder}/PHS_Network_Item_Pickup.wav" },
-                { NetworkAudioCue.ItemDrop, $"{NetworkGeneratedAudioFolder}/PHS_Network_Item_Drop.wav" },
-                { NetworkAudioCue.ItemSwap, $"{NetworkGeneratedAudioFolder}/PHS_Network_Item_Swap.wav" },
-                { NetworkAudioCue.ShopSuccess, $"{NetworkGeneratedAudioFolder}/PHS_Network_Shop_Success.wav" },
-                { NetworkAudioCue.ShopFailure, $"{NetworkGeneratedAudioFolder}/PHS_Network_Shop_Fail.wav" },
-                { NetworkAudioCue.Warning, $"{NetworkGeneratedAudioFolder}/PHS_Network_Warning.wav" },
-                { NetworkAudioCue.RunClear, $"{NetworkGeneratedAudioFolder}/PHS_Network_Clear.wav" },
-                { NetworkAudioCue.RunGameOver, $"{NetworkGeneratedAudioFolder}/PHS_Network_GameOver.wav" },
-                { NetworkAudioCue.RestartRequested, $"{NetworkGeneratedAudioFolder}/PHS_Network_UI_Click.wav" },
-                { NetworkAudioCue.RestartSucceeded, $"{NetworkGeneratedAudioFolder}/PHS_Network_Restart_Success.wav" },
-                { NetworkAudioCue.RestartFailed, $"{NetworkGeneratedAudioFolder}/PHS_Network_Restart_Fail.wav" },
-                { NetworkAudioCue.TutorialComplete, $"{NetworkGeneratedAudioFolder}/PHS_Network_TutorialComplete.wav" },
-                { NetworkAudioCue.WrenchImpact, $"{NetworkGeneratedAudioFolder}/PHS_Item_Wrench_Impact.wav" },
-                { NetworkAudioCue.RepairComplete, $"{NetworkGeneratedAudioFolder}/PHS_Item_Repair_Complete.wav" },
-                { NetworkAudioCue.ExtinguisherSpray, $"{NetworkGeneratedAudioFolder}/PHS_Item_Extinguisher_Spray.wav" },
-                { NetworkAudioCue.ExtinguishComplete, $"{NetworkGeneratedAudioFolder}/PHS_Item_Extinguish_Complete.wav" },
-                { NetworkAudioCue.BatteryInstall, $"{NetworkGeneratedAudioFolder}/PHS_Item_Battery_Install.wav" },
-                { NetworkAudioCue.FoamShot, $"{NetworkGeneratedAudioFolder}/PHS_Item_Foam_Shot.wav" },
-                { NetworkAudioCue.FoamAttach, $"{NetworkGeneratedAudioFolder}/PHS_Item_Foam_Attach.wav" },
-                { NetworkAudioCue.FoamHarden, $"{NetworkGeneratedAudioFolder}/PHS_Item_Foam_Harden.wav" },
-                { NetworkAudioCue.FoamSealComplete, $"{NetworkGeneratedAudioFolder}/PHS_Item_Foam_Seal_Complete.wav" },
-                { NetworkAudioCue.FoamFireComplete, $"{NetworkGeneratedAudioFolder}/PHS_Item_Foam_Fire_Complete.wav" }
+                { NetworkAudioCue.ItemPickup, PHSCuratedAssetSfxAuthoring.GetCuePath(NetworkAudioCue.ItemPickup) },
+                { NetworkAudioCue.ItemDrop, PHSCuratedAssetSfxAuthoring.GetCuePath(NetworkAudioCue.ItemDrop) },
+                { NetworkAudioCue.ItemSwap, PHSCuratedAssetSfxAuthoring.GetCuePath(NetworkAudioCue.ItemSwap) },
+                { NetworkAudioCue.ShopSuccess, PHSCuratedAssetSfxAuthoring.GetCuePath(NetworkAudioCue.ShopSuccess) },
+                { NetworkAudioCue.ShopFailure, PHSCuratedAssetSfxAuthoring.GetCuePath(NetworkAudioCue.ShopFailure) },
+                { NetworkAudioCue.Warning, PHSCuratedAssetSfxAuthoring.GetCuePath(NetworkAudioCue.Warning) },
+                { NetworkAudioCue.RunClear, PHSCuratedAssetSfxAuthoring.GetCuePath(NetworkAudioCue.RunClear) },
+                { NetworkAudioCue.RunGameOver, PHSCuratedAssetSfxAuthoring.GetCuePath(NetworkAudioCue.RunGameOver) },
+                { NetworkAudioCue.RestartRequested, PHSCuratedAssetSfxAuthoring.GetCuePath(NetworkAudioCue.RestartRequested) },
+                { NetworkAudioCue.RestartSucceeded, PHSCuratedAssetSfxAuthoring.GetCuePath(NetworkAudioCue.RestartSucceeded) },
+                { NetworkAudioCue.RestartFailed, PHSCuratedAssetSfxAuthoring.GetCuePath(NetworkAudioCue.RestartFailed) },
+                { NetworkAudioCue.TutorialComplete, PHSCuratedAssetSfxAuthoring.GetCuePath(NetworkAudioCue.TutorialComplete) },
+                { NetworkAudioCue.WrenchImpact, PHSCuratedAssetSfxAuthoring.GetCuePath(NetworkAudioCue.WrenchImpact) },
+                { NetworkAudioCue.RepairComplete, PHSCuratedAssetSfxAuthoring.GetCuePath(NetworkAudioCue.RepairComplete) },
+                { NetworkAudioCue.ExtinguisherSpray, PHSCuratedAssetSfxAuthoring.GetCuePath(NetworkAudioCue.ExtinguisherSpray) },
+                { NetworkAudioCue.ExtinguishComplete, PHSCuratedAssetSfxAuthoring.GetCuePath(NetworkAudioCue.ExtinguishComplete) },
+                { NetworkAudioCue.BatteryInstall, PHSCuratedAssetSfxAuthoring.GetCuePath(NetworkAudioCue.BatteryInstall) },
+                { NetworkAudioCue.FoamShot, PHSCuratedAssetSfxAuthoring.GetCuePath(NetworkAudioCue.FoamShot) },
+                { NetworkAudioCue.FoamAttach, PHSCuratedAssetSfxAuthoring.GetCuePath(NetworkAudioCue.FoamAttach) },
+                { NetworkAudioCue.FoamHarden, PHSCuratedAssetSfxAuthoring.GetCuePath(NetworkAudioCue.FoamHarden) },
+                { NetworkAudioCue.FoamSealComplete, PHSCuratedAssetSfxAuthoring.GetCuePath(NetworkAudioCue.FoamSealComplete) },
+                { NetworkAudioCue.FoamFireComplete, PHSCuratedAssetSfxAuthoring.GetCuePath(NetworkAudioCue.FoamFireComplete) },
+                { NetworkAudioCue.DebrisDeposit, PHSCuratedAssetSfxAuthoring.GetCuePath(NetworkAudioCue.DebrisDeposit) },
+                { NetworkAudioCue.FootstepWalk, PHSCuratedAssetSfxAuthoring.GetCuePath(NetworkAudioCue.FootstepWalk) },
+                { NetworkAudioCue.FootstepRun, PHSCuratedAssetSfxAuthoring.GetCuePath(NetworkAudioCue.FootstepRun) },
+                { NetworkAudioCue.PlayerJump, PHSCuratedAssetSfxAuthoring.GetCuePath(NetworkAudioCue.PlayerJump) },
+                { NetworkAudioCue.MissionSuccess, PHSCuratedAssetSfxAuthoring.GetCuePath(NetworkAudioCue.MissionSuccess) },
+                { NetworkAudioCue.VendingInteraction, PHSCuratedAssetSfxAuthoring.GetCuePath(NetworkAudioCue.VendingInteraction) },
+                { NetworkAudioCue.InteractionFocus, PHSCuratedAssetSfxAuthoring.GetCuePath(NetworkAudioCue.InteractionFocus) },
+                { NetworkAudioCue.OptionsSaved, PHSCuratedAssetSfxAuthoring.GetCuePath(NetworkAudioCue.OptionsSaved) },
+                { NetworkAudioCue.WarpStart, PHSCuratedAssetSfxAuthoring.GetCuePath(NetworkAudioCue.WarpStart) },
+                { NetworkAudioCue.WarpEnd, PHSCuratedAssetSfxAuthoring.GetCuePath(NetworkAudioCue.WarpEnd) },
+                { NetworkAudioCue.AccidentAppeared, PHSCuratedAssetSfxAuthoring.GetCuePath(NetworkAudioCue.AccidentAppeared) }
             };
         }
 

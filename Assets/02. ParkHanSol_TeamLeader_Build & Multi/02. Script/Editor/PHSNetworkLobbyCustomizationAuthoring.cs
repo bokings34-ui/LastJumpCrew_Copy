@@ -18,15 +18,15 @@ namespace LastJumpCrew.ParkHanSol.Editor
         private const int RequiredItemCount = 6;
         private const int RequiredColorCount = 6;
         private static readonly Color PanelDeepColor =
-            new Color(0.055f, 0.075f, 0.09f, 0.96f);
+            new Color(0.015f, 0.012f, 0.008f, 1f);
         private static readonly Color RowElevatedColor =
-            new Color(0.095f, 0.125f, 0.145f, 0.98f);
+            new Color(0.045f, 0.032f, 0.018f, 0.98f);
         private static readonly Color SettingsOrangeColor =
-            new Color(1f, 0.57f, 0.2f, 0.98f);
+            new Color(0.95f, 0.33f, 0.04f, 1f);
         private static readonly Color WarmCreamColor =
-            new Color(1f, 0.94f, 0.82f, 1f);
+            new Color(1f, 0.76f, 0.08f, 1f);
         private static readonly Color LobbyCoralColor =
-            new Color(1f, 0.404f, 0.282f, 1f);
+            new Color(0.95f, 0.33f, 0.04f, 1f);
         private const string RootFolder =
             "Assets/02. ParkHanSol_TeamLeader_Build & Multi";
         private const string CatalogPath = RootFolder +
@@ -164,6 +164,9 @@ namespace LastJumpCrew.ParkHanSol.Editor
             {
                 var controller = root.gameObject.AddComponent<
                     NetworkLobbyCustomizationFrontendController>();
+                var localService = root.gameObject.AddComponent<
+                    LocalLobbyCustomizationService>();
+                SetObject(localService, "catalog", catalog);
                 var openButton = CreateLobbyMenuButton(
                     root,
                     "OpenCustomizationButton",
@@ -228,6 +231,8 @@ namespace LastJumpCrew.ParkHanSol.Editor
                     closeButton, creditsLabel, statusLabel, presenter, itemRows,
                     colorButtons, applyColorButton, unequipHeadButton,
                     unequipBackButton, resetPreviewButton);
+                SetObject(controller, "localService", localService);
+                panel.gameObject.SetActive(false);
 
                 PrefabUtility.SaveAsPrefabAsset(root.gameObject, UiPrefabPath);
             }
@@ -835,8 +840,6 @@ namespace LastJumpCrew.ParkHanSol.Editor
             }
 
             var serialized = new SerializedObject(controller);
-            serialized.FindProperty("lobbyEventSystem").objectReferenceValue =
-                eventSystems[0];
             WireBlockedMenuButtons(
                 serialized,
                 tutorialButton,

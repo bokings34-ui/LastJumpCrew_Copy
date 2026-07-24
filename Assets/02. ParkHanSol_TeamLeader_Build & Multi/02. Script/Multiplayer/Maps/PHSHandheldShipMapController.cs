@@ -10,8 +10,10 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Maps
 {
     [DisallowMultipleComponent]
     [RequireComponent(typeof(NetworkObject))]
+    [RequireComponent(typeof(NetworkPlayerController))]
     public sealed class PHSHandheldShipMapController : NetworkBehaviour
     {
+        [SerializeField] private NetworkPlayerController playerController;
         [SerializeField] private PHSHandheldShipMapView firstPersonView;
         [SerializeField] private PHSHandheldShipMapView worldView;
         [SerializeField, Min(0.02f)] private float refreshIntervalSeconds = 0.08f;
@@ -34,10 +36,10 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Maps
         public override void OnNetworkSpawn()
         {
             base.OnNetworkSpawn();
-            if (firstPersonView == null || worldView == null)
+            if (playerController == null || firstPersonView == null || worldView == null)
             {
                 Debug.LogError(
-                    $"PHS_HANDHELD_MAP_SETUP_FAILED player={name} first_person={firstPersonView != null} world={worldView != null}",
+                    $"PHS_HANDHELD_MAP_SETUP_FAILED player={name} controller={playerController != null} first_person={firstPersonView != null} world={worldView != null}",
                     this);
                 enabled = false;
                 return;
@@ -67,7 +69,12 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Maps
             if (IsOwner)
             {
                 var keyboard = Keyboard.current;
-                var desiredVisible = keyboard != null && keyboard.tabKey.isPressed;
+                var layout = PHSShipMapWorldLayout.Instance;
+                var desiredVisible = playerController.CanAcceptLocalInput
+                    && layout != null
+                    && layout.isActiveAndEnabled
+                    && keyboard != null
+                    && keyboard.tabKey.isPressed;
                 if (desiredVisible != requestedVisible)
                 {
                     requestedVisible = desiredVisible;

@@ -39,6 +39,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
         [Header("Lobby Buttons")]
         [SerializeField] private Button createRoomButton;
         [SerializeField] private Button joinRoomButton;
+        [SerializeField] private Button singlePlayButton;
         [SerializeField] private Button lobbyBackButton;
         [SerializeField] private TMP_Text lobbyStatusText;
 
@@ -62,6 +63,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
             Bind(quitButton, QuitGame);
             Bind(createRoomButton, ShowCreateRoom);
             Bind(joinRoomButton, ShowJoinRoom);
+            Bind(singlePlayButton, StartSoloPlay);
             Bind(lobbyBackButton, ShowStart);
             Bind(roomLeaveButton, LeaveRoom);
             Bind(roomSettingsButton, ShowSettingsFromRoom);
@@ -103,6 +105,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
             Unbind(quitButton, QuitGame);
             Unbind(createRoomButton, ShowCreateRoom);
             Unbind(joinRoomButton, ShowJoinRoom);
+            Unbind(singlePlayButton, StartSoloPlay);
             Unbind(lobbyBackButton, ShowStart);
             Unbind(roomLeaveButton, LeaveRoom);
             Unbind(roomSettingsButton, ShowSettingsFromRoom);
@@ -219,7 +222,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
             roomBrowser.ShowCreateRoomPanel();
         }
 
-        private async Task<bool> CreateRoomAsync(string roomName = "Last Jump Crew Room", int maxPlayers = 8)
+        private async Task<bool> CreateRoomAsync(string roomName = "", int maxPlayers = 8)
         {
             if (roomService == null)
             {
@@ -322,6 +325,24 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
                 return;
             }
 
+            SceneManager.LoadScene(playSceneName);
+        }
+
+        private void StartSoloPlay()
+        {
+            if (NetworkManager.Singleton != null && NetworkManager.Singleton.IsListening)
+            {
+                Debug.LogError("PHS_SOLO_PLAY_FAILED reason=network_session_active");
+                SetLobbyStatus("LEAVE ROOM FIRST");
+                return;
+            }
+
+            if (!TryBeginGameRun())
+            {
+                return;
+            }
+
+            Debug.Log($"PHS_SOLO_PLAY_BEGIN scene={playSceneName}");
             SceneManager.LoadScene(playSceneName);
         }
 

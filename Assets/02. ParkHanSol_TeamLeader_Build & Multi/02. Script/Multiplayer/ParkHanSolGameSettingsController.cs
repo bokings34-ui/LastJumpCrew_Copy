@@ -1,5 +1,7 @@
 using System.Collections.Generic;
 using System.Linq;
+using LastJumpCrew.ParkHanSol.Multiplayer.Input;
+using LastJumpCrew.ParkHanSol.Multiplayer.Audio;
 using TMPro;
 using UnityEngine;
 using UnityEngine.UI;
@@ -45,12 +47,14 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
         [SerializeField] private Toggle outputMuteToggle;
         [SerializeField] private TMP_Text statusText;
         [SerializeField] private Button applyButton;
+        [SerializeField] private MonoBehaviour saveCuePlayerSource;
 
-        private readonly List<Resolution> resolutions = new();
+        private readonly List<Vector2Int> resolutions = new();
         private bool suppressEvents;
         private SettingsSnapshot savedSnapshot;
         private bool hasSnapshot;
         private int settingsLoadVersion;
+        private INetworkAudioCuePlayer saveCuePlayer;
 
         private async void OnEnable()
         {
@@ -92,6 +96,11 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
 
         private void Awake()
         {
+            saveCuePlayer = saveCuePlayerSource as INetworkAudioCuePlayer;
+            if (saveCuePlayer == null)
+            {
+                Debug.LogError("PHS_SETTINGS_AUDIO_SETUP_FAILED reason=cue_player_missing", this);
+            }
             BindControls();
             ApplySavedRuntimeValues();
         }
@@ -147,36 +156,22 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
 
         private void RefreshVideoOptions()
         {
-            var availableResolutions = Screen.resolutions
-                .GroupBy(value => new { value.width, value.height })
-                .Select(group => group.OrderByDescending(value => value.refreshRateRatio.value).First())
-                .OrderByDescending(value => value.width)
-                .ThenByDescending(value => value.height)
-                .ToList();
-            var savedWidth = PlayerPrefs.GetInt(ResolutionWidthKey, Screen.width);
-            var savedHeight = PlayerPrefs.GetInt(ResolutionHeightKey, Screen.height);
-            var supportedResolutions = availableResolutions
-                .Where(value =>
-                    (value.width >= 1280 && value.height >= 720) ||
-                    (value.width == Screen.width && value.height == Screen.height) ||
-                    (value.width == savedWidth && value.height == savedHeight))
-                .ToList();
-
             resolutions.Clear();
-            resolutions.AddRange(supportedResolutions.Count > 0
-                ? supportedResolutions
-                : availableResolutions);
+            resolutions.AddRange(
+                NetworkPlayerOptionsStore.Shared.GetSupportedResolutions());
 
             if (resolutions.Count == 0)
             {
-                resolutions.Add(Screen.currentResolution);
+                Debug.LogError(
+                    "PHS settings resolution refresh failed. reason=no_supported_resolutions",
+                    this);
             }
 
             if (resolutionDropdown != null)
             {
                 resolutionDropdown.ClearOptions();
                 resolutionDropdown.AddOptions(resolutions
-                    .Select(value => $"{value.width} x {value.height}")
+                    .Select(value => $"{value.x} x {value.y}")
                     .ToList());
             }
 
@@ -245,7 +240,14 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
             if (outputVolumeSlider != null) outputVolumeSlider.value = PlayerPrefs.GetInt(OutputVolumeKey, 0);
             if (qualityDropdown != null) qualityDropdown.value = Mathf.Clamp(PlayerPrefs.GetInt(QualityKey, QualitySettings.GetQualityLevel()), 0, QualitySettings.names.Length - 1);
             if (vSyncToggle != null) vSyncToggle.isOn = PlayerPrefs.GetInt(VSyncKey, QualitySettings.vSyncCount > 0 ? 1 : 0) == 1;
-            if (resolutionDropdown != null) resolutionDropdown.value = FindSavedResolutionIndex();
+            if (resolutionDropdown != null)
+            {
+                var savedResolutionIndex = FindSavedResolutionIndex();
+                if (savedResolutionIndex >= 0)
+                {
+                    resolutionDropdown.value = savedResolutionIndex;
+                }
+            }
             if (microphoneMuteToggle != null) microphoneMuteToggle.isOn = PlayerPrefs.GetInt(MicMutedKey, 0) == 1;
             if (outputMuteToggle != null) outputMuteToggle.isOn = PlayerPrefs.GetInt(OutputMutedKey, 0) == 1;
 
@@ -275,6 +277,22 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
             hasSnapshot = true;
             PlayerPrefs.Save();
             SetStatus("SAVED");
+            PlaySaveCue();
+        }
+
+        private void PlaySaveCue()
+        {
+            if (saveCuePlayer == null)
+            {
+                Debug.LogError("PHS_SETTINGS_AUDIO_PLAY_FAILED reason=cue_player_missing", this);
+                return;
+            }
+
+            if (!saveCuePlayer.TryPlay(NetworkAudioCue.OptionsSaved, out var reason)
+                && reason != "cue_cooldown")
+            {
+                Debug.LogError($"PHS_SETTINGS_AUDIO_PLAY_FAILED reason={reason}", this);
+            }
         }
 
         public void CancelSettings()
@@ -297,8 +315,8 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
             }
 
             var resolution = resolutions[index];
-            Screen.SetResolution(resolution.width, resolution.height, Screen.fullScreenMode);
-            SetStatus($"{resolution.width} x {resolution.height}");
+            Screen.SetResolution(resolution.x, resolution.y, Screen.fullScreenMode);
+            SetStatus($"{resolution.x} x {resolution.y}");
         }
 
         private void SetFullScreen(bool active)
@@ -471,7 +489,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
         {
             for (var i = 0; i < resolutions.Count; i++)
             {
-                if (resolutions[i].width == Screen.width && resolutions[i].height == Screen.height)
+                if (resolutions[i].x == Screen.width && resolutions[i].y == Screen.height)
                 {
                     return i;
                 }
@@ -482,26 +500,47 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
 
         private int FindSavedResolutionIndex()
         {
-            var savedWidth = PlayerPrefs.GetInt(ResolutionWidthKey, Screen.width);
-            var savedHeight = PlayerPrefs.GetInt(ResolutionHeightKey, Screen.height);
-
-            for (var i = 0; i < resolutions.Count; i++)
+            if (!NetworkPlayerOptionsStore.Shared.TryGetSavedResolution(
+                    out var savedResolution))
             {
-                if (resolutions[i].width == savedWidth && resolutions[i].height == savedHeight)
-                {
-                    return i;
-                }
+                Debug.LogError(
+                    "PHS settings resolution load failed. reason=invalid_saved_resolution",
+                    this);
+                SetStatus("INVALID RESOLUTION");
+                return -1;
             }
 
-            return FindCurrentResolutionIndex();
+            var index = resolutions.IndexOf(savedResolution);
+            if (index >= 0)
+            {
+                return index;
+            }
+
+            Debug.LogError(
+                $"PHS settings resolution load failed. reason=saved_resolution_not_supported " +
+                $"width={savedResolution.x} height={savedResolution.y}",
+                this);
+            SetStatus("INVALID RESOLUTION");
+            return -1;
         }
 
         private void ApplySavedResolution()
         {
-            var savedWidth = PlayerPrefs.GetInt(ResolutionWidthKey, Screen.width);
-            var savedHeight = PlayerPrefs.GetInt(ResolutionHeightKey, Screen.height);
+            if (!NetworkPlayerOptionsStore.Shared.TryGetSavedResolution(
+                    out var savedResolution))
+            {
+                Debug.LogError(
+                    "PHS settings resolution apply failed. reason=invalid_saved_resolution",
+                    this);
+                SetStatus("INVALID RESOLUTION");
+                return;
+            }
+
             var fullScreen = PlayerPrefs.GetInt(FullScreenKey, Screen.fullScreen ? 1 : 0) == 1;
-            Screen.SetResolution(savedWidth, savedHeight, fullScreen ? FullScreenMode.FullScreenWindow : FullScreenMode.Windowed);
+            Screen.SetResolution(
+                savedResolution.x,
+                savedResolution.y,
+                fullScreen ? FullScreenMode.FullScreenWindow : FullScreenMode.Windowed);
         }
 
         private int FindClosestResolutionIndex(int width, int height)
@@ -510,8 +549,8 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
             var closestDistance = long.MaxValue;
             for (var i = 0; i < resolutions.Count; i++)
             {
-                var widthDelta = (long)resolutions[i].width - width;
-                var heightDelta = (long)resolutions[i].height - height;
+                var widthDelta = (long)resolutions[i].x - width;
+                var heightDelta = (long)resolutions[i].y - height;
                 var distance = widthDelta * widthDelta + heightDelta * heightDelta;
                 if (distance >= closestDistance)
                 {
@@ -536,8 +575,8 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
                 resolutionIndex >= 0 &&
                 resolutionIndex < resolutions.Count)
             {
-                resolutionWidth = resolutions[resolutionIndex].width;
-                resolutionHeight = resolutions[resolutionIndex].height;
+                resolutionWidth = resolutions[resolutionIndex].x;
+                resolutionHeight = resolutions[resolutionIndex].y;
             }
 
             var microphoneDeviceIndex = microphoneDropdown == null ? 0 : microphoneDropdown.value;
@@ -614,7 +653,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
             else if (snapshot.ResolutionIndex >= 0 && snapshot.ResolutionIndex < resolutions.Count)
             {
                 var resolution = resolutions[snapshot.ResolutionIndex];
-                Screen.SetResolution(resolution.width, resolution.height, snapshot.FullScreen ? FullScreenMode.FullScreenWindow : FullScreenMode.Windowed);
+                Screen.SetResolution(resolution.x, resolution.y, snapshot.FullScreen ? FullScreenMode.FullScreenWindow : FullScreenMode.Windowed);
             }
             else
             {
@@ -673,8 +712,8 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
                 return;
             }
 
-            PlayerPrefs.SetInt(ResolutionWidthKey, resolutions[index].width);
-            PlayerPrefs.SetInt(ResolutionHeightKey, resolutions[index].height);
+            PlayerPrefs.SetInt(ResolutionWidthKey, resolutions[index].x);
+            PlayerPrefs.SetInt(ResolutionHeightKey, resolutions[index].y);
         }
 
         private static void SetDropdownOptions(TMP_Dropdown dropdown, IReadOnlyList<string> options, int selectedIndex)

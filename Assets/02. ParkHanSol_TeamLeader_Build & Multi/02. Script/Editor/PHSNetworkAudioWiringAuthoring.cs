@@ -5,6 +5,8 @@ using LastJumpCrew.ParkHanSol.Interaction;
 using LastJumpCrew.ParkHanSol.Multiplayer;
 using LastJumpCrew.ParkHanSol.Multiplayer.Audio;
 using LastJumpCrew.ParkHanSol.Multiplayer.Tutorial;
+using LastJumpCrew.ParkHanSol.Multiplayer.Events.MiniGames.Runtime;
+using LastJumpCrew.ParkHanSol.Multiplayer.Input;
 using Unity.Netcode;
 using UnityEditor;
 using UnityEditor.SceneManagement;
@@ -17,7 +19,6 @@ namespace LastJumpCrew.ParkHanSol.Editor
     {
         private const string Root =
             "Assets/02. ParkHanSol_TeamLeader_Build & Multi";
-        private const string AudioRoot = Root + "/06. Audio/NetworkGenerated";
         private const string PlayerPrefabPath =
             Root + "/03. Prefab/PlayerPrefab/PHS_CuteWhiteGhost_Player.prefab";
         private const string TutorialPlayerPrefabPath =
@@ -30,10 +31,21 @@ namespace LastJumpCrew.ParkHanSol.Editor
             Root + "/03. Prefab/UI/PHS_NetworkRunResultPanel.prefab";
         private const string TutorialScenePath =
             Root + "/01. Scene/BEAVER_2026/Tutorial/PHS_NetworkTutorialScene.unity";
+        private const string DebrisSellPrefabPath =
+            Root + "/03. Prefab/Props/Prefabs/ShopCheckoutCounter/PHS_DebrisSellStation.prefab";
+        private const string PausePrefabPath =
+            Root + "/03. Prefab/UI/PHS_NetworkOwnerPauseUI.prefab";
+        private const string LobbyUiPrefabPath =
+            Root + "/03. Prefab/UI/PHS_NetworkStartLobbyUI.prefab";
+        private const string MiniGamePrefabPath =
+            "Assets/01. MainGame/02. Final_Prefab/01. Prefab_ParkHanSol_TeamLeader/Prefab/Integration0716/PHS_MiniGameRuntimeSystem.prefab";
+        private const string GameplayScenePath =
+            Root + "/01. Scene/BEAVER_2026/PHS_Map_ver1.unity";
 
         [MenuItem("Tools/ParkHanSol/BEAVER/Author Network Audio Wiring")]
         public static void Author()
         {
+            PHSCuratedAssetSfxAuthoring.Author();
             var clips = LoadRequiredClips();
             RequireNoDirtyLoadedScenes();
             var sceneSetup = EditorSceneManager.GetSceneManagerSetup();
@@ -45,7 +57,12 @@ namespace LastJumpCrew.ParkHanSol.Editor
                 ConfigurePlayerPrefab(TutorialPlayerPrefabPath, clips, true);
                 ConfigureShopPrefab(clips);
                 ConfigureRunRootPrefab(clips);
+                ConfigureDebrisSellPrefab(clips);
+                ConfigurePausePrefab(clips);
+                ConfigureLobbySettingsPrefab(clips);
+                ConfigureMiniGamePrefab(clips);
                 ConfigureTutorialScene();
+                ConfigureGameplayBackgroundScene();
                 AssetDatabase.SaveAssets();
                 Debug.Log("PHS_NETWORK_AUDIO_WIRING_COMPLETE");
             }
@@ -60,35 +77,73 @@ namespace LastJumpCrew.ParkHanSol.Editor
             }
         }
 
+        [MenuItem("Tools/ParkHanSol/BEAVER/Author Network Audio Prefabs Only")]
+        public static void AuthorPrefabsOnly()
+        {
+            PHSCuratedAssetSfxAuthoring.Author();
+            var clips = LoadRequiredClips();
+            ConfigureResultPrefab(clips);
+            ConfigurePlayerPrefab(PlayerPrefabPath, clips, false);
+            ConfigurePlayerPrefab(TutorialPlayerPrefabPath, clips, true);
+            ConfigureShopPrefab(clips);
+            ConfigureRunRootPrefab(clips);
+            ConfigureDebrisSellPrefab(clips);
+            ConfigurePausePrefab(clips);
+            ConfigureLobbySettingsPrefab(clips);
+            ConfigureMiniGamePrefab(clips);
+            AssetDatabase.SaveAssets();
+            Debug.Log("PHS_NETWORK_AUDIO_PREFABS_ONLY_COMPLETE");
+        }
+
+        [MenuItem("Tools/ParkHanSol/BEAVER/Author Requested SFX")]
+        public static void AuthorRequestedSfx()
+        {
+            AuthorPrefabsOnly();
+            ConfigureGameplayBackgroundScene();
+            AssetDatabase.SaveAssets();
+            Debug.Log("PHS_REQUESTED_SFX_AUTHORING_COMPLETE");
+        }
+
         private static Dictionary<NetworkAudioCue, AudioClip> LoadRequiredClips()
         {
             var clips = new Dictionary<NetworkAudioCue, AudioClip>
             {
-                { NetworkAudioCue.ItemPickup, RequireClip("PHS_Network_Item_Pickup.wav") },
-                { NetworkAudioCue.ItemDrop, RequireClip("PHS_Network_Item_Drop.wav") },
-                { NetworkAudioCue.ItemSwap, RequireClip("PHS_Network_Item_Swap.wav") },
-                { NetworkAudioCue.ShopSuccess, RequireClip("PHS_Network_Shop_Success.wav") },
-                { NetworkAudioCue.ShopFailure, RequireClip("PHS_Network_Shop_Fail.wav") },
-                { NetworkAudioCue.Warning, RequireClip("PHS_Network_Warning.wav") },
-                { NetworkAudioCue.RunClear, RequireClip("PHS_Network_Clear.wav") },
-                { NetworkAudioCue.RunGameOver, RequireClip("PHS_Network_GameOver.wav") },
-                { NetworkAudioCue.RestartRequested, RequireClip("PHS_Network_UI_Click.wav") },
-                { NetworkAudioCue.RestartSucceeded, RequireClip("PHS_Network_Restart_Success.wav") },
-                { NetworkAudioCue.RestartFailed, RequireClip("PHS_Network_Restart_Fail.wav") },
-                { NetworkAudioCue.TutorialComplete, RequireClip("PHS_Network_TutorialComplete.wav") },
+                { NetworkAudioCue.ItemPickup, RequireClip(NetworkAudioCue.ItemPickup) },
+                { NetworkAudioCue.ItemDrop, RequireClip(NetworkAudioCue.ItemDrop) },
+                { NetworkAudioCue.ItemSwap, RequireClip(NetworkAudioCue.ItemSwap) },
+                { NetworkAudioCue.ShopSuccess, RequireClip(NetworkAudioCue.ShopSuccess) },
+                { NetworkAudioCue.ShopFailure, RequireClip(NetworkAudioCue.ShopFailure) },
+                { NetworkAudioCue.Warning, RequireClip(NetworkAudioCue.Warning) },
+                { NetworkAudioCue.RunClear, RequireClip(NetworkAudioCue.RunClear) },
+                { NetworkAudioCue.RunGameOver, RequireClip(NetworkAudioCue.RunGameOver) },
+                { NetworkAudioCue.RestartRequested, RequireClip(NetworkAudioCue.RestartRequested) },
+                { NetworkAudioCue.RestartSucceeded, RequireClip(NetworkAudioCue.RestartSucceeded) },
+                { NetworkAudioCue.RestartFailed, RequireClip(NetworkAudioCue.RestartFailed) },
+                { NetworkAudioCue.TutorialComplete, RequireClip(NetworkAudioCue.TutorialComplete) },
+                { NetworkAudioCue.DebrisDeposit, RequireClip(NetworkAudioCue.DebrisDeposit) },
+                { NetworkAudioCue.FootstepWalk, RequireClip(NetworkAudioCue.FootstepWalk) },
+                { NetworkAudioCue.FootstepRun, RequireClip(NetworkAudioCue.FootstepRun) },
+                { NetworkAudioCue.PlayerJump, RequireClip(NetworkAudioCue.PlayerJump) },
+                { NetworkAudioCue.MissionSuccess, RequireClip(NetworkAudioCue.MissionSuccess) },
+                { NetworkAudioCue.VendingInteraction, RequireClip(NetworkAudioCue.VendingInteraction) },
+                { NetworkAudioCue.InteractionFocus, RequireClip(NetworkAudioCue.InteractionFocus) },
+                { NetworkAudioCue.OptionsSaved, RequireClip(NetworkAudioCue.OptionsSaved) },
+                { NetworkAudioCue.WarpStart, RequireClip(NetworkAudioCue.WarpStart) },
+                { NetworkAudioCue.WarpEnd, RequireClip(NetworkAudioCue.WarpEnd) },
+                { NetworkAudioCue.AccidentAppeared, RequireClip(NetworkAudioCue.AccidentAppeared) },
             };
 
             return clips;
         }
 
-        private static AudioClip RequireClip(string fileName)
+        private static AudioClip RequireClip(NetworkAudioCue cue)
         {
-            var path = $"{AudioRoot}/{fileName}";
+            var path = PHSCuratedAssetSfxAuthoring.GetCuePath(cue);
             var clip = AssetDatabase.LoadAssetAtPath<AudioClip>(path);
             if (clip == null)
             {
                 throw new InvalidOperationException(
-                    $"PHS_NETWORK_AUDIO_WIRING_FAILED reason=generated_clip_missing path={path}");
+                    $"PHS_NETWORK_AUDIO_WIRING_FAILED reason=curated_clip_missing path={path}");
             }
 
             return clip;
@@ -121,11 +176,16 @@ namespace LastJumpCrew.ParkHanSol.Editor
             {
                 var record = RequireSingle<NetworkPlayerItemRecord>(root);
                 var networkObject = RequireSingle<NetworkObject>(root);
+                var playerController = RequireSingle<NetworkPlayerController>(root);
+                var characterController = RequireSingle<CharacterController>(root);
+                var playerControlInput = RequireSingle<PlayerControlInput>(root);
+                var interactionScanner = RequireSingle<TempPlayerInteractionScanner>(root);
                 var feedback = GetOrAddSingle<NetworkPlayerItemAudioFeedback>(root);
+                var movementFeedback = GetOrAddSingle<NetworkPlayerMovementAudioFeedback>(root);
 
                 var ownerRoot = RequireNamedChild(root.transform, "PHS_NetworkItemAudio_2D");
                 var ownerSource = ConfigureAudioSource(ownerRoot.gameObject, false, 25f);
-                var ownerEmitter = ConfigureItemEmitter(ownerRoot.gameObject, ownerSource, clips);
+                var ownerEmitter = ConfigurePlayerOwnerEmitter(ownerRoot.gameObject, ownerSource, clips);
 
                 var worldRoot = RequireNamedChild(root.transform, "PHS_NetworkItemAudio_3D");
                 var worldSource = ConfigureAudioSource(worldRoot.gameObject, true, 20f);
@@ -135,6 +195,18 @@ namespace LastJumpCrew.ParkHanSol.Editor
                 SetObjectReference(feedback, "networkObject", networkObject);
                 SetObjectReference(feedback, "ownerCuePlayerSource", ownerEmitter);
                 SetObjectReference(feedback, "worldCuePlayerSource", worldEmitter);
+                SetObjectReference(movementFeedback, "networkObject", networkObject);
+                SetObjectReference(movementFeedback, "playerController", playerController);
+                SetObjectReference(movementFeedback, "characterController", characterController);
+                SetObjectReference(movementFeedback, "playerControlInput", playerControlInput);
+                SetObjectReference(movementFeedback, "ownerCuePlayerSource", ownerEmitter);
+                SetObjectReference(movementFeedback, "worldCuePlayerSource", worldEmitter);
+                SetObjectReference(interactionScanner, "interactionCuePlayerSource", ownerEmitter);
+
+                foreach (var optionsPanel in root.GetComponentsInChildren<NetworkSharedOptionsPanelController>(true))
+                {
+                    SetObjectReference(optionsPanel, "saveCuePlayerSource", ownerEmitter);
+                }
 
                 if (includeTutorialCompletion)
                 {
@@ -172,7 +244,29 @@ namespace LastJumpCrew.ParkHanSol.Editor
                 source,
                 Binding(NetworkAudioCue.ItemPickup, clips, 0.65f, 0.1f),
                 Binding(NetworkAudioCue.ItemSwap, clips, 0.65f, 0.12f),
-                Binding(NetworkAudioCue.ItemDrop, clips, 0.6f, 0.1f));
+                Binding(NetworkAudioCue.ItemDrop, clips, 0.6f, 0.1f),
+                Binding(NetworkAudioCue.FootstepWalk, clips, 0.5f, 0.08f),
+                Binding(NetworkAudioCue.FootstepRun, clips, 0.55f, 0.08f),
+                Binding(NetworkAudioCue.PlayerJump, clips, 0.62f, 0.15f));
+        }
+
+        private static NetworkAudioCueEmitter ConfigurePlayerOwnerEmitter(
+            GameObject gameObject,
+            AudioSource source,
+            IReadOnlyDictionary<NetworkAudioCue, AudioClip> clips)
+        {
+            return ConfigureEmitter(
+                gameObject,
+                source,
+                Binding(NetworkAudioCue.ItemPickup, clips, 0.65f, 0.1f),
+                Binding(NetworkAudioCue.ItemSwap, clips, 0.65f, 0.12f),
+                Binding(NetworkAudioCue.ItemDrop, clips, 0.6f, 0.1f),
+                Binding(NetworkAudioCue.FootstepWalk, clips, 0.42f, 0.08f),
+                Binding(NetworkAudioCue.FootstepRun, clips, 0.48f, 0.08f),
+                Binding(NetworkAudioCue.PlayerJump, clips, 0.62f, 0.15f),
+                Binding(NetworkAudioCue.VendingInteraction, clips, 0.72f, 0.12f),
+                Binding(NetworkAudioCue.InteractionFocus, clips, 0.38f, 0.1f),
+                Binding(NetworkAudioCue.OptionsSaved, clips, 0.68f, 0.2f));
         }
 
         private static void ConfigureShopPrefab(
@@ -205,11 +299,142 @@ namespace LastJumpCrew.ParkHanSol.Editor
                 var emitter = ConfigureEmitter(
                     audioRoot.gameObject,
                     source,
-                    Binding(NetworkAudioCue.Warning, clips, 0.8f, 0.5f));
+                    Binding(NetworkAudioCue.Warning, clips, 0.8f, 0.5f),
+                    Binding(NetworkAudioCue.AccidentAppeared, clips, 0.82f, 0.4f));
                 SetObjectReference(presenter, "incidentLedger", ledger);
                 SetObjectReference(presenter, "stageClock", clock);
                 SetObjectReference(presenter, "cuePlayerSource", emitter);
+
+                var runFlow = RequireSingle<NetworkRunFlowCoordinator>(root);
+                var warpPresenter = GetOrAddSingle<NetworkRunWarpAudioPresenter>(root);
+                var warpAudioRoot = RequireNamedChild(root.transform, "PHS_NetworkWarpAudio");
+                var warpSource = ConfigureAudioSource(warpAudioRoot.gameObject, false, 25f);
+                var warpEmitter = ConfigureEmitter(
+                    warpAudioRoot.gameObject,
+                    warpSource,
+                    Binding(NetworkAudioCue.WarpStart, clips, 0.5f, 0.5f),
+                    Binding(NetworkAudioCue.WarpEnd, clips, 0.5f, 0.5f));
+                SetObjectReference(warpPresenter, "runFlowCoordinator", runFlow);
+                SetObjectReference(warpPresenter, "cuePlayerSource", warpEmitter);
             });
+        }
+
+        private static void ConfigureDebrisSellPrefab(
+            IReadOnlyDictionary<NetworkAudioCue, AudioClip> clips)
+        {
+            EditPrefab(DebrisSellPrefabPath, root =>
+            {
+                var sellZone = RequireSingle<DebrisSellZone>(root);
+                var audioRoot = RequireNamedChild(root.transform, "PHS_DebrisDepositAudio");
+                var source = ConfigureAudioSource(audioRoot.gameObject, true, 18f);
+                var emitter = ConfigureEmitter(
+                    audioRoot.gameObject,
+                    source,
+                    Binding(NetworkAudioCue.DebrisDeposit, clips, 0.8f, 0.15f));
+                SetObjectReference(sellZone, "successCuePlayerSource", emitter);
+            });
+        }
+
+        private static void ConfigurePausePrefab(
+            IReadOnlyDictionary<NetworkAudioCue, AudioClip> clips)
+        {
+            EditPrefab(PausePrefabPath, root =>
+            {
+                var optionsPanel = RequireSingle<NetworkSharedOptionsPanelController>(root);
+                var audioRoot = RequireNamedChild(root.transform, "PHS_OptionsSaveAudio");
+                var source = ConfigureAudioSource(audioRoot.gameObject, false, 25f);
+                var emitter = ConfigureEmitter(
+                    audioRoot.gameObject,
+                    source,
+                    Binding(NetworkAudioCue.OptionsSaved, clips, 0.68f, 0.2f));
+                SetObjectReference(optionsPanel, "saveCuePlayerSource", emitter);
+            });
+        }
+
+        private static void ConfigureLobbySettingsPrefab(
+            IReadOnlyDictionary<NetworkAudioCue, AudioClip> clips)
+        {
+            EditPrefab(LobbyUiPrefabPath, root =>
+            {
+                var settings = RequireSingle<ParkHanSolGameSettingsController>(root);
+                var audioRoot = RequireNamedChild(root.transform, "PHS_OptionsSaveAudio");
+                var source = ConfigureAudioSource(audioRoot.gameObject, false, 25f);
+                var emitter = ConfigureEmitter(
+                    audioRoot.gameObject,
+                    source,
+                    Binding(NetworkAudioCue.OptionsSaved, clips, 0.68f, 0.2f));
+                SetObjectReference(settings, "saveCuePlayerSource", emitter);
+            });
+        }
+
+        private static void ConfigureMiniGamePrefab(
+            IReadOnlyDictionary<NetworkAudioCue, AudioClip> clips)
+        {
+            EditPrefab(MiniGamePrefabPath, root =>
+            {
+                var manager = RequireSingle<PHSMiniGameManager>(root);
+                var audioRoot = RequireNamedChild(root.transform, "PHS_MissionSuccessAudio");
+                var source = ConfigureAudioSource(audioRoot.gameObject, false, 25f);
+                var emitter = ConfigureEmitter(
+                    audioRoot.gameObject,
+                    source,
+                    Binding(NetworkAudioCue.MissionSuccess, clips, 0.85f, 0.3f));
+                SetObjectReference(manager, "successCuePlayerSource", emitter);
+            });
+        }
+
+        private static void ConfigureGameplayBackgroundScene()
+        {
+            var loadedScene = SceneManager.GetSceneByPath(GameplayScenePath);
+            if (loadedScene.IsValid() && loadedScene.isDirty)
+            {
+                throw new InvalidOperationException(
+                    $"PHS_NETWORK_AUDIO_WIRING_FAILED reason=target_scene_dirty path={GameplayScenePath}");
+            }
+
+            var openedForAuthoring = !loadedScene.IsValid();
+            var scene = openedForAuthoring
+                ? EditorSceneManager.OpenScene(GameplayScenePath, OpenSceneMode.Additive)
+                : loadedScene;
+            try
+            {
+                var runtimeRoots = scene.GetRootGameObjects()
+                    .Where(root => root.name == "PHS_Map_Runtime")
+                    .ToArray();
+                if (runtimeRoots.Length != 1)
+                {
+                    throw new InvalidOperationException(
+                        $"PHS_NETWORK_AUDIO_WIRING_FAILED reason=map_runtime_root_count count={runtimeRoots.Length}");
+                }
+
+                var audioParent = RequireNamedChild(runtimeRoots[0].transform, "Audio");
+                var loopRoot = RequireNamedChild(audioParent, "PHS_SpaceEngineLoop");
+                var source = ConfigureAudioSource(loopRoot.gameObject, false, 25f);
+                source.clip = AssetDatabase.LoadAssetAtPath<AudioClip>(
+                    PHSCuratedAssetSfxAuthoring.SpaceEngineLoopPath);
+                if (source.clip == null)
+                {
+                    throw new InvalidOperationException(
+                        $"PHS_NETWORK_AUDIO_WIRING_FAILED reason=background_clip_missing path={PHSCuratedAssetSfxAuthoring.SpaceEngineLoopPath}");
+                }
+
+                source.volume = 0.12f;
+                source.loop = true;
+                source.playOnAwake = true;
+                EditorSceneManager.MarkSceneDirty(scene);
+                if (!EditorSceneManager.SaveScene(scene))
+                {
+                    throw new InvalidOperationException(
+                        $"PHS_NETWORK_AUDIO_WIRING_FAILED reason=map_scene_save_failed path={GameplayScenePath}");
+                }
+            }
+            finally
+            {
+                if (openedForAuthoring && scene.IsValid())
+                {
+                    EditorSceneManager.CloseScene(scene, true);
+                }
+            }
         }
 
         private static void ConfigureTutorialScene()

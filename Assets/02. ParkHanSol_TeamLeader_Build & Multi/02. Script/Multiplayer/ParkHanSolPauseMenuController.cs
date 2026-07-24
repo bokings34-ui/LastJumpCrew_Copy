@@ -179,6 +179,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
             {
                 SetPanels(false, false);
                 sharedOptionsPanel.Open();
+                SetPanelVisible(optionsPanel, sharedOptionsPanel.IsOpen);
                 return;
             }
 

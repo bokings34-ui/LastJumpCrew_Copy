@@ -64,8 +64,9 @@ namespace LastJumpCrew.ParkHanSol.Editor
 
                     var serialized = new SerializedObject(feedbacks[0]);
                     RequireObject(serialized, "sphereRangePrefab", path, errors);
-                    RequireObject(serialized, "castRangePrefab", path, errors);
-                    RequireObject(serialized, "targetFeedbackPrefab", path, errors);
+                RequireObject(serialized, "castRangePrefab", path, errors);
+                RequireObject(serialized, "targetFeedbackPrefab", path, errors);
+                RequireObject(serialized, "wrenchTargetFeedbackPrefab", path, errors);
                     RequirePositive(serialized, "rangeLifetimeSeconds", path, errors);
                     RequirePositive(serialized, "targetLifetimeSeconds", path, errors);
                 }

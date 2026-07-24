@@ -22,6 +22,18 @@ namespace LastJumpCrew.ParkHanSol.Editor
             "/03. Prefab/UI/Customization/PHS_NetworkLobbyCustomizationFrontend.prefab";
         private const string LobbyScenePath = RootFolder +
             "/01. Scene/BEAVER_2026/ParkHanSol_LobbyScene.unity";
+        private const string BrowserSubtitle =
+            "CREATE OR JOIN A CREW ROOM";
+        private const string BrowserJoinLabel = "";
+        private const string RoomReadyLabel = "ROOM NAME";
+
+        private static readonly string[] LegacyInviteCopy =
+        {
+            "CREATE ROOM OR JOIN WITH CODE",
+            "ROOM CODE",
+            "ENTER CODE",
+            "CODE LOCAL"
+        };
 
         [MenuItem("Tools/ParkHanSol/BEAVER/Validate Manual Room Browser")]
         public static void Validate()
@@ -47,7 +59,7 @@ namespace LastJumpCrew.ParkHanSol.Editor
             Debug.Log(
                 "PHS_ROOM_BROWSER_RECOVERY_VALIDATION_PASS " +
                 "browser=1 panels=4 prefab_refs=20 scene_room_service=1 " +
-                "preserved_create_join=2 customize_tutorial_vertical_orange=1 " +
+                "create_join=2 legacy_invite_ui=0 customize_tutorial_vertical_orange=1 " +
                 "assets01_modified=0");
         }
 
@@ -91,14 +103,43 @@ namespace LastJumpCrew.ParkHanSol.Editor
                 return;
             }
 
+            var createButton = actionPanel.Find("Create Room Button")
+                ?.GetComponent<UnityEngine.UI.Button>();
+            var joinButton = actionPanel.Find("Join Room Button")
+                ?.GetComponent<UnityEngine.UI.Button>();
             Require(
-                actionPanel.Find("Create Room Button") != null
-                && actionPanel.Find("Join Room Button") != null
-                && actionPanel.Find("Join Code Input") != null
-                && actionPanel.Find("Back Button") != null
-                && actionPanel.Find("Status Text") != null,
-                "reason=preserved_action_controls_missing",
+                createButton != null && joinButton != null,
+                "reason=create_join_buttons_missing",
                 errors);
+            Require(
+                actionPanel.Find("Join Code Input") == null,
+                "reason=legacy_join_code_input_present",
+                errors);
+            Require(
+                actionPanel.Find("Back Button") != null
+                && actionPanel.Find("Status Text") != null,
+                "reason=action_controls_missing",
+                errors);
+            RequireText(
+                root.transform,
+                "Lobby Panel/Lobby Action Panel/Subtitle",
+                BrowserSubtitle,
+                errors);
+            RequireText(
+                root.transform,
+                "Lobby Panel/Lobby Action Panel/Join Label",
+                BrowserJoinLabel,
+                errors);
+            Require(
+                !actionPanel.Find("Join Label").gameObject.activeSelf,
+                "reason=join_label_active",
+                errors);
+            RequireText(
+                root.transform,
+                "Room Panel/Player List Panel/Room Name Text",
+                RoomReadyLabel,
+                errors);
+            ValidateLegacyInviteCopyRemoved(root, errors);
 
             var browser = browsers[0];
             var browserState = new SerializedObject(browser);
@@ -142,9 +183,57 @@ namespace LastJumpCrew.ParkHanSol.Editor
             var controllerState = new SerializedObject(controllers[0]);
             RequireReference(
                 controllerState,
+                "createRoomButton",
+                createButton,
+                errors);
+            RequireReference(
+                controllerState,
+                "joinRoomButton",
+                joinButton,
+                errors);
+            RequireReference(
+                controllerState,
                 "roomBrowser",
                 browser,
                 errors);
+        }
+
+        private static void ValidateLegacyInviteCopyRemoved(
+            GameObject root,
+            ICollection<string> errors)
+        {
+            foreach (var label in root.GetComponentsInChildren<TMP_Text>(true))
+            {
+                var normalized = NormalizeCopy(label.text);
+                if (LegacyInviteCopy.Contains(normalized))
+                {
+                    errors.Add(
+                        $"reason=legacy_invite_copy_present object={label.name} text={normalized}");
+                }
+            }
+        }
+
+        private static void RequireText(
+            Transform root,
+            string path,
+            string expected,
+            ICollection<string> errors)
+        {
+            var label = root.Find(path)?.GetComponent<TMP_Text>();
+            Require(
+                label != null
+                && string.Equals(label.text, expected, StringComparison.Ordinal),
+                $"reason=room_browser_copy_invalid path={path}",
+                errors);
+        }
+
+        private static string NormalizeCopy(string value)
+        {
+            return string.Join(
+                " ",
+                (value ?? string.Empty).Split(
+                    (char[])null,
+                    StringSplitOptions.RemoveEmptyEntries));
         }
 
         private static void ValidateRoomEntry(ICollection<string> errors)
@@ -201,15 +290,15 @@ namespace LastJumpCrew.ParkHanSol.Editor
 
         private static void ValidateLobbyScene(ICollection<string> errors)
         {
-            if (SceneManager.GetSceneByPath(LobbyScenePath).isLoaded)
+            var scene = SceneManager.GetSceneByPath(LobbyScenePath);
+            var openedForValidation = !scene.IsValid() || !scene.isLoaded;
+            if (openedForValidation)
             {
-                errors.Add("reason=lobby_scene_already_loaded");
-                return;
+                scene = EditorSceneManager.OpenScene(
+                    LobbyScenePath,
+                    OpenSceneMode.Additive);
             }
 
-            var scene = EditorSceneManager.OpenScene(
-                LobbyScenePath,
-                OpenSceneMode.Additive);
             try
             {
                 var sceneTransforms = scene.GetRootGameObjects()
@@ -276,7 +365,10 @@ namespace LastJumpCrew.ParkHanSol.Editor
             }
             finally
             {
-                EditorSceneManager.CloseScene(scene, true);
+                if (openedForValidation)
+                {
+                    EditorSceneManager.CloseScene(scene, true);
+                }
             }
         }
 

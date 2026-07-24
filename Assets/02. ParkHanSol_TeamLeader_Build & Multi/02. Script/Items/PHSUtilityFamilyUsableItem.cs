@@ -88,11 +88,11 @@ namespace LastJumpCrew.ParkHanSol.Items
                 PresentationKind,
                 () => controller.RequestAction(FamilyKind),
                 !isWrench
-                    ? 0.16f
-                    : 0.08f,
+                    ? 0.24f
+                    : 0.32f,
                 !isWrench
                     ? 0.2f
-                    : 0.35f);
+                    : 0.52f);
         }
     }
 

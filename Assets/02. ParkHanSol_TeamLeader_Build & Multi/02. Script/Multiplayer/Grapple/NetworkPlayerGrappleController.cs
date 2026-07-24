@@ -4,6 +4,7 @@ using LastJumpCrew.ParkHanSol.Items;
 using Unity.Netcode;
 using UnityEngine;
 using LastJumpCrew.ParkHanSol.Multiplayer.Input;
+using UnityEngine.Serialization;
 
 namespace LastJumpCrew.ParkHanSol.Multiplayer
 {
@@ -21,7 +22,9 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
 
         [SerializeField] private Camera aimCamera;
         [SerializeField] private Transform ropeOrigin;
-        [SerializeField] private LineRenderer ropeRenderer;
+        [FormerlySerializedAs("ropeRenderer")]
+        [SerializeField] private LineRenderer legacyRopeRenderer;
+        [SerializeField] private PHSRobotArmRopeVfxPresenter ropeVfxPresenter;
         [SerializeField] private Transform hookVisual;
         [SerializeField] private GrappleClawVisual clawVisual;
         [SerializeField] private Transform aimMarker;
@@ -76,13 +79,9 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
             upgradeState = GetComponent<NetworkPlayerUpgradeState>();
             itemHolder = itemHolderBehaviour as IItemHolder;
             ValidateSetup();
-            if (ropeRenderer != null)
+            if (legacyRopeRenderer != null)
             {
-                ropeRenderer.startWidth = ropeWidth;
-                ropeRenderer.endWidth = ropeWidth;
-                ropeRenderer.useWorldSpace = true;
-                ropeRenderer.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
-                ropeRenderer.receiveShadows = false;
+                legacyRopeRenderer.enabled = false;
             }
 
             SetRopeVisible(false);
@@ -713,8 +712,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
             }
 
             var grapplePoint = GetGrapplePosition();
-            ropeRenderer.SetPosition(0, ropeOrigin.position);
-            ropeRenderer.SetPosition(1, grapplePoint);
+            ropeVfxPresenter.SetEndpoints(ropeOrigin.position, grapplePoint);
             hookVisual.position = grapplePoint;
             var hookDirection = grapplePoint - ropeOrigin.position;
             if (hookDirection.sqrMagnitude > 0.001f)
@@ -752,13 +750,17 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
 
         private void SetRopeVisible(bool visible)
         {
-            if (ropeRenderer == null)
+            if (ropeVfxPresenter == null)
             {
                 return;
             }
 
-            ropeRenderer.positionCount = 2;
-            ropeRenderer.enabled = visible;
+            if (legacyRopeRenderer != null)
+            {
+                legacyRopeRenderer.enabled = false;
+            }
+
+            ropeVfxPresenter.SetVisible(visible);
         }
 
         private void SetHookVisible(bool visible)
@@ -809,7 +811,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
                 && playerControlInput != null
                 && aimCamera != null
                 && ropeOrigin != null
-                && ropeRenderer != null
+                && ropeVfxPresenter != null
                 && hookVisual != null
                 && clawVisual != null
                 && aimMarker != null
@@ -824,7 +826,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
             if (!setupErrorLogged)
             {
                 setupErrorLogged = true;
-                Debug.LogError($"PHS_GRAPPLE_SETUP_FAILED player={name} controller={playerController != null} input={playerControlInput != null} camera={aimCamera != null} ropeOrigin={ropeOrigin != null} ropeRenderer={ropeRenderer != null} hookVisual={hookVisual != null} clawVisual={clawVisual != null} aimMarker={aimMarker != null} aimReticle={aimReticle != null} aimReticleRenderer={aimReticleRenderer != null} itemHolder={itemHolder != null} itemCollectionPoint={itemCollectionPoint != null}");
+                Debug.LogError($"PHS_GRAPPLE_SETUP_FAILED player={name} controller={playerController != null} input={playerControlInput != null} camera={aimCamera != null} ropeOrigin={ropeOrigin != null} ropeVfx={ropeVfxPresenter != null} hookVisual={hookVisual != null} clawVisual={clawVisual != null} aimMarker={aimMarker != null} aimReticle={aimReticle != null} aimReticleRenderer={aimReticleRenderer != null} itemHolder={itemHolder != null} itemCollectionPoint={itemCollectionPoint != null}");
             }
 
             return false;

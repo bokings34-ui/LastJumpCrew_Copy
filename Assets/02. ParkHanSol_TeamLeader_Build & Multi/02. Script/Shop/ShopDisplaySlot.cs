@@ -1,5 +1,4 @@
 using LastJumpCrew.ParkHanSol.Items;
-using TMPro;
 using UnityEngine;
 
 namespace LastJumpCrew.ParkHanSol.Shop
@@ -7,9 +6,7 @@ namespace LastJumpCrew.ParkHanSol.Shop
     public sealed class ShopDisplaySlot : MonoBehaviour
     {
         [SerializeField] private Transform itemSpawnPoint;
-        [SerializeField] private TMP_Text productLabel;
-        [SerializeField] private TMP_Text productNameText;
-        [SerializeField] private TMP_Text priceText;
+        [SerializeField] private SpriteRenderer productIconRenderer;
         [SerializeField, Min(0.01f)] private float displayScaleMultiplier = 0.75f;
 
         private GameObject displayedItem;
@@ -32,6 +29,18 @@ namespace LastJumpCrew.ParkHanSol.Shop
             }
 
             var itemData = product.ItemPrefabData;
+            if (productIconRenderer == null)
+            {
+                Debug.LogError($"PHS_SHOP_DISPLAY_FAILED reason=icon_renderer_missing slot={name}", this);
+                return false;
+            }
+
+            if (itemData.Icon == null)
+            {
+                Debug.LogError($"PHS_SHOP_DISPLAY_FAILED reason=item_icon_missing slot={name} offer={product.OfferId}", itemData);
+                return false;
+            }
+
             if (!itemData.HasHeldPrefab)
             {
                 Debug.LogError($"PHS_SHOP_DISPLAY_FAILED reason=local_prefab_missing slot={name} offer={product.OfferId}", product);
@@ -49,8 +58,25 @@ namespace LastJumpCrew.ParkHanSol.Shop
                 return false;
             }
 
+            var pricePresentation = displayedItem.GetComponentInChildren<ShopItemPricePresentation>(true);
+            if (pricePresentation == null)
+            {
+                Debug.LogError($"PHS_SHOP_DISPLAY_FAILED reason=item_price_presentation_missing slot={name} offer={product.OfferId}", displayedItem);
+                Destroy(displayedItem);
+                displayedItem = null;
+                return false;
+            }
+
+            if (!pricePresentation.TryShow(product.PurchasePrice))
+            {
+                Debug.LogError($"PHS_SHOP_DISPLAY_FAILED reason=item_price_presentation_invalid slot={name} offer={product.OfferId}", displayedItem);
+                Destroy(displayedItem);
+                displayedItem = null;
+                return false;
+            }
+
             CurrentProduct = product;
-            RefreshLabels(product);
+            RefreshIcon(itemData.Icon);
             return true;
         }
 
@@ -63,27 +89,16 @@ namespace LastJumpCrew.ParkHanSol.Shop
                 displayedItem = null;
             }
 
-            RefreshLabels(null);
+            RefreshIcon(null);
         }
 
-        private void RefreshLabels(ShopProductData product)
+        private void RefreshIcon(Sprite icon)
         {
-            if (productLabel != null)
-            {
-                productLabel.text = product == null
-                    ? string.Empty
-                    : $"{product.ItemPrefabData.DisplayName}\n{product.PurchasePrice} CR";
-            }
+            if (productIconRenderer == null)
+                return;
 
-            if (productNameText != null)
-            {
-                productNameText.text = product == null ? string.Empty : product.ItemPrefabData.DisplayName;
-            }
-
-            if (priceText != null)
-            {
-                priceText.text = product == null ? string.Empty : $"{product.PurchasePrice} CR";
-            }
+            productIconRenderer.sprite = icon;
+            productIconRenderer.enabled = icon != null;
         }
     }
 }

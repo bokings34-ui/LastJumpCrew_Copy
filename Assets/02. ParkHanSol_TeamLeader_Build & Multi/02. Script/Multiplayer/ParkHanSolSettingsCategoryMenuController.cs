@@ -19,6 +19,12 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
         [SerializeField] private GameObject voicePanel;
         [SerializeField] private GameObject controlsPanel;
 
+        [Header("Category State")]
+        [SerializeField] private Color activeCategoryColor =
+            new(1f, 0.76f, 0.08f, 1f);
+        [SerializeField] private Color inactiveCategoryColor =
+            new(0.95f, 0.33f, 0.04f, 1f);
+
         private void Awake()
         {
             Bind(gameplayButton, ShowGameplay);
@@ -44,36 +50,54 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
 
         private void ShowGameplay()
         {
-            ShowPanel(gameplayPanel);
+            ShowPanel(gameplayPanel, gameplayButton);
         }
 
         private void ShowGraphics()
         {
-            ShowPanel(graphicsPanel);
+            ShowPanel(graphicsPanel, graphicsButton);
         }
 
         private void ShowAudio()
         {
-            ShowPanel(audioPanel);
+            ShowPanel(audioPanel, audioButton);
         }
 
         private void ShowVoice()
         {
-            ShowPanel(voicePanel);
+            ShowPanel(voicePanel, voiceButton);
         }
 
         private void ShowControls()
         {
-            ShowPanel(controlsPanel);
+            ShowPanel(controlsPanel, controlsButton);
         }
 
-        private void ShowPanel(GameObject target)
+        private void ShowPanel(GameObject target, Button activeButton)
         {
             SetActive(gameplayPanel, target == gameplayPanel);
             SetActive(graphicsPanel, target == graphicsPanel);
             SetActive(audioPanel, target == audioPanel);
             SetActive(voicePanel, target == voicePanel);
             SetActive(controlsPanel, target == controlsPanel);
+
+            SetCategoryColor(gameplayButton, activeButton == gameplayButton);
+            SetCategoryColor(graphicsButton, activeButton == graphicsButton);
+            SetCategoryColor(audioButton, activeButton == audioButton);
+            SetCategoryColor(voiceButton, activeButton == voiceButton);
+            SetCategoryColor(controlsButton, activeButton == controlsButton);
+        }
+
+        private void SetCategoryColor(Button button, bool active)
+        {
+            if (button == null || button.targetGraphic == null)
+            {
+                return;
+            }
+
+            button.targetGraphic.color = active
+                ? activeCategoryColor
+                : inactiveCategoryColor;
         }
 
         private static void SetActive(GameObject panel, bool active)

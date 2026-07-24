@@ -1,3 +1,4 @@
+using System;
 using LastJumpCrew.ParkHanSol.Interaction;
 using LastJumpCrew.ParkHanSol.Multiplayer.Audio;
 using TMPro;
@@ -38,10 +39,88 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Tutorial
         private string swapBaselineItemId;
         private bool isExiting;
         private bool tutorialCompleteCuePlayed;
+        private bool completionPresented;
         private INetworkAudioCuePlayer audioCuePlayer;
+
+        public event Action ProgressChanged;
 
         public bool IsWaitingForInteraction =>
             currentStep == TutorialStep.Interaction;
+
+        public bool IsRoomComplete(NetworkTutorialRoom room)
+        {
+            return room switch
+            {
+                NetworkTutorialRoom.Movement =>
+                    HasAdvancedPast(TutorialStep.Movement),
+                NetworkTutorialRoom.ZeroGravity =>
+                    HasAdvancedPast(TutorialStep.Thruster),
+                NetworkTutorialRoom.Grapple =>
+                    HasAdvancedPast(TutorialStep.Grapple),
+                NetworkTutorialRoom.ItemPickup =>
+                    HasAdvancedPast(TutorialStep.ItemPickup),
+                NetworkTutorialRoom.ItemDrop =>
+                    HasAdvancedPast(TutorialStep.ItemDrop),
+                NetworkTutorialRoom.ItemSwap =>
+                    HasAdvancedPast(TutorialStep.ItemSwap),
+                NetworkTutorialRoom.Interaction =>
+                    currentStep == TutorialStep.Complete,
+                NetworkTutorialRoom.Complete =>
+                    completionPresented,
+                _ => throw new ArgumentOutOfRangeException(
+                    nameof(room),
+                    room,
+                    "Unsupported tutorial room.")
+            };
+        }
+
+        public void GetRoomDisplay(
+            NetworkTutorialRoom room,
+            out string title,
+            out string description,
+            out string status)
+        {
+            title = room switch
+            {
+                NetworkTutorialRoom.Movement => "01 · MOVEMENT",
+                NetworkTutorialRoom.ZeroGravity => "02 · ZERO GRAVITY",
+                NetworkTutorialRoom.Grapple => "03 · GRAPPLE",
+                NetworkTutorialRoom.ItemPickup => "04 · ITEM PICKUP",
+                NetworkTutorialRoom.ItemDrop => "05 · ITEM DROP",
+                NetworkTutorialRoom.ItemSwap => "06 · ITEM SWAP",
+                NetworkTutorialRoom.Interaction => "07 · INTERACTION",
+                NetworkTutorialRoom.Complete => "08 · COMPLETE",
+                _ => throw new ArgumentOutOfRangeException(
+                    nameof(room),
+                    room,
+                    "Unsupported tutorial room.")
+            };
+
+            description = GetRoomDescription(room);
+            if (room == NetworkTutorialRoom.Complete
+                && completionPresented)
+            {
+                status = "STATUS: TRAINING COMPLETE";
+                return;
+            }
+
+            if (room == NetworkTutorialRoom.Complete
+                && currentStep == TutorialStep.Complete)
+            {
+                status = "STATUS: READY · ENTER THIS ROOM";
+                return;
+            }
+
+            if (IsRoomComplete(room))
+            {
+                status = "STATUS: CLEARED · NEXT ROOM READY";
+                return;
+            }
+
+            status = IsRoomActive(room)
+                ? $"STATUS: IN PROGRESS · {GetInstruction(currentStep)}"
+                : "STATUS: LOCKED · CLEAR PREVIOUS ROOM";
+        }
 
         private void Awake()
         {
@@ -138,6 +217,38 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Tutorial
             }
         }
 
+        public void ReportCompleteRoomEntered()
+        {
+            if (currentStep != TutorialStep.Complete)
+            {
+                Debug.LogError(
+                    $"PHS_NETWORK_TUTORIAL_COMPLETE_ROOM_FAILED " +
+                    $"reason=step_not_ready director={name}",
+                    this);
+                return;
+            }
+
+            if (completionPresented)
+            {
+                return;
+            }
+
+            completionPresented = true;
+            instructionText.text = "TRAINING COMPLETE";
+            completionPanel.SetActive(true);
+            if (!tutorialCompleteCuePlayed)
+            {
+                tutorialCompleteCuePlayed = true;
+                PlayAudioCue(NetworkAudioCue.TutorialComplete);
+            }
+
+            playerController.SetResultInputBlocked(true);
+            Cursor.lockState = CursorLockMode.None;
+            Cursor.visible = true;
+            Debug.Log("PHS_NETWORK_TUTORIAL_COMPLETE");
+            ProgressChanged?.Invoke();
+        }
+
         private void UpdateItemSwapStep()
         {
             if (!itemHolder.HasItem)
@@ -170,34 +281,96 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Tutorial
         private void SetStep(TutorialStep step)
         {
             currentStep = step;
-            instructionText.text = step switch
-            {
-                TutorialStep.Movement => "MOVE  ·  WASD",
-                TutorialStep.Thruster => "ENTER ZERO-G  ·  MOVE + SPACE / SHIFT",
-                TutorialStep.Grapple => "GRAPPLE THE ORANGE TARGET  ·  HOLD Q",
-                TutorialStep.ItemPickup => "PICK UP AN ITEM  ·  F",
-                TutorialStep.ItemDrop => "DROP THE HELD ITEM  ·  RIGHT MOUSE",
-                TutorialStep.ItemSwap => "PICK UP ONE ITEM, THEN PICK UP THE OTHER WITHOUT DROPPING",
-                TutorialStep.Interaction => "USE THE EXIT CONSOLE  ·  F",
-                TutorialStep.Complete => "TRAINING COMPLETE",
-                _ => string.Empty
-            };
+            instructionText.text = GetInstruction(step);
 
             if (step != TutorialStep.Complete)
             {
+                ProgressChanged?.Invoke();
                 return;
             }
+            ProgressChanged?.Invoke();
+        }
 
-            completionPanel.SetActive(true);
-            if (!tutorialCompleteCuePlayed)
+        private string GetRoomDescription(NetworkTutorialRoom room)
+        {
+            return room switch
             {
-                tutorialCompleteCuePlayed = true;
-                PlayAudioCue(NetworkAudioCue.TutorialComplete);
-            }
-            playerController.SetResultInputBlocked(true);
-            Cursor.lockState = CursorLockMode.None;
-            Cursor.visible = true;
-            Debug.Log("PHS_NETWORK_TUTORIAL_COMPLETE");
+                NetworkTutorialRoom.Movement =>
+                    "Move through the room with WASD.",
+                NetworkTutorialRoom.ZeroGravity =>
+                    "Enter zero gravity and move with SPACE / SHIFT.",
+                NetworkTutorialRoom.Grapple =>
+                    "Hold Q and connect to the orange target.",
+                NetworkTutorialRoom.ItemPickup =>
+                    "Pick up the training item with F.",
+                NetworkTutorialRoom.ItemDrop =>
+                    "Drop the held item with RIGHT MOUSE.",
+                NetworkTutorialRoom.ItemSwap =>
+                    "Pick up one item, then pick up the other without dropping.",
+                NetworkTutorialRoom.Interaction =>
+                    "Use the completion console with F.",
+                NetworkTutorialRoom.Complete =>
+                    "Training results and return controls are available here.",
+                _ => throw new ArgumentOutOfRangeException(
+                    nameof(room),
+                    room,
+                    "Unsupported tutorial room.")
+            };
+        }
+
+        private bool IsRoomActive(NetworkTutorialRoom room)
+        {
+            return room switch
+            {
+                NetworkTutorialRoom.Movement =>
+                    currentStep == TutorialStep.Movement,
+                NetworkTutorialRoom.ZeroGravity =>
+                    currentStep == TutorialStep.Thruster,
+                NetworkTutorialRoom.Grapple =>
+                    currentStep == TutorialStep.Grapple,
+                NetworkTutorialRoom.ItemPickup =>
+                    currentStep == TutorialStep.ItemPickup,
+                NetworkTutorialRoom.ItemDrop =>
+                    currentStep == TutorialStep.ItemDrop,
+                NetworkTutorialRoom.ItemSwap =>
+                    currentStep == TutorialStep.ItemSwap,
+                NetworkTutorialRoom.Interaction =>
+                    currentStep == TutorialStep.Interaction,
+                NetworkTutorialRoom.Complete =>
+                    currentStep == TutorialStep.Complete,
+                _ => throw new ArgumentOutOfRangeException(
+                    nameof(room),
+                    room,
+                    "Unsupported tutorial room.")
+            };
+        }
+
+        private bool HasAdvancedPast(TutorialStep step)
+        {
+            return (byte)currentStep > (byte)step;
+        }
+
+        private static string GetInstruction(TutorialStep step)
+        {
+            return step switch
+            {
+                TutorialStep.Movement => "MOVE  ·  WASD",
+                TutorialStep.Thruster =>
+                    "ENTER ZERO-G  ·  MOVE + SPACE / SHIFT",
+                TutorialStep.Grapple =>
+                    "GRAPPLE THE ORANGE TARGET  ·  HOLD Q",
+                TutorialStep.ItemPickup => "PICK UP AN ITEM  ·  F",
+                TutorialStep.ItemDrop =>
+                    "DROP THE HELD ITEM  ·  RIGHT MOUSE",
+                TutorialStep.ItemSwap =>
+                    "PICK UP ONE ITEM, THEN PICK UP THE OTHER WITHOUT DROPPING",
+                TutorialStep.Interaction => "USE THE EXIT CONSOLE  ·  F",
+                TutorialStep.Complete => "ENTER THE COMPLETE ROOM",
+                _ => throw new ArgumentOutOfRangeException(
+                    nameof(step),
+                    step,
+                    "Unsupported tutorial step.")
+            };
         }
 
         private void PlayAudioCue(NetworkAudioCue cue)

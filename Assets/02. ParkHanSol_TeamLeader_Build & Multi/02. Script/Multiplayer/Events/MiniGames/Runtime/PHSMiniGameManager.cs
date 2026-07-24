@@ -6,6 +6,7 @@ using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.InputSystem;
 using UnityEngine.UI;
+using LastJumpCrew.ParkHanSol.Multiplayer.Audio;
 
 namespace LastJumpCrew.ParkHanSol.Multiplayer.Events.MiniGames.Runtime
 {
@@ -22,11 +23,13 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Events.MiniGames.Runtime
 
         [Header("애니메이션 설정")]
         public float slideDuration = 0.25f; // 오르내리는 속도
+        [SerializeField] private MonoBehaviour successCuePlayerSource;
 
         private PHSMiniGameBase activeGame = null;
         private IMiniGameTarget activeTarget = null;
         private bool isFlashing = false;    // 연출 중 키보드 입력 방지
         private Coroutine slideCoroutine = null;
+        private INetworkAudioCuePlayer successCuePlayer;
 
         public bool BlocksPauseMenuEscape => activeGame != null || isFlashing;
 
@@ -45,6 +48,11 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Events.MiniGames.Runtime
 
             canvasRoot.SetActive(false);
             if (flashScreen != null) flashScreen.gameObject.SetActive(false);
+            successCuePlayer = successCuePlayerSource as INetworkAudioCuePlayer;
+            if (successCuePlayer == null)
+            {
+                Debug.LogError("PHS_MISSION_AUDIO_SETUP_FAILED reason=cue_player_missing", this);
+            }
         }
 
         private void Update()
@@ -145,12 +153,32 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Events.MiniGames.Runtime
         {
             if (isFlashing) return;
 
+            if (isSuccess)
+            {
+                PlayMissionSuccessCue();
+            }
+
             if (slideCoroutine != null)
             {
                 StopCoroutine(slideCoroutine);
             }
 
             slideCoroutine = StartCoroutine(FlashAndSlideUpRoutine(isSuccess));
+        }
+
+        private void PlayMissionSuccessCue()
+        {
+            if (successCuePlayer == null)
+            {
+                Debug.LogError("PHS_MISSION_AUDIO_PLAY_FAILED reason=cue_player_missing", this);
+                return;
+            }
+
+            if (!successCuePlayer.TryPlay(NetworkAudioCue.MissionSuccess, out var reason)
+                && reason != "cue_cooldown")
+            {
+                Debug.LogError($"PHS_MISSION_AUDIO_PLAY_FAILED reason={reason}", this);
+            }
         }
 
         public void CancelActiveMiniGame()

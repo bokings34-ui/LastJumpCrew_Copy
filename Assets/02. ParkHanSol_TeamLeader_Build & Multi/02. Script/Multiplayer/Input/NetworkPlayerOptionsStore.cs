@@ -16,6 +16,16 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Input
         public const float MinimumMouseSensitivity = 0.05f;
         public const float MaximumMouseSensitivity = 5f;
 
+        private static readonly Vector2Int[] CuratedHighResolutions =
+        {
+            new(2560, 1440),
+            new(2560, 1600),
+            new(2560, 1920),
+            new(3200, 1800),
+            new(3440, 1440),
+            new(3840, 2160)
+        };
+
         public static INetworkPlayerOptionsStore Shared { get; } =
             new NetworkPlayerOptionsStore();
 
@@ -93,7 +103,13 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Input
                 supported.Add(current);
             }
 
-            return supported;
+            supported.AddRange(CuratedHighResolutions);
+
+            return supported
+                .Distinct()
+                .OrderBy(resolution => resolution.x)
+                .ThenBy(resolution => resolution.y)
+                .ToList();
         }
 
         public bool TryGetSavedResolution(out Vector2Int resolution)

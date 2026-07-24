@@ -19,7 +19,7 @@ namespace LastJumpCrew.ParkHanSol.EditorTools
             "Assets/MasterMagicFX/ParticlesVer3/Lightnings/" +
             "LightningRing/Prefabs/Par_LightningRing.prefab";
         private const string ElectricShockAudioPath =
-            Root + "/06. Audio/NetworkGenerated/PHS_Item_Battery_Shock.wav";
+            LastJumpCrew.ParkHanSol.Editor.PHSCuratedAssetSfxAuthoring.BatteryShockPath;
         private const string ElectricShockRootName =
             "PHS_ElectricShockEffectRoot";
 

@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using TMPro;
 using UnityEngine;
 using UnityEngine.UI;
+using LastJumpCrew.ParkHanSol.Multiplayer.Audio;
 
 namespace LastJumpCrew.ParkHanSol.Multiplayer.Input
 {
@@ -16,11 +17,13 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Input
         [SerializeField] private TMP_Dropdown windowModeDropdown;
         [SerializeField] private TMP_Dropdown resolutionDropdown;
         [SerializeField] private Button closeButton;
+        [SerializeField] private MonoBehaviour saveCuePlayerSource;
 
         private readonly INetworkPlayerOptionsStore optionsStore =
             NetworkPlayerOptionsStore.Shared;
         private bool setupValid;
         private readonly List<Vector2Int> resolutions = new();
+        private INetworkAudioCuePlayer saveCuePlayer;
 
         public event Action Closed;
 
@@ -31,6 +34,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Input
 
         private void Awake()
         {
+            saveCuePlayer = saveCuePlayerSource as INetworkAudioCuePlayer;
             setupValid = ValidateSetup();
             if (!setupValid)
             {
@@ -84,6 +88,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Input
             }
 
             panelRoot.SetActive(false);
+            PlaySaveCue();
             Closed?.Invoke();
         }
 
@@ -191,7 +196,8 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Input
                 && rebindPanel != null
                 && windowModeDropdown != null
                 && resolutionDropdown != null
-                && closeButton != null)
+                && closeButton != null
+                && saveCuePlayer != null)
             {
                 return true;
             }
@@ -200,9 +206,18 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Input
                 $"PHS_NETWORK_OPTIONS_SETUP_FAILED panel={name} root={panelRoot != null} " +
                 $"rebind={rebindPanel != null} windowMode={windowModeDropdown != null} " +
                 $"resolution={resolutionDropdown != null} " +
-                $"close={closeButton != null}",
+                $"close={closeButton != null} saveCuePlayer={saveCuePlayer != null}",
                 this);
             return false;
+        }
+
+        private void PlaySaveCue()
+        {
+            if (!saveCuePlayer.TryPlay(NetworkAudioCue.OptionsSaved, out var reason)
+                && reason != "cue_cooldown")
+            {
+                Debug.LogError($"PHS_OPTIONS_AUDIO_PLAY_FAILED reason={reason} panel={name}", this);
+            }
         }
     }
 }

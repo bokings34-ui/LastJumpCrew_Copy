@@ -2,6 +2,7 @@ using System.Collections.Generic;
 using LastJumpCrew.ParkHanSol.Items;
 using LastJumpCrew.ParkHanSol.Multiplayer;
 using LastJumpCrew.ParkHanSol.Shop;
+using LastJumpCrew.ParkHanSol.Multiplayer.Audio;
 using Unity.Collections;
 using Unity.Netcode;
 using UnityEngine;
@@ -17,6 +18,7 @@ namespace LastJumpCrew.ParkHanSol.Interaction
         [SerializeField] private string debrisTag = "Debris";
         [SerializeField, Min(0.1f)] private float maximumSaleDistance = 6f;
         [SerializeField, Min(0.05f)] private float retrySeconds = 0.25f;
+        [SerializeField] private MonoBehaviour successCuePlayerSource;
 
         private readonly HashSet<DebrisItem> pendingItems = new();
         private readonly HashSet<string> soldItemIds = new();
@@ -24,11 +26,17 @@ namespace LastJumpCrew.ParkHanSol.Interaction
         private IShopWallet shopWallet;
         private bool networkSalePending;
         private float nextNetworkSaleTime;
+        private INetworkAudioCuePlayer successCuePlayer;
 
         private void Awake()
         {
             shopWallet = shopWalletSource as IShopWallet;
+            successCuePlayer = successCuePlayerSource as INetworkAudioCuePlayer;
             ValidateSetup();
+            if (successCuePlayer == null)
+            {
+                Debug.LogError($"PHS_DEBRIS_AUDIO_SETUP_FAILED reason=cue_player_missing zone={name}", this);
+            }
         }
 
         private void OnTriggerEnter(Collider other)
@@ -103,6 +111,7 @@ namespace LastJumpCrew.ParkHanSol.Interaction
 
                 soldItemIds.Add(debrisInstanceId);
                 Debug.Log($"PHS_DEBRIS_SOLD zone={name} debris={debrisItem.name} value={debrisItem.Value}");
+                PlayDepositCue();
 
                 // 월드 데브리만 여기서 직접 제거한다. 손에 든 데브리는 Holder가
                 // 모델, 보유 데이터, HUD를 한 번에 정리한다.
@@ -181,6 +190,7 @@ namespace LastJumpCrew.ParkHanSol.Interaction
             }
 
             Debug.Log($"PHS_DEBRIS_SOLD zone={name} debris={debrisItem.name} value={itemData.Price} method=thrown");
+            PlayDepositCueClientRpc();
             var debrisNetworkObject = debrisItem.GetComponent<NetworkObject>();
             if (debrisNetworkObject != null && debrisNetworkObject.IsSpawned)
             {
@@ -358,6 +368,8 @@ namespace LastJumpCrew.ParkHanSol.Interaction
                 return;
             }
 
+            PlayDepositCue();
+
             var networkManager = NetworkManager.Singleton;
             var localPlayer = networkManager == null ? null : networkManager.LocalClient?.PlayerObject;
             var itemHolder = localPlayer == null ? null : localPlayer.GetComponent<TempPlayerItemHolder>();
@@ -366,6 +378,27 @@ namespace LastJumpCrew.ParkHanSol.Interaction
                 Debug.LogError(
                     $"PHS_DEBRIS_SELL_CLIENT_APPLY_FAILED reason=held_item_consume_failed zone={name} item={itemId}",
                     this);
+            }
+        }
+
+        [ClientRpc]
+        private void PlayDepositCueClientRpc()
+        {
+            PlayDepositCue();
+        }
+
+        private void PlayDepositCue()
+        {
+            if (successCuePlayer == null)
+            {
+                Debug.LogError($"PHS_DEBRIS_AUDIO_PLAY_FAILED reason=cue_player_missing zone={name}", this);
+                return;
+            }
+
+            if (!successCuePlayer.TryPlay(NetworkAudioCue.DebrisDeposit, out var reason)
+                && reason != "cue_cooldown")
+            {
+                Debug.LogError($"PHS_DEBRIS_AUDIO_PLAY_FAILED reason={reason} zone={name}", this);
             }
         }
 

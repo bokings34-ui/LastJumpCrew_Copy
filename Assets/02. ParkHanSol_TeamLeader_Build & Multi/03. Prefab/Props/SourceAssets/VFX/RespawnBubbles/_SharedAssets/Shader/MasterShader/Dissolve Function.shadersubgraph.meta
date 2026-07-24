@@ -10,8 +10,9 @@ ScriptedImporter:
   script: {fileID: 11500000, guid: 60072b568d64c40a485e0fc55012dc9f, type: 3}
 AssetOrigin:
   serializedVersion: 1
-  productId: 270114
-  packageName: Stylized Water Effect Pack
+  productId: 248665
+  packageName: Simple Stylized Slash Pack 2
   packageVersion: 1.0
-  assetPath: Assets/NamuFX/_SharedAssets/Shader/MasterShader/Dissolve Function.shadersubgraph
-  uploadId: 640167
+  assetPath: Assets/02. ParkHanSol_TeamLeader_Build & Multi/03. Prefab/Props/SourceAssets/VFX/RespawnBubbles/_SharedAssets/Shader/MasterShader/Dissolve
+    Function.shadersubgraph
+  uploadId: 584375

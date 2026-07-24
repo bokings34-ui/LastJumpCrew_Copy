@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using TMPro;
 using UnityEngine;
+using UnityEngine.UI;
 using LastJumpCrew.ParkHanSol.Multiplayer.ShipAccidents;
 
 namespace LastJumpCrew.ParkHanSol.Multiplayer.Events
@@ -9,6 +10,60 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Events
     [DisallowMultipleComponent]
     public sealed class PHSNetworkEventHudView : MonoBehaviour, INetworkEventHudView
     {
+        [Serializable]
+        private sealed class AccidentIconEntry
+        {
+            [SerializeField] private PHSShipAccidentId accidentId;
+            [SerializeField] private GameObject root;
+            [SerializeField] private Image iconImage;
+            [SerializeField] private Image progressFill;
+
+            public PHSShipAccidentId AccidentId => accidentId;
+
+            public bool Validate(PHSNetworkEventHudView owner, int index)
+            {
+                var valid = accidentId != PHSShipAccidentId.None
+                    && root != null
+                    && iconImage != null
+                    && iconImage.sprite != null
+                    && progressFill != null;
+                if (!valid)
+                {
+                    Debug.LogError(
+                        $"PHS_EVENT_HUD_ACCIDENT_ICON_SETUP_FAILED view={owner.name} index={index} accident={accidentId} root={root != null} icon={iconImage != null} sprite={iconImage != null && iconImage.sprite != null} progress={progressFill != null}",
+                        owner);
+                }
+
+                return valid;
+            }
+
+            public void Apply(PHSShipAccidentHudLine line)
+            {
+                root.SetActive(true);
+                var required = Mathf.Max(1, line.RequiredRepairProgress);
+                var normalized = Mathf.Clamp01(
+                    line.RepairProgress / (float)required);
+                progressFill.fillAmount = normalized;
+                progressFill.color = Color.Lerp(
+                    new Color(1f, 0.28f, 0.08f, 1f),
+                    new Color(0.15f, 1f, 0.85f, 1f),
+                    normalized);
+            }
+
+            public void Clear()
+            {
+                if (root != null)
+                {
+                    root.SetActive(false);
+                }
+
+                if (progressFill != null)
+                {
+                    progressFill.fillAmount = 0f;
+                }
+            }
+        }
+
         [Serializable]
         private sealed class RoomViewEntry
         {
@@ -78,7 +133,9 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Events
 
         [Header("Dedicated Event Alert (do not reuse hazard/gravity panel)")]
         [SerializeField] private GameObject eventAlertRoot;
-        [SerializeField] private TMP_Text eventAlertText;
+        [SerializeField] private GameObject accidentIconRoot;
+        [SerializeField] private AccidentIconEntry[] accidentIconEntries =
+            new AccidentIconEntry[7];
 
         [Header("Dedicated Ship Map")]
         [SerializeField] private GameObject shipMapRoot;
@@ -88,11 +145,12 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Events
         private readonly Dictionary<string, RoomViewEntry> roomViewsById =
             new(StringComparer.Ordinal);
         private readonly HashSet<string> missingRoomMappingsLogged = new(StringComparer.Ordinal);
+        private readonly Dictionary<PHSShipAccidentId, AccidentIconEntry>
+            accidentIconsById = new();
 
         private bool hasValidatedSetup;
         private bool isConfigured;
-        private string externalAlertText = string.Empty;
-        private string internalAccidentAlertText = string.Empty;
+        private bool hasInternalAccidentIcons;
         private string currentMapText = string.Empty;
 
         public bool IsConfigured
@@ -135,7 +193,6 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Events
                 return;
             }
 
-            externalAlertText = viewModel.AlertText;
             RefreshAlertText();
 
             foreach (var roomView in roomViews)
@@ -177,8 +234,8 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Events
 
         public void HideOffline()
         {
-            externalAlertText = string.Empty;
-            internalAccidentAlertText = string.Empty;
+            hasInternalAccidentIcons = false;
+            ClearAccidentIcons();
             RefreshAlertText();
             if (shipMapRoot != null) shipMapRoot.SetActive(false);
 
@@ -200,45 +257,46 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Events
                 return;
             }
 
+            ClearAccidentIcons();
             if (lines == null || lines.Count == 0)
             {
-                internalAccidentAlertText = string.Empty;
+                hasInternalAccidentIcons = false;
                 RefreshAlertText();
                 return;
             }
 
-            var builder = new System.Text.StringBuilder(128);
+            hasInternalAccidentIcons = false;
             foreach (var line in lines)
             {
-                if (builder.Length > 0)
+                if (!accidentIconsById.TryGetValue(
+                        line.AccidentId,
+                        out var iconEntry))
                 {
-                    builder.Append('\n');
+                    Debug.LogError(
+                        $"PHS_EVENT_HUD_ACCIDENT_ICON_FAILED reason=mapping_missing view={name} accident={line.AccidentId}",
+                        this);
+                    continue;
                 }
 
-                builder.Append("• ");
-                builder.Append(line.DisplayName);
-                builder.Append(" · ");
-                builder.Append(line.ModuleName);
+                iconEntry.Apply(line);
+                hasInternalAccidentIcons = true;
             }
 
-            internalAccidentAlertText = builder.ToString();
             RefreshAlertText();
         }
 
         private void RefreshAlertText()
         {
-            if (eventAlertRoot == null || eventAlertText == null)
+            if (eventAlertRoot == null)
             {
                 return;
             }
 
-            var text = string.IsNullOrWhiteSpace(externalAlertText)
-                ? internalAccidentAlertText
-                : string.IsNullOrWhiteSpace(internalAccidentAlertText)
-                    ? externalAlertText
-                    : $"{externalAlertText}\n{internalAccidentAlertText}";
-            eventAlertRoot.SetActive(!string.IsNullOrWhiteSpace(text));
-            eventAlertText.text = text;
+            eventAlertRoot.SetActive(hasInternalAccidentIcons);
+            if (accidentIconRoot != null)
+            {
+                accidentIconRoot.SetActive(hasInternalAccidentIcons);
+            }
         }
 
         private void RefreshCurrentMapText()
@@ -264,10 +322,42 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Events
                 valid = false;
             }
 
-            if (eventAlertText == null)
+            if (accidentIconRoot == null)
             {
-                Debug.LogError($"PHS_EVENT_HUD_VIEW_SETUP_FAILED reason=event_alert_text_missing view={name}", this);
+                Debug.LogError(
+                    $"PHS_EVENT_HUD_VIEW_SETUP_FAILED reason=accident_icon_root_missing view={name}",
+                    this);
                 valid = false;
+            }
+
+            if (accidentIconEntries == null
+                || accidentIconEntries.Length != 7)
+            {
+                Debug.LogError(
+                    $"PHS_EVENT_HUD_VIEW_SETUP_FAILED reason=accident_icon_count_invalid view={name} actual={accidentIconEntries?.Length ?? 0} expected=7",
+                    this);
+                valid = false;
+            }
+            else
+            {
+                accidentIconsById.Clear();
+                for (var index = 0; index < accidentIconEntries.Length; index++)
+                {
+                    var entry = accidentIconEntries[index];
+                    if (entry == null || !entry.Validate(this, index))
+                    {
+                        valid = false;
+                        continue;
+                    }
+
+                    if (!accidentIconsById.TryAdd(entry.AccidentId, entry))
+                    {
+                        Debug.LogError(
+                            $"PHS_EVENT_HUD_VIEW_SETUP_FAILED reason=accident_icon_duplicate view={name} accident={entry.AccidentId}",
+                            this);
+                        valid = false;
+                    }
+                }
             }
 
             if (shipMapRoot == null)
@@ -327,6 +417,19 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Events
 
             hasValidatedSetup = true;
             isConfigured = ValidateSetup();
+        }
+
+        private void ClearAccidentIcons()
+        {
+            if (accidentIconEntries == null)
+            {
+                return;
+            }
+
+            foreach (var entry in accidentIconEntries)
+            {
+                entry?.Clear();
+            }
         }
     }
 }

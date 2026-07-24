@@ -25,6 +25,7 @@ namespace LastJumpCrew.ParkHanSol.Items
         [SerializeField] private GameObject sphereRangePrefab;
         [SerializeField] private GameObject castRangePrefab;
         [SerializeField] private GameObject targetFeedbackPrefab;
+        [SerializeField] private GameObject wrenchTargetFeedbackPrefab;
         [SerializeField, Min(0.05f)] private float rangeLifetimeSeconds = 0.45f;
         [SerializeField, Min(0.05f)] private float targetLifetimeSeconds = 0.75f;
         [SerializeField, Min(1f)] private float maximumFeedbackDistance = 8f;
@@ -41,10 +42,13 @@ namespace LastJumpCrew.ParkHanSol.Items
 
         private void Awake()
         {
-            if (sphereRangePrefab == null || castRangePrefab == null || targetFeedbackPrefab == null)
+            if (sphereRangePrefab == null
+                || castRangePrefab == null
+                || targetFeedbackPrefab == null
+                || wrenchTargetFeedbackPrefab == null)
             {
                 Debug.LogError(
-                    $"PHS_ITEM_FEEDBACK_SETUP_FAILED player={name} sphere={sphereRangePrefab != null} cast={castRangePrefab != null} target={targetFeedbackPrefab != null}",
+                    $"PHS_ITEM_FEEDBACK_SETUP_FAILED player={name} sphere={sphereRangePrefab != null} cast={castRangePrefab != null} target={targetFeedbackPrefab != null} wrenchTarget={wrenchTargetFeedbackPrefab != null}",
                     this);
                 enabled = false;
             }
@@ -320,8 +324,17 @@ namespace LastJumpCrew.ParkHanSol.Items
 
             for (var index = 0; index < targetPositions.Length; index++)
             {
+                var targetPrefab = ResolveTargetFeedbackPrefab(kind);
+                if (targetPrefab == null)
+                {
+                    Debug.LogError(
+                        $"PHS_ITEM_FEEDBACK_FAILED reason=target_prefab_missing kind={kind} player={name}",
+                        this);
+                    return;
+                }
+
                 var targetInstance = Instantiate(
-                    targetFeedbackPrefab,
+                    targetPrefab,
                     targetPositions[index],
                     Quaternion.identity);
                 ApplyFeedbackColor(targetInstance, ResolveTargetColor(kind));
@@ -398,6 +411,14 @@ namespace LastJumpCrew.ParkHanSol.Items
                 propertyBlock.SetColor("_EmissionColor", color * 2f);
                 renderer.SetPropertyBlock(propertyBlock);
             }
+        }
+
+        private GameObject ResolveTargetFeedbackPrefab(
+            PHSItemUseFeedbackKind kind)
+        {
+            return kind == PHSItemUseFeedbackKind.Wrench
+                ? wrenchTargetFeedbackPrefab
+                : targetFeedbackPrefab;
         }
     }
 }

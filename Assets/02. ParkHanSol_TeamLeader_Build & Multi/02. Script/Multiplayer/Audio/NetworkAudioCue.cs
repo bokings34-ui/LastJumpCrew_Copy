@@ -23,6 +23,17 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Audio
         FoamAttach = 18,
         FoamHarden = 19,
         FoamSealComplete = 20,
-        FoamFireComplete = 21
+        FoamFireComplete = 21,
+        DebrisDeposit = 22,
+        FootstepWalk = 23,
+        FootstepRun = 24,
+        PlayerJump = 25,
+        MissionSuccess = 26,
+        VendingInteraction = 27,
+        InteractionFocus = 28,
+        OptionsSaved = 29,
+        WarpStart = 30,
+        WarpEnd = 31,
+        AccidentAppeared = 32
     }
 }

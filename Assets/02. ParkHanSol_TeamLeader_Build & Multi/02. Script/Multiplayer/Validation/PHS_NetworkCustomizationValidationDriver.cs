@@ -132,9 +132,9 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Validation
                 "normal_default_color",
                 $"actual={service.BodyColor}");
             Require(
-                service.PersonalCreditsWallet.CurrentCredits == 300,
+                service.CurrentCredits == 300,
                 "normal_starting_credits",
-                $"actual={service.PersonalCreditsWallet.CurrentCredits}");
+                $"actual={service.CurrentCredits}");
             if (failed)
             {
                 yield break;
@@ -176,7 +176,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Validation
                 yield break;
             }
 
-            var creditsBeforePurchase = service.PersonalCreditsWallet.CurrentCredits;
+            var creditsBeforePurchase = service.CurrentCredits;
             if (!service.TryRequestPurchase(item.ItemId, out reason))
             {
                 Fail("purchase_request", reason);
@@ -185,7 +185,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Validation
 
             yield return WaitForCondition(
                 () => service.OwnsItem(item.ItemId)
-                    && service.PersonalCreditsWallet.CurrentCredits
+                    && service.CurrentCredits
                     == creditsBeforePurchase - item.Price,
                 "purchase_owned_and_debited");
             if (failed)
@@ -221,8 +221,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Validation
         {
             yield return WaitForCondition(
                 () => !string.IsNullOrWhiteSpace(service.ProfileFailureReason)
-                    && !string.IsNullOrWhiteSpace(
-                        service.PersonalCreditsWallet.ProfileFailureReason),
+                    && !string.IsNullOrWhiteSpace(service.CreditsFailureReason),
                 "corrupt_failure_reasons");
             if (failed)
             {
@@ -238,11 +237,11 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Validation
                 "corrupt_appearance_reason",
                 service.ProfileFailureReason);
             Require(
-                service.PersonalCreditsWallet.ProfileFailureReason.Contains(
+                service.CreditsFailureReason.Contains(
                     "saved_credits_out_of_range",
                     StringComparison.Ordinal),
                 "corrupt_credits_reason",
-                service.PersonalCreditsWallet.ProfileFailureReason);
+                service.CreditsFailureReason);
             if (failed)
             {
                 yield break;
@@ -323,7 +322,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Validation
             INetworkLobbyCustomizationService service)
         {
             CosmeticItemData selected = null;
-            var credits = service.PersonalCreditsWallet.CurrentCredits;
+            var credits = service.CurrentCredits;
             foreach (var item in service.Catalog.Items)
             {
                 if (item == null

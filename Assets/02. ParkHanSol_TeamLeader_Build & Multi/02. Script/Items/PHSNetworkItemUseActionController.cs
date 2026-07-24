@@ -191,15 +191,47 @@ namespace LastJumpCrew.ParkHanSol.Items
             var elapsed = 0f;
             var impactSent = false;
 
+            if (actionKind == PHSItemUseActionKind.Wrench)
+            {
+                var slashPresenter = visual.GetComponentInChildren<
+                    PHSWrenchSlashPresenter>(true);
+                if (slashPresenter == null)
+                {
+                    Debug.LogError(
+                        $"PHS_WRENCH_SLASH_FAILED reason=presenter_missing player={name}",
+                        visual);
+                }
+                else
+                {
+                    slashPresenter.Play();
+                }
+            }
+            else if (actionKind == PHSItemUseActionKind.FireExtinguisher)
+            {
+                var sprayPresenter = visual.GetComponentInChildren<
+                    PHSFireExtinguisherSprayPresenter>(true);
+                if (sprayPresenter == null)
+                {
+                    Debug.LogError(
+                        $"PHS_EXTINGUISHER_SPRAY_FAILED reason=presenter_missing player={name}",
+                        visual);
+                }
+                else
+                {
+                    sprayPresenter.TryPlay(duration);
+                }
+            }
+
             while (elapsed < duration && visual != null)
             {
                 elapsed += Time.deltaTime;
                 var normalized = Mathf.Clamp01(elapsed / duration);
-                var arc = Mathf.Sin(normalized * Mathf.PI);
-                visual.localPosition = initialPosition
-                    + new Vector3(0f, -0.025f * arc, 0.035f * arc);
-                visual.localRotation = initialRotation
-                    * Quaternion.Euler(-swingDegrees * arc, 0f, rollDegrees * arc);
+                ApplyVisualPose(
+                    actionKind,
+                    visual,
+                    initialPosition,
+                    initialRotation,
+                    normalized);
 
                 if (!impactSent && normalized >= impactNormalizedTime)
                 {
@@ -221,6 +253,73 @@ namespace LastJumpCrew.ParkHanSol.Items
             }
 
             ClearRoutine(localAction);
+        }
+
+        private void ApplyVisualPose(
+            PHSItemUseActionKind actionKind,
+            Transform visual,
+            Vector3 initialPosition,
+            Quaternion initialRotation,
+            float normalizedTime)
+        {
+            if (actionKind == PHSItemUseActionKind.FireExtinguisher)
+            {
+                visual.SetLocalPositionAndRotation(
+                    initialPosition,
+                    initialRotation);
+                return;
+            }
+
+            if (actionKind == PHSItemUseActionKind.Wrench)
+            {
+                var yaw = ResolveWrenchYaw(normalizedTime);
+                var arc = Mathf.Sin(normalizedTime * Mathf.PI);
+                visual.localPosition = initialPosition
+                    + new Vector3(0.035f * yaw / swingDegrees, -0.012f * arc, 0.025f * arc);
+                visual.localRotation = initialRotation
+                    * Quaternion.Euler(0f, yaw, -rollDegrees * arc);
+                return;
+            }
+
+            var genericArc = Mathf.Sin(normalizedTime * Mathf.PI);
+            visual.localPosition = initialPosition
+                + new Vector3(0f, -0.025f * genericArc, 0.035f * genericArc);
+            visual.localRotation = initialRotation
+                * Quaternion.Euler(
+                    -swingDegrees * genericArc,
+                    0f,
+                    rollDegrees * genericArc);
+        }
+
+        private float ResolveWrenchYaw(float normalizedTime)
+        {
+            const float windupEnd = 0.22f;
+            const float strikeEnd = 0.72f;
+            var windupYaw = -swingDegrees * 0.45f;
+
+            if (normalizedTime <= windupEnd)
+            {
+                var windup = Mathf.SmoothStep(
+                    0f,
+                    1f,
+                    normalizedTime / windupEnd);
+                return Mathf.Lerp(0f, windupYaw, windup);
+            }
+
+            if (normalizedTime <= strikeEnd)
+            {
+                var strike = Mathf.SmoothStep(
+                    0f,
+                    1f,
+                    (normalizedTime - windupEnd) / (strikeEnd - windupEnd));
+                return Mathf.Lerp(windupYaw, swingDegrees, strike);
+            }
+
+            var recovery = Mathf.SmoothStep(
+                0f,
+                1f,
+                (normalizedTime - strikeEnd) / (1f - strikeEnd));
+            return Mathf.Lerp(swingDegrees, 0f, recovery);
         }
 
         private void ClearRoutine(bool localAction)

@@ -384,7 +384,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
                 return roomName.Trim();
             }
 
-            return $"Host-{UnityEngine.Random.Range(100000, 1000000)}";
+            return $"HOST {UnityEngine.Random.Range(10, 100):00}'S ROOM";
         }
 
         private bool ValidatePassword(string password)

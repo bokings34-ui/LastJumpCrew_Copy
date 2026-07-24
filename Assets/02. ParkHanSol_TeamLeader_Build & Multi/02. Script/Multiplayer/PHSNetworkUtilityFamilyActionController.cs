@@ -33,6 +33,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
         private PHSNetworkItemInteractionAudioRelay interactionAudio;
         private uint ownerSequence;
         private uint lastServerSequence;
+        private uint serverTargetSequence;
         private double nextWrenchServerTime;
         private double nextExtinguisherServerTime;
 
@@ -188,6 +189,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
 
             candidates.Sort((left, right) =>
                 left.Distance.CompareTo(right.Distance));
+            var resolvedAny = false;
             foreach (var candidate in candidates)
             {
                 if (!HasLineOfSight(origin, candidate))
@@ -195,17 +197,26 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
                     continue;
                 }
 
+                var actionRevision = familyKind
+                    == PHSUtilityFamilyActionKind.FireExtinguisher
+                        ? itemRecord.Revision
+                        : expectedRevision;
                 if (!itemLifecycle.TryResolveHeldItemActionServer(
                         itemData.ItemId,
-                        expectedRevision,
+                        actionRevision,
                         candidate.ActionKind,
                         out _))
                 {
-                    return false;
+                    return resolvedAny;
                 }
 
-                if (candidate.TryResolve(itemRecord, requestSequence, gameObject))
+                var targetSequence = familyKind
+                    == PHSUtilityFamilyActionKind.FireExtinguisher
+                        ? NextServerTargetSequence(requestSequence)
+                        : requestSequence;
+                if (candidate.TryResolve(itemRecord, targetSequence, gameObject))
                 {
+                    resolvedAny = true;
                     if (familyKind == PHSUtilityFamilyActionKind.Wrench)
                     {
                         interactionAudio?.TryBroadcastConfirmedServer(
@@ -227,11 +238,30 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
                             requestSequence);
                     }
 
-                    return true;
+                    if (familyKind == PHSUtilityFamilyActionKind.Wrench)
+                    {
+                        return true;
+                    }
                 }
             }
 
-            return false;
+            return resolvedAny;
+        }
+
+        private uint NextServerTargetSequence(uint requestSequence)
+        {
+            if (serverTargetSequence < requestSequence)
+            {
+                serverTargetSequence = requestSequence;
+            }
+
+            serverTargetSequence++;
+            if (serverTargetSequence == 0U)
+            {
+                serverTargetSequence = 1U;
+            }
+
+            return serverTargetSequence;
         }
 
         private static bool TryCreateCandidate(

@@ -30,6 +30,10 @@ namespace LastJumpCrew.ParkHanSol.Editor
         private const string CreatePanelName = "Create Room Panel";
         private const string ListPanelName = "Room List Panel";
         private const string PasswordPanelName = "Password Panel";
+        private const string BrowserSubtitle =
+            "CREATE OR JOIN A CREW ROOM";
+        private const string BrowserJoinLabel = "";
+        private const string RoomReadyLabel = "ROOM NAME";
 
         [MenuItem("Tools/ParkHanSol/BEAVER/Restore Manual Room Browser")]
         public static void Author()
@@ -182,6 +186,8 @@ namespace LastJumpCrew.ParkHanSol.Editor
                     passwordPanel.gameObject,
                     roomEntry);
                 SetObject(controller, "roomBrowser", browser);
+                RemoveLegacyInviteCodeUi(actionPanel);
+                RewriteRoomBrowserCopy(targetRoot.transform);
 
                 PrefabUtility.SaveAsPrefabAsset(
                     targetRoot,
@@ -192,6 +198,68 @@ namespace LastJumpCrew.ParkHanSol.Editor
                 PrefabUtility.UnloadPrefabContents(targetRoot);
                 PrefabUtility.UnloadPrefabContents(sourceRoot);
             }
+        }
+
+        private static void RemoveLegacyInviteCodeUi(Transform actionPanel)
+        {
+            var legacyInput = actionPanel.Find("Join Code Input");
+            if (legacyInput == null)
+            {
+                return;
+            }
+
+            if (legacyInput.parent != actionPanel
+                || legacyInput.GetComponent<TMP_InputField>() == null)
+            {
+                throw Failure("legacy_join_code_input_contract_invalid");
+            }
+
+            UnityEngine.Object.DestroyImmediate(legacyInput.gameObject);
+        }
+
+        private static void RewriteRoomBrowserCopy(Transform root)
+        {
+            RewriteText(
+                root,
+                "Lobby Panel/Lobby Action Panel/Subtitle",
+                "CREATE ROOM OR JOIN WITH CODE",
+                BrowserSubtitle);
+            RewriteText(
+                root,
+                "Lobby Panel/Lobby Action Panel/Join Label",
+                "ROOM CODE",
+                BrowserJoinLabel);
+            var joinLabel = RequireComponent<TMP_Text>(
+                root,
+                "Lobby Panel/Lobby Action Panel/Join Label");
+            joinLabel.gameObject.SetActive(false);
+            RewriteText(
+                root,
+                "Room Panel/Player List Panel/Room Name Text",
+                "CODE  LOCAL",
+                RoomReadyLabel);
+        }
+
+        private static void RewriteText(
+            Transform root,
+            string path,
+            string legacyText,
+            string replacementText)
+        {
+            var label = RequireComponent<TMP_Text>(root, path);
+            if (string.Equals(label.text, replacementText, StringComparison.Ordinal))
+            {
+                return;
+            }
+
+            if (!string.Equals(label.text, legacyText, StringComparison.Ordinal))
+            {
+                throw Failure(
+                    $"legacy_copy_unexpected path={path} text={label.text}");
+            }
+
+            label.text = replacementText;
+            EditorUtility.SetDirty(label);
         }
 
         private static Transform ClonePanel(
@@ -288,8 +356,18 @@ namespace LastJumpCrew.ParkHanSol.Editor
 
         private static void WireLobbySceneRoomService()
         {
-            if (SceneManager.GetSceneByPath(LobbyScenePath).isLoaded)
+            var loadedScene = SceneManager.GetSceneByPath(LobbyScenePath);
+            if (loadedScene.isLoaded)
             {
+                if (loadedScene.isDirty)
+                {
+                    ValidateLoadedDirtyLobbySceneRoomService(loadedScene);
+                    Debug.Log(
+                        "PHS_ROOM_BROWSER_RECOVERY_SCENE_PRESERVED " +
+                        $"scene={LobbyScenePath} dirty=true room_service=valid");
+                    return;
+                }
+
                 throw Failure("lobby_scene_already_loaded");
             }
 
@@ -321,6 +399,39 @@ namespace LastJumpCrew.ParkHanSol.Editor
             finally
             {
                 EditorSceneManager.CloseScene(scene, true);
+            }
+        }
+
+        private static void ValidateLoadedDirtyLobbySceneRoomService(
+            Scene scene)
+        {
+            var browsers = scene.GetRootGameObjects()
+                .SelectMany(root => root.GetComponentsInChildren<
+                    MultiplayerRoomBrowser>(true))
+                .ToArray();
+            var services = scene.GetRootGameObjects()
+                .SelectMany(root => root.GetComponentsInChildren<
+                    MultiplayerRoomService>(true))
+                .ToArray();
+            if (browsers.Length != 1 || services.Length != 1)
+            {
+                throw Failure(
+                    $"loaded_dirty_scene_contract browsers={browsers.Length} services={services.Length}");
+            }
+
+            var browserState = new SerializedObject(browsers[0]);
+            var roomServiceProperty = browserState.FindProperty("roomService");
+            if (roomServiceProperty == null)
+            {
+                throw Failure(
+                    "loaded_dirty_scene_property_missing property=roomService");
+            }
+
+            if (roomServiceProperty.objectReferenceValue != services[0])
+            {
+                throw Failure(
+                    "loaded_dirty_scene_room_service_invalid " +
+                    $"assigned={roomServiceProperty.objectReferenceValue != null} expected={services[0].name}");
             }
         }
 

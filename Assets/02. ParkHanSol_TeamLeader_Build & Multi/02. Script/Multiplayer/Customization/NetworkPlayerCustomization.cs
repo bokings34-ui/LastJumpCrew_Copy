@@ -11,10 +11,10 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Customization
         NetworkBehaviour,
         INetworkLobbyCustomizationService
     {
-        private const string OwnedItemsPreferenceKey = "PHS_CosmeticOwnedItems_v1";
-        private const string HeadPreferenceKey = "PHS_CosmeticHead_v1";
-        private const string BackPreferenceKey = "PHS_CosmeticBack_v1";
-        private const string ColorPreferenceKey = "PHS_CosmeticColor_v1";
+        private const string OwnedItemsPreferenceKey = LobbyCustomizationProfileKeys.OwnedItems;
+        private const string HeadPreferenceKey = LobbyCustomizationProfileKeys.Head;
+        private const string BackPreferenceKey = LobbyCustomizationProfileKeys.Back;
+        private const string ColorPreferenceKey = LobbyCustomizationProfileKeys.Color;
 
         [SerializeField] private CosmeticCatalog catalog;
         [SerializeField] private PersonalLobbyCustomizationCreditsWallet personalCreditsWallet;
@@ -40,7 +40,14 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Customization
         public event Action PreviewChanged;
 
         public CosmeticCatalog Catalog => catalog;
-        public PersonalLobbyCustomizationCreditsWallet PersonalCreditsWallet => personalCreditsWallet;
+        public PersonalLobbyCustomizationCreditsWallet PersonalCreditsWallet =>
+            personalCreditsWallet;
+        public int CurrentCredits => personalCreditsWallet != null
+            ? personalCreditsWallet.CurrentCredits
+            : 0;
+        public string CreditsFailureReason => personalCreditsWallet != null
+            ? personalCreditsWallet.ProfileFailureReason
+            : "credits_wallet_missing";
         public bool IsProfileReady => ownerProfileReady
             && personalCreditsWallet != null
             && personalCreditsWallet.IsProfileReady;

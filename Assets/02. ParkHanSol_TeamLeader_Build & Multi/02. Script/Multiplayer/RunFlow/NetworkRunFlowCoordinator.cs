@@ -12,6 +12,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
 {
     [RequireComponent(typeof(NetworkObject))]
     [RequireComponent(typeof(NetworkRunStageClock))]
+    [RequireComponent(typeof(NetworkGameOverSequenceCoordinator))]
     public sealed class NetworkRunFlowCoordinator : NetworkBehaviour, IRunFlowStatus
     {
         [Header("Run Rules")]
@@ -74,6 +75,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
         private readonly HashSet<ulong> warpRevivePlayerIds = new();
         private IGameStateProvider gameState;
         private IGameCommands gameCommands;
+        private NetworkGameOverSequenceCoordinator gameOverSequence;
         private float chargeElapsed;
         private float rearmElapsed;
         private float nextBindAttemptTime;
@@ -221,6 +223,16 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
             }
 
             Instance = this;
+            gameOverSequence = GetComponent<NetworkGameOverSequenceCoordinator>();
+            if (gameOverSequence == null)
+            {
+                Debug.LogError(
+                    $"PHS_RUN_FLOW_SETUP_FAILED reason=game_over_sequence_missing coordinator={name}",
+                    this);
+                enabled = false;
+                return;
+            }
+
             if (!ValidateStageClockReference() || !ValidateMapCatalog())
             {
                 enabled = false;
@@ -287,6 +299,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
             {
                 if (TryBindGameFlow() && gameState.Phase == GamePhase.GameOver)
                 {
+                    TryBeginGameOverSequenceServer();
                     SetPhase(NetworkRunPhase.GameOver);
                 }
 
@@ -545,6 +558,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
                     break;
                 case GamePhase.GameOver:
                     TryStopStageClockServer("game_over");
+                    TryBeginGameOverSequenceServer();
                     SetPhase(NetworkRunPhase.GameOver);
                     break;
             }
@@ -752,6 +766,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
                     break;
                 case GamePhase.GameOver:
                     TryStopStageClockServer("jump_completed_game_over");
+                    TryBeginGameOverSequenceServer();
                     SetPhase(NetworkRunPhase.GameOver);
                     break;
                 default:
@@ -1054,6 +1069,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
                 if (gameState != null && gameState.Phase == GamePhase.GameOver)
                 {
                     TryStopStageClockServer("game_state_changed_game_over");
+                    TryBeginGameOverSequenceServer();
                     SetPhase(NetworkRunPhase.GameOver);
                 }
             }
@@ -1107,10 +1123,30 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
             }
 
             MirrorGameState();
+            TryBeginGameOverSequenceServer();
             SetPhase(NetworkRunPhase.GameOver);
             Debug.Log(
                 $"PHS_STAGE_CLOCK_TIMEOUT_RESOLVED map={expiredSnapshot.MapId} sequence={expiredSnapshot.StageSequence} gameOver={gameState.Phase}",
                 this);
+        }
+
+        private void TryBeginGameOverSequenceServer()
+        {
+            if (!IsServer
+                || gameState == null
+                || gameState.Phase != GamePhase.GameOver
+                || gameOverSequence == null
+                || gameOverSequence.State != NetworkGameOverSequenceState.Idle)
+            {
+                return;
+            }
+
+            if (!gameOverSequence.TryBeginServer(gameState.LastGameOverReason, out var reason))
+            {
+                Debug.LogError(
+                    $"PHS_GAME_OVER_SEQUENCE_START_FAILED reason={reason} gameOverReason={gameState.LastGameOverReason}",
+                    this);
+            }
         }
 
         private bool TryStopStageClockServer(string context)
