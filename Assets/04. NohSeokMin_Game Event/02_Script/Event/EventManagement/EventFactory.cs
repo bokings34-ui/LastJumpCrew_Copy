@@ -18,8 +18,8 @@ namespace SM
                     return new MicDestroyEvent();
                 case EventId.PowerOff:
                     return new PowerOffEvent();
-
-                // TODO :: EngineBreak 구현 후 추가
+                case EventId.EngineBreak:
+                    return new EngineBreakEvent();
 
                 case EventId.MeteorAttack:
                     return new MeteorAttackEvent();
