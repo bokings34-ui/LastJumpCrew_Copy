@@ -16,8 +16,10 @@ namespace SM
                     return new OxygenLeakEvent();
                 case EventId.MicDestroy:
                     return new MicDestroyEvent();
+                case EventId.PowerOff:
+                    return new PowerOffEvent();
 
-                // TODO :: PowerOff, EngineBreak 구현 후 추가
+                // TODO :: EngineBreak 구현 후 추가
 
                 case EventId.MeteorAttack:
                     return new MeteorAttackEvent();
