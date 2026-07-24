@@ -60,11 +60,6 @@ namespace LastJumpCrew.ParkHanSol.Combat
 
             bool isPlayer = target.GetComponentInParent<NetworkPlayerController>() != null;
 
-            if(damage > 0)
-            {
-                var damageable = target.GetComponentInParent<IDamageable>();//데미지 처리
-
-
             if(!isPlayer && damage > 0)
             {
                 var damageable = target.GetComponentInParent<IDamageable>();

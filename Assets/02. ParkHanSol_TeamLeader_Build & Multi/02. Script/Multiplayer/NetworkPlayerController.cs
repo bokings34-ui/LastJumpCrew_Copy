@@ -64,6 +64,14 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
         [SerializeField] private Camera playerCamera;
         [SerializeField] private AudioListener audioListener;
         [SerializeField] private Renderer[] localOwnerHiddenRenderers;
+        [Header("Knockback")]
+        [SerializeField, Min(0f)]
+        private float groundedKnockbackRecovery = 8f;
+
+        [SerializeField, Min(0f)]
+        private float zeroGravityKnockbackRecovery = 2f;
+
+        private Vector3 externalVelocity;
 
         private CharacterController characterController;
         private NetworkPlayerGrappleController grappleController;
@@ -1011,10 +1019,6 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
             var collisionFlags = characterController.Move(zeroGravityVelocity * deltaTime);
             grappleController?.StopGrappleForBlockedPlayerMovement(collisionFlags);
 
-
-
-            var collisionFlags = characterController.Move(zeroGravityVelocity * deltaTime);
-            grappleController?.StopGrappleForBlockedPlayerMovement(collisionFlags);
 
         }
 

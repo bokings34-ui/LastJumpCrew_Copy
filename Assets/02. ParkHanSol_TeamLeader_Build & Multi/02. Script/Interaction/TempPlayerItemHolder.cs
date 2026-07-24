@@ -419,14 +419,6 @@ namespace LastJumpCrew.ParkHanSol.Interaction
                 Debug.LogError($"PHS_TEMP_ITEM_CONSUME_FAILED reason=heldItemInstance_missing player={name} item={itemId}");
                 return false;
             }
-
-
-
-            
-            ClearHeldItemState();
-
-
-
             heldItemInstance.SetActive(false);
             Destroy(heldItemInstance);
             heldItemInstance = null;
@@ -502,30 +494,6 @@ namespace LastJumpCrew.ParkHanSol.Interaction
                 Destroy(droppedItemInstance);
                 return false;
             }
-
-            Debug.Log($"PHS_TEMP_ITEM_PLACED player={name} item={currentItemPrefabData.ItemId}");
-            if (heldItemInstance != null)
-            {
-                Destroy(heldItemInstance);
-            }
-
-            heldItemInstance = null;
-            currentItemObject = null;
-            currentItemPrefabData = null;
-
-
-            RefreshHeldItemHud();
-            ReportHeldItemRecord();
-            
-        }
-
-           
-        
-
-        private void PlaceHeldDebris()
-
-            ReportHeldItemRecord();
-            RefreshHeldItemHud();
             return true;
         }
 
