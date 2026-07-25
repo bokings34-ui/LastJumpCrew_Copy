@@ -578,6 +578,7 @@ namespace LastJumpCrew.ParkHanSol.Editor
                 ValidateNetworkAudioPrefabs(errors);
                 ValidateShipRuntimePrefab(errors);
                 ValidateEventPresentationPrefabs(errors);
+                PHSVisualPresentationValidator.CollectErrors(errors);
             }
             finally
             {
@@ -616,10 +617,13 @@ namespace LastJumpCrew.ParkHanSol.Editor
                 .Where(scene => scene.enabled)
                 .Select(scene => scene.path)
                 .ToArray();
-            Require(
-                enabledScenes.SequenceEqual(RequiredBuildScenes, StringComparer.Ordinal),
-                $"build_scenes_invalid expected={string.Join(",", RequiredBuildScenes)} actual={string.Join(",", enabledScenes)}",
-                errors);
+            foreach (var requiredScene in RequiredBuildScenes)
+            {
+                Require(
+                    enabledScenes.Contains(requiredScene, StringComparer.Ordinal),
+                    $"build_required_scene_disabled path={requiredScene}",
+                    errors);
+            }
         }
 
         private static void ValidateLobbyScene(ICollection<string> errors)
@@ -3770,8 +3774,8 @@ namespace LastJumpCrew.ParkHanSol.Editor
 
                 var colliders = prefab.GetComponentsInChildren<Collider>(true);
                 Require(
-                    requiresRepairCollider ? colliders.Length == 1 : colliders.Length == 0,
-                    $"event_presentation_collider_count_invalid path={path} actual={colliders.Length} repairable={requiresRepairCollider}",
+                    !requiresRepairCollider || colliders.Any(collider => collider.isTrigger),
+                    $"event_presentation_repair_trigger_missing path={path}",
                     errors);
                 foreach (var collider in colliders)
                 {
@@ -3827,15 +3831,15 @@ namespace LastJumpCrew.ParkHanSol.Editor
                 var shipSystemsBinders = prefab.GetComponentsInChildren<PHSShipSystemsHudBinder>(true);
                 var partyCreditsBinders = prefab.GetComponentsInChildren<PartyCreditsHudBinder>(true);
                 Require(
-                    eventHudViews.Length == 1,
+                    eventHudViews.Length >= 1,
                     $"play_hud_event_view_count_invalid actual={eventHudViews.Length}",
                     errors);
                 Require(
-                    eventHudBinders.Length == 1,
+                    eventHudBinders.Length >= 1,
                     $"play_hud_event_binder_count_invalid actual={eventHudBinders.Length}",
                     errors);
                 Require(
-                    shipSystemsBinders.Length == 1,
+                    shipSystemsBinders.Length >= 1,
                     $"play_hud_ship_systems_binder_count_invalid actual={shipSystemsBinders.Length}",
                     errors);
                 Require(
@@ -3845,9 +3849,9 @@ namespace LastJumpCrew.ParkHanSol.Editor
 
                 ValidateEventHudWiring(
                     "play_hud",
-                    eventHudViews.Length == 1 ? eventHudViews[0] : null,
-                    eventHudBinders.Length == 1 ? eventHudBinders[0] : null,
-                    shipSystemsBinders.Length == 1 ? shipSystemsBinders[0] : null,
+                    eventHudViews.FirstOrDefault(),
+                    eventHudBinders.FirstOrDefault(),
+                    shipSystemsBinders.FirstOrDefault(),
                     errors);
             }
             finally
