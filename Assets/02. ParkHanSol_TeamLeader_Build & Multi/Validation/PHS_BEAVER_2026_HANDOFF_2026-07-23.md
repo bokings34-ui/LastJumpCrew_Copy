@@ -49,7 +49,7 @@ Unity: `6000.5.2f1`, StandaloneWindows64
 | Tutorial | `Assets/02. ParkHanSol_TeamLeader_Build & Multi/01. Scene/BEAVER_2026/Tutorial/PHS_NetworkTutorialScene.unity` | `7ab67b955719b1641abfc1778b40bfc1` | 조립 완료, 아래 magenta 이슈 남음 |
 | Map | `Assets/02. ParkHanSol_TeamLeader_Build & Multi/01. Scene/BEAVER_2026/PHS_Map_ver1.unity` | `50a12aa76331aa04796f77f318ce226c` | 팀 Map 복사본, 팀 작업 영역은 열어 둠 |
 | Shop | `Assets/02. ParkHanSol_TeamLeader_Build & Multi/01. Scene/BEAVER_2026/PHS_ExteriorShopScene.unity` | `dbdb852546180384f885696430f292c9` | 캐셔 복사본 연결 |
-| Legacy Debris | `Assets/02. ParkHanSol_TeamLeader_Build & Multi/01. Scene/BEAVER_2026/Legacy/` | `782a1efe2d080044fb88ec0fbd8f50a3` | Release 제외 |
+| Legacy Debris | `Assets/02. ParkHanSol_TeamLeader_Build & Multi/99. Legacy/Scenes/Retired/` | `782a1efe2d080044fb88ec0fbd8f50a3` | Release 제외 |
 
 ### Build Settings
 
