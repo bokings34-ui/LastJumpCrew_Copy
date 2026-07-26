@@ -78,7 +78,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Events
 
         [Header("Dedicated Event Alert (do not reuse hazard/gravity panel)")]
         [SerializeField] private GameObject eventAlertRoot;
-        [SerializeField] private TMP_Text eventAlertText;
+        [SerializeField] private GameObject eventAlertIcon;
 
         [Header("Dedicated Ship Map")]
         [SerializeField] private GameObject shipMapRoot;
@@ -227,18 +227,15 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Events
 
         private void RefreshAlertText()
         {
-            if (eventAlertRoot == null || eventAlertText == null)
+            if (eventAlertRoot == null || eventAlertIcon == null)
             {
                 return;
             }
 
-            var text = string.IsNullOrWhiteSpace(externalAlertText)
-                ? internalAccidentAlertText
-                : string.IsNullOrWhiteSpace(internalAccidentAlertText)
-                    ? externalAlertText
-                    : $"{externalAlertText}\n{internalAccidentAlertText}";
-            eventAlertRoot.SetActive(!string.IsNullOrWhiteSpace(text));
-            eventAlertText.text = text;
+            var hasActiveEvent = !string.IsNullOrWhiteSpace(externalAlertText)
+                || !string.IsNullOrWhiteSpace(internalAccidentAlertText);
+            eventAlertRoot.SetActive(hasActiveEvent);
+            eventAlertIcon.SetActive(hasActiveEvent);
         }
 
         private void RefreshCurrentMapText()
@@ -264,9 +261,9 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Events
                 valid = false;
             }
 
-            if (eventAlertText == null)
+            if (eventAlertIcon == null)
             {
-                Debug.LogError($"PHS_EVENT_HUD_VIEW_SETUP_FAILED reason=event_alert_text_missing view={name}", this);
+                Debug.LogError($"PHS_EVENT_HUD_VIEW_SETUP_FAILED reason=event_alert_icon_missing view={name}", this);
                 valid = false;
             }
 

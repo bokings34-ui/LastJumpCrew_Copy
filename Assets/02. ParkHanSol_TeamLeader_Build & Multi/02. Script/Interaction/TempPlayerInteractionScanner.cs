@@ -2,6 +2,7 @@ using UnityEngine;
 using Unity.Netcode;
 using LastJumpCrew.ParkHanSol.Multiplayer;
 using LastJumpCrew.ParkHanSol.Multiplayer.Input;
+using LastJumpCrew.ParkHanSol.Multiplayer.Audio;
 using CommonInteraction = LastJumpCrew.Common;
 
 namespace LastJumpCrew.ParkHanSol.Interaction
@@ -11,6 +12,8 @@ namespace LastJumpCrew.ParkHanSol.Interaction
     // 우클릭 내려놓기는 추후 던지기로 교체할 입력 자리다.
     public sealed class TempPlayerInteractionScanner : MonoBehaviour
     {
+        public Camera InteractionCamera => interactionCamera;
+
         // Raycast 시작점이다. 보통 플레이어 카메라를 Inspector에서 연결한다.
         [SerializeField] private Camera interactionCamera;
 
@@ -21,6 +24,7 @@ namespace LastJumpCrew.ParkHanSol.Interaction
         [SerializeField] private LayerMask interactableLayers = ~0;
         [SerializeField] private ParkHanSolPlayHudMockPresenter playHudPresenter;
         [SerializeField] private PlayerControlInput playerControlInput;
+        [SerializeField] private MonoBehaviour interactionCuePlayerSource;
 
         // 같은 오브젝트에 붙은 아이템 보유 컴포넌트다.
         private IItemHolder itemHolder;
@@ -33,6 +37,7 @@ namespace LastJumpCrew.ParkHanSol.Interaction
 
         // 로컬 일시정지 메뉴가 열린 동안 상호작용 입력을 막기 위한 플레이어 제어기다.
         private NetworkPlayerController playerController;
+        private INetworkAudioCuePlayer interactionCuePlayer;
 
         // 현재 바라보는 툴박스 슬롯이다. 슬롯 자체 glowOutlineRoot 제어에 사용한다.
         private UtilityToolBoxStorageSlotInteractable focusedToolBoxSlot;
@@ -43,6 +48,7 @@ namespace LastJumpCrew.ParkHanSol.Interaction
         private int cachedInteractionHitFrame = -1;
         private bool hasCachedInteractionHit;
         private RaycastHit cachedInteractionHit;
+        private int interactionFocusCueFrame = -1;
 
         [Header("Drop And Throw Input")]
         [SerializeField, Min(0.1f)] private float throwHoldThreshold = 0.4f;
@@ -58,9 +64,14 @@ namespace LastJumpCrew.ParkHanSol.Interaction
             networkObject = GetComponent<NetworkObject>();
             playerController = GetComponent<NetworkPlayerController>();
             combatController ??= GetComponent<NetworkPlayerCombatController>();
+            interactionCuePlayer = interactionCuePlayerSource as INetworkAudioCuePlayer;
             if (playerControlInput == null)
             {
                 Debug.LogError($"PHS_PLAYER_INPUT_SETUP_FAILED reason=control_input_reference_missing player={name}", this);
+            }
+            if (interactionCuePlayer == null)
+            {
+                Debug.LogError($"PHS_INTERACTION_AUDIO_SETUP_FAILED reason=cue_player_missing player={name}", this);
             }
         }
 
@@ -244,6 +255,10 @@ namespace LastJumpCrew.ParkHanSol.Interaction
             }
 
             interactable.Interact(itemHolder);
+            if (interactable is UtilityVendingMachineInteractable)
+            {
+                PlayInteractionCue(NetworkAudioCue.VendingInteraction);
+            }
             InvalidateInteractionHitCache();
         }
 
@@ -295,6 +310,10 @@ namespace LastJumpCrew.ParkHanSol.Interaction
             ClearToolBoxSlotFocus();
             focusedToolBoxSlot = toolBoxSlot;
             focusedToolBoxSlot?.SetInteractionFocus(itemHolder, true);
+            if (focusedToolBoxSlot != null)
+            {
+                PlayInteractionCue(NetworkAudioCue.InteractionFocus);
+            }
         }
 
         private void ClearToolBoxSlotFocus()
@@ -345,6 +364,7 @@ namespace LastJumpCrew.ParkHanSol.Interaction
             ClearInteractableFocusGlow();
             focusedGlow = glow;
             focusedGlow?.SetFocused(true);
+            PlayInteractionCue(NetworkAudioCue.InteractionFocus);
         }
 
         private void ClearInteractableFocusGlow()
@@ -417,6 +437,35 @@ namespace LastJumpCrew.ParkHanSol.Interaction
         private void ClearInteractionPrompt()
         {
             playHudPresenter?.SetInteractionPrompt(string.Empty, string.Empty);
+        }
+
+        private void PlayInteractionCue(NetworkAudioCue cue)
+        {
+            if (cue == NetworkAudioCue.InteractionFocus)
+            {
+                if (interactionFocusCueFrame == Time.frameCount)
+                {
+                    return;
+                }
+
+                interactionFocusCueFrame = Time.frameCount;
+            }
+
+            if (interactionCuePlayer == null)
+            {
+                Debug.LogError(
+                    $"PHS_INTERACTION_AUDIO_PLAY_FAILED reason=cue_player_missing player={name} cue={cue}",
+                    this);
+                return;
+            }
+
+            if (!interactionCuePlayer.TryPlay(cue, out var reason)
+                && reason != "cue_cooldown")
+            {
+                Debug.LogError(
+                    $"PHS_INTERACTION_AUDIO_PLAY_FAILED reason={reason} player={name} cue={cue}",
+                    this);
+            }
         }
 
         private void ProcessHeldItemUseInput()

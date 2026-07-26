@@ -153,6 +153,9 @@ public static class PHSNetworkOptionsAuthoring
                     videoOptionsRow,
                     false);
                 dropdownObject.name = "Window Mode Dropdown";
+                LastJumpCrew.ParkHanSol.Editor
+                    .PHSPlayHudSingleSourceAuthoring
+                    .RemoveUnavailableModular3DText(dropdownObject);
                 windowModeDropdown = dropdownObject.GetComponent<TMP_Dropdown>();
                 RemovePersistentDropdownListeners(windowModeDropdown);
             }
@@ -175,6 +178,9 @@ public static class PHSNetworkOptionsAuthoring
                     videoOptionsRow,
                     false);
                 dropdownObject.name = "Resolution Dropdown";
+                LastJumpCrew.ParkHanSol.Editor
+                    .PHSPlayHudSingleSourceAuthoring
+                    .RemoveUnavailableModular3DText(dropdownObject);
                 resolutionDropdown = dropdownObject.GetComponent<TMP_Dropdown>();
                 RemovePersistentDropdownListeners(resolutionDropdown);
             }
@@ -207,6 +213,17 @@ public static class PHSNetworkOptionsAuthoring
             PrefabUtility.UnloadPrefabContents(root);
             PrefabUtility.UnloadPrefabContents(lobbySource);
         }
+    }
+
+    public static void ConfigurePlayHudForCanonicalVariant()
+    {
+        if (AssetDatabase.LoadAssetAtPath<GameObject>(NetworkPlayHud) == null)
+        {
+            throw new InvalidOperationException(
+                $"PHS_NETWORK_OPTIONS_AUTHOR_FAILED reason=network_hud_missing path={NetworkPlayHud}");
+        }
+
+        ConfigurePlayHud();
     }
 
     private static void CreateOwnerPauseUi()

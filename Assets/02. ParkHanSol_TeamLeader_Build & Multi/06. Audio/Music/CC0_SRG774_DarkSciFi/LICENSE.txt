@@ -1,0 +1,10 @@
+Dark Sci-Fi Audio Pack
+Author: SRG774
+Source: https://opengameart.org/content/dark-sci-fi-audio-pack
+License: CC0 1.0 Universal / Public Domain
+
+Imported file:
+- PHS_BGM_Airy_CC0.ogg (original: airy.ogg)
+
+The author permits copying, modifying, distributing, and commercial use
+without attribution. Source and author are retained here for provenance.

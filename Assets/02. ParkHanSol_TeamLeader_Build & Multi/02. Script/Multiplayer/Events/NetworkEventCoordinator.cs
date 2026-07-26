@@ -819,6 +819,15 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Events
                 terminalState,
                 false);
 
+            if (terminalState == EventState.Fail)
+            {
+                Debug.LogError(
+                    $"PHS_EVENT_EXECUTION_FAILED source=event_finished " +
+                    $"instance={instanceId} event={eventId} room={roomId} " +
+                    $"state={terminalState} success={success}",
+                    this);
+            }
+
             Debug.Log(
                 $"PHS_EVENT_LIFECYCLE_FINISHED instance={instanceId} event={eventId} success={success} revision={revision}",
                 this);

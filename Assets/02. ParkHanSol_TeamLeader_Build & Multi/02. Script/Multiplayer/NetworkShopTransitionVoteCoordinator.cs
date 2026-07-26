@@ -9,9 +9,15 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
 {
     [DisallowMultipleComponent]
     [RequireComponent(typeof(NetworkObject))]
-    public sealed class NetworkShopTransitionVoteCoordinator : NetworkBehaviour, IShopTransitionVoteService
+    public sealed class NetworkShopTransitionVoteCoordinator :
+        NetworkBehaviour,
+        IShopTransitionVoteService,
+        IShopItemUsePolicy
     {
+        private const string DefaultShopSceneName = "PHS_ExteriorShopScene";
+
         [SerializeField, Min(5f)] private float voteDurationSeconds = 20f;
+        [SerializeField] private string shopSceneName = DefaultShopSceneName;
 
         private readonly NetworkVariable<bool> voteActive = new(
             false,
@@ -55,6 +61,30 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
         public int RequiredAgreeCount => requiredAgreeCount.Value;
         public int EligiblePlayerCount => eligiblePlayerCount.Value;
         public string DestinationSceneName => destinationScene.Value.ToString();
+
+        public static bool TryAuthorizeHeldItemUseServer(
+            ulong playerClientId,
+            string itemId,
+            out string reason)
+        {
+            IShopItemUsePolicy policy = Instance;
+            if (policy != null)
+            {
+                return policy.CanUseHeldItemServer(
+                    playerClientId,
+                    itemId,
+                    out reason);
+            }
+
+            if (SceneManager.GetActiveScene().name == DefaultShopSceneName)
+            {
+                reason = "shop_item_use_policy_missing";
+                return false;
+            }
+
+            reason = null;
+            return true;
+        }
 
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
         private static void ResetStatics()
@@ -217,8 +247,39 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
                 return false;
             }
 
-            if (!CanExecuteTransition(requestedDestination, requestedMode, true, out reason))
+            if (!CanExecuteTransition(
+                    requestedDestination,
+                    requestedMode,
+                    false,
+                    out reason))
             {
+                return false;
+            }
+
+            var entryDropTransactions =
+                new List<NetworkPlayerItemLifecycle.ShopEntryDropTransaction>();
+            if (requestedMode == ShopSceneTransitionMode.RequireShopPhase
+                && !TryDropHeldItemsForShopEntry(
+                    entryDropTransactions,
+                    out reason))
+            {
+                return false;
+            }
+
+            if (requestedMode == ShopSceneTransitionMode.CompleteShop
+                && !TryValidateShopExitHandsEmpty(out reason))
+            {
+                RollbackShopEntryDrops(entryDropTransactions);
+                return false;
+            }
+
+            if (!CanExecuteTransition(
+                    requestedDestination,
+                    requestedMode,
+                    true,
+                    out reason))
+            {
+                RollbackShopEntryDrops(entryDropTransactions);
                 return false;
             }
 
@@ -226,10 +287,35 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
             if (status != SceneEventProgressStatus.Started)
             {
                 reason = $"scene_load_{status}";
+                RollbackShopEntryDrops(entryDropTransactions);
                 return false;
             }
 
             Debug.Log($"PHS_NETWORK_PORTAL_LOAD scene={requestedDestination}", this);
+            reason = null;
+            return true;
+        }
+
+        public bool CanUseHeldItemServer(
+            ulong playerClientId,
+            string itemId,
+            out string reason)
+        {
+            if (!IsSpawned || !IsServer)
+            {
+                reason = "server_required";
+                return false;
+            }
+
+            var configuredShopScene = string.IsNullOrWhiteSpace(shopSceneName)
+                ? DefaultShopSceneName
+                : shopSceneName;
+            if (SceneManager.GetActiveScene().name == configuredShopScene)
+            {
+                reason = "shop_item_use_blocked";
+                return false;
+            }
+
             reason = null;
             return true;
         }
@@ -340,6 +426,118 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
             return applyTransition
                 ? runFlow.TryCompleteShop(out reason)
                 : runFlow.CanCompleteShop(out reason);
+        }
+
+        private bool TryDropHeldItemsForShopEntry(
+            ICollection<NetworkPlayerItemLifecycle.ShopEntryDropTransaction> transactions,
+            out string reason)
+        {
+            foreach (var pair in NetworkManager.ConnectedClients)
+            {
+                var playerObject = pair.Value.PlayerObject;
+                if (playerObject == null)
+                {
+                    reason = $"shop_entry_player_missing:{pair.Key}";
+                    RollbackShopEntryDrops(transactions);
+                    return false;
+                }
+
+                var itemRecord = playerObject.GetComponent<NetworkPlayerItemRecord>();
+                var itemLifecycle = playerObject.GetComponent<NetworkPlayerItemLifecycle>();
+                if (itemRecord == null
+                    || itemLifecycle == null
+                    || !itemRecord.IsSpawned)
+                {
+                    reason = $"shop_entry_item_boundary_missing:{pair.Key}";
+                    RollbackShopEntryDrops(transactions);
+                    return false;
+                }
+
+                if (string.IsNullOrEmpty(itemRecord.HeldItemId))
+                {
+                    continue;
+                }
+
+                if (!itemLifecycle.TryDropHeldItemForShopEntryServer(
+                        out var transaction,
+                        out var dropReason))
+                {
+                    reason = $"shop_entry_drop_failed:{pair.Key}:{dropReason}";
+                    Debug.LogError(
+                        $"PHS_SHOP_ENTRY_CANCELLED reason={dropReason} clientId={pair.Key} item={itemRecord.HeldItemId}",
+                        this);
+                    RollbackShopEntryDrops(transactions);
+                    return false;
+                }
+
+                if (transaction.IsValid)
+                {
+                    transactions.Add(transaction);
+                }
+            }
+
+            reason = null;
+            return true;
+        }
+
+        private bool TryValidateShopExitHandsEmpty(out string reason)
+        {
+            foreach (var pair in NetworkManager.ConnectedClients)
+            {
+                var playerObject = pair.Value.PlayerObject;
+                var itemRecord = playerObject == null
+                    ? null
+                    : playerObject.GetComponent<NetworkPlayerItemRecord>();
+                if (itemRecord == null || !itemRecord.IsSpawned)
+                {
+                    reason = $"shop_exit_item_record_missing:{pair.Key}";
+                    Debug.LogError(
+                        $"PHS_SHOP_EXIT_REJECTED reason=item_record_missing clientId={pair.Key}",
+                        this);
+                    return false;
+                }
+
+                if (string.IsNullOrEmpty(itemRecord.HeldItemId))
+                {
+                    continue;
+                }
+
+                reason = $"shop_exit_held_item:{pair.Key}:{itemRecord.HeldItemId}";
+                Debug.LogWarning(
+                    $"PHS_SHOP_EXIT_REJECTED reason=held_item clientId={pair.Key} item={itemRecord.HeldItemId}",
+                    this);
+                return false;
+            }
+
+            reason = null;
+            return true;
+        }
+
+        private void RollbackShopEntryDrops(
+            ICollection<NetworkPlayerItemLifecycle.ShopEntryDropTransaction> transactions)
+        {
+            if (transactions == null || transactions.Count == 0)
+            {
+                return;
+            }
+
+            var orderedTransactions =
+                new List<NetworkPlayerItemLifecycle.ShopEntryDropTransaction>(transactions);
+            for (var index = orderedTransactions.Count - 1; index >= 0; index--)
+            {
+                var transaction = orderedTransactions[index];
+                if (!transaction.IsValid
+                    || transaction.Lifecycle.TryRollbackShopEntryDropServer(
+                        transaction,
+                        out var rollbackReason))
+                {
+                    continue;
+                }
+
+                Debug.LogError(
+                    $"PHS_SHOP_ENTRY_ROLLBACK_FAILED reason={rollbackReason} index={index}",
+                    this);
+            }
         }
 
         private void RemoveDisconnectedVoters()

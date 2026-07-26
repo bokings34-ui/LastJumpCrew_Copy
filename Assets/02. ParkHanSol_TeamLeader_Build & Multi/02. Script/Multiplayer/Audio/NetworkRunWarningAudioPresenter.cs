@@ -94,7 +94,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Audio
             previousRemainingSeconds = currentRemainingSeconds;
             if (crossedThreshold)
             {
-                PlayWarning("stage_clock_threshold");
+                PlayCue(NetworkAudioCue.Warning, "stage_clock_threshold");
             }
         }
 
@@ -110,7 +110,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Audio
             var key = $"{command.CommandId}:{command.StateRevision}";
             if (announcedIncidentStates.Add(key))
             {
-                PlayWarning("incident_active");
+                PlayCue(NetworkAudioCue.AccidentAppeared, "incident_active");
             }
         }
 
@@ -134,7 +134,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Audio
             hasClockBaseline = snapshot.State == NetworkRunStageClockState.Running;
         }
 
-        private void PlayWarning(string trigger)
+        private void PlayCue(NetworkAudioCue cue, string trigger)
         {
             if (cuePlayer == null)
             {
@@ -144,7 +144,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Audio
                 return;
             }
 
-            if (cuePlayer.TryPlay(NetworkAudioCue.Warning, out var reason)
+            if (cuePlayer.TryPlay(cue, out var reason)
                 || reason == "cue_cooldown")
             {
                 return;

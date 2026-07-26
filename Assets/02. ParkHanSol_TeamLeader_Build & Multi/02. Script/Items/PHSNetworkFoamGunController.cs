@@ -128,6 +128,15 @@ namespace LastJumpCrew.ParkHanSol.Items
                 return;
             }
 
+            if (!NetworkShopTransitionVoteCoordinator.TryAuthorizeHeldItemUseServer(
+                    senderClientId,
+                    PHSNetworkFoamCoordinator.FoamItemId,
+                    out var policyReason))
+            {
+                RejectServerShot(policyReason, senderClientId, shotSequence);
+                return;
+            }
+
             lastServerShotSequence = shotSequence;
             var now = NetworkManager.ServerTime.Time;
             if (now < nextServerShotTime)

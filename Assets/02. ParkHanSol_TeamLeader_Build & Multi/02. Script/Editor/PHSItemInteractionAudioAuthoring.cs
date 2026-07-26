@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using LastJumpCrew.ParkHanSol.Multiplayer;
 using LastJumpCrew.ParkHanSol.Multiplayer.Audio;
 using UnityEditor;
 using UnityEngine;
@@ -10,7 +11,6 @@ namespace LastJumpCrew.ParkHanSol.Editor
     {
         private const string Root =
             "Assets/02. ParkHanSol_TeamLeader_Build & Multi";
-        private const string AudioRoot = Root + "/06. Audio/NetworkGenerated";
         private static readonly string[] PlayerPaths =
         {
             Root + "/03. Prefab/PlayerPrefab/PHS_CuteWhiteGhost_Player.prefab",
@@ -19,41 +19,40 @@ namespace LastJumpCrew.ParkHanSol.Editor
 
         private readonly struct Binding
         {
-            public Binding(NetworkAudioCue cue, string file, float volume, float cooldown)
+            public Binding(NetworkAudioCue cue, float volume, float cooldown)
             {
                 Cue = cue;
-                File = file;
                 Volume = volume;
                 Cooldown = cooldown;
             }
 
             public NetworkAudioCue Cue { get; }
-            public string File { get; }
             public float Volume { get; }
             public float Cooldown { get; }
         }
 
         private static readonly Binding[] OwnerBindings =
         {
-            new(NetworkAudioCue.ExtinguisherSpray, "PHS_Item_Extinguisher_Spray.wav", 0.55f, 0.12f),
-            new(NetworkAudioCue.FoamShot, "PHS_Item_Foam_Shot.wav", 0.65f, 0.08f)
+            new(NetworkAudioCue.ExtinguisherSpray, 0.55f, 0.12f),
+            new(NetworkAudioCue.FoamShot, 0.65f, 0.08f)
         };
 
         private static readonly Binding[] WorldBindings =
         {
-            new(NetworkAudioCue.WrenchImpact, "PHS_Item_Wrench_Impact.wav", 0.75f, 0.08f),
-            new(NetworkAudioCue.RepairComplete, "PHS_Item_Repair_Complete.wav", 0.8f, 0.20f),
-            new(NetworkAudioCue.ExtinguishComplete, "PHS_Item_Extinguish_Complete.wav", 0.8f, 0.20f),
-            new(NetworkAudioCue.BatteryInstall, "PHS_Item_Battery_Install.wav", 0.8f, 0.20f),
-            new(NetworkAudioCue.FoamAttach, "PHS_Item_Foam_Attach.wav", 0.65f, 0.06f),
-            new(NetworkAudioCue.FoamHarden, "PHS_Item_Foam_Harden.wav", 0.65f, 0.12f),
-            new(NetworkAudioCue.FoamSealComplete, "PHS_Item_Foam_Seal_Complete.wav", 0.8f, 0.20f),
-            new(NetworkAudioCue.FoamFireComplete, "PHS_Item_Foam_Fire_Complete.wav", 0.8f, 0.20f)
+            new(NetworkAudioCue.WrenchImpact, 0.75f, 0.08f),
+            new(NetworkAudioCue.RepairComplete, 0.8f, 0.20f),
+            new(NetworkAudioCue.ExtinguishComplete, 0.8f, 0.20f),
+            new(NetworkAudioCue.BatteryInstall, 0.8f, 0.20f),
+            new(NetworkAudioCue.FoamAttach, 0.65f, 0.06f),
+            new(NetworkAudioCue.FoamHarden, 0.65f, 0.12f),
+            new(NetworkAudioCue.FoamSealComplete, 0.8f, 0.20f),
+            new(NetworkAudioCue.FoamFireComplete, 0.8f, 0.20f)
         };
 
         [MenuItem("Tools/ParkHanSol/BEAVER/Author Item Interaction Audio")]
         public static void Author()
         {
+            PHSCuratedAssetSfxAuthoring.Author();
             RequireClips(OwnerBindings);
             RequireClips(WorldBindings);
             foreach (var path in PlayerPaths)
@@ -89,6 +88,7 @@ namespace LastJumpCrew.ParkHanSol.Editor
                 relayObject.FindProperty("ownerCuePlayerSource").objectReferenceValue = ownerEmitter;
                 relayObject.FindProperty("worldCuePlayerSource").objectReferenceValue = worldEmitter;
                 relayObject.ApplyModifiedPropertiesWithoutUndo();
+                ConfigureBatteryShockAudio(root);
                 if (PrefabUtility.SaveAsPrefabAsset(root, path) == null)
                 {
                     throw new InvalidOperationException(
@@ -110,7 +110,8 @@ namespace LastJumpCrew.ParkHanSol.Editor
             source.playOnAwake = false;
             source.loop = false;
             source.spatialBlend = spatial ? 1f : 0f;
-            source.rolloffMode = AudioRolloffMode.Linear;
+            source.dopplerLevel = 0f;
+            source.rolloffMode = AudioRolloffMode.Logarithmic;
             source.minDistance = 1f;
             source.maxDistance = 20f;
 
@@ -125,7 +126,8 @@ namespace LastJumpCrew.ParkHanSol.Editor
                 var element = array.GetArrayElementAtIndex(index);
                 element.FindPropertyRelative("cue").enumValueIndex = (int)binding.Cue;
                 element.FindPropertyRelative("clip").objectReferenceValue =
-                    AssetDatabase.LoadAssetAtPath<AudioClip>($"{AudioRoot}/{binding.File}");
+                    AssetDatabase.LoadAssetAtPath<AudioClip>(
+                        PHSCuratedAssetSfxAuthoring.GetCuePath(binding.Cue));
                 element.FindPropertyRelative("volumeScale").floatValue = binding.Volume;
                 element.FindPropertyRelative("cooldownSeconds").floatValue = binding.Cooldown;
             }
@@ -138,13 +140,51 @@ namespace LastJumpCrew.ParkHanSol.Editor
         {
             foreach (var binding in bindings)
             {
-                var path = $"{AudioRoot}/{binding.File}";
+                var path = PHSCuratedAssetSfxAuthoring.GetCuePath(binding.Cue);
                 if (AssetDatabase.LoadAssetAtPath<AudioClip>(path) == null)
                 {
                     throw new InvalidOperationException(
                         $"PHS_ITEM_INTERACTION_AUDIO_AUTHORING_FAILED reason=clip_missing path={path}");
                 }
             }
+        }
+
+        private static void ConfigureBatteryShockAudio(GameObject root)
+        {
+            var status = root.GetComponent<StatusEffectController>();
+            var effectRoot = status == null
+                ? null
+                : new SerializedObject(status)
+                    .FindProperty("electricShockEffectRoot")
+                    ?.objectReferenceValue as GameObject;
+            var sources = effectRoot == null
+                ? Array.Empty<AudioSource>()
+                : effectRoot.GetComponents<AudioSource>();
+            if (status == null || effectRoot == null || sources.Length != 1)
+            {
+                throw new InvalidOperationException(
+                    $"PHS_ITEM_INTERACTION_AUDIO_AUTHORING_FAILED reason=electric_shock_contract_invalid prefab={root.name} sources={sources.Length}");
+            }
+
+            var clip = AssetDatabase.LoadAssetAtPath<AudioClip>(
+                PHSCuratedAssetSfxAuthoring.BatteryShockPath);
+            if (clip == null)
+            {
+                throw new InvalidOperationException(
+                    $"PHS_ITEM_INTERACTION_AUDIO_AUTHORING_FAILED reason=battery_shock_clip_missing path={PHSCuratedAssetSfxAuthoring.BatteryShockPath}");
+            }
+
+            var source = sources[0];
+            source.enabled = true;
+            source.clip = clip;
+            source.playOnAwake = false;
+            source.loop = false;
+            source.volume = 0.65f;
+            source.spatialBlend = 1f;
+            source.dopplerLevel = 0f;
+            source.rolloffMode = AudioRolloffMode.Logarithmic;
+            source.minDistance = 1f;
+            source.maxDistance = 15f;
         }
 
         private static GameObject RequireChild(Transform parent, string name)

@@ -85,6 +85,18 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
         private float autoMoveEndTime;
         private bool autoMoveStarted;
         private float nextPositionLogTime;
+        private bool inputDeviceProbeEnabled;
+        private float inputDeviceProbeSeconds;
+        private bool inputDeviceProbeStarted;
+        private bool inputDeviceProbeReported;
+        private bool inputDeviceProbeBlockedLogged;
+        private bool inputDeviceProbeSampleLogged;
+        private float inputDeviceProbeStartTime;
+        private Vector3 inputDeviceProbeStartPosition;
+        private float inputDeviceProbeStartYaw;
+        private float inputDeviceProbeStartPitch;
+        private float inputDeviceProbeMaximumMove;
+        private float inputDeviceProbeMaximumLook;
         private bool originalRigidbodyUseGravity;
         private bool originalRigidbodyIsKinematic;
         private readonly List<NetworkPlayerGravityArea> gravityAreas = new();
@@ -553,25 +565,45 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
         {
             SceneManager.activeSceneChanged -= HandleActiveSceneChanged;
             SetLocalOwnerVisualsVisible(true);
-            StopThrusterAudio();
+            StopThrusterFeedback();
         }
 
         private void Update()
         {
-            if (!CanProcessLocalInput())
+            var canProcessLocalInput = CanProcessLocalInput();
+            if (inputDeviceProbeEnabled && IsOwner && !canProcessLocalInput)
+            {
+                var blockedMove = ReadMove();
+                var blockedLook = ReadLook();
+                if (!inputDeviceProbeBlockedLogged
+                    && (blockedMove.sqrMagnitude > 0.01f || blockedLook.sqrMagnitude > 0.01f))
+                {
+                    inputDeviceProbeBlockedLogged = true;
+                    Debug.Log(
+                        $"PHS_INPUT_DEVICE_BLOCKED ownerClientId={OwnerClientId} " +
+                        $"rawMove={blockedMove.magnitude:F2} rawLook={blockedLook.magnitude:F2} " +
+                        $"gameplay={gameplayInputEnabled} pause={pauseInputBlocked} life={lifeInputBlocked} " +
+                        $"warp={warpInputBlocked} result={resultInputBlocked} " +
+                        $"restart={(NetworkRunRestartCoordinator.Instance != null && NetworkRunRestartCoordinator.Instance.BlocksRun)}",
+                        this);
+                }
+            }
+
+            if (!canProcessLocalInput)
             {
                 return;
             }
 
             RefreshThrusterGauge();
             var move = ReadMove();
+            var look = ReadLook();
+            CaptureLocalInputDeviceProbe(move, look);
             if (autoMoveEnabled && Time.time < autoMoveEndTime)
             {
                 move.y = 1f;
             }
 
             var verticalMove = ReadVerticalMove();
-            var look = ReadLook();
             if (playerControlInput == null)
             {
                 return;
@@ -745,6 +777,8 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
 
         private void LateUpdate()
         {
+            UpdateRemoteInputDeviceProbe();
+
             if (!autoMoveEnabled || Time.time < nextPositionLogTime)
             {
                 return;
@@ -756,6 +790,8 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
 
         private void ConfigureCommandLineAutomation()
         {
+            inputDeviceProbeSeconds = GetCommandLineFloat("-phsInputDeviceProbeSeconds");
+            inputDeviceProbeEnabled = inputDeviceProbeSeconds > 0f;
             autoMoveSeconds = GetCommandLineFloat("-phsAutoMoveSeconds");
             if (autoMoveSeconds <= 0f)
             {
@@ -764,6 +800,100 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
 
             autoMoveEnabled = true;
             nextPositionLogTime = Time.time + 1f;
+        }
+
+        private void CaptureLocalInputDeviceProbe(Vector2 move, Vector2 look)
+        {
+            if (!inputDeviceProbeEnabled || !IsOwner || !gameplayInputEnabled || inputDeviceProbeReported
+                || SceneManager.GetActiveScene().name != "PHS_Map_ver1")
+            {
+                return;
+            }
+
+            inputDeviceProbeMaximumMove = Mathf.Max(inputDeviceProbeMaximumMove, move.magnitude);
+            inputDeviceProbeMaximumLook = Mathf.Max(inputDeviceProbeMaximumLook, look.magnitude);
+            if (!inputDeviceProbeSampleLogged
+                && (move.sqrMagnitude > 0.01f || look.sqrMagnitude > 0.01f))
+            {
+                inputDeviceProbeSampleLogged = true;
+                Debug.Log(
+                    $"PHS_INPUT_DEVICE_SAMPLE ownerClientId={OwnerClientId} " +
+                    $"rawMove={move.magnitude:F2} rawLook={look.magnitude:F2}",
+                    this);
+            }
+
+            if (!inputDeviceProbeStarted)
+            {
+                if (inputDeviceProbeMaximumMove < 0.5f || inputDeviceProbeMaximumLook < 0.1f)
+                {
+                    return;
+                }
+
+                inputDeviceProbeStarted = true;
+                inputDeviceProbeStartTime = Time.unscaledTime;
+                inputDeviceProbeStartPosition = transform.position;
+                inputDeviceProbeStartYaw = transform.eulerAngles.y;
+                inputDeviceProbeStartPitch = cameraPitch;
+                if (!IsServer)
+                {
+                    BeginInputDeviceRemoteProbeServerRpc();
+                }
+            }
+            if (Time.unscaledTime < inputDeviceProbeStartTime + inputDeviceProbeSeconds)
+            {
+                return;
+            }
+
+            inputDeviceProbeReported = true;
+            var positionDelta = Vector3.Distance(inputDeviceProbeStartPosition, transform.position);
+            var yawDelta = Mathf.Abs(Mathf.DeltaAngle(inputDeviceProbeStartYaw, transform.eulerAngles.y));
+            var pitchDelta = Mathf.Abs(cameraPitch - inputDeviceProbeStartPitch);
+            var passed = inputDeviceProbeMaximumMove >= 0.5f
+                && inputDeviceProbeMaximumLook >= 0.1f
+                && positionDelta >= 0.5f
+                && (yawDelta >= 1f || pitchDelta >= 1f);
+            Debug.Log(
+                $"PHS_INPUT_DEVICE_PROBE ownerClientId={OwnerClientId} pass={passed} " +
+                $"rawMove={inputDeviceProbeMaximumMove:F2} rawLook={inputDeviceProbeMaximumLook:F2} " +
+                $"positionDelta={positionDelta:F2} yawDelta={yawDelta:F2} pitchDelta={pitchDelta:F2}",
+                this);
+        }
+
+        private void UpdateRemoteInputDeviceProbe()
+        {
+            if (!inputDeviceProbeEnabled || !IsServer || IsOwner || !IsSpawned || inputDeviceProbeReported
+                || SceneManager.GetActiveScene().name != "PHS_Map_ver1")
+            {
+                return;
+            }
+
+            if (!inputDeviceProbeStarted || Time.unscaledTime < inputDeviceProbeStartTime + inputDeviceProbeSeconds)
+            {
+                return;
+            }
+
+            inputDeviceProbeReported = true;
+            var positionDelta = Vector3.Distance(inputDeviceProbeStartPosition, transform.position);
+            var yawDelta = Mathf.Abs(Mathf.DeltaAngle(inputDeviceProbeStartYaw, transform.eulerAngles.y));
+            var passed = positionDelta >= 0.5f && yawDelta >= 1f;
+            Debug.Log(
+                $"PHS_INPUT_REMOTE_SYNC ownerClientId={OwnerClientId} pass={passed} " +
+                $"positionDelta={positionDelta:F2} yawDelta={yawDelta:F2}",
+                this);
+        }
+
+        [ServerRpc]
+        private void BeginInputDeviceRemoteProbeServerRpc()
+        {
+            if (!inputDeviceProbeEnabled || !IsServer || IsOwner || inputDeviceProbeStarted)
+            {
+                return;
+            }
+
+            inputDeviceProbeStarted = true;
+            inputDeviceProbeStartTime = Time.unscaledTime;
+            inputDeviceProbeStartPosition = transform.position;
+            inputDeviceProbeStartYaw = transform.eulerAngles.y;
         }
 
         private static float GetCommandLineFloat(string key)
@@ -1486,7 +1616,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
                 * zeroGravityCameraShakeDegrees;
         }
 
-        private void StopThrusterAudio()
+        private void StopThrusterFeedback()
         {
             isLocalThrusterActive = false;
             if (thrusterAudio != null)

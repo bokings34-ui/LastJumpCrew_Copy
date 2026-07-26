@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using TMPro;
 using UnityEngine;
 using UnityEngine.UI;
+using LastJumpCrew.ParkHanSol.Multiplayer.Audio;
 
 namespace LastJumpCrew.ParkHanSol.Multiplayer.Input
 {
@@ -16,11 +17,13 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Input
         [SerializeField] private TMP_Dropdown windowModeDropdown;
         [SerializeField] private TMP_Dropdown resolutionDropdown;
         [SerializeField] private Button closeButton;
+        [SerializeField] private MonoBehaviour saveCuePlayerSource;
 
         private readonly INetworkPlayerOptionsStore optionsStore =
             NetworkPlayerOptionsStore.Shared;
         private bool setupValid;
         private readonly List<Vector2Int> resolutions = new();
+        private INetworkAudioCuePlayer saveCuePlayer;
 
         public event Action Closed;
 
@@ -31,6 +34,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Input
 
         private void Awake()
         {
+            saveCuePlayer = saveCuePlayerSource as INetworkAudioCuePlayer;
             setupValid = ValidateSetup();
             if (!setupValid)
             {
@@ -84,6 +88,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Input
             }
 
             panelRoot.SetActive(false);
+            PlaySaveCue();
             Closed?.Invoke();
         }
 
@@ -203,6 +208,22 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Input
                 $"close={closeButton != null}",
                 this);
             return false;
+        }
+
+        private void PlaySaveCue()
+        {
+            if (saveCuePlayer == null)
+            {
+                return;
+            }
+
+            if (!saveCuePlayer.TryPlay(NetworkAudioCue.OptionsSaved, out var reason)
+                && reason != "cue_cooldown")
+            {
+                Debug.LogError(
+                    $"PHS_OPTIONS_AUDIO_PLAY_FAILED reason={reason} panel={name}",
+                    this);
+            }
         }
     }
 }

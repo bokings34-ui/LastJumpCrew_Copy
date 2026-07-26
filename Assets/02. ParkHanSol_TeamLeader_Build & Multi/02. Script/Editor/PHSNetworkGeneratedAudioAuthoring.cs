@@ -28,7 +28,9 @@ namespace LastJumpCrew.ParkHanSol.Editor
             GameOver,
             RestartSuccess,
             RestartFail,
-            TutorialComplete
+            TutorialComplete,
+            WarpSafeZoneEnter,
+            WarpSafeZoneExit
         }
 
         private readonly struct Recipe
@@ -58,7 +60,9 @@ namespace LastJumpCrew.ParkHanSol.Editor
             new Recipe("PHS_Network_GameOver.wav", 1.35d, RecipeKind.GameOver),
             new Recipe("PHS_Network_Restart_Success.wav", 0.72d, RecipeKind.RestartSuccess),
             new Recipe("PHS_Network_Restart_Fail.wav", 0.48d, RecipeKind.RestartFail),
-            new Recipe("PHS_Network_TutorialComplete.wav", 0.92d, RecipeKind.TutorialComplete)
+            new Recipe("PHS_Network_TutorialComplete.wav", 0.92d, RecipeKind.TutorialComplete),
+            new Recipe("PHS_Warp_SafeZone_Enter.wav", 0.58d, RecipeKind.WarpSafeZoneEnter),
+            new Recipe("PHS_Warp_SafeZone_Exit.wav", 0.34d, RecipeKind.WarpSafeZoneExit)
         };
 
         [MenuItem("Tools/ParkHanSol/BEAVER/Author Network Generated Audio")]
@@ -166,6 +170,16 @@ namespace LastJumpCrew.ParkHanSol.Editor
                 RecipeKind.TutorialComplete =>
                     Arpeggio(time, normalizedTime, 783.99d, 1046.5d, 1318.5d)
                     * release,
+                RecipeKind.WarpSafeZoneEnter =>
+                    (Chirp(time, normalizedTime, 95d, 920d)
+                        + 0.38d * Chirp(time, normalizedTime, 190d, 1380d)
+                        + noise * 0.12d)
+                    * Math.Sin(Math.PI * Math.Clamp(normalizedTime, 0d, 1d)),
+                RecipeKind.WarpSafeZoneExit =>
+                    (Chirp(time, normalizedTime, 980d, 120d)
+                        + 0.3d * Chirp(time, normalizedTime, 1460d, 240d)
+                        + noise * 0.08d)
+                    * Math.Pow(Math.Max(0d, 1d - normalizedTime), 4d),
                 _ => 0d
             };
         }

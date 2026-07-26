@@ -26,6 +26,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Validation
     {
         private const string ScenarioFlag = "-phsAutoP0Scenario";
         private const string ItemScenarioFlag = "-phsAutoItemScenario";
+        private const string InputOnlyScenarioFlag = "-phsInputOnlyScenario";
         private const string MapSceneName = "PHS_Map_ver1";
         private const string ShopSceneName = "PHS_ExteriorShopScene";
         private const string LocalDebrisEntryPortalName = "PHS_DebrisCollectionPortal_0715";
@@ -371,6 +372,12 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Validation
 
             expectedClientCount = Mathf.Max(2, GetCommandLineInt("-phsAutoStartClients", 2));
             scenarioRunning = true;
+            if (HasCommandLineFlag(InputOnlyScenarioFlag))
+            {
+                StartCoroutine(RunInputOnlyServerScenario());
+                return;
+            }
+
             if (HasCommandLineFlag(ItemScenarioFlag))
             {
                 StartCoroutine(RunItemServerScenario());
@@ -438,6 +445,25 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Validation
             }
 
             Pass($"item_network_lifecycle peers={expectedClientCount} items={itemIds.Length}");
+        }
+
+        private IEnumerator RunInputOnlyServerScenario()
+        {
+            yield return WaitFor(
+                () => NetworkManager != null && NetworkManager.ConnectedClients.Count >= expectedClientCount,
+                DefaultStepTimeout,
+                "input_only_clients_not_connected");
+            if (scenarioFinished) yield break;
+
+            yield return WaitFor(
+                () => SceneManager.GetActiveScene().name == MapSceneName,
+                DefaultStepTimeout,
+                "input_only_map_scene_not_loaded");
+            if (scenarioFinished) yield break;
+
+            Debug.Log(
+                $"PHS_INPUT_SCENE_READY peers={NetworkManager.ConnectedClients.Count} scene={MapSceneName}",
+                this);
         }
 
         public override void OnNetworkDespawn()
@@ -6181,7 +6207,8 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Validation
         {
             return Debug.isDebugBuild
                 && (HasCommandLineFlag(ScenarioFlag)
-                    || HasCommandLineFlag(ItemScenarioFlag));
+                    || HasCommandLineFlag(ItemScenarioFlag)
+                    || HasCommandLineFlag(InputOnlyScenarioFlag));
         }
 
         private static bool HasCommandLineFlag(string flag)

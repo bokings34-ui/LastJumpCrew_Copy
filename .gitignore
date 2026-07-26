@@ -80,9 +80,12 @@ crashlytics-build.properties
 /[Ll]ibrary/MCPForUnity/
 /[Ll]ibrary/[Pp]ackage[Cc]ache/com.anklebreaker.unity-mcp*/
 /.codex/
+/.codex-remote-attachments/
 /.codex.json
 /.codex.toml
 /.mcp.json
+/Assets/Casual Game UI Sound/
+/Assets/Casual Game UI Sound.meta
 /mcp.json
 /ProjectSettings/Packages/com.unity.services.vivox
 ProjectSettings/Packages/com.unity.services.vivox/Settings.json

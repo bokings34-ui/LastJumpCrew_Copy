@@ -13,21 +13,6 @@ namespace LastJumpCrew.ParkHanSol.Editor
     {
         private const string Root =
             "Assets/02. ParkHanSol_TeamLeader_Build & Multi";
-        private const string AudioRoot = Root + "/06. Audio/NetworkGenerated";
-        private static readonly string[] Files =
-        {
-            "PHS_Item_Wrench_Impact.wav",
-            "PHS_Item_Repair_Complete.wav",
-            "PHS_Item_Extinguisher_Spray.wav",
-            "PHS_Item_Extinguish_Complete.wav",
-            "PHS_Item_Battery_Install.wav",
-            "PHS_Item_Battery_Shock.wav",
-            "PHS_Item_Foam_Shot.wav",
-            "PHS_Item_Foam_Attach.wav",
-            "PHS_Item_Foam_Harden.wav",
-            "PHS_Item_Foam_Seal_Complete.wav",
-            "PHS_Item_Foam_Fire_Complete.wav"
-        };
         private static readonly string[] PlayerPaths =
         {
             Root + "/03. Prefab/PlayerPrefab/PHS_CuteWhiteGhost_Player.prefab",
@@ -35,37 +20,34 @@ namespace LastJumpCrew.ParkHanSol.Editor
         };
         private static readonly BindingContract[] OwnerBindings =
         {
-            new(NetworkAudioCue.ExtinguisherSpray, "PHS_Item_Extinguisher_Spray.wav", 0.55f, 0.12f),
-            new(NetworkAudioCue.FoamShot, "PHS_Item_Foam_Shot.wav", 0.65f, 0.08f)
+            new(NetworkAudioCue.ExtinguisherSpray, 0.55f, 0.12f),
+            new(NetworkAudioCue.FoamShot, 0.65f, 0.08f)
         };
         private static readonly BindingContract[] WorldBindings =
         {
-            new(NetworkAudioCue.WrenchImpact, "PHS_Item_Wrench_Impact.wav", 0.75f, 0.08f),
-            new(NetworkAudioCue.RepairComplete, "PHS_Item_Repair_Complete.wav", 0.8f, 0.20f),
-            new(NetworkAudioCue.ExtinguishComplete, "PHS_Item_Extinguish_Complete.wav", 0.8f, 0.20f),
-            new(NetworkAudioCue.BatteryInstall, "PHS_Item_Battery_Install.wav", 0.8f, 0.20f),
-            new(NetworkAudioCue.FoamAttach, "PHS_Item_Foam_Attach.wav", 0.65f, 0.06f),
-            new(NetworkAudioCue.FoamHarden, "PHS_Item_Foam_Harden.wav", 0.65f, 0.12f),
-            new(NetworkAudioCue.FoamSealComplete, "PHS_Item_Foam_Seal_Complete.wav", 0.8f, 0.20f),
-            new(NetworkAudioCue.FoamFireComplete, "PHS_Item_Foam_Fire_Complete.wav", 0.8f, 0.20f)
+            new(NetworkAudioCue.WrenchImpact, 0.75f, 0.08f),
+            new(NetworkAudioCue.RepairComplete, 0.8f, 0.20f),
+            new(NetworkAudioCue.ExtinguishComplete, 0.8f, 0.20f),
+            new(NetworkAudioCue.BatteryInstall, 0.8f, 0.20f),
+            new(NetworkAudioCue.FoamAttach, 0.65f, 0.06f),
+            new(NetworkAudioCue.FoamHarden, 0.65f, 0.12f),
+            new(NetworkAudioCue.FoamSealComplete, 0.8f, 0.20f),
+            new(NetworkAudioCue.FoamFireComplete, 0.8f, 0.20f)
         };
 
         private readonly struct BindingContract
         {
             public BindingContract(
                 NetworkAudioCue cue,
-                string file,
                 float volume,
                 float cooldown)
             {
                 Cue = cue;
-                File = file;
                 Volume = volume;
                 Cooldown = cooldown;
             }
 
             public NetworkAudioCue Cue { get; }
-            public string File { get; }
             public float Volume { get; }
             public float Cooldown { get; }
         }
@@ -74,10 +56,11 @@ namespace LastJumpCrew.ParkHanSol.Editor
         public static void Validate()
         {
             var errors = new List<string>();
-            foreach (var file in Files)
+            foreach (var cue in OwnerBindings.Concat(WorldBindings).Select(binding => binding.Cue))
             {
-                ValidateWave($"{AudioRoot}/{file}", errors);
+                ValidateWave(PHSCuratedAssetSfxAuthoring.GetCuePath(cue), errors);
             }
+            ValidateWave(PHSCuratedAssetSfxAuthoring.BatteryShockPath, errors);
 
             foreach (var path in PlayerPaths)
             {
@@ -99,20 +82,96 @@ namespace LastJumpCrew.ParkHanSol.Editor
         private static void ValidateWave(string path, ICollection<string> errors)
         {
             var clip = AssetDatabase.LoadAssetAtPath<AudioClip>(path);
-            if (clip == null || clip.channels != 1 || clip.frequency != 44100)
+            if (clip == null)
             {
                 errors.Add($"wave_import path={path}");
                 return;
             }
 
             var bytes = File.ReadAllBytes(path);
-            if (bytes.Length < 44
-                || BitConverter.ToInt16(bytes, 22) != 1
-                || BitConverter.ToInt32(bytes, 24) != 44100
-                || BitConverter.ToInt16(bytes, 34) != 16)
+            if (!TryReadWaveContract(
+                    bytes,
+                    out var channels,
+                    out var sampleRate,
+                    out var bitsPerSample)
+                || channels < 1
+                || channels > 2
+                || sampleRate < 22050
+                || bitsPerSample < 16
+                || clip.channels != channels
+                || clip.frequency != sampleRate)
             {
                 errors.Add($"wave_pcm_contract path={path}");
             }
+        }
+
+        private static bool TryReadWaveContract(
+            byte[] bytes,
+            out short channels,
+            out int sampleRate,
+            out short bitsPerSample)
+        {
+            channels = 0;
+            sampleRate = 0;
+            bitsPerSample = 0;
+            if (bytes.Length < 12
+                || bytes[0] != 'R'
+                || bytes[1] != 'I'
+                || bytes[2] != 'F'
+                || bytes[3] != 'F'
+                || bytes[8] != 'W'
+                || bytes[9] != 'A'
+                || bytes[10] != 'V'
+                || bytes[11] != 'E')
+            {
+                return false;
+            }
+
+            var foundFormat = false;
+            var foundData = false;
+            var offset = 12;
+            while (offset + 8 <= bytes.Length)
+            {
+                var chunkSize = BitConverter.ToInt32(bytes, offset + 4);
+                var dataOffset = offset + 8;
+                if (chunkSize < 0 || dataOffset + chunkSize > bytes.Length)
+                {
+                    return false;
+                }
+
+                if (bytes[offset] == 'f'
+                    && bytes[offset + 1] == 'm'
+                    && bytes[offset + 2] == 't'
+                    && bytes[offset + 3] == ' ')
+                {
+                    if (chunkSize < 16)
+                    {
+                        return false;
+                    }
+
+                    var format = BitConverter.ToInt16(bytes, dataOffset);
+                    if (format != 1 && format != -2)
+                    {
+                        return false;
+                    }
+
+                    channels = BitConverter.ToInt16(bytes, dataOffset + 2);
+                    sampleRate = BitConverter.ToInt32(bytes, dataOffset + 4);
+                    bitsPerSample = BitConverter.ToInt16(bytes, dataOffset + 14);
+                    foundFormat = true;
+                }
+                else if (bytes[offset] == 'd'
+                    && bytes[offset + 1] == 'a'
+                    && bytes[offset + 2] == 't'
+                    && bytes[offset + 3] == 'a')
+                {
+                    foundData = chunkSize > 0;
+                }
+
+                offset = dataOffset + chunkSize + (chunkSize & 1);
+            }
+
+            return foundFormat && foundData;
         }
 
         private static void ValidatePlayer(string path, ICollection<string> errors)
@@ -174,7 +233,7 @@ namespace LastJumpCrew.ParkHanSol.Editor
                 : effectRoot.GetComponentsInChildren<AudioSource>(true);
             var source = sources.Length == 1 ? sources[0] : null;
             var expectedClip = AssetDatabase.LoadAssetAtPath<AudioClip>(
-                $"{AudioRoot}/PHS_Item_Battery_Shock.wav");
+                PHSCuratedAssetSfxAuthoring.BatteryShockPath);
             if (status == null
                 || effectRoot == null
                 || sources.Length != 1
@@ -215,9 +274,10 @@ namespace LastJumpCrew.ParkHanSol.Editor
             if (objects.Length != 1
                 || source == null
                 || !Mathf.Approximately(source.spatialBlend, spatialBlend)
+                || !Mathf.Approximately(source.dopplerLevel, 0f)
                 || source.playOnAwake
                 || source.loop
-                || source.rolloffMode != AudioRolloffMode.Linear
+                || source.rolloffMode != AudioRolloffMode.Logarithmic
                 || !Mathf.Approximately(source.minDistance, 1f)
                 || !Mathf.Approximately(source.maxDistance, 20f)
                 || emitter == null)
@@ -257,7 +317,7 @@ namespace LastJumpCrew.ParkHanSol.Editor
                 }
 
                 var expectedClip = AssetDatabase.LoadAssetAtPath<AudioClip>(
-                    $"{AudioRoot}/{expected.File}");
+                    PHSCuratedAssetSfxAuthoring.GetCuePath(expected.Cue));
                 if (binding.FindPropertyRelative("clip").objectReferenceValue
                         != expectedClip
                     || !Mathf.Approximately(

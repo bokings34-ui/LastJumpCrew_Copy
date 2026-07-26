@@ -43,6 +43,8 @@ namespace LastJumpCrew.ParkHanSol.Editor
             "Assets/02. ParkHanSol_TeamLeader_Build & Multi/03. Prefab/Tutorial/PHS_NetworkTutorialWall.prefab";
         private const string TutorialPlayerPrefabPath =
             "Assets/02. ParkHanSol_TeamLeader_Build & Multi/03. Prefab/Tutorial/PHS_NetworkTutorialPlayer.prefab";
+        private const string TutorialPlayerPrefabGuid =
+            "6e972064a85d6794f88960cdf7c8c307";
         private const string TutorialGrappleTargetName =
             "PHS_NetworkTutorialGrappleTarget";
         private const string MapScenePath =
@@ -123,6 +125,24 @@ namespace LastJumpCrew.ParkHanSol.Editor
         public static void ValidateFromMenu()
         {
             ValidateOrThrow();
+        }
+
+        [MenuItem(
+            "Tools/ParkHanSol/BEAVER/Validate Tutorial Player Canonical Variant")]
+        public static void ValidateTutorialPlayerVariantFromMenu()
+        {
+            var errors = new List<string>();
+            ValidateTutorialPlayerVariant(errors);
+            if (errors.Count > 0)
+            {
+                throw new InvalidOperationException(
+                    "PHS_TUTORIAL_PLAYER_VARIANT_VALIDATION_FAILED\n- " +
+                    string.Join("\n- ", errors));
+            }
+
+            Debug.Log(
+                "PHS_TUTORIAL_PLAYER_VARIANT_VALIDATION_OK " +
+                $"source={PlayerPrefabPath} target={TutorialPlayerPrefabPath}");
         }
 
         [MenuItem("Tools/ParkHanSol/Migrate 0715 Economy Ledger")]
@@ -563,6 +583,7 @@ namespace LastJumpCrew.ParkHanSol.Editor
             try
             {
                 ValidateBuildSettings(errors);
+                ValidateTutorialPlayerVariant(errors);
                 ValidateLobbyScene(errors);
                 ValidateTutorialScene(errors);
                 ValidateMapScene(errors);
@@ -572,6 +593,7 @@ namespace LastJumpCrew.ParkHanSol.Editor
                 ValidateUtilityItemFunctionContracts(errors);
                 ValidateSellStationPrefab(errors);
                 ValidatePlayHudPrefab(errors);
+                TryValidateCanonicalHud(errors);
                 ValidatePlayerPrefab(errors);
                 ValidateRunSessionRootPrefab(errors);
                 ValidateNetworkAudioAssets(errors);
@@ -1118,6 +1140,121 @@ namespace LastJumpCrew.ParkHanSol.Editor
                     "tutorialDirector",
                     "tutorial_station_director_missing",
                     errors);
+            }
+        }
+
+        private static void TryValidateCanonicalHud(ICollection<string> errors)
+        {
+            try
+            {
+                PHSPlayHudSingleSourceAuthoring.ValidateOrThrow();
+            }
+            catch (Exception exception)
+            {
+                errors.Add($"canonical_hud_invalid detail={exception.Message}");
+            }
+        }
+
+        private static void ValidateTutorialPlayerVariant(
+            ICollection<string> errors)
+        {
+            var canonicalPlayer = AssetDatabase.LoadAssetAtPath<GameObject>(
+                PlayerPrefabPath);
+            var tutorialPlayer = AssetDatabase.LoadAssetAtPath<GameObject>(
+                TutorialPlayerPrefabPath);
+            Require(
+                canonicalPlayer != null,
+                $"tutorial_player_canonical_missing path={PlayerPrefabPath}",
+                errors);
+            Require(
+                tutorialPlayer != null,
+                $"tutorial_player_prefab_missing path={TutorialPlayerPrefabPath}",
+                errors);
+            if (canonicalPlayer == null || tutorialPlayer == null)
+            {
+                return;
+            }
+
+            Require(
+                AssetDatabase.AssetPathToGUID(TutorialPlayerPrefabPath)
+                    == TutorialPlayerPrefabGuid,
+                "tutorial_player_guid_changed " +
+                $"expected={TutorialPlayerPrefabGuid} " +
+                $"actual={AssetDatabase.AssetPathToGUID(TutorialPlayerPrefabPath)}",
+                errors);
+            Require(
+                PrefabUtility.GetPrefabAssetType(tutorialPlayer)
+                    == PrefabAssetType.Variant,
+                "tutorial_player_not_variant",
+                errors);
+
+            var sourcePlayer = PrefabUtility.GetCorrespondingObjectFromSource(
+                tutorialPlayer);
+            Require(
+                sourcePlayer == canonicalPlayer,
+                "tutorial_player_variant_source_invalid " +
+                $"expected={PlayerPrefabPath} " +
+                $"actual={AssetDatabase.GetAssetPath(sourcePlayer)}",
+                errors);
+
+            var root = PrefabUtility.LoadPrefabContents(
+                TutorialPlayerPrefabPath);
+            try
+            {
+                Require(
+                    root.name == "PHS_NetworkTutorialPlayer",
+                    $"tutorial_player_root_name_invalid actual={root.name}",
+                    errors);
+                Require(
+                    root.GetComponentsInChildren<NetworkObject>(true).Length == 1,
+                    "tutorial_player_network_object_count_invalid",
+                    errors);
+                Require(
+                    root.GetComponentsInChildren<NetworkPlayerController>(true).Length
+                        == 1,
+                    "tutorial_player_controller_count_invalid",
+                    errors);
+                Require(
+                    root.GetComponentsInChildren<NetworkPlayerGrappleController>(true)
+                        .Length == 1,
+                    "tutorial_player_grapple_count_invalid",
+                    errors);
+                Require(
+                    root.GetComponentsInChildren<TempPlayerItemHolder>(true).Length
+                        == 1,
+                    "tutorial_player_item_holder_count_invalid",
+                    errors);
+                Require(
+                    root.GetComponentsInChildren<NetworkRunResultPanelController>(true)
+                        .Length == 0,
+                    "tutorial_player_result_controller_must_be_removed",
+                    errors);
+                Require(
+                    root.GetComponentsInChildren<NetworkRunResultPanelView>(true)
+                        .Length == 0,
+                    "tutorial_player_result_view_must_be_removed",
+                    errors);
+
+                var transforms = root.GetComponentsInChildren<Transform>(true);
+                Require(
+                    transforms.Count(transform =>
+                        transform.name == "PHS_NetworkRunResultPanel") == 0,
+                    "tutorial_player_result_panel_must_be_removed",
+                    errors);
+                Require(
+                    transforms.Count(transform =>
+                        transform.name == "PHS_NetworkOwnerPauseUI") == 0,
+                    "tutorial_player_pause_ui_must_be_removed",
+                    errors);
+                Require(
+                    transforms.Count(transform =>
+                        transform.name == "PHS_NetworkTutorialCompletionAudio") == 1,
+                    "tutorial_player_completion_audio_count_invalid",
+                    errors);
+            }
+            finally
+            {
+                PrefabUtility.UnloadPrefabContents(root);
             }
         }
 
@@ -3047,7 +3184,8 @@ namespace LastJumpCrew.ParkHanSol.Editor
                     typeof(NetworkRunIncidentLedger),
                     typeof(NetworkShopTransitionVoteCoordinator),
                     typeof(NetworkRunRestartCoordinator),
-                    typeof(PHSNetworkFoamCoordinator)
+                    typeof(PHSNetworkFoamCoordinator),
+                    typeof(NetworkGameOverSequenceCoordinator)
                 };
                 Require(
                     networkBehaviours.Length == expectedBehaviourTypes.Length,
@@ -3939,8 +4077,8 @@ namespace LastJumpCrew.ParkHanSol.Editor
                     errors);
                 RequireObject(
                     serializedView,
-                    "eventAlertText",
-                    $"{label}_event_hud_alert_text_missing",
+                    "eventAlertIcon",
+                    $"{label}_event_hud_alert_icon_missing",
                     errors);
                 RequireObject(
                     serializedView,
@@ -4036,7 +4174,7 @@ namespace LastJumpCrew.ParkHanSol.Editor
                 return;
             }
 
-            Require(catalog.Products.Count == 13, $"shop_catalog_count_invalid actual={catalog.Products.Count}", errors);
+            Require(catalog.Products.Count == 10, $"shop_catalog_count_invalid actual={catalog.Products.Count}", errors);
             var networkPrefabHashes = new HashSet<long>();
             foreach (var product in catalog.Products)
             {

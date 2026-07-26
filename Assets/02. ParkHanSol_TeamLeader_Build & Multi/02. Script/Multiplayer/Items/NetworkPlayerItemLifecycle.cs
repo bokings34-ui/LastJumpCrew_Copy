@@ -14,6 +14,31 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
         NetworkBehaviour,
         INetworkItemPickupRequester
     {
+        public readonly struct ShopEntryDropTransaction
+        {
+            internal ShopEntryDropTransaction(
+                NetworkPlayerItemLifecycle lifecycle,
+                string itemId,
+                int durability,
+                uint consumedRevision,
+                NetworkObject droppedItem)
+            {
+                Lifecycle = lifecycle;
+                ItemId = itemId;
+                Durability = durability;
+                ConsumedRevision = consumedRevision;
+                DroppedItem = droppedItem;
+            }
+
+            internal NetworkPlayerItemLifecycle Lifecycle { get; }
+            internal string ItemId { get; }
+            internal int Durability { get; }
+            internal uint ConsumedRevision { get; }
+            internal NetworkObject DroppedItem { get; }
+            public bool IsValid => Lifecycle != null
+                && !string.IsNullOrWhiteSpace(ItemId);
+        }
+
         [Header("Catalog")]
         [SerializeField] private UtilityItemCatalogSO itemCatalog;
 
@@ -285,6 +310,142 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
             return true;
         }
 
+        public bool TryDropHeldItemForShopEntryServer(
+            out ShopEntryDropTransaction transaction,
+            out string reason)
+        {
+            transaction = default;
+            if (!IsSpawned
+                || !IsServer
+                || itemRecord == null
+                || itemHolder == null
+                || dropMotionProfile == null
+                || !itemRecord.IsSpawned)
+            {
+                reason = "player_contract";
+                return false;
+            }
+
+            var itemId = itemRecord.HeldItemId;
+            if (string.IsNullOrEmpty(itemId))
+            {
+                reason = null;
+                return true;
+            }
+
+            itemHolder.GetDropPose(out var dropPosition, out var dropRotation);
+            if (!IsFinite(dropPosition)
+                || !TryNormalize(dropRotation, out var normalizedDropRotation)
+                || !IsWithinDistance(
+                    transform.position,
+                    dropPosition,
+                    serverPlaceDistance))
+            {
+                reason = "drop_pose_contract";
+                return false;
+            }
+
+            var durability = itemRecord.CurrentDurability;
+            var expectedRevision = itemRecord.Revision;
+            if (!TryCreateDroppedItemServer(
+                    itemId,
+                    durability,
+                    dropPosition,
+                    normalizedDropRotation,
+                    out var droppedItem))
+            {
+                reason = "drop_spawn_failed";
+                return false;
+            }
+
+            var droppedRigidbody = droppedItem.GetComponent<Rigidbody>();
+            if (droppedRigidbody == null
+                || !dropMotionProfile.TryApply(
+                    droppedRigidbody,
+                    normalizedDropRotation))
+            {
+                TryCleanupSpawnedItemServer(
+                    droppedItem,
+                    "shop_entry_drop_motion_rejected");
+                reason = "drop_motion_rejected";
+                return false;
+            }
+
+            if (!itemRecord.TryConsumeHeldItemServer(
+                    itemId,
+                    expectedRevision))
+            {
+                TryCleanupSpawnedItemServer(
+                    droppedItem,
+                    "shop_entry_record_rejected");
+                reason = "record_consume_failed";
+                return false;
+            }
+
+            transaction = new ShopEntryDropTransaction(
+                this,
+                itemId,
+                durability,
+                itemRecord.Revision,
+                droppedItem);
+            Debug.Log(
+                $"PHS_SHOP_ENTRY_ITEM_DROPPED owner={OwnerClientId} item={itemId} networkObjectId={droppedItem.NetworkObjectId} revision={itemRecord.Revision}",
+                this);
+            reason = null;
+            return true;
+        }
+
+        public bool TryRollbackShopEntryDropServer(
+            ShopEntryDropTransaction transaction,
+            out string reason)
+        {
+            if (!transaction.IsValid
+                || transaction.Lifecycle != this
+                || !IsSpawned
+                || !IsServer
+                || itemRecord == null
+                || !itemRecord.IsSpawned
+                || !string.IsNullOrEmpty(itemRecord.HeldItemId)
+                || itemRecord.Revision != transaction.ConsumedRevision)
+            {
+                reason = "rollback_contract";
+                return false;
+            }
+
+            if (!itemRecord.TrySetHeldItemServer(
+                    transaction.ItemId,
+                    transaction.Durability,
+                    transaction.ConsumedRevision))
+            {
+                reason = "record_restore_failed";
+                return false;
+            }
+
+            var restoredRevision = itemRecord.Revision;
+            if (!TryCleanupSpawnedItemServer(
+                    transaction.DroppedItem,
+                    "shop_entry_rollback"))
+            {
+                if (!itemRecord.TryConsumeHeldItemServer(
+                        transaction.ItemId,
+                        restoredRevision))
+                {
+                    Debug.LogError(
+                        $"PHS_SHOP_ENTRY_ROLLBACK_INVARIANT_FAILED reason=duplicate_prevention_failed owner={OwnerClientId} item={transaction.ItemId}",
+                        this);
+                }
+
+                reason = "drop_cleanup_failed";
+                return false;
+            }
+
+            Debug.LogWarning(
+                $"PHS_SHOP_ENTRY_ITEM_ROLLED_BACK owner={OwnerClientId} item={transaction.ItemId} revision={itemRecord.Revision}",
+                this);
+            reason = null;
+            return true;
+        }
+
         public bool TryResolveHeldItemActionServer(
             string expectedItemId,
             uint expectedRevision,
@@ -300,6 +461,17 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
             {
                 Debug.LogError(
                     $"PHS_ITEM_ACTION_REJECTED reason=server_contract player={name} action={actionKind}",
+                    this);
+                return false;
+            }
+
+            if (!NetworkShopTransitionVoteCoordinator.TryAuthorizeHeldItemUseServer(
+                    OwnerClientId,
+                    expectedItemId,
+                    out var policyReason))
+            {
+                Debug.LogWarning(
+                    $"PHS_ITEM_ACTION_REJECTED reason={policyReason} player={name} item={expectedItemId} action={actionKind}",
                     this);
                 return false;
             }
@@ -338,6 +510,17 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
             {
                 Debug.LogError(
                     $"PHS_ITEM_ACTION_COMMIT_FAILED reason=profile_invalid player={name} item={expectedItemId}",
+                    this);
+                return false;
+            }
+
+            if (!NetworkShopTransitionVoteCoordinator.TryAuthorizeHeldItemUseServer(
+                    OwnerClientId,
+                    expectedItemId,
+                    out var policyReason))
+            {
+                Debug.LogWarning(
+                    $"PHS_ITEM_ACTION_COMMIT_FAILED reason={policyReason} player={name} item={expectedItemId}",
                     this);
                 return false;
             }

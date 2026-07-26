@@ -69,16 +69,53 @@ namespace LastJumpCrew.ParkHanSol.Editor
             Debug.Log($"PHS_NETWORK_TUTORIAL_AUTHORING_OK scene={ScenePath}");
         }
 
+        [MenuItem(
+            "Tools/ParkHanSol/BEAVER/Migrate Tutorial Player To Canonical Variant")]
+        public static void MigrateTutorialPlayerToCanonicalVariant()
+        {
+            RequireTutorialSceneNotLoaded();
+            RequireAsset<GameObject>(SourcePlayerPrefabPath);
+            RequireAsset<GameObject>(TutorialPlayerPrefabPath);
+            CreateTutorialPlayerPrefab();
+            RebindTutorialScenePlayerReferences();
+            AssetDatabase.SaveAssets();
+            AssetDatabase.ImportAsset(
+                TutorialPlayerPrefabPath,
+                ImportAssetOptions.ForceSynchronousImport);
+            Debug.Log(
+                "PHS_NETWORK_TUTORIAL_PLAYER_VARIANT_AUTHORING_OK " +
+                $"source={SourcePlayerPrefabPath} target={TutorialPlayerPrefabPath}");
+        }
+
         private static void CreateTutorialPlayerPrefab()
         {
-            CopyPrefabPreservingGuid(
-                SourcePlayerPrefabPath,
-                TutorialPlayerPrefabPath,
-                "PHS_NetworkTutorialPlayer");
-
-            var root = PrefabUtility.LoadPrefabContents(TutorialPlayerPrefabPath);
+            var sourcePrefab = RequireAsset<GameObject>(SourcePlayerPrefabPath);
+            var existingTutorialPrefab = AssetDatabase.LoadAssetAtPath<GameObject>(
+                TutorialPlayerPrefabPath);
+            var targetGuid = AssetDatabase.AssetPathToGUID(
+                TutorialPlayerPrefabPath);
+            var existingRoot = existingTutorialPrefab != null
+                ? PrefabUtility.LoadPrefabContents(TutorialPlayerPrefabPath)
+                : null;
+            var previewScene = EditorSceneManager.NewPreviewScene();
+            GameObject root = null;
             try
             {
+                root = PrefabUtility.InstantiatePrefab(
+                    sourcePrefab,
+                    previewScene) as GameObject;
+                if (root == null)
+                {
+                    throw new InvalidOperationException(
+                        "PHS_NETWORK_TUTORIAL_AUTHORING_FAILED reason=canonical_player_instantiate_failed");
+                }
+
+                if (existingRoot != null)
+                {
+                    PreserveTutorialCompletionAudio(existingRoot, root);
+                    PrefabUtility.UnloadPrefabContents(existingRoot);
+                    existingRoot = null;
+                }
                 foreach (var resultController in root.GetComponentsInChildren<
                              NetworkRunResultPanelController>(true))
                 {
@@ -99,13 +136,164 @@ namespace LastJumpCrew.ParkHanSol.Editor
                     UnityEngine.Object.DestroyImmediate(ownerPause.gameObject);
                 }
 
+                foreach (var speakingHudBinder in root.GetComponentsInChildren<
+                             ParkHanSolSpeakingPlayerHudBinder>(true))
+                {
+                    UnityEngine.Object.DestroyImmediate(speakingHudBinder);
+                }
+
+                foreach (var voiceChatSession in root.GetComponentsInChildren<
+                             ProximityVoiceChatSession>(true))
+                {
+                    UnityEngine.Object.DestroyImmediate(voiceChatSession);
+                }
+
                 root.name = "PHS_NetworkTutorialPlayer";
-                PrefabUtility.SaveAsPrefabAsset(root, TutorialPlayerPrefabPath);
+                var savedPrefab = PrefabUtility.SaveAsPrefabAsset(
+                    root,
+                    TutorialPlayerPrefabPath);
+                if (savedPrefab == null)
+                {
+                    throw new InvalidOperationException(
+                        "PHS_NETWORK_TUTORIAL_AUTHORING_FAILED reason=tutorial_variant_save_failed");
+                }
+
+                var savedGuid = AssetDatabase.AssetPathToGUID(
+                    TutorialPlayerPrefabPath);
+                if (!string.IsNullOrWhiteSpace(targetGuid)
+                    && !string.Equals(
+                        targetGuid,
+                        savedGuid,
+                        StringComparison.Ordinal))
+                {
+                    throw new InvalidOperationException(
+                        "PHS_NETWORK_TUTORIAL_AUTHORING_FAILED " +
+                        $"reason=tutorial_prefab_guid_changed before={targetGuid} after={savedGuid}");
+                }
             }
             finally
             {
-                PrefabUtility.UnloadPrefabContents(root);
+                if (existingRoot != null)
+                {
+                    PrefabUtility.UnloadPrefabContents(existingRoot);
+                }
+
+                EditorSceneManager.ClosePreviewScene(previewScene);
             }
+        }
+
+        private static void RebindTutorialScenePlayerReferences()
+        {
+            var scene = EditorSceneManager.OpenScene(
+                ScenePath,
+                OpenSceneMode.Additive);
+            try
+            {
+                var playerRoot = FindSceneRoot(
+                    scene,
+                    "PHS_NetworkTutorialPlayer");
+                var director = FindExactlyOneInScene<NetworkTutorialDirector>(
+                    scene,
+                    "tutorial_director");
+                var controller = RequireSingle<NetworkPlayerController>(playerRoot);
+                var grapple = RequireSingle<NetworkPlayerGrappleController>(playerRoot);
+                var holder = RequireSingle<TempPlayerItemHolder>(playerRoot);
+
+                RemoveTutorialVoiceOwnershipOverrides(scene);
+
+                var serializedDirector = new SerializedObject(director);
+                serializedDirector.FindProperty("playerController").objectReferenceValue =
+                    controller;
+                serializedDirector.FindProperty("grappleController").objectReferenceValue =
+                    grapple;
+                serializedDirector.FindProperty("itemHolder").objectReferenceValue = holder;
+                serializedDirector.ApplyModifiedPropertiesWithoutUndo();
+                EditorUtility.SetDirty(director);
+                EditorSceneManager.MarkSceneDirty(scene);
+                if (!EditorSceneManager.SaveScene(scene))
+                {
+                    throw new InvalidOperationException(
+                        "PHS_NETWORK_TUTORIAL_AUTHORING_FAILED reason=tutorial_scene_save_failed");
+                }
+            }
+            finally
+            {
+                EditorSceneManager.CloseScene(scene, true);
+            }
+        }
+
+        private static void RemoveTutorialVoiceOwnershipOverrides(Scene scene)
+        {
+            foreach (var root in scene.GetRootGameObjects())
+            {
+                foreach (var binder in root.GetComponentsInChildren<
+                             ParkHanSolSpeakingPlayerHudBinder>(true))
+                {
+                    UnityEngine.Object.DestroyImmediate(binder);
+                }
+
+                foreach (var voiceSession in root.GetComponentsInChildren<
+                             ProximityVoiceChatSession>(true))
+                {
+                    UnityEngine.Object.DestroyImmediate(voiceSession);
+                }
+            }
+        }
+
+        private static GameObject FindSceneRoot(Scene scene, string rootName)
+        {
+            foreach (var root in scene.GetRootGameObjects())
+            {
+                if (root.name == rootName)
+                {
+                    return root;
+                }
+            }
+
+            throw new InvalidOperationException(
+                $"PHS_NETWORK_TUTORIAL_AUTHORING_FAILED reason=scene_root_missing root={rootName}");
+        }
+
+        private static T FindExactlyOneInScene<T>(Scene scene, string role)
+            where T : Component
+        {
+            T found = null;
+            var count = 0;
+            foreach (var root in scene.GetRootGameObjects())
+            {
+                foreach (var component in root.GetComponentsInChildren<T>(true))
+                {
+                    found = component;
+                    count++;
+                }
+            }
+
+            if (count != 1)
+            {
+                throw new InvalidOperationException(
+                    $"PHS_NETWORK_TUTORIAL_AUTHORING_FAILED reason={role}_count_invalid actual={count}");
+            }
+
+            return found;
+        }
+
+        private static void PreserveTutorialCompletionAudio(
+            GameObject existingRoot,
+            GameObject variantRoot)
+        {
+            var existingAudio = FindChild(
+                existingRoot.transform,
+                "PHS_NetworkTutorialCompletionAudio");
+            if (existingAudio == null)
+            {
+                return;
+            }
+
+            var preservedAudio = UnityEngine.Object.Instantiate(
+                existingAudio.gameObject,
+                variantRoot.transform,
+                false);
+            preservedAudio.name = "PHS_NetworkTutorialCompletionAudio";
         }
 
         private static void CreateInteractionStationPrefab()

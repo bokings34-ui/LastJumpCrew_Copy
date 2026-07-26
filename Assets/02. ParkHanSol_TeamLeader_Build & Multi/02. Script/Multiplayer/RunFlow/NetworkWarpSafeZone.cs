@@ -102,6 +102,18 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
             }
 
             coordinator.SetPlayerInsideSafeZone(player.OwnerClientId, isInside);
+            var audioFeedback = player.GetComponent<NetworkWarpSafeZoneAudioFeedback>();
+            if (audioFeedback == null)
+            {
+                Debug.LogError(
+                    $"PHS_WARP_SAFE_ZONE_AUDIO_FAILED reason=feedback_missing player={player.name}",
+                    player);
+            }
+            else
+            {
+                audioFeedback.PlayForOwner(isInside);
+            }
+
             Debug.Log($"PHS_WARP_SAFE_ZONE_PLAYER zone={name} clientId={player.OwnerClientId} inside={isInside}");
         }
 
