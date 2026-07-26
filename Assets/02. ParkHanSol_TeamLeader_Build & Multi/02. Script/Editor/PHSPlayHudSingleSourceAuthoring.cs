@@ -22,6 +22,10 @@ namespace LastJumpCrew.ParkHanSol.Editor
             "07d62e5473408144e8beaf1dc528b2bc";
         private const string CanonicalEnglishFontPath =
             "Assets/99. DownloadAssets/TextMesh Pro/Resources/Fonts & Materials/LiberationSans SDF.asset";
+        private const string ShipHealthIconPath =
+            "Assets/02. ParkHanSol_TeamLeader_Build & Multi/04. Data/UI/VitalsIcons/PHS_Hud_ShipHealth.png";
+        private const string WarpGaugeIconPath =
+            "Assets/02. ParkHanSol_TeamLeader_Build & Multi/04. Data/UI/VitalsIcons/PHS_Hud_WarpGauge.png";
 
         [MenuItem("Tools/ParkHanSol/BEAVER/Author Canonical Play HUD")]
         public static void Author()
@@ -37,37 +41,18 @@ namespace LastJumpCrew.ParkHanSol.Editor
                         "PHS_HUD_SSO_AUTHOR_FAILED reason=economy_cluster_missing");
                 ConfigureEconomyCluster(economy);
 
-                var warpText = RequireText(root, "Warp Gauge Text");
-                var shipHpText = RequireText(root, "Ship HP Text");
-                ConfigureWarpText(warpText);
-                ConfigureShipHpText(shipHpText);
-                var warpGauge = EnsureGauge(
-                    warpText,
-                    "Warp Gauge Bar",
-                    new Vector2(0f, -148f),
-                    new Vector2(180f, 10f),
-                    new Vector2(0f, 1f),
-                    new Vector2(0f, 1f),
-                    new Color(0.44f, 0.1f, 0.025f, 1f),
-                    new Color(1f, 0.31f, 0.08f, 1f));
-                var shipHpGauge = EnsureGauge(
-                    shipHpText,
-                    "Ship HP Bar",
-                    new Vector2(0f, -5f),
-                    new Vector2(160f, 9f),
-                    new Vector2(1f, 0f),
-                    new Vector2(1f, 1f),
-                    new Color(0.04f, 0.16f, 0.22f, 1f),
-                    new Color(0.27f, 0.81f, 1f, 1f));
+                var gauges = ConfigureVitalsGauges(root);
 
                 var controllerData = new SerializedObject(controller);
                 SetReference(controllerData, "economyRoot", economy.gameObject);
-                SetReference(controllerData, "warpGaugeMotion", warpGauge);
-                SetReference(controllerData, "shipHpGaugeMotion", shipHpGauge);
+                SetReference(controllerData, "shipHpMotion", null);
+                SetReference(controllerData, "warpGaugeMotion", gauges.warp);
+                SetReference(controllerData, "shipHpGaugeMotion", gauges.ship);
                 controllerData.ApplyModifiedPropertiesWithoutUndo();
 
                 RemoveUnavailableModular3DText(root);
                 EnsureEventAlertIcon(root);
+                ConfigureAlertIconLineup(root);
                 EnsureShopProductPanel(root);
                 NormalizeEnglishFonts(root);
                 PrefabUtility.SaveAsPrefabAsset(root, HudPath);
@@ -186,7 +171,7 @@ namespace LastJumpCrew.ParkHanSol.Editor
             Require(shipHpGauge != null, "ship_hp_gauge_missing", errors);
             if (warpGauge != null)
             {
-                Require(Approximately(warpGauge.sizeDelta, new Vector2(180f, 10f)),
+                Require(Approximately(warpGauge.sizeDelta, new Vector2(300f, 18f)),
                     $"warp_gauge_size_invalid actual={warpGauge.sizeDelta}", errors);
                 var fill = Find(warpGauge, "Fill")?.GetComponent<Image>();
                 Require(fill != null && Approximately(
@@ -197,7 +182,7 @@ namespace LastJumpCrew.ParkHanSol.Editor
 
             if (shipHpGauge != null)
             {
-                Require(Approximately(shipHpGauge.sizeDelta, new Vector2(160f, 9f)),
+                Require(Approximately(shipHpGauge.sizeDelta, new Vector2(300f, 18f)),
                     $"ship_hp_gauge_size_invalid actual={shipHpGauge.sizeDelta}", errors);
                 Require(shipHpGauge.anchorMin == shipHpGauge.anchorMax,
                     "ship_hp_gauge_stretch_anchor_present", errors);
@@ -236,10 +221,39 @@ namespace LastJumpCrew.ParkHanSol.Editor
                 var eventData = new SerializedObject(eventView);
                 Require(eventData.FindProperty("eventAlertIcon")?.objectReferenceValue != null,
                     "event_alert_icon_reference_missing", errors);
+                Require(eventData.FindProperty("iconLineupRoot")?.objectReferenceValue != null,
+                    "event_icon_lineup_reference_missing", errors);
+                Require(eventData.FindProperty("accidentIconEntries")?.arraySize == 7,
+                    "accident_icon_entry_count_invalid", errors);
+                Require(eventData.FindProperty("miniGameIconEntries")?.arraySize == 3,
+                    "minigame_icon_entry_count_invalid", errors);
                 Require(Find(prefab.transform, "PHS Event Alert Text") == null,
                     "event_alert_text_still_present", errors);
+                Require(Find(prefab.transform, "Icon Mark") == null,
+                    "event_alert_mark_still_present", errors);
                 Require(Find(prefab.transform, "PHS Event Alert Icon") != null,
                     "event_alert_icon_missing", errors);
+                var lineup = eventData.FindProperty("iconLineupRoot")
+                    ?.objectReferenceValue as GameObject;
+                Require(lineup != null
+                        && lineup.GetComponent<VerticalLayoutGroup>() != null
+                        && lineup.GetComponent<Image>() == null
+                        && lineup.GetComponent<Outline>() == null,
+                    "event_icon_lineup_should_be_vertical_and_background_free",
+                    errors);
+                if (lineup != null)
+                {
+                    foreach (Transform entry in lineup.transform)
+                    {
+                        var icon = Find(entry, "Icon") as RectTransform;
+                        Require(icon != null
+                                && Approximately(icon.sizeDelta, new Vector2(92f, 92f))
+                                && entry.GetComponent<Image>() == null
+                                && entry.GetComponent<Outline>() == null,
+                            $"event_icon_entry_style_invalid name={entry.name}",
+                            errors);
+                    }
+                }
             }
 
             var canonicalFont = AssetDatabase.LoadAssetAtPath<TMP_FontAsset>(CanonicalEnglishFontPath);
@@ -348,8 +362,8 @@ namespace LastJumpCrew.ParkHanSol.Editor
             alertRect.anchorMin = Vector2.one;
             alertRect.anchorMax = Vector2.one;
             alertRect.pivot = Vector2.one;
-            alertRect.anchoredPosition = new Vector2(-42f, -154f);
-            alertRect.sizeDelta = new Vector2(72f, 72f);
+            alertRect.anchoredPosition = new Vector2(-430f, -116f);
+            alertRect.sizeDelta = new Vector2(92f, 92f);
 
             var iconTransform = Find(alertRoot.transform, "PHS Event Alert Icon");
             var iconObject = iconTransform == null
@@ -381,32 +395,10 @@ namespace LastJumpCrew.ParkHanSol.Editor
             iconOutline.effectDistance = new Vector2(3f, -3f);
 
             var markTransform = Find(iconRect, "Icon Mark");
-            var markObject = markTransform == null
-                ? new GameObject(
-                    "Icon Mark",
-                    typeof(RectTransform),
-                    typeof(TextMeshProUGUI))
-                : markTransform.gameObject;
-            var markRect = markObject.GetComponent<RectTransform>();
-            if (markTransform == null)
+            if (markTransform != null)
             {
-                markRect.SetParent(iconRect, false);
+                UnityEngine.Object.DestroyImmediate(markTransform.gameObject);
             }
-
-            markRect.anchorMin = Vector2.zero;
-            markRect.anchorMax = Vector2.one;
-            markRect.offsetMin = Vector2.zero;
-            markRect.offsetMax = Vector2.zero;
-            markRect.localScale = Vector3.one;
-            markRect.localEulerAngles = new Vector3(0f, 0f, -45f);
-
-            var mark = markObject.GetComponent<TextMeshProUGUI>();
-            mark.text = "!";
-            mark.alignment = TextAlignmentOptions.Center;
-            mark.fontSize = 32f;
-            mark.fontStyle = FontStyles.Bold;
-            mark.color = Color.white;
-            mark.raycastTarget = false;
             SetReference(viewData, "eventAlertIcon", iconObject);
             viewData.ApplyModifiedPropertiesWithoutUndo();
             EditorUtility.SetDirty(eventHudView);
@@ -437,6 +429,177 @@ namespace LastJumpCrew.ParkHanSol.Editor
             bankText.alignment = TextAlignmentOptions.Right;
             bankText.fontSize = 30f;
             bankText.color = new Color(0.27f, 0.81f, 1f, 1f);
+        }
+
+        private static (
+            ParkHanSolHudGaugeMotion warp,
+            ParkHanSolHudGaugeMotion ship) ConfigureVitalsGauges(GameObject root)
+        {
+            var mission = Find(root.transform, "Mission Status Cluster") as RectTransform
+                ?? throw new InvalidOperationException(
+                    "PHS_HUD_SSO_AUTHOR_FAILED reason=mission_status_cluster_missing");
+            mission.sizeDelta = new Vector2(440f, 180f);
+
+            var shipRoot = Find(root.transform, "Ship HP Root") as RectTransform
+                ?? throw new InvalidOperationException(
+                    "PHS_HUD_SSO_AUTHOR_FAILED reason=ship_hp_root_missing");
+            var obsoleteShipTextMotion =
+                shipRoot.GetComponent<ParkHanSolHudTextMotion>();
+            if (obsoleteShipTextMotion != null)
+            {
+                UnityEngine.Object.DestroyImmediate(obsoleteShipTextMotion);
+            }
+            shipRoot.SetParent(mission, false);
+            ConfigureGaugeRow(shipRoot, new Vector2(0f, -58f));
+
+            var warpRootTransform = Find(root.transform, "Warp Gauge Root");
+            var warpRootObject = warpRootTransform == null
+                ? new GameObject("Warp Gauge Root", typeof(RectTransform))
+                : warpRootTransform.gameObject;
+            var warpRoot = warpRootObject.GetComponent<RectTransform>();
+            warpRoot.SetParent(mission, false);
+            ConfigureGaugeRow(warpRoot, new Vector2(0f, -104f));
+
+            var shipBar = Find(root.transform, "Ship HP Bar") as RectTransform
+                ?? throw new InvalidOperationException(
+                    "PHS_HUD_SSO_AUTHOR_FAILED reason=ship_hp_bar_missing");
+            var warpBar = Find(root.transform, "Warp Gauge Bar") as RectTransform
+                ?? throw new InvalidOperationException(
+                    "PHS_HUD_SSO_AUTHOR_FAILED reason=warp_gauge_bar_missing");
+            ConfigureGaugeBar(shipBar, shipRoot);
+            ConfigureGaugeBar(warpBar, warpRoot);
+
+            EnsureVitalsIcon(shipRoot, "Ship Health Icon", ShipHealthIconPath);
+            EnsureVitalsIcon(warpRoot, "Warp Gauge Icon", WarpGaugeIconPath);
+
+            var warpText = Find(root.transform, "Warp Gauge Text");
+            if (warpText != null)
+            {
+                UnityEngine.Object.DestroyImmediate(warpText.gameObject);
+            }
+
+            var shipText = Find(root.transform, "Ship HP Text");
+            if (shipText != null)
+            {
+                UnityEngine.Object.DestroyImmediate(shipText.gameObject);
+            }
+
+            return (
+                warpBar.GetComponent<ParkHanSolHudGaugeMotion>(),
+                shipBar.GetComponent<ParkHanSolHudGaugeMotion>());
+        }
+
+        private static void ConfigureGaugeRow(RectTransform row, Vector2 position)
+        {
+            row.anchorMin = Vector2.one;
+            row.anchorMax = Vector2.one;
+            row.pivot = Vector2.one;
+            row.anchoredPosition = position;
+            row.sizeDelta = new Vector2(380f, 64f);
+            row.localScale = Vector3.one;
+        }
+
+        private static void ConfigureGaugeBar(
+            RectTransform bar,
+            RectTransform parent)
+        {
+            bar.SetParent(parent, false);
+            bar.anchorMin = new Vector2(0f, 0.5f);
+            bar.anchorMax = new Vector2(0f, 0.5f);
+            bar.pivot = new Vector2(0f, 0.5f);
+            bar.anchoredPosition = new Vector2(80f, 0f);
+            bar.sizeDelta = new Vector2(300f, 18f);
+            bar.localScale = Vector3.one;
+        }
+
+        private static void EnsureVitalsIcon(
+            RectTransform parent,
+            string name,
+            string spritePath)
+        {
+            var sprite = AssetDatabase.LoadAssetAtPath<Sprite>(spritePath)
+                ?? throw new InvalidOperationException(
+                    $"PHS_HUD_SSO_AUTHOR_FAILED reason=vitals_icon_missing path={spritePath}");
+            var existing = Find(parent, name);
+            var iconObject = existing == null
+                ? new GameObject(name, typeof(RectTransform), typeof(Image))
+                : existing.gameObject;
+            var iconRect = iconObject.GetComponent<RectTransform>();
+            iconRect.SetParent(parent, false);
+            iconRect.anchorMin = new Vector2(0f, 0.5f);
+            iconRect.anchorMax = new Vector2(0f, 0.5f);
+            iconRect.pivot = new Vector2(0.5f, 0.5f);
+            iconRect.anchoredPosition = new Vector2(32f, 0f);
+            iconRect.sizeDelta = new Vector2(64f, 64f);
+            iconRect.localScale = Vector3.one;
+            var image = iconObject.GetComponent<Image>();
+            image.sprite = sprite;
+            image.color = Color.white;
+            image.preserveAspect = true;
+            image.raycastTarget = false;
+        }
+
+        private static void ConfigureAlertIconLineup(GameObject root)
+        {
+            var view = root.GetComponentInChildren<PHSNetworkEventHudView>(true)
+                ?? throw new InvalidOperationException(
+                    "PHS_HUD_SSO_AUTHOR_FAILED reason=event_hud_view_missing");
+            var data = new SerializedObject(view);
+            var lineup = data.FindProperty("iconLineupRoot")
+                ?.objectReferenceValue as GameObject
+                ?? throw new InvalidOperationException(
+                    "PHS_HUD_SSO_AUTHOR_FAILED reason=event_icon_lineup_missing");
+
+            UnityEngine.Object.DestroyImmediate(lineup.GetComponent<Image>());
+            UnityEngine.Object.DestroyImmediate(lineup.GetComponent<Outline>());
+            UnityEngine.Object.DestroyImmediate(lineup.GetComponent<HorizontalLayoutGroup>());
+            var vertical = lineup.GetComponent<VerticalLayoutGroup>()
+                ?? lineup.AddComponent<VerticalLayoutGroup>();
+            vertical.padding = new RectOffset();
+            vertical.spacing = 8f;
+            vertical.childAlignment = TextAnchor.UpperCenter;
+            vertical.childControlWidth = true;
+            vertical.childControlHeight = true;
+            vertical.childForceExpandWidth = false;
+            vertical.childForceExpandHeight = false;
+
+            var lineupRect = lineup.GetComponent<RectTransform>();
+            lineupRect.anchorMin = Vector2.one;
+            lineupRect.anchorMax = Vector2.one;
+            lineupRect.pivot = Vector2.one;
+            lineupRect.anchoredPosition = Vector2.zero;
+            lineupRect.sizeDelta = new Vector2(92f, 92f);
+            lineupRect.localScale = Vector3.one;
+
+            var fitter = lineup.GetComponent<ContentSizeFitter>()
+                ?? lineup.AddComponent<ContentSizeFitter>();
+            fitter.horizontalFit = ContentSizeFitter.FitMode.PreferredSize;
+            fitter.verticalFit = ContentSizeFitter.FitMode.PreferredSize;
+
+            foreach (Transform entry in lineup.transform)
+            {
+                UnityEngine.Object.DestroyImmediate(entry.GetComponent<Image>());
+                UnityEngine.Object.DestroyImmediate(entry.GetComponent<Outline>());
+                var entryRect = entry as RectTransform;
+                entryRect.sizeDelta = new Vector2(92f, 92f);
+                entryRect.localScale = Vector3.one;
+                var layout = entry.GetComponent<LayoutElement>()
+                    ?? entry.gameObject.AddComponent<LayoutElement>();
+                layout.minWidth = 92f;
+                layout.minHeight = 92f;
+                layout.preferredWidth = 92f;
+                layout.preferredHeight = 92f;
+
+                var icon = Find(entry, "Icon") as RectTransform;
+                if (icon != null)
+                {
+                    icon.sizeDelta = new Vector2(92f, 92f);
+                    icon.localScale = Vector3.one;
+                    var image = icon.GetComponent<Image>();
+                    image.preserveAspect = true;
+                    image.raycastTarget = false;
+                }
+            }
         }
 
         private static void ConfigureWarpText(TMP_Text warpText)
@@ -574,8 +737,8 @@ namespace LastJumpCrew.ParkHanSol.Editor
             panelRect.anchorMin = new Vector2(0.5f, 1f);
             panelRect.anchorMax = new Vector2(0.5f, 1f);
             panelRect.pivot = new Vector2(0.5f, 1f);
-            panelRect.anchoredPosition = new Vector2(0f, -118f);
-            panelRect.sizeDelta = new Vector2(420f, 126f);
+            panelRect.anchoredPosition = new Vector2(0f, -128f);
+            panelRect.sizeDelta = new Vector2(260f, 64f);
             panelRect.localScale = Vector3.one;
             var background = panelObject.GetComponent<Image>();
             background.color = new Color(0.02f, 0.07f, 0.11f, 0.9f);
@@ -595,8 +758,8 @@ namespace LastJumpCrew.ParkHanSol.Editor
                 panelRect,
                 "Price",
                 Vector2.zero,
-                24f,
-                FontStyles.Normal);
+                36f,
+                FontStyles.Bold);
             var pickupText = EnsureShopText(
                 panelRect,
                 "Pickup Prompt",
@@ -621,6 +784,9 @@ namespace LastJumpCrew.ParkHanSol.Editor
             SetReference(presenterData, "priceText", priceText);
             SetReference(presenterData, "pickupPromptText", pickupText);
             presenterData.ApplyModifiedPropertiesWithoutUndo();
+            nameText.gameObject.SetActive(false);
+            priceText.gameObject.SetActive(true);
+            pickupText.gameObject.SetActive(false);
             EditorUtility.SetDirty(presenter);
         }
 

@@ -13,6 +13,9 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
         [SerializeField, Min(1)] private int maximumDebrisCount = 30;
         [SerializeField] private Vector3 spawnCenter = new(-330f, 6f, -15f);
         [SerializeField] private Vector3 spawnExtents = new(3f, 5f, 12f);
+        [SerializeField] private Vector3[] passageLaneCenters;
+        [SerializeField] private Vector3 passageLaneExtents = new(3f, 1f, 1f);
+        [SerializeField, Range(0f, 1f)] private float passageLaneSpawnChance = 1f;
         [SerializeField] private float recycleWorldX = -365f;
         [SerializeField] private bool distributeAcrossPathOnAwake;
         [SerializeField, Min(0.01f)] private float minimumSpeed = 0.8f;
@@ -335,19 +338,35 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
         private void ResetDebris(int index, bool distributeAcrossPath)
         {
             var debris = activeDebris[index];
+            GetSpawnArea(out var laneCenter, out var laneExtents);
             var spawnX = distributeAcrossPath
                 ? Random.Range(
-                    Mathf.Min(recycleWorldX, spawnCenter.x + spawnExtents.x),
-                    Mathf.Max(recycleWorldX, spawnCenter.x + spawnExtents.x))
-                : spawnCenter.x + Random.Range(-spawnExtents.x, spawnExtents.x);
+                    Mathf.Min(recycleWorldX, laneCenter.x + laneExtents.x),
+                    Mathf.Max(recycleWorldX, laneCenter.x + laneExtents.x))
+                : laneCenter.x + Random.Range(-laneExtents.x, laneExtents.x);
 
             debris.position = new Vector3(
                 spawnX,
-                spawnCenter.y + Random.Range(-spawnExtents.y, spawnExtents.y),
-                spawnCenter.z + Random.Range(-spawnExtents.z, spawnExtents.z));
+                laneCenter.y + Random.Range(-laneExtents.y, laneExtents.y),
+                laneCenter.z + Random.Range(-laneExtents.z, laneExtents.z));
             debris.rotation = Random.rotation;
             speeds[index] = Random.Range(minimumSpeed, maximumSpeed);
             angularVelocities[index] = Random.insideUnitSphere * maximumAngularSpeed;
+        }
+
+        private void GetSpawnArea(out Vector3 center, out Vector3 extents)
+        {
+            if (passageLaneCenters == null
+                || passageLaneCenters.Length == 0
+                || Random.value > passageLaneSpawnChance)
+            {
+                center = spawnCenter;
+                extents = spawnExtents;
+                return;
+            }
+
+            center = passageLaneCenters[Random.Range(0, passageLaneCenters.Length)];
+            extents = passageLaneExtents;
         }
     }
 }

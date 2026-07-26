@@ -11,6 +11,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
     public sealed class NetworkPlayerGrappleController : NetworkBehaviour
     {
         public bool IsGrappleActive => IsGrappleActiveInternal();
+        public event Action<Collider> GrappleLatched;
 
         private enum GrappleMotionState
         {
@@ -29,8 +30,9 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
         [SerializeField] private Transform armVisual;
         [SerializeField] private Transform armSegment;
         [SerializeField] private Transform armEndJoint;
+        [SerializeField] private GrappleTelescopicArmVisual telescopicArmVisual;
         [SerializeField, Range(0.02f, 0.12f)]
-        private float armThickness = 0.065f;
+        private float armThickness = 0.05f;
         [SerializeField] private Transform aimMarker;
         [SerializeField] private Transform aimReticle;
         [SerializeField] private Renderer aimReticleRenderer;
@@ -446,6 +448,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
         {
             motionState = GrappleMotionState.Latched;
             SetGrappleVisualPhase(GrappleClawPhase.Latched);
+            GrappleLatched?.Invoke(collider);
             activeTarget = collider.GetComponentInParent<IGrappleTarget>();
             activeCollectible = collider.GetComponentInParent<IGrappleCollectible>();
             activeCollectibleIsDebris = activeCollectible != null && HasDebrisTag(collider.transform);
@@ -770,7 +773,11 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
 
         private void RefreshRoboticArmVisual(Vector3 grapplePoint)
         {
-            if (armVisual == null || armSegment == null || armEndJoint == null)
+            if (armVisual == null
+                || armSegment == null
+                || armEndJoint == null
+                || telescopicArmVisual == null
+                || !telescopicArmVisual.IsConfigured)
             {
                 return;
             }
@@ -785,12 +792,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
             armVisual.SetPositionAndRotation(
                 ropeOrigin.position,
                 Quaternion.FromToRotation(Vector3.up, direction));
-            armSegment.localPosition = Vector3.up * (length * 0.5f);
-            armSegment.localScale = new Vector3(
-                armThickness,
-                length * 0.5f,
-                armThickness);
-            armEndJoint.localPosition = Vector3.up * length;
+            telescopicArmVisual.SetLength(length, armThickness);
         }
 
         private void SetAimMarkerVisible(bool visible)
@@ -838,6 +840,8 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
                 && armVisual != null
                 && armSegment != null
                 && armEndJoint != null
+                && telescopicArmVisual != null
+                && telescopicArmVisual.IsConfigured
                 && aimMarker != null
                 && aimReticle != null
                 && aimReticleRenderer != null
@@ -850,7 +854,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
             if (!setupErrorLogged)
             {
                 setupErrorLogged = true;
-                Debug.LogError($"PHS_GRAPPLE_SETUP_FAILED player={name} controller={playerController != null} input={playerControlInput != null} camera={aimCamera != null} ropeOrigin={ropeOrigin != null} hookVisual={hookVisual != null} clawVisual={clawVisual != null} ropeAttachPoint={ropeAttachPoint != null} clawTipPoint={clawTipPoint != null} armVisual={armVisual != null} armSegment={armSegment != null} armEndJoint={armEndJoint != null} aimMarker={aimMarker != null} aimReticle={aimReticle != null} itemHolder={itemHolder != null} itemCollectionPoint={itemCollectionPoint != null}");
+                Debug.LogError($"PHS_GRAPPLE_SETUP_FAILED player={name} controller={playerController != null} input={playerControlInput != null} camera={aimCamera != null} ropeOrigin={ropeOrigin != null} hookVisual={hookVisual != null} clawVisual={clawVisual != null} ropeAttachPoint={ropeAttachPoint != null} clawTipPoint={clawTipPoint != null} armVisual={armVisual != null} armSegment={armSegment != null} armEndJoint={armEndJoint != null} telescopicArmVisual={telescopicArmVisual != null} telescopicArmConfigured={telescopicArmVisual != null && telescopicArmVisual.IsConfigured} aimMarker={aimMarker != null} aimReticle={aimReticle != null} itemHolder={itemHolder != null} itemCollectionPoint={itemCollectionPoint != null}");
             }
 
             return false;

@@ -398,9 +398,9 @@ namespace LastJumpCrew.ParkHanSol.Editor
                 CreateZeroGravityArea(tutorialScene);
                 CreateGrappleTarget(tutorialScene);
                 InstantiatePrefab(WrenchPrefabPath, tutorialScene,
-                    new Vector3(-1.5f, 2.25f, 25.5f));
+                    new Vector3(-1.5f, 2.25f, 30.6f));
                 InstantiatePrefab(BatteryPrefabPath, tutorialScene,
-                    new Vector3(1.5f, 2.25f, 25.5f));
+                    new Vector3(1.5f, 2.25f, 30.6f));
 
                 CreateTutorialUi(
                     tutorialScene,
@@ -431,7 +431,7 @@ namespace LastJumpCrew.ParkHanSol.Editor
                 var station = InstantiatePrefab(
                     StationPrefabPath,
                     tutorialScene,
-                    new Vector3(0f, 1f, 32f));
+                    new Vector3(0f, 1f, 49.5f));
                 var stationComponent = RequireSingle<
                     NetworkTutorialInteractionStation>(station);
                 var stationSerialized = new SerializedObject(stationComponent);
@@ -487,7 +487,7 @@ namespace LastJumpCrew.ParkHanSol.Editor
             var environment = new GameObject("PHS_NetworkTutorialEnvironment");
             SceneManager.MoveGameObjectToScene(environment, scene);
 
-            for (var zIndex = 0; zIndex <= 10; zIndex++)
+            for (var zIndex = 0; zIndex <= 15; zIndex++)
             {
                 var z = zIndex * 3.6f;
                 for (var xIndex = -1; xIndex <= 1; xIndex++)
@@ -497,7 +497,14 @@ namespace LastJumpCrew.ParkHanSol.Editor
                         scene,
                         environment.transform,
                         $"PHS_NetworkTutorialFloor_{zIndex}_{xIndex + 1}",
-                        new Vector3(xIndex * 3.6f, 0f, z - 1.8f),
+                        new Vector3(xIndex * 3.6f, -0.513f, z + 1.8f),
+                        new Vector3(-90f, 0f, 0f));
+                    CreateEnvironmentInstance(
+                        TutorialWallPrefabPath,
+                        scene,
+                        environment.transform,
+                        $"PHS_NetworkTutorialCeiling_{zIndex}_{xIndex + 1}",
+                        new Vector3(xIndex * 3.6f, 7.2f, z - 1.8f),
                         new Vector3(90f, 0f, 0f));
                 }
 
@@ -526,8 +533,8 @@ namespace LastJumpCrew.ParkHanSol.Editor
                 scene,
                 environment.transform,
                 "PHS_NetworkTutorialExitDoor",
-                new Vector3(0f, 0f, 36.27f),
-                Vector3.zero);
+                new Vector3(0f, 0f, 54.27f),
+                new Vector3(0f, 180f, 0f));
             foreach (var x in new[] { -4.5f, 4.5f })
             {
                 CreateEnvironmentInstance(
@@ -537,8 +544,8 @@ namespace LastJumpCrew.ParkHanSol.Editor
                     x < 0f
                         ? "PHS_NetworkTutorialEndWall_L"
                         : "PHS_NetworkTutorialEndWall_R",
-                    new Vector3(x, 0f, 36.27f),
-                    Vector3.zero);
+                    new Vector3(x, 0f, 54.27f),
+                    new Vector3(0f, 180f, 0f));
             }
 
             for (var xIndex = -1; xIndex <= 1; xIndex++)
@@ -548,8 +555,25 @@ namespace LastJumpCrew.ParkHanSol.Editor
                     scene,
                     environment.transform,
                     $"PHS_NetworkTutorialEndWall_Upper_{xIndex + 1}",
-                    new Vector3(xIndex * 3.6f, 3.6f, 36.27f),
-                    Vector3.zero);
+                    new Vector3(xIndex * 3.6f, 3.6f, 54.27f),
+                    new Vector3(0f, 180f, 0f));
+            }
+
+            for (var yIndex = 0; yIndex <= 1; yIndex++)
+            {
+                for (var xIndex = -1; xIndex <= 1; xIndex++)
+                {
+                    CreateEnvironmentInstance(
+                        TutorialWallPrefabPath,
+                        scene,
+                        environment.transform,
+                        $"PHS_NetworkTutorialStartWall_{yIndex}_{xIndex + 1}",
+                        new Vector3(
+                            xIndex * 3.6f,
+                            yIndex * 3.6f,
+                            -2.313f),
+                        Vector3.zero);
+                }
             }
 
             CreateEnvironmentInstance(
@@ -557,14 +581,14 @@ namespace LastJumpCrew.ParkHanSol.Editor
                 scene,
                 environment.transform,
                 "PHS_NetworkTutorialItemDesk_L",
-                new Vector3(-1.5f, 0f, 25.5f),
+                new Vector3(-1.5f, 0f, 39.6f),
                 Vector3.zero);
             CreateEnvironmentInstance(
                 TutorialDisplayDeskPrefabPath,
                 scene,
                 environment.transform,
                 "PHS_NetworkTutorialItemDesk_R",
-                new Vector3(1.5f, 0f, 25.5f),
+                new Vector3(1.5f, 0f, 39.6f),
                 Vector3.zero);
         }
 
@@ -588,10 +612,10 @@ namespace LastJumpCrew.ParkHanSol.Editor
         {
             var area = new GameObject("PHS_NetworkTutorialZeroGravity");
             SceneManager.MoveGameObjectToScene(area, scene);
-            area.transform.position = new Vector3(0f, 3f, 11f);
+            area.transform.position = new Vector3(0f, 3f, 13.5f);
             var collider = area.AddComponent<BoxCollider>();
             collider.isTrigger = true;
-            collider.size = new Vector3(10f, 6f, 12f);
+            collider.size = new Vector3(10f, 6f, 6.75f);
             var gravityArea = area.AddComponent<NetworkPlayerGravityArea>();
             var serialized = new SerializedObject(gravityArea);
             serialized.FindProperty("gravityMode").enumValueIndex =
@@ -605,7 +629,7 @@ namespace LastJumpCrew.ParkHanSol.Editor
             var target = InstantiatePrefab(
                 TutorialWallPrefabPath,
                 scene,
-                new Vector3(0f, 3f, 18f));
+                new Vector3(0f, 3f, 22.5f));
             target.name = "PHS_NetworkTutorialGrappleTarget";
             target.transform.localScale = Vector3.one * 0.5f;
             var markerLight = target.AddComponent<Light>();

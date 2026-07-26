@@ -78,6 +78,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Audio
         private void PlayConfirmedClientRpc(NetworkAudioCue cue, ulong key)
         {
             if (!IsServerConfirmedCue(cue)
+                || cue == NetworkAudioCue.WrenchImpact && IsOwner
                 || worldCuePlayer == null
                 || !RememberKey(key, playedKeys, playedKeyOrder))
             {
@@ -109,7 +110,8 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Audio
         private static bool IsOwnerPredictedCue(NetworkAudioCue cue)
         {
             return cue is NetworkAudioCue.ExtinguisherSpray
-                or NetworkAudioCue.FoamShot;
+                or NetworkAudioCue.FoamShot
+                or NetworkAudioCue.WrenchImpact;
         }
 
         private static bool IsServerConfirmedCue(NetworkAudioCue cue)

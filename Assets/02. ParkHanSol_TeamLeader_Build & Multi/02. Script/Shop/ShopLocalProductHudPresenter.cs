@@ -77,7 +77,7 @@ namespace LastJumpCrew.ParkHanSol.Shop
                 || interactionScanner == null
                 || interactionCamera == null
                 || productPanel == null
-                || pickupPromptText == null
+                || priceText == null
                 || !interactionCamera.isActiveAndEnabled)
             {
                 return false;
@@ -138,8 +138,7 @@ namespace LastJumpCrew.ParkHanSol.Shop
             productPanel.alpha = 1f;
             productPanel.interactable = false;
             productPanel.blocksRaycasts = false;
-            HideFloatingProductDetails();
-            pickupPromptText.text = "[F] Pick Up";
+            ShowPriceOnly(product.PurchasePrice);
         }
 
         private void Hide()
@@ -168,7 +167,7 @@ namespace LastJumpCrew.ParkHanSol.Shop
             }
         }
 
-        private void HideFloatingProductDetails()
+        private void ShowPriceOnly(int price)
         {
             if (productNameText != null)
             {
@@ -178,8 +177,14 @@ namespace LastJumpCrew.ParkHanSol.Shop
 
             if (priceText != null)
             {
-                priceText.text = string.Empty;
-                priceText.gameObject.SetActive(false);
+                priceText.text = $"${price}";
+                priceText.gameObject.SetActive(true);
+            }
+
+            if (pickupPromptText != null)
+            {
+                pickupPromptText.text = string.Empty;
+                pickupPromptText.gameObject.SetActive(false);
             }
         }
 

@@ -14,6 +14,8 @@ namespace LastJumpCrew.ParkHanSol.Editor
             "Assets/02. ParkHanSol_TeamLeader_Build & Multi";
         private const string LobbyPrefabPath = Root +
             "/03. Prefab/UI/PHS_NetworkStartLobbyUI.prefab";
+        private const string CanonicalPlayHudPrefabPath = Root +
+            "/03. Prefab/UI/ParkHanSol_PlayHudUI.prefab";
         private const string PlayHudPrefabPath = Root +
             "/03. Prefab/UI/PHS_NetworkPlayHudUI.prefab";
         private const string OwnerPausePrefabPath = Root +
@@ -26,6 +28,10 @@ namespace LastJumpCrew.ParkHanSol.Editor
         {
             var errors = new List<string>();
             ValidateLobbyOptionsPrefab(errors);
+            ValidateSharedOptionsPrefab(
+                CanonicalPlayHudPrefabPath,
+                false,
+                errors);
             ValidateSharedOptionsPrefab(
                 PlayHudPrefabPath,
                 false,
@@ -50,7 +56,7 @@ namespace LastJumpCrew.ParkHanSol.Editor
 
             Debug.Log(
                 "PHS_NETWORK_OPTIONS_VALIDATION_PASS " +
-                "prefabs=3 player_owner_pause_connected=1 serialized_refs=valid");
+                "prefabs=4 player_owner_pause_connected=1 serialized_refs=valid");
         }
 
         private static void ValidateLobbyOptionsPrefab(
@@ -66,6 +72,8 @@ namespace LastJumpCrew.ParkHanSol.Editor
                 ParkHanSolGameSettingsController>(true);
             var rebindPanels = prefab.GetComponentsInChildren<
                 PlayerControlRebindPanel>(true);
+            var categoryControllers = prefab.GetComponentsInChildren<
+                ParkHanSolSettingsCategoryMenuController>(true);
             Require(
                 settingsControllers.Length == 1,
                 $"reason=lobby_settings_controller_count actual={settingsControllers.Length}",
@@ -74,12 +82,33 @@ namespace LastJumpCrew.ParkHanSol.Editor
                 rebindPanels.Length == 1,
                 $"reason=lobby_rebind_panel_count actual={rebindPanels.Length}",
                 errors);
-            if (settingsControllers.Length != 1)
+            Require(
+                categoryControllers.Length == 1,
+                $"reason=lobby_category_controller_count actual={categoryControllers.Length}",
+                errors);
+            if (settingsControllers.Length != 1
+                || categoryControllers.Length != 1)
             {
                 return;
             }
 
-            var state = new SerializedObject(settingsControllers[0]);
+            ValidateGameSettingsReferences(
+                settingsControllers[0],
+                LobbyPrefabPath,
+                errors);
+            ValidateCategoryReferences(
+                categoryControllers[0],
+                prefab,
+                LobbyPrefabPath,
+                errors);
+        }
+
+        private static void ValidateGameSettingsReferences(
+            ParkHanSolGameSettingsController controller,
+            string path,
+            ICollection<string> errors)
+        {
+            var state = new SerializedObject(controller);
             foreach (var propertyName in new[]
                      {
                          "resolutionDropdown",
@@ -92,7 +121,42 @@ namespace LastJumpCrew.ParkHanSol.Editor
                 RequireNonNullReference(
                     state,
                     propertyName,
-                    LobbyPrefabPath,
+                    path,
+                    errors);
+            }
+        }
+
+        private static void ValidateCategoryReferences(
+            ParkHanSolSettingsCategoryMenuController controller,
+            GameObject expectedRoot,
+            string path,
+            ICollection<string> errors)
+        {
+            var state = new SerializedObject(controller);
+            foreach (var propertyName in new[]
+                     {
+                         "gameplayButton",
+                         "graphicsButton",
+                         "audioButton",
+                         "voiceButton",
+                         "controlsButton",
+                         "gameplayPanel",
+                         "graphicsPanel",
+                         "audioPanel",
+                         "voicePanel",
+                         "controlsPanel"
+                     })
+            {
+                var reference = GetReference<UnityEngine.Object>(
+                    state,
+                    propertyName,
+                    path,
+                    errors);
+                RequireContained(
+                    reference,
+                    expectedRoot,
+                    propertyName,
+                    path,
                     errors);
             }
         }
@@ -140,14 +204,10 @@ namespace LastJumpCrew.ParkHanSol.Editor
                 "rebindPanel",
                 path,
                 errors);
-            var windowModeDropdown = GetReference<Component>(
+            var gameSettingsController = GetReference<
+                ParkHanSolGameSettingsController>(
                 sharedState,
-                "windowModeDropdown",
-                path,
-                errors);
-            var resolutionDropdown = GetReference<Component>(
-                sharedState,
-                "resolutionDropdown",
+                "gameSettingsController",
                 path,
                 errors);
             var closeButton = GetReference<Component>(
@@ -197,6 +257,14 @@ namespace LastJumpCrew.ParkHanSol.Editor
                 panelRoot != null && panelRoot == optionsPanel,
                 $"reason=shared_panel_not_pause_options path={path}",
                 errors);
+            var matchingPanelCount = panelRoot == null
+                ? 0
+                : prefab.GetComponentsInChildren<Transform>(true)
+                    .Count(transform => transform.name == panelRoot.name);
+            Require(
+                matchingPanelCount == 1,
+                $"reason=shared_panel_duplicate path={path} actual={matchingPanelCount}",
+                errors);
             Require(
                 closeButton != null && closeButton == optionsBackButton,
                 $"reason=shared_close_not_pause_back path={path}",
@@ -209,14 +277,74 @@ namespace LastJumpCrew.ParkHanSol.Editor
                 pausePanel != null && pausePanel != optionsPanel,
                 $"reason=pause_options_panels_invalid path={path}",
                 errors);
+            var modalBackground = panelRoot == null
+                ? null
+                : panelRoot.GetComponent<UnityEngine.UI.Image>();
+            var modalCanvas = panelRoot == null
+                ? null
+                : panelRoot.GetComponent<Canvas>();
+            Require(
+                modalBackground != null && modalBackground.color.a >= 0.99f,
+                $"reason=settings_modal_background_invalid path={path}",
+                errors);
+            Require(
+                modalCanvas != null
+                && modalCanvas.overrideSorting
+                && modalCanvas.sortingOrder >= 500,
+                $"reason=settings_modal_canvas_invalid path={path}",
+                errors);
+            Require(
+                panelRoot != null
+                && panelRoot.GetComponent<UnityEngine.UI.GraphicRaycaster>() != null,
+                $"reason=settings_modal_raycaster_missing path={path}",
+                errors);
 
             RequireContained(rebindPanel, panelRoot, "rebindPanel", path, errors);
-            RequireContained(windowModeDropdown, panelRoot, "windowModeDropdown", path, errors);
-            RequireContained(resolutionDropdown, panelRoot, "resolutionDropdown", path, errors);
+            RequireContained(
+                gameSettingsController,
+                panelRoot,
+                "gameSettingsController",
+                path,
+                errors);
             RequireContained(closeButton, panelRoot, "closeButton", path, errors);
             RequireContained(resumeButton, pausePanel, "resumeButton", path, errors);
             RequireContained(optionsButton, pausePanel, "optionsButton", path, errors);
             RequireContained(exitGameButton, pausePanel, "exitGameButton", path, errors);
+
+            RequireNullReference(
+                sharedState,
+                "windowModeDropdown",
+                path,
+                errors);
+            RequireNullReference(
+                sharedState,
+                "resolutionDropdown",
+                path,
+                errors);
+            if (gameSettingsController != null)
+            {
+                ValidateGameSettingsReferences(
+                    gameSettingsController,
+                    path,
+                    errors);
+            }
+
+            var categoryControllers = panelRoot == null
+                ? Array.Empty<ParkHanSolSettingsCategoryMenuController>()
+                : panelRoot.GetComponentsInChildren<
+                    ParkHanSolSettingsCategoryMenuController>(true);
+            Require(
+                categoryControllers.Length == 1,
+                $"reason=settings_category_controller_count path={path} actual={categoryControllers.Length}",
+                errors);
+            if (categoryControllers.Length == 1)
+            {
+                ValidateCategoryReferences(
+                    categoryControllers[0],
+                    panelRoot,
+                    path,
+                    errors);
+            }
 
             ValidateOwnerRoot(
                 prefab,
@@ -347,18 +475,37 @@ namespace LastJumpCrew.ParkHanSol.Editor
                 errors);
         }
 
+        private static void RequireNullReference(
+            SerializedObject state,
+            string propertyName,
+            string path,
+            ICollection<string> errors)
+        {
+            var property = state.FindProperty(propertyName);
+            Require(
+                property != null && property.objectReferenceValue == null,
+                $"reason=legacy_reference_present path={path} target={state.targetObject.GetType().Name} property={propertyName}",
+                errors);
+        }
+
         private static void RequireContained(
-            Component component,
+            UnityEngine.Object reference,
             GameObject expectedRoot,
             string propertyName,
             string path,
             ICollection<string> errors)
         {
+            var referencedObject = reference as GameObject;
+            if (referencedObject == null && reference is Component component)
+            {
+                referencedObject = component.gameObject;
+            }
+
             Require(
-                component != null
+                referencedObject != null
                 && expectedRoot != null
-                && (component.gameObject == expectedRoot
-                    || component.transform.IsChildOf(expectedRoot.transform)),
+                && (referencedObject == expectedRoot
+                    || referencedObject.transform.IsChildOf(expectedRoot.transform)),
                 $"reason=reference_outside_expected_root path={path} property={propertyName}",
                 errors);
         }

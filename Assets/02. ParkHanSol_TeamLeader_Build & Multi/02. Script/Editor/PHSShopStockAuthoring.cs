@@ -125,6 +125,7 @@ namespace LastJumpCrew.ParkHanSol.Editor
                     label.alignment = TextAlignmentOptions.Center;
                     label.enableWordWrapping = false;
                     label.raycastTarget = false;
+                    label.gameObject.SetActive(false);
                     var rect = label.rectTransform;
                     rect.SetParent(slot.PresentationAnchor, false);
                     rect.anchoredPosition = new Vector2(0f, 0.82f);
@@ -172,13 +173,18 @@ namespace LastJumpCrew.ParkHanSol.Editor
                 if (priceText != null)
                 {
                     priceText.text = string.Empty;
-                    priceText.gameObject.SetActive(false);
+                    priceText.gameObject.SetActive(true);
                 }
 
                 var panelRect = panel.GetComponent<RectTransform>();
-                panelRect.sizeDelta = new Vector2(190f, 42f);
-                panelRect.anchoredPosition = new Vector2(0f, -102f);
-                promptText.gameObject.SetActive(true);
+                panelRect.sizeDelta = new Vector2(260f, 64f);
+                panelRect.anchoredPosition = new Vector2(0f, -128f);
+                priceText.rectTransform.anchoredPosition = Vector2.zero;
+                priceText.rectTransform.sizeDelta = new Vector2(240f, 54f);
+                priceText.fontSize = 36f;
+                priceText.fontStyle = FontStyles.Bold;
+                priceText.alignment = TextAlignmentOptions.Center;
+                promptText.gameObject.SetActive(false);
                 promptText.rectTransform.anchoredPosition = Vector2.zero;
                 promptText.rectTransform.sizeDelta = new Vector2(170f, 32f);
                 promptText.fontSize = 18f;
@@ -214,8 +220,8 @@ namespace LastJumpCrew.ParkHanSol.Editor
                         "PHS_SHOP_CHECKOUT_UI_AUTHORING_FAILED reason=unavailable_missing");
 
                 var priceRect = priceText.rectTransform;
-                priceRect.localScale = Vector3.one * 0.24f;
-                priceText.fontSize = 0.9f;
+                priceRect.localScale = Vector3.one;
+                priceText.fontSize = 1.15f;
                 priceText.fontStyle = FontStyles.Bold;
                 priceText.alignment = TextAlignmentOptions.Center;
                 priceText.raycastTarget = false;
@@ -292,19 +298,20 @@ namespace LastJumpCrew.ParkHanSol.Editor
                 "shop_hud_product_name_should_be_hidden",
                 errors);
             Require(
-                priceText != null && !priceText.gameObject.activeSelf,
-                "shop_hud_floating_price_should_be_hidden",
+                priceText != null && priceText.gameObject.activeSelf
+                    && Mathf.Approximately(priceText.fontSize, 36f),
+                "shop_hud_proximity_price_style_invalid",
                 errors);
             Require(
-                promptText != null && promptText.gameObject.activeSelf,
-                "shop_hud_pickup_prompt_should_be_visible",
+                promptText != null && !promptText.gameObject.activeSelf,
+                "shop_hud_duplicate_pickup_prompt_should_be_hidden",
                 errors);
             if (panel != null)
             {
                 var size = panel.GetComponent<RectTransform>().sizeDelta;
                 Require(
-                    size.x <= 200f && size.y <= 48f,
-                    $"shop_hud_pickup_panel_too_large size={size}",
+                    size == new Vector2(260f, 64f),
+                    $"shop_hud_price_panel_size_invalid size={size}",
                     errors);
             }
         }
@@ -355,6 +362,10 @@ namespace LastJumpCrew.ParkHanSol.Editor
                     label.rectTransform.sizeDelta.x <= 3.21f,
                     $"shop_price_tag_size_invalid path={prefabPath} slot={slot.name}",
                     errors);
+                Require(
+                    !label.gameObject.activeSelf,
+                    $"shop_world_price_tag_should_be_hidden path={prefabPath} slot={slot.name}",
+                    errors);
             }
         }
 
@@ -396,8 +407,9 @@ namespace LastJumpCrew.ParkHanSol.Editor
                 "shop_checkout_unavailable_not_above_price",
                 errors);
             Require(
-                priceText.rectTransform.localScale.x <= 0.25f,
-                "shop_checkout_price_scale_too_large",
+                priceText.rectTransform.localScale == Vector3.one
+                    && Mathf.Approximately(priceText.fontSize, 1.15f),
+                "shop_checkout_price_original_size_not_restored",
                 errors);
         }
 

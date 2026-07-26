@@ -4,6 +4,7 @@ using TMPro;
 using UnityEngine;
 using UnityEngine.UI;
 using LastJumpCrew.ParkHanSol.Multiplayer.Audio;
+using LastJumpCrew.ParkHanSol.Multiplayer;
 
 namespace LastJumpCrew.ParkHanSol.Multiplayer.Input
 {
@@ -16,6 +17,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Input
         [SerializeField] private PlayerControlRebindPanel rebindPanel;
         [SerializeField] private TMP_Dropdown windowModeDropdown;
         [SerializeField] private TMP_Dropdown resolutionDropdown;
+        [SerializeField] private ParkHanSolGameSettingsController gameSettingsController;
         [SerializeField] private Button closeButton;
         [SerializeField] private MonoBehaviour saveCuePlayerSource;
 
@@ -42,14 +44,18 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Input
                 return;
             }
 
-            windowModeDropdown.ClearOptions();
-            windowModeDropdown.AddOptions(new System.Collections.Generic.List<string>
+            if (!UsesLobbySettings)
             {
-                "WINDOWED",
-                "BORDERLESS"
-            });
-            windowModeDropdown.onValueChanged.AddListener(SetWindowMode);
-            resolutionDropdown.onValueChanged.AddListener(SetResolution);
+                windowModeDropdown.ClearOptions();
+                windowModeDropdown.AddOptions(new System.Collections.Generic.List<string>
+                {
+                    "WINDOWED",
+                    "BORDERLESS"
+                });
+                windowModeDropdown.onValueChanged.AddListener(SetWindowMode);
+                resolutionDropdown.onValueChanged.AddListener(SetResolution);
+            }
+
             closeButton.onClick.AddListener(Close);
             CloseWithoutNotification();
         }
@@ -61,8 +67,12 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Input
                 return;
             }
 
-            windowModeDropdown.onValueChanged.RemoveListener(SetWindowMode);
-            resolutionDropdown.onValueChanged.RemoveListener(SetResolution);
+            if (!UsesLobbySettings)
+            {
+                windowModeDropdown.onValueChanged.RemoveListener(SetWindowMode);
+                resolutionDropdown.onValueChanged.RemoveListener(SetResolution);
+            }
+
             closeButton.onClick.RemoveListener(Close);
         }
 
@@ -76,7 +86,11 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Input
                 return;
             }
 
-            RefreshVideoOptions();
+            if (!UsesLobbySettings)
+            {
+                RefreshVideoOptions();
+            }
+
             panelRoot.SetActive(true);
         }
 
@@ -87,15 +101,29 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Input
                 return;
             }
 
+            if (UsesLobbySettings)
+            {
+                gameSettingsController.CancelSettings();
+            }
+
             panelRoot.SetActive(false);
-            PlaySaveCue();
+            if (!UsesLobbySettings)
+            {
+                PlaySaveCue();
+            }
+
             Closed?.Invoke();
         }
 
         public void CloseWithoutNotification()
         {
-            if (panelRoot != null)
+            if (panelRoot != null && panelRoot.activeSelf)
             {
+                if (UsesLobbySettings)
+                {
+                    gameSettingsController.CancelSettings();
+                }
+
                 panelRoot.SetActive(false);
             }
         }
@@ -192,11 +220,14 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Input
 
         private bool ValidateSetup()
         {
-            if (panelRoot != null
+            var baseReferencesValid = panelRoot != null
                 && rebindPanel != null
-                && windowModeDropdown != null
-                && resolutionDropdown != null
-                && closeButton != null)
+                && closeButton != null;
+            var lobbySettingsValid = gameSettingsController != null;
+            var legacySettingsValid = windowModeDropdown != null
+                && resolutionDropdown != null;
+            if (baseReferencesValid
+                && (lobbySettingsValid || legacySettingsValid))
             {
                 return true;
             }
@@ -205,10 +236,13 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Input
                 $"PHS_NETWORK_OPTIONS_SETUP_FAILED panel={name} root={panelRoot != null} " +
                 $"rebind={rebindPanel != null} windowMode={windowModeDropdown != null} " +
                 $"resolution={resolutionDropdown != null} " +
+                $"lobbySettings={gameSettingsController != null} " +
                 $"close={closeButton != null}",
                 this);
             return false;
         }
+
+        private bool UsesLobbySettings => gameSettingsController != null;
 
         private void PlaySaveCue()
         {

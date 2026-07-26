@@ -1,4 +1,3 @@
-using System;
 using LastJumpCrew.Common;
 using LastJumpCrew.ParkHanSol.Multiplayer;
 using UnityEngine;
@@ -43,9 +42,7 @@ namespace LastJumpCrew.ParkHanSol.Items
                     FamilyKind,
                     phsHolder.CurrentItemPrefabData)
                 && holderComponent.GetComponent<
-                    PHSNetworkItemUseActionController>() != null
-                && holderComponent.GetComponent<
-                    PHSNetworkItemUseFeedbackController>() != null;
+                    PHSNetworkItemUseActionController>() != null;
         }
 
         public void Use(
@@ -62,28 +59,13 @@ namespace LastJumpCrew.ParkHanSol.Items
                 PHSNetworkUtilityFamilyActionController>();
             var presentation = holderComponent.GetComponent<
                 PHSNetworkItemUseActionController>();
-            var feedback = holderComponent.GetComponent<
-                PHSNetworkItemUseFeedbackController>();
-            if (controller == null || presentation == null || feedback == null)
+            if (controller == null || presentation == null)
             {
                 return;
             }
 
             var isWrench =
                 FamilyKind == PHSUtilityFamilyActionKind.Wrench;
-            feedback.RequestOwnerFeedback(
-                isWrench
-                    ? PHSItemUseFeedbackKind.Wrench
-                    : PHSItemUseFeedbackKind.FireExtinguisher,
-                isWrench
-                    ? PHSItemUseFeedbackShape.Sphere
-                    : PHSItemUseFeedbackShape.Cast,
-                holderComponent.transform.position + Vector3.up * 0.75f,
-                holderComponent.transform.forward,
-                isWrench ? 1.1f : 0.45f,
-                isWrench ? 0f : 4f,
-                Array.Empty<Vector3>());
-
             presentation.TryBeginImpactAction(
                 PresentationKind,
                 () => controller.RequestAction(FamilyKind),

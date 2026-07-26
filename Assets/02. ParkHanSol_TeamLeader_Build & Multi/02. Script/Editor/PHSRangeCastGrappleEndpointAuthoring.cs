@@ -20,9 +20,9 @@ namespace LastJumpCrew.ParkHanSol.Editor
         internal const string HookVisualContainerName = "HookVisual";
         internal const float RequiredMaximumDistance = 24f;
         internal const float RequiredHookVisualScale = 0.18f;
-        internal const float RequiredArmThickness = 0.065f;
-        internal const float RequiredBaseJointScale = 0.11f;
-        internal const float RequiredEndJointScale = 0.12f;
+        internal const float RequiredArmThickness = 0.05f;
+        internal const float RequiredBaseJointScale = 1f;
+        internal const float RequiredEndJointScale = 1f;
 
         [MenuItem(
             "Tools/ParkHanSol/BEAVER/Author Range Cast And Grapple Endpoints")]
@@ -159,15 +159,24 @@ namespace LastJumpCrew.ParkHanSol.Editor
                 var armEndJoint = RequireTransformReference(
                     serialized,
                     "armEndJoint");
+                var telescopicArmVisual = armSegment
+                    .GetComponent<GrappleTelescopicArmVisual>();
+                if (telescopicArmVisual == null
+                    || !telescopicArmVisual.IsConfigured)
+                {
+                    throw new InvalidOperationException(
+                        "Player telescopic grapple arm is not configured.");
+                }
+
+                serialized.FindProperty("telescopicArmVisual")
+                    .objectReferenceValue = telescopicArmVisual;
                 var baseJoint = RequireDirectMarker(
                     armVisual,
                     "BaseJoint");
                 baseJoint.localScale = Vector3.one
                     * RequiredBaseJointScale;
-                armSegment.localScale = new Vector3(
-                    RequiredArmThickness,
-                    armSegment.localScale.y,
-                    RequiredArmThickness);
+                armSegment.localPosition = Vector3.zero;
+                armSegment.localScale = Vector3.one;
                 armEndJoint.localScale = Vector3.one
                     * RequiredEndJointScale;
                 serialized.ApplyModifiedPropertiesWithoutUndo();

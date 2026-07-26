@@ -1,3 +1,5 @@
+using System;
+using System.Collections.Generic;
 using LastJumpCrew.ParkHanSol.Interaction;
 using LastJumpCrew.ParkHanSol.Multiplayer.Audio;
 using TMPro;
@@ -8,40 +10,70 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Tutorial
 {
     public sealed class NetworkTutorialDirector : MonoBehaviour
     {
-        private enum TutorialStep : byte
-        {
-            Movement,
-            Thruster,
-            Grapple,
-            ItemPickup,
-            ItemDrop,
-            ItemSwap,
-            Interaction,
-            Complete
-        }
+        private const int DefaultRequiredSuccessCount = 2;
+        private const int ConfiguredRoomCount = 6;
 
+        private static readonly TutorialActionKind[] LegacyActionOrder =
+        {
+            TutorialActionKind.Move,
+            TutorialActionKind.Jump,
+            TutorialActionKind.Thruster,
+            TutorialActionKind.Grapple,
+            TutorialActionKind.Pickup,
+            TutorialActionKind.Drop,
+            TutorialActionKind.Swap,
+            TutorialActionKind.Use,
+            TutorialActionKind.Interaction
+        };
+
+        [Header("Observed Player")]
         [SerializeField] private NetworkPlayerController playerController;
         [SerializeField] private NetworkPlayerGrappleController grappleController;
         [SerializeField] private TempPlayerItemHolder itemHolder;
+        [SerializeField] private MonoBehaviour actionSourceBehaviour;
+
+        [Header("Room Sequence")]
+        [SerializeField] private NetworkTutorialRoomController[] rooms =
+            Array.Empty<NetworkTutorialRoomController>();
+
+        [Header("Legacy Single-Corridor UI Fallback")]
+        [SerializeField] private Image instructionImage;
         [SerializeField] private TMP_Text instructionText;
+        [SerializeField] private Slider instructionProgressSlider;
+
+        [Header("Completion")]
         [SerializeField] private GameObject completionPanel;
         [SerializeField] private Button returnToLobbyButton;
         [SerializeField] private MonoBehaviour audioCuePlayerSource;
-        [SerializeField] private string lobbySceneName = "ParkHanSol_LobbyScene";
-        [SerializeField, Min(1f)] private float movementDistance = 3f;
+        [SerializeField] private string lobbySceneName =
+            "ParkHanSol_LobbyScene";
+
+        [Header("Success Filtering")]
+        [SerializeField, Min(0.1f)] private float movementDistance = 1.5f;
 
         private readonly INetworkSessionExitService sessionExitService =
             new NetworkSessionExitService();
-        private TutorialStep currentStep;
-        private Vector3 movementStartPosition;
-        private bool swapArmed;
-        private string swapBaselineItemId;
+        private ITutorialActionSource actionSource;
+        private INetworkAudioCuePlayer audioCuePlayer;
+        private int currentRoomIndex;
+        private int currentSuccessCount;
+        private bool isComplete;
         private bool isExiting;
         private bool tutorialCompleteCuePlayed;
-        private INetworkAudioCuePlayer audioCuePlayer;
 
         public bool IsWaitingForInteraction =>
-            currentStep == TutorialStep.Interaction;
+            !isComplete
+            && CurrentAction == TutorialActionKind.Interaction;
+
+        private TutorialActionKind CurrentAction => HasConfiguredRooms
+            ? rooms[currentRoomIndex].GetExpectedAction(currentSuccessCount)
+            : LegacyActionOrder[currentRoomIndex];
+
+        private int CurrentRequiredSuccessCount => HasConfiguredRooms
+            ? rooms[currentRoomIndex].RequiredSuccessCount
+            : DefaultRequiredSuccessCount;
+
+        private bool HasConfiguredRooms => rooms != null && rooms.Length > 0;
 
         private void Awake()
         {
@@ -53,139 +85,358 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Tutorial
                     this);
             }
 
-            if (playerController == null
-                || grappleController == null
-                || itemHolder == null
-                || instructionText == null
-                || completionPanel == null
-                || returnToLobbyButton == null)
+            if (!ValidateSetup())
+            {
+                enabled = false;
+                return;
+            }
+
+            actionSource = ResolveActionSource();
+            if (actionSource == null)
             {
                 Debug.LogError(
-                    $"PHS_NETWORK_TUTORIAL_SETUP_FAILED reason=inspector_reference_missing director={name}",
+                    $"PHS_NETWORK_TUTORIAL_SETUP_FAILED reason=action_source_missing director={name}",
                     this);
                 enabled = false;
                 return;
             }
 
-            movementStartPosition = playerController.transform.position;
+            actionSource.ActionSucceeded += HandleActionSucceeded;
+            foreach (var room in rooms)
+            {
+                room.ObjectiveProgressChanged += HandleObjectiveProgressChanged;
+            }
+            currentRoomIndex = 0;
+            currentSuccessCount = 0;
             completionPanel.SetActive(false);
             returnToLobbyButton.onClick.AddListener(ReturnToLobby);
-            SetStep(TutorialStep.Movement);
+            SetRoomSequenceState();
+            RefreshCurrentInstruction();
             Cursor.lockState = CursorLockMode.Locked;
             Cursor.visible = false;
         }
 
         private void OnDestroy()
         {
+            if (actionSource != null)
+            {
+                actionSource.ActionSucceeded -= HandleActionSucceeded;
+            }
+
+            if (rooms != null)
+            {
+                foreach (var room in rooms)
+                {
+                    if (room != null)
+                    {
+                        room.ObjectiveProgressChanged -=
+                            HandleObjectiveProgressChanged;
+                    }
+                }
+            }
+
             if (returnToLobbyButton != null)
             {
                 returnToLobbyButton.onClick.RemoveListener(ReturnToLobby);
             }
         }
 
-        private void Update()
-        {
-            switch (currentStep)
-            {
-                case TutorialStep.Movement:
-                    var displacement = playerController.transform.position
-                        - movementStartPosition;
-                    displacement.y = 0f;
-                    if (displacement.magnitude >= movementDistance)
-                    {
-                        SetStep(TutorialStep.Thruster);
-                    }
-                    break;
-                case TutorialStep.Thruster:
-                    if (playerController.GravityMode
-                            != NetworkPlayerGravityMode.ShipGravity
-                        && playerController.HasMoveInput)
-                    {
-                        SetStep(TutorialStep.Grapple);
-                    }
-                    break;
-                case TutorialStep.Grapple:
-                    if (grappleController.IsGrappleActive)
-                    {
-                        SetStep(TutorialStep.ItemPickup);
-                    }
-                    break;
-                case TutorialStep.ItemPickup:
-                    if (itemHolder.HasItem)
-                    {
-                        SetStep(TutorialStep.ItemDrop);
-                    }
-                    break;
-                case TutorialStep.ItemDrop:
-                    if (!itemHolder.HasItem)
-                    {
-                        swapArmed = false;
-                        swapBaselineItemId = null;
-                        SetStep(TutorialStep.ItemSwap);
-                    }
-                    break;
-                case TutorialStep.ItemSwap:
-                    UpdateItemSwapStep();
-                    break;
-            }
-        }
-
         public void ReportInteraction()
         {
-            if (currentStep == TutorialStep.Interaction)
+            if (!IsWaitingForInteraction)
             {
-                SetStep(TutorialStep.Complete);
+                return;
+            }
+
+            actionSource.ReportInteractionSuccess();
+        }
+
+        private bool ValidateSetup()
+        {
+            if (playerController == null
+                || grappleController == null
+                || itemHolder == null
+                || completionPanel == null
+                || returnToLobbyButton == null)
+            {
+                Debug.LogError(
+                    $"PHS_NETWORK_TUTORIAL_SETUP_FAILED reason=inspector_reference_missing director={name}",
+                    this);
+                return false;
+            }
+
+            if (!HasConfiguredRooms && instructionText == null)
+            {
+                Debug.LogError(
+                    $"PHS_NETWORK_TUTORIAL_SETUP_FAILED reason=legacy_instruction_text_missing director={name}",
+                    this);
+                return false;
+            }
+
+            if (!HasConfiguredRooms)
+            {
+                return true;
+            }
+
+            if (rooms.Length != ConfiguredRoomCount)
+            {
+                Debug.LogError(
+                    $"PHS_NETWORK_TUTORIAL_SETUP_FAILED reason=room_count_invalid expected={ConfiguredRoomCount} actual={rooms.Length} director={name}",
+                    this);
+                return false;
+            }
+
+            for (var index = 0; index < rooms.Length; index++)
+            {
+                if (rooms[index] == null)
+                {
+                    Debug.LogError(
+                        $"PHS_NETWORK_TUTORIAL_SETUP_FAILED reason=room_reference_missing index={index} director={name}",
+                        this);
+                    return false;
+                }
+
+                var objectiveReason = string.Empty;
+                if (!rooms[index].HasObjectiveSources
+                    || rooms[index].RequiredStepCount < 2
+                    || !rooms[index].TryValidateObjectiveSources(
+                        out objectiveReason))
+                {
+                    Debug.LogError(
+                        $"PHS_NETWORK_TUTORIAL_SETUP_FAILED reason=room_contract_invalid index={index} steps={rooms[index].RequiredStepCount} objectives={objectiveReason}",
+                        this);
+                    return false;
+                }
+            }
+
+            return true;
+        }
+
+        private ITutorialActionSource ResolveActionSource()
+        {
+            if (actionSourceBehaviour != null)
+            {
+                if (actionSourceBehaviour is ITutorialActionSource configured)
+                {
+                    ConfigureActionSourceIfSupported(configured);
+                    return configured;
+                }
+
+                Debug.LogError(
+                    $"PHS_NETWORK_TUTORIAL_SETUP_FAILED reason=action_source_interface_missing source={actionSourceBehaviour.name}",
+                    this);
+                return null;
+            }
+
+            var existing = playerController.GetComponent<
+                NetworkTutorialActionSource>();
+            if (existing == null)
+            {
+                existing = playerController.gameObject.AddComponent<
+                    NetworkTutorialActionSource>();
+            }
+
+            existing.Configure(
+                playerController,
+                grappleController,
+                itemHolder,
+                movementDistance);
+            actionSourceBehaviour = existing;
+            return existing;
+        }
+
+        private void ConfigureActionSourceIfSupported(
+            ITutorialActionSource configured)
+        {
+            if (configured is NetworkTutorialActionSource stateSource)
+            {
+                stateSource.Configure(
+                    playerController,
+                    grappleController,
+                    itemHolder,
+                    movementDistance);
             }
         }
 
-        private void UpdateItemSwapStep()
+        private void HandleActionSucceeded(TutorialActionKind actionKind)
         {
-            if (!itemHolder.HasItem)
-            {
-                swapArmed = false;
-                swapBaselineItemId = null;
-                return;
-            }
-
-            var itemId = itemHolder.CurrentItemPrefabData?.ItemId;
-            if (string.IsNullOrWhiteSpace(itemId))
+            if (isComplete)
             {
                 return;
             }
 
-            if (!swapArmed)
+            if (HasConfiguredRooms)
             {
-                swapArmed = true;
-                swapBaselineItemId = itemId;
+                if (!rooms[currentRoomIndex].TryRegisterAction(
+                        actionKind,
+                        currentSuccessCount,
+                        out var nextSuccessCount))
+                {
+                    return;
+                }
+
+                currentSuccessCount = nextSuccessCount;
+            }
+            else
+            {
+                if (actionKind != CurrentAction)
+                {
+                    return;
+                }
+
+                currentSuccessCount = Mathf.Min(
+                    currentSuccessCount + 1,
+                    CurrentRequiredSuccessCount);
+            }
+
+            RefreshCurrentInstruction();
+            Debug.Log(
+                $"PHS_NETWORK_TUTORIAL_ACTION_OK room={currentRoomIndex} "
+                + $"action={actionKind} count={currentSuccessCount}/{CurrentRequiredSuccessCount}",
+                this);
+
+            if (currentSuccessCount < CurrentRequiredSuccessCount)
+            {
                 return;
             }
 
-            if (!string.Equals(itemId, swapBaselineItemId,
-                    System.StringComparison.Ordinal))
+            CompleteCurrentRoom();
+        }
+
+        private void HandleObjectiveProgressChanged(
+            NetworkTutorialRoomController room,
+            int completedCount)
+        {
+            if (isComplete
+                || !HasConfiguredRooms
+                || room != rooms[currentRoomIndex])
             {
-                SetStep(TutorialStep.Interaction);
+                return;
+            }
+
+            currentSuccessCount = Mathf.Clamp(
+                completedCount,
+                0,
+                CurrentRequiredSuccessCount);
+            RefreshCurrentInstruction();
+            Debug.Log(
+                $"PHS_NETWORK_TUTORIAL_OBJECTIVE_OK room={currentRoomIndex} "
+                + $"count={currentSuccessCount}/{CurrentRequiredSuccessCount}",
+                this);
+            if (currentSuccessCount >= CurrentRequiredSuccessCount)
+            {
+                CompleteCurrentRoom();
             }
         }
 
-        private void SetStep(TutorialStep step)
+        private void CompleteCurrentRoom()
         {
-            currentStep = step;
-            instructionText.text = step switch
+            if (HasConfiguredRooms)
             {
-                TutorialStep.Movement => "MOVE  ·  WASD",
-                TutorialStep.Thruster => "ENTER ZERO-G  ·  MOVE + SPACE / SHIFT",
-                TutorialStep.Grapple => "GRAPPLE THE ORANGE TARGET  ·  HOLD Q",
-                TutorialStep.ItemPickup => "PICK UP AN ITEM  ·  F",
-                TutorialStep.ItemDrop => "DROP THE HELD ITEM  ·  RIGHT MOUSE",
-                TutorialStep.ItemSwap => "PICK UP ONE ITEM, THEN PICK UP THE OTHER WITHOUT DROPPING",
-                TutorialStep.Interaction => "USE THE EXIT CONSOLE  ·  F",
-                TutorialStep.Complete => "TRAINING COMPLETE",
+                rooms[currentRoomIndex].CompleteRoom();
+                rooms[currentRoomIndex].SetCurrent(false, currentSuccessCount);
+            }
+
+            currentRoomIndex++;
+            currentSuccessCount = 0;
+            var roomCount = HasConfiguredRooms
+                ? rooms.Length
+                : LegacyActionOrder.Length;
+            if (currentRoomIndex >= roomCount)
+            {
+                CompleteTutorial();
+                return;
+            }
+
+            SetRoomSequenceState();
+            RefreshCurrentInstruction();
+        }
+
+        private void SetRoomSequenceState()
+        {
+            if (!HasConfiguredRooms)
+            {
+                return;
+            }
+
+            for (var index = 0; index < rooms.Length; index++)
+            {
+                rooms[index].SetCurrent(
+                    index == currentRoomIndex,
+                    index == currentRoomIndex ? currentSuccessCount : 0);
+            }
+        }
+
+        private void RefreshCurrentInstruction()
+        {
+            if (isComplete)
+            {
+                return;
+            }
+
+            if (HasConfiguredRooms)
+            {
+                rooms[currentRoomIndex].RefreshProgress(currentSuccessCount);
+                return;
+            }
+
+            if (instructionImage != null)
+            {
+                instructionImage.gameObject.SetActive(false);
+            }
+
+            instructionText.text =
+                $"{GetLegacyInstruction(CurrentAction)}  "
+                + $"{currentSuccessCount}/{CurrentRequiredSuccessCount}";
+            if (instructionProgressSlider != null)
+            {
+                instructionProgressSlider.minValue = 0f;
+                instructionProgressSlider.maxValue =
+                    CurrentRequiredSuccessCount;
+                instructionProgressSlider.wholeNumbers = true;
+                instructionProgressSlider.value = currentSuccessCount;
+            }
+        }
+
+        private static string GetLegacyInstruction(
+            TutorialActionKind actionKind)
+        {
+            return actionKind switch
+            {
+                TutorialActionKind.Move =>
+                    "MOVE TWICE  -  RELEASE WASD BETWEEN MOVES",
+                TutorialActionKind.Jump =>
+                    "JUMP TWICE  -  SPACE",
+                TutorialActionKind.Thruster =>
+                    "THRUST TWICE IN ZERO-G  -  RELEASE BETWEEN USES",
+                TutorialActionKind.Grapple =>
+                    "LATCH THE ORANGE TARGET TWICE  -  HOLD Q",
+                TutorialActionKind.Pickup =>
+                    "PICK UP AN ITEM TWICE  -  F",
+                TutorialActionKind.Drop =>
+                    "PLACE THE HELD ITEM TWICE  -  TAP RIGHT MOUSE",
+                TutorialActionKind.Swap =>
+                    "SWAP HELD ITEMS TWICE WITHOUT DROPPING",
+                TutorialActionKind.Use =>
+                    "USE THE HELD TOOL TWICE  -  LEFT MOUSE",
+                TutorialActionKind.Interaction =>
+                    "USE THE EXIT CONSOLE TWICE  -  F",
                 _ => string.Empty
             };
+        }
 
-            if (step != TutorialStep.Complete)
+        private void CompleteTutorial()
+        {
+            isComplete = true;
+            if (instructionText != null)
             {
-                return;
+                instructionText.text = "TRAINING COMPLETE";
+            }
+
+            if (instructionProgressSlider != null)
+            {
+                instructionProgressSlider.value =
+                    instructionProgressSlider.maxValue;
             }
 
             completionPanel.SetActive(true);
@@ -194,10 +445,11 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Tutorial
                 tutorialCompleteCuePlayed = true;
                 PlayAudioCue(NetworkAudioCue.TutorialComplete);
             }
+
             playerController.SetResultInputBlocked(true);
             Cursor.lockState = CursorLockMode.None;
             Cursor.visible = true;
-            Debug.Log("PHS_NETWORK_TUTORIAL_COMPLETE");
+            Debug.Log("PHS_NETWORK_TUTORIAL_COMPLETE", this);
         }
 
         private void PlayAudioCue(NetworkAudioCue cue)

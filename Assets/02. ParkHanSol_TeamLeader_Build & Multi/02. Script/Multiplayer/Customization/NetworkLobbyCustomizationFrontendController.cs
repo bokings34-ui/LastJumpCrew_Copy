@@ -52,6 +52,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Customization
         [SerializeField] private Button closeButton;
         [SerializeField] private TMP_Text creditsLabel;
         [SerializeField] private TMP_Text statusLabel;
+        [SerializeField] private LobbyLocalCustomizationService localService;
         [SerializeField] private LobbyCustomizationPreviewPresenter previewPresenter;
         [SerializeField] private EventSystem lobbyEventSystem;
         [SerializeField] private Button[] blockedLobbyMenuButtons =
@@ -65,7 +66,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Customization
         [SerializeField] private Button unequipBackButton;
         [SerializeField] private Button resetPreviewButton;
 
-        private INetworkLobbyCustomizationService service;
+        private ILobbyCustomizationService service;
         private UnityAction[] previewActions;
         private UnityAction[] itemActions;
         private UnityAction[] colorActions;
@@ -207,18 +208,28 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Customization
             var playerObject = networkManager != null && networkManager.IsListening
                 ? networkManager.LocalClient?.PlayerObject
                 : null;
-            if (playerObject == null
-                || !playerObject.TryGetComponent<NetworkPlayerCustomization>(
+            ILobbyCustomizationService resolvedService = null;
+            if (playerObject != null
+                && playerObject.TryGetComponent<NetworkPlayerCustomization>(
                     out var customization))
             {
-                reason = "LOCAL PLAYER NOT READY";
+                resolvedService = customization;
+            }
+            else if (localService != null)
+            {
+                resolvedService = localService;
+            }
+
+            if (resolvedService == null)
+            {
+                reason = "CUSTOMIZATION SERVICE NOT READY";
                 Debug.LogError(
-                    "PHS_NETWORK_LOBBY_CUSTOMIZATION_BIND_FAILED reason=local_player_missing",
+                    "PHS_NETWORK_LOBBY_CUSTOMIZATION_BIND_FAILED reason=service_missing",
                     this);
                 return false;
             }
 
-            if (customization.Catalog != catalog)
+            if (resolvedService.Catalog != catalog)
             {
                 reason = "CATALOG MISMATCH";
                 Debug.LogError(
@@ -227,14 +238,14 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Customization
                 return false;
             }
 
-            if (ReferenceEquals(service, customization))
+            if (ReferenceEquals(service, resolvedService))
             {
                 reason = null;
                 return true;
             }
 
             UnbindService();
-            service = customization;
+            service = resolvedService;
             service.StateChanged += HandleStateChanged;
             service.PreviewChanged += HandlePreviewChanged;
             reason = null;
@@ -369,8 +380,8 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Customization
         private void RefreshView()
         {
             var ready = service != null && service.IsProfileReady;
-            creditsLabel.text = ready && service.PersonalCreditsWallet != null
-                ? $"CUSTOM CREDITS  {service.PersonalCreditsWallet.CurrentCredits}"
+            creditsLabel.text = ready
+                ? $"CUSTOM CREDITS  {service.CurrentCredits}"
                 : "CUSTOM CREDITS  ---";
 
             for (var index = 0; index < itemRows.Length; index++)
@@ -498,6 +509,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Customization
                 || closeButton == null
                 || creditsLabel == null
                 || statusLabel == null
+                || localService == null
                 || previewPresenter == null
                 || lobbyEventSystem == null
                 || blockedLobbyMenuButtons == null

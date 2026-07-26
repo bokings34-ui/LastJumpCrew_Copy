@@ -1,4 +1,3 @@
-using System;
 using LastJumpCrew.ParkHanSol.Interaction;
 using LastJumpCrew.ParkHanSol.Multiplayer;
 using UnityEngine;
@@ -12,9 +11,6 @@ namespace LastJumpCrew.ParkHanSol.Items
         MonoBehaviour,
         CommonIUsableItem
     {
-        private const float TelegraphRadius = 0.9f;
-        private const float ImpactPulseRadius = 0.18f;
-
         public bool CanUse(
             CommonIItemHolder holder,
             CommonIInteractable target)
@@ -36,9 +32,7 @@ namespace LastJumpCrew.ParkHanSol.Items
             }
 
             return holderComponent.GetComponent<
-                       PHSNetworkItemUseActionController>() != null
-                && holderComponent.GetComponent<
-                       PHSNetworkItemUseFeedbackController>() != null;
+                       PHSNetworkItemUseActionController>() != null;
         }
 
         public void Use(
@@ -54,9 +48,7 @@ namespace LastJumpCrew.ParkHanSol.Items
 
             var action = holderComponent.GetComponent<
                 PHSNetworkItemUseActionController>();
-            var feedback = holderComponent.GetComponent<
-                PHSNetworkItemUseFeedbackController>();
-            if (action == null || feedback == null)
+            if (action == null)
             {
                 return;
             }
@@ -65,29 +57,11 @@ namespace LastJumpCrew.ParkHanSol.Items
                     PHSItemUseActionKind.Battery,
                     () =>
                     {
-                        var dropPosition = phsHolder.DropPosition;
-                        feedback.RequestOwnerFeedback(
-                            PHSItemUseFeedbackKind.Battery,
-                            PHSItemUseFeedbackShape.Sphere,
-                            dropPosition,
-                            holderComponent.transform.forward,
-                            ImpactPulseRadius,
-                            0f,
-                            new[] { dropPosition });
                         holder.Drop();
                     }))
             {
                 return;
             }
-
-            feedback.RequestOwnerFeedback(
-                PHSItemUseFeedbackKind.Battery,
-                PHSItemUseFeedbackShape.Sphere,
-                holderComponent.transform.position,
-                holderComponent.transform.forward,
-                TelegraphRadius,
-                0f,
-                Array.Empty<Vector3>());
         }
     }
 }

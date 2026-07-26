@@ -5,7 +5,6 @@ using LastJumpCrew.ParkHanSol.Multiplayer;
 using LastJumpCrew.ParkHanSol.Multiplayer.Input;
 using TMPro;
 using UnityEditor;
-using UnityEditor.Events;
 using UnityEditor.SceneManagement;
 using UnityEngine;
 using UnityEngine.SceneManagement;
@@ -36,6 +35,13 @@ public static class PHSNetworkOptionsAuthoring
     [MenuItem("Tools/ParkHanSol/BEAVER/Author Network Options UI")]
     public static void Author()
     {
+        if (EditorApplication.isPlayingOrWillChangePlaymode)
+        {
+            Debug.LogError(
+                "PHS_NETWORK_OPTIONS_AUTHOR_FAILED reason=play_mode_active");
+            return;
+        }
+
         var activeScene = SceneManager.GetActiveScene();
         if (activeScene.IsValid() && activeScene.name.Contains("Map", StringComparison.OrdinalIgnoreCase))
         {
@@ -48,6 +54,7 @@ public static class PHSNetworkOptionsAuthoring
         CopyWithNewGuid(OriginalLobbyUi, NetworkLobbyUi);
         CopyWithNewGuid(OriginalPlayHud, NetworkPlayHud);
         ConfigureLobbyUi();
+        ConfigureCanonicalPlayHud();
         ConfigurePlayHud();
         CreateOwnerPauseUi();
         AttachOwnerPauseUiToPlayer();
@@ -58,6 +65,27 @@ public static class PHSNetworkOptionsAuthoring
             "PHS_NETWORK_OPTIONS_AUTHOR_OK lobby=PHS_NetworkStartLobbyUI " +
             "playHud=PHS_NetworkPlayHudUI ownerPause=PHS_NetworkOwnerPauseUI " +
             "playerConnected=true mapModified=false");
+    }
+
+    [MenuItem("Tools/ParkHanSol/BEAVER/Sync Lobby Settings To Player HUD")]
+    public static void SyncLobbySettingsToPlayerHud()
+    {
+        if (EditorApplication.isPlayingOrWillChangePlaymode)
+        {
+            Debug.LogError(
+                "PHS_LOBBY_SETTINGS_HUD_SYNC_FAILED reason=play_mode_active");
+            return;
+        }
+
+        ConfigureCanonicalPlayHud();
+        ConfigurePlayHud();
+        CreateOwnerPauseUi();
+        AttachOwnerPauseUiToPlayer();
+        AssetDatabase.SaveAssets();
+        AssetDatabase.Refresh();
+        Debug.Log(
+            "PHS_LOBBY_SETTINGS_HUD_SYNC_OK " +
+            "tabs=graphics,audio,voice,controls apply=true back_cancel=true");
     }
 
     private static void CopyWithNewGuid(string sourcePath, string targetPath)
@@ -101,23 +129,27 @@ public static class PHSNetworkOptionsAuthoring
 
     private static void ConfigurePlayHud()
     {
+        ConfigurePlayHudPrefab(NetworkPlayHud, "PHS_NetworkPlayHudUI");
+    }
+
+    private static void ConfigureCanonicalPlayHud()
+    {
+        ConfigurePlayHudPrefab(OriginalPlayHud, "ParkHanSol_PlayHudUI");
+    }
+
+    private static void ConfigurePlayHudPrefab(
+        string hudPath,
+        string rootName)
+    {
         var lobbySource = PrefabUtility.LoadPrefabContents(NetworkLobbyUi);
-        var root = PrefabUtility.LoadPrefabContents(NetworkPlayHud);
+        var root = PrefabUtility.LoadPrefabContents(hudPath);
         try
         {
-            root.name = "PHS_NetworkPlayHudUI";
+            root.name = rootName;
             ConfigureCanvasScalers(root);
             var pausePanel = FindTransform(root.transform, "Pause Menu")?.gameObject;
-            var optionsPanel = FindTransform(root.transform, "Options Panel")?.gameObject;
-            var optionsCard = FindTransform(root.transform, "Options Card");
-            var backButton = FindTransform(root.transform, "Back Button")?.GetComponent<Button>();
-            var rebindPanel = root.GetComponentInChildren<PlayerControlRebindPanel>(true);
             var pauseController = root.GetComponentInChildren<ParkHanSolPauseMenuController>(true);
-            var dropdownSource = lobbySource.GetComponentsInChildren<TMP_Dropdown>(true).FirstOrDefault();
-
-            if (pausePanel == null || optionsPanel == null || optionsCard == null
-                || backButton == null || rebindPanel == null || pauseController == null
-                || dropdownSource == null)
+            if (pausePanel == null || pauseController == null)
             {
                 throw new InvalidOperationException(
                     "PHS_NETWORK_OPTIONS_AUTHOR_FAILED reason=play_hud_reference_missing");
@@ -130,83 +162,66 @@ public static class PHSNetworkOptionsAuthoring
                     "PHS_NETWORK_OPTIONS_AUTHOR_FAILED reason=pause_parent_missing");
             }
 
-            optionsPanel.transform.SetParent(pauseParent, false);
-            optionsPanel.transform.SetSiblingIndex(
-                pausePanel.transform.GetSiblingIndex() + 1);
-            optionsPanel.transform.localScale = Vector3.one;
+            var legacyOptions = root.GetComponentsInChildren<Transform>(true)
+                .Where(transform => transform.name == "Options Panel")
+                .Select(transform => transform.gameObject)
+                .Distinct()
+                .ToArray();
+            foreach (var legacyOption in legacyOptions)
+            {
+                UnityEngine.Object.DestroyImmediate(legacyOption);
+            }
 
+            var optionsPanel = CreateLobbySettingsPanel(
+                lobbySource,
+                pauseParent,
+                "Options Panel");
+            optionsPanel.transform.SetAsLastSibling();
             StyleImages(pausePanel, true);
-            StyleImages(optionsPanel, true);
             StyleTexts(pausePanel, true);
-            StyleTexts(optionsPanel, true);
-            StretchRect(optionsPanel.GetComponent<RectTransform>());
-            ConfigureResponsiveCard(optionsCard.GetComponent<RectTransform>());
-            var videoOptionsRow = EnsureVideoOptionsRow(optionsCard);
-            ReserveControlsPanelTopInset(optionsCard, 150f);
 
-            var existingDropdown = FindTransform(optionsCard, "Window Mode Dropdown");
-            TMP_Dropdown windowModeDropdown;
-            if (existingDropdown == null)
+            var backButton = FindTransform(optionsPanel.transform, "Back Button")
+                ?.GetComponent<Button>();
+            var rebindPanel = optionsPanel.GetComponentInChildren<
+                PlayerControlRebindPanel>(true);
+            var gameSettingsController = optionsPanel.GetComponentInChildren<
+                ParkHanSolGameSettingsController>(true);
+            if (backButton == null || rebindPanel == null
+                || gameSettingsController == null)
             {
-                var dropdownObject = UnityEngine.Object.Instantiate(
-                    dropdownSource.gameObject,
-                    videoOptionsRow,
-                    false);
-                dropdownObject.name = "Window Mode Dropdown";
-                LastJumpCrew.ParkHanSol.Editor
-                    .PHSPlayHudSingleSourceAuthoring
-                    .RemoveUnavailableModular3DText(dropdownObject);
-                windowModeDropdown = dropdownObject.GetComponent<TMP_Dropdown>();
-                RemovePersistentDropdownListeners(windowModeDropdown);
+                throw new InvalidOperationException(
+                    "PHS_NETWORK_OPTIONS_AUTHOR_FAILED reason=lobby_settings_reference_missing");
             }
-            else
-            {
-                existingDropdown.SetParent(videoOptionsRow, false);
-                windowModeDropdown = existingDropdown.GetComponent<TMP_Dropdown>();
-            }
-            ConfigureVideoDropdownRect(
-                windowModeDropdown.GetComponent<RectTransform>(),
-                0.02f,
-                0.48f);
 
-            var existingResolutionDropdown = FindTransform(optionsCard, "Resolution Dropdown");
-            TMP_Dropdown resolutionDropdown;
-            if (existingResolutionDropdown == null)
-            {
-                var dropdownObject = UnityEngine.Object.Instantiate(
-                    dropdownSource.gameObject,
-                    videoOptionsRow,
-                    false);
-                dropdownObject.name = "Resolution Dropdown";
-                LastJumpCrew.ParkHanSol.Editor
-                    .PHSPlayHudSingleSourceAuthoring
-                    .RemoveUnavailableModular3DText(dropdownObject);
-                resolutionDropdown = dropdownObject.GetComponent<TMP_Dropdown>();
-                RemovePersistentDropdownListeners(resolutionDropdown);
-            }
-            else
-            {
-                existingResolutionDropdown.SetParent(videoOptionsRow, false);
-                resolutionDropdown = existingResolutionDropdown.GetComponent<TMP_Dropdown>();
-            }
-            ConfigureVideoDropdownRect(
-                resolutionDropdown.GetComponent<RectTransform>(),
-                0.52f,
-                0.98f);
-
-            var sharedController = root.GetComponent<NetworkSharedOptionsPanelController>();
+            var sharedControllers = root.GetComponents<
+                NetworkSharedOptionsPanelController>();
+            var sharedController = sharedControllers.FirstOrDefault(
+                    controller => !PrefabUtility.IsAddedComponentOverride(controller))
+                ?? sharedControllers.FirstOrDefault();
             if (sharedController == null)
             {
                 sharedController = root.AddComponent<NetworkSharedOptionsPanelController>();
             }
 
+            foreach (var duplicate in sharedControllers.Where(
+                         controller => controller != sharedController))
+            {
+                UnityEngine.Object.DestroyImmediate(duplicate);
+            }
+
             SetObjectReference(sharedController, "panelRoot", optionsPanel);
             SetObjectReference(sharedController, "rebindPanel", rebindPanel);
-            SetObjectReference(sharedController, "windowModeDropdown", windowModeDropdown);
-            SetObjectReference(sharedController, "resolutionDropdown", resolutionDropdown);
+            SetObjectReference(sharedController, "windowModeDropdown", null);
+            SetObjectReference(sharedController, "resolutionDropdown", null);
+            SetObjectReference(
+                sharedController,
+                "gameSettingsController",
+                gameSettingsController);
             SetObjectReference(sharedController, "closeButton", backButton);
+            SetObjectReference(pauseController, "optionsPanel", optionsPanel);
+            SetObjectReference(pauseController, "optionsBackButton", backButton);
             SetObjectReference(pauseController, "sharedOptionsPanel", sharedController);
-            PrefabUtility.SaveAsPrefabAsset(root, NetworkPlayHud);
+            PrefabUtility.SaveAsPrefabAsset(root, hudPath);
         }
         finally
         {
@@ -277,13 +292,11 @@ public static class PHSNetworkOptionsAuthoring
             var exitButton = FindTransform(pausePanel.transform, "Exit Game Button")?.GetComponent<Button>();
             var backButton = FindTransform(optionsPanel.transform, "Back Button")?.GetComponent<Button>();
             var rebindPanel = optionsPanel.GetComponentInChildren<PlayerControlRebindPanel>(true);
-            var windowModeDropdown = optionsPanel.GetComponentsInChildren<TMP_Dropdown>(true)
-                .FirstOrDefault(dropdown => dropdown.name == "Window Mode Dropdown");
-            var resolutionDropdown = optionsPanel.GetComponentsInChildren<TMP_Dropdown>(true)
-                .FirstOrDefault(dropdown => dropdown.name == "Resolution Dropdown");
+            var gameSettingsController = optionsPanel.GetComponentInChildren<
+                ParkHanSolGameSettingsController>(true);
             if (resumeButton == null || optionsButton == null || exitButton == null
-                || backButton == null || rebindPanel == null || windowModeDropdown == null
-                || resolutionDropdown == null)
+                || backButton == null || rebindPanel == null
+                || gameSettingsController == null)
             {
                 throw new InvalidOperationException(
                     "PHS_NETWORK_OPTIONS_AUTHOR_FAILED reason=owner_pause_reference_missing");
@@ -292,8 +305,12 @@ public static class PHSNetworkOptionsAuthoring
             var sharedOptions = presentation.GetComponent<NetworkSharedOptionsPanelController>();
             SetObjectReference(sharedOptions, "panelRoot", optionsPanel);
             SetObjectReference(sharedOptions, "rebindPanel", rebindPanel);
-            SetObjectReference(sharedOptions, "windowModeDropdown", windowModeDropdown);
-            SetObjectReference(sharedOptions, "resolutionDropdown", resolutionDropdown);
+            SetObjectReference(sharedOptions, "windowModeDropdown", null);
+            SetObjectReference(sharedOptions, "resolutionDropdown", null);
+            SetObjectReference(
+                sharedOptions,
+                "gameSettingsController",
+                gameSettingsController);
             SetObjectReference(sharedOptions, "closeButton", backButton);
 
             var pauseController = presentation.GetComponent<ParkHanSolPauseMenuController>();
@@ -314,12 +331,133 @@ public static class PHSNetworkOptionsAuthoring
         }
     }
 
+    private static GameObject CreateLobbySettingsPanel(
+        GameObject lobbySource,
+        Transform parent,
+        string panelName)
+    {
+        var backdropSource = lobbySource.transform.Cast<Transform>()
+            .FirstOrDefault(child => child.name == "RawImage");
+        var settingsSource = lobbySource.transform.Cast<Transform>()
+            .FirstOrDefault(child => child.name == "Settings Panel_R");
+        if (backdropSource == null || settingsSource == null)
+        {
+            throw new InvalidOperationException(
+                "PHS_NETWORK_OPTIONS_AUTHOR_FAILED reason=lobby_settings_source_missing");
+        }
+
+        var panel = new GameObject(
+            panelName,
+            typeof(RectTransform),
+            typeof(Image),
+            typeof(Canvas),
+            typeof(GraphicRaycaster));
+        var panelRect = panel.GetComponent<RectTransform>();
+        panelRect.SetParent(parent, false);
+        StretchRect(panelRect);
+        var panelBackground = panel.GetComponent<Image>();
+        panelBackground.color = new Color(0.008f, 0.012f, 0.016f, 1f);
+        panelBackground.raycastTarget = true;
+        var panelCanvas = panel.GetComponent<Canvas>();
+        panelCanvas.overrideSorting = true;
+        panelCanvas.sortingOrder = 500;
+
+        var backdrop = UnityEngine.Object.Instantiate(
+            backdropSource.gameObject,
+            panel.transform,
+            false);
+        backdrop.name = "Settings Backdrop";
+        var leftMenu = FindTransform(backdrop.transform, "Left Menu");
+        if (leftMenu == null)
+        {
+            UnityEngine.Object.DestroyImmediate(panel);
+            throw new InvalidOperationException(
+                "PHS_NETWORK_OPTIONS_AUTHOR_FAILED reason=lobby_settings_left_menu_missing");
+        }
+
+        foreach (var child in backdrop.transform.Cast<Transform>().ToArray())
+        {
+            if (child != leftMenu)
+            {
+                UnityEngine.Object.DestroyImmediate(child.gameObject);
+            }
+        }
+
+        var settingsPanel = UnityEngine.Object.Instantiate(
+            settingsSource.gameObject,
+            panel.transform,
+            false);
+        settingsPanel.name = "Settings Panel_R";
+        leftMenu.gameObject.SetActive(true);
+        settingsPanel.SetActive(true);
+
+        var categoryController = leftMenu.GetComponent<
+            ParkHanSolSettingsCategoryMenuController>();
+        var gameSettingsController = settingsPanel.GetComponent<
+            ParkHanSolGameSettingsController>();
+        if (categoryController == null || gameSettingsController == null)
+        {
+            UnityEngine.Object.DestroyImmediate(panel);
+            throw new InvalidOperationException(
+                "PHS_NETWORK_OPTIONS_AUTHOR_FAILED reason=lobby_settings_controller_missing");
+        }
+
+        var gameplayPanel = FindTransform(
+            settingsPanel.transform,
+            "Gameplay Options Panel")?.gameObject;
+        var graphicsPanel = FindTransform(
+            settingsPanel.transform,
+            "Graphics Options Panel")?.gameObject;
+        var audioPanel = FindTransform(
+            settingsPanel.transform,
+            "Audio Options Panel")?.gameObject;
+        var voicePanel = FindTransform(
+            settingsPanel.transform,
+            "Voice Chat Options Panel")?.gameObject;
+        var controlsPanel = FindTransform(
+            settingsPanel.transform,
+            "Controls Options Panel")?.gameObject;
+        if (gameplayPanel == null || graphicsPanel == null
+            || audioPanel == null || voicePanel == null
+            || controlsPanel == null)
+        {
+            UnityEngine.Object.DestroyImmediate(panel);
+            throw new InvalidOperationException(
+                "PHS_NETWORK_OPTIONS_AUTHOR_FAILED reason=lobby_settings_category_panel_missing");
+        }
+
+        SetObjectReference(
+            categoryController,
+            "gameplayPanel",
+            gameplayPanel);
+        SetObjectReference(
+            categoryController,
+            "graphicsPanel",
+            graphicsPanel);
+        SetObjectReference(
+            categoryController,
+            "audioPanel",
+            audioPanel);
+        SetObjectReference(
+            categoryController,
+            "voicePanel",
+            voicePanel);
+        SetObjectReference(
+            categoryController,
+            "controlsPanel",
+            controlsPanel);
+
+        panel.SetActive(false);
+        return panel;
+    }
+
     private static void AttachOwnerPauseUiToPlayer()
     {
         var player = PrefabUtility.LoadPrefabContents(PlayerPrefab);
         try
         {
             var existing = FindTransform(player.transform, "PHS_NetworkOwnerPauseUI");
+            var modified = false;
             if (existing == null)
             {
                 var ownerPausePrefab = AssetDatabase.LoadAssetAtPath<GameObject>(NetworkOwnerPauseUi);
@@ -331,9 +469,13 @@ public static class PHSNetworkOptionsAuthoring
 
                 var instance = (GameObject)PrefabUtility.InstantiatePrefab(ownerPausePrefab, player.transform);
                 instance.name = "PHS_NetworkOwnerPauseUI";
+                modified = true;
             }
 
-            PrefabUtility.SaveAsPrefabAsset(player, PlayerPrefab);
+            if (modified)
+            {
+                PrefabUtility.SaveAsPrefabAsset(player, PlayerPrefab);
+            }
         }
         finally
         {
@@ -419,77 +561,6 @@ public static class PHSNetworkOptionsAuthoring
             scaler.referenceResolution = new Vector2(1920f, 1080f);
             scaler.screenMatchMode = CanvasScaler.ScreenMatchMode.MatchWidthOrHeight;
             scaler.matchWidthOrHeight = 0.5f;
-        }
-    }
-
-    private static void ConfigureResponsiveCard(RectTransform card)
-    {
-        card.anchorMin = new Vector2(0.5f, 0.5f);
-        card.anchorMax = new Vector2(0.5f, 0.5f);
-        card.pivot = new Vector2(0.5f, 0.5f);
-        card.anchoredPosition = Vector2.zero;
-        card.sizeDelta = new Vector2(960f, 760f);
-        var fitter = card.GetComponent<ContentSizeFitter>();
-        if (fitter != null)
-        {
-            UnityEngine.Object.DestroyImmediate(fitter);
-        }
-    }
-
-    private static Transform EnsureVideoOptionsRow(Transform optionsCard)
-    {
-        var existing = FindTransform(optionsCard, "PHS_NetworkVideoOptionsRow");
-        var row = existing != null
-            ? existing.GetComponent<RectTransform>()
-            : new GameObject(
-                    "PHS_NetworkVideoOptionsRow",
-                    typeof(RectTransform))
-                .GetComponent<RectTransform>();
-        row.SetParent(optionsCard, false);
-        row.anchorMin = new Vector2(0f, 1f);
-        row.anchorMax = new Vector2(1f, 1f);
-        row.pivot = new Vector2(0.5f, 1f);
-        row.anchoredPosition = new Vector2(0f, -96f);
-        row.sizeDelta = new Vector2(-72f, 78f);
-        return row;
-    }
-
-    private static void ReserveControlsPanelTopInset(
-        Transform optionsCard,
-        float topInset)
-    {
-        var controlsPanel = FindTransform(
-            optionsCard,
-            "Pause Controls Options Panel");
-        var controlsRect = controlsPanel?.GetComponent<RectTransform>();
-        if (controlsRect == null)
-        {
-            throw new InvalidOperationException(
-                "PHS_NETWORK_OPTIONS_AUTHOR_FAILED reason=controls_panel_missing");
-        }
-
-        controlsRect.offsetMax = new Vector2(
-            controlsRect.offsetMax.x,
-            -34f - topInset);
-    }
-
-    private static void ConfigureVideoDropdownRect(
-        RectTransform rect,
-        float anchorMinX,
-        float anchorMaxX)
-    {
-        rect.anchorMin = new Vector2(anchorMinX, 0f);
-        rect.anchorMax = new Vector2(anchorMaxX, 1f);
-        rect.pivot = new Vector2(0.5f, 0.5f);
-        rect.anchoredPosition = Vector2.zero;
-        rect.sizeDelta = Vector2.zero;
-    }
-
-    private static void RemovePersistentDropdownListeners(TMP_Dropdown dropdown)
-    {
-        while (dropdown.onValueChanged.GetPersistentEventCount() > 0)
-        {
-            UnityEventTools.RemovePersistentListener(dropdown.onValueChanged, 0);
         }
     }
 

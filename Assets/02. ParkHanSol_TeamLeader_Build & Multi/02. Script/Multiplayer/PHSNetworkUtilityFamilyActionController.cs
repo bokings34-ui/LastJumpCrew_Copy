@@ -89,6 +89,11 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
                 interactionAudio?.TryPlayOwnerPredicted(
                     NetworkAudioCue.ExtinguisherSpray);
             }
+            else if (familyKind == PHSUtilityFamilyActionKind.Wrench)
+            {
+                interactionAudio?.TryPlayOwnerPredicted(
+                    NetworkAudioCue.WrenchImpact);
+            }
         }
 
         [ServerRpc]

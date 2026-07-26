@@ -27,7 +27,8 @@ namespace LastJumpCrew.ParkHanSol.Editor
             Debug.Log(
                 "PHS_RANGE_GRAPPLE_ENDPOINT_VALIDATE_OK "
                 + "range=presentation_removed markers=bounds "
-                + "hook=wrapper_visible arm=thin refs=explicit distance=24");
+                + "hook=wrapper_visible arm=telescopic_thin "
+                + "round_end=removed refs=explicit distance=24");
         }
 
         private static void ValidateRangeCast(ICollection<string> errors)
@@ -203,6 +204,8 @@ namespace LastJumpCrew.ParkHanSol.Editor
                 var armVisualProperty = serialized.FindProperty("armVisual");
                 var armSegmentProperty = serialized.FindProperty("armSegment");
                 var armEndJointProperty = serialized.FindProperty("armEndJoint");
+                var telescopicArmProperty = serialized.FindProperty(
+                    "telescopicArmVisual");
                 var hookVisual = hookVisualProperty?.objectReferenceValue
                     as Transform;
                 var clawVisual = clawVisualProperty?.objectReferenceValue
@@ -217,6 +220,8 @@ namespace LastJumpCrew.ParkHanSol.Editor
                     as Transform;
                 var armEndJoint = armEndJointProperty?.objectReferenceValue
                     as Transform;
+                var telescopicArmVisual = telescopicArmProperty
+                    ?.objectReferenceValue as GrappleTelescopicArmVisual;
                 if (hookVisual == null)
                 {
                     errors.Add("player_hook_visual_reference_missing");
@@ -294,7 +299,8 @@ namespace LastJumpCrew.ParkHanSol.Editor
 
                 if (armVisual == null
                     || armSegment == null
-                    || armEndJoint == null)
+                    || armEndJoint == null
+                    || telescopicArmVisual == null)
                 {
                     errors.Add("player_arm_reference_missing");
                     return;
@@ -318,17 +324,9 @@ namespace LastJumpCrew.ParkHanSol.Editor
                 }
 
                 RequirePosition(
-                    new Vector3(
-                        armSegment.localScale.x,
-                        0f,
-                        armSegment.localScale.z),
-                    new Vector3(
-                        PHSRangeCastGrappleEndpointAuthoring
-                            .RequiredArmThickness,
-                        0f,
-                        PHSRangeCastGrappleEndpointAuthoring
-                            .RequiredArmThickness),
-                    "player_arm_segment_too_thick",
+                    armSegment.localScale,
+                    Vector3.one,
+                    "player_arm_segment_root_scaled",
                     errors);
                 RequirePosition(
                     armEndJoint.localScale,
@@ -337,6 +335,15 @@ namespace LastJumpCrew.ParkHanSol.Editor
                             .RequiredEndJointScale,
                     "player_arm_end_joint_too_thick",
                     errors);
+                if (!telescopicArmVisual.IsConfigured)
+                {
+                    errors.Add("player_telescopic_arm_not_configured");
+                }
+
+                if (armEndJoint.GetComponent<MeshRenderer>() != null)
+                {
+                    errors.Add("player_arm_round_end_renderer_present");
+                }
             }
             finally
             {

@@ -445,7 +445,7 @@ Restart driver flag:
 - `Packages/packages-lock.json`의 `com.anklebreaker.unity-mcp` 오염
 - `Assets/02. ParkHanSol_TeamLeader_Build & Multi/05. Material/Items/Feedback/PHS_ItemRangeOutline.mat`
 - `Assets/02. ParkHanSol_TeamLeader_Build & Multi/05. Material/Items/Feedback/PHS_WrenchSpark.mat`
-- `Assets/99. DownloadAssets/TextMesh Pro/Fonts/Maplestory Light SDF.asset`
+- `Assets/02. ParkHanSol_TeamLeader_Build & Multi/_ThirdParty/Fonts/Maplestory Light SDF.asset`
 - `LastJumpCrew.slnx`
 - `ProjectSettings/ProjectSettings.asset`
 

@@ -1,8 +1,9 @@
 using System;
 using System.Collections.Generic;
+using LastJumpCrew.ParkHanSol.Multiplayer.ShipAccidents;
+using SM;
 using TMPro;
 using UnityEngine;
-using LastJumpCrew.ParkHanSol.Multiplayer.ShipAccidents;
 
 namespace LastJumpCrew.ParkHanSol.Multiplayer.Events
 {
@@ -76,9 +77,94 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Events
             }
         }
 
+        [Serializable]
+        private sealed class AccidentIconEntry
+        {
+            [SerializeField] private PHSShipAccidentId accidentId;
+            [SerializeField] private GameObject root;
+
+            public PHSShipAccidentId AccidentId => accidentId;
+
+            public bool Validate(PHSNetworkEventHudView owner, int index, HashSet<PHSShipAccidentId> configuredIds)
+            {
+                var valid = true;
+                if (accidentId == PHSShipAccidentId.None || !configuredIds.Add(accidentId))
+                {
+                    Debug.LogError(
+                        $"PHS_EVENT_HUD_VIEW_SETUP_FAILED reason=accident_icon_id_invalid_or_duplicate " +
+                        $"view={owner.name} accident={accidentId} index={index}",
+                        owner);
+                    valid = false;
+                }
+
+                if (root == null)
+                {
+                    Debug.LogError(
+                        $"PHS_EVENT_HUD_VIEW_SETUP_FAILED reason=accident_icon_root_missing " +
+                        $"view={owner.name} accident={accidentId} index={index}",
+                        owner);
+                    valid = false;
+                }
+
+                return valid;
+            }
+
+            public void SetVisible(bool visible)
+            {
+                if (root != null)
+                {
+                    root.SetActive(visible);
+                }
+            }
+        }
+
+        [Serializable]
+        private sealed class MiniGameIconEntry
+        {
+            [SerializeField] private EventId eventId;
+            [SerializeField] private GameObject root;
+
+            public EventId EventId => eventId;
+
+            public bool Validate(PHSNetworkEventHudView owner, int index, HashSet<EventId> configuredIds)
+            {
+                var valid = true;
+                if (!IsMiniGameEvent(eventId) || !configuredIds.Add(eventId))
+                {
+                    Debug.LogError(
+                        $"PHS_EVENT_HUD_VIEW_SETUP_FAILED reason=minigame_icon_id_invalid_or_duplicate " +
+                        $"view={owner.name} event={eventId} index={index}",
+                        owner);
+                    valid = false;
+                }
+
+                if (root == null)
+                {
+                    Debug.LogError(
+                        $"PHS_EVENT_HUD_VIEW_SETUP_FAILED reason=minigame_icon_root_missing " +
+                        $"view={owner.name} event={eventId} index={index}",
+                        owner);
+                    valid = false;
+                }
+
+                return valid;
+            }
+
+            public void SetVisible(bool visible)
+            {
+                if (root != null)
+                {
+                    root.SetActive(visible);
+                }
+            }
+        }
+
         [Header("Dedicated Event Alert (do not reuse hazard/gravity panel)")]
         [SerializeField] private GameObject eventAlertRoot;
         [SerializeField] private GameObject eventAlertIcon;
+        [SerializeField] private GameObject iconLineupRoot;
+        [SerializeField] private AccidentIconEntry[] accidentIconEntries = new AccidentIconEntry[7];
+        [SerializeField] private MiniGameIconEntry[] miniGameIconEntries = new MiniGameIconEntry[3];
 
         [Header("Dedicated Ship Map")]
         [SerializeField] private GameObject shipMapRoot;
@@ -88,11 +174,14 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Events
         private readonly Dictionary<string, RoomViewEntry> roomViewsById =
             new(StringComparer.Ordinal);
         private readonly HashSet<string> missingRoomMappingsLogged = new(StringComparer.Ordinal);
+        private readonly HashSet<PHSShipAccidentId> activeAccidentIds = new();
+        private readonly HashSet<EventId> activeMiniGameEventIds = new();
 
         private bool hasValidatedSetup;
         private bool isConfigured;
         private string externalAlertText = string.Empty;
-        private string internalAccidentAlertText = string.Empty;
+        private bool hasActiveAccidentIcons;
+        private bool hasActiveMiniGameIcons;
         private string currentMapText = string.Empty;
 
         public bool IsConfigured
@@ -136,7 +225,8 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Events
             }
 
             externalAlertText = viewModel.AlertText;
-            RefreshAlertText();
+            SetMiniGameEvents(viewModel.ActiveEventIds);
+            RefreshAlertPresentation();
 
             foreach (var roomView in roomViews)
             {
@@ -178,8 +268,9 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Events
         public void HideOffline()
         {
             externalAlertText = string.Empty;
-            internalAccidentAlertText = string.Empty;
-            RefreshAlertText();
+            SetAccidentIcons(null);
+            SetMiniGameEvents(null);
+            RefreshAlertPresentation();
             if (shipMapRoot != null) shipMapRoot.SetActive(false);
 
             if (roomViews == null)
@@ -200,42 +291,93 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Events
                 return;
             }
 
-            if (lines == null || lines.Count == 0)
-            {
-                internalAccidentAlertText = string.Empty;
-                RefreshAlertText();
-                return;
-            }
-
-            var builder = new System.Text.StringBuilder(128);
-            foreach (var line in lines)
-            {
-                if (builder.Length > 0)
-                {
-                    builder.Append('\n');
-                }
-
-                builder.Append("• ");
-                builder.Append(line.DisplayName);
-                builder.Append(" · ");
-                builder.Append(line.ModuleName);
-            }
-
-            internalAccidentAlertText = builder.ToString();
-            RefreshAlertText();
+            SetAccidentIcons(lines);
+            RefreshAlertPresentation();
         }
 
-        private void RefreshAlertText()
+        private void SetAccidentIcons(IReadOnlyList<PHSShipAccidentHudLine> lines)
         {
-            if (eventAlertRoot == null || eventAlertIcon == null)
+            activeAccidentIds.Clear();
+            if (lines != null)
+            {
+                foreach (var line in lines)
+                {
+                    activeAccidentIds.Add(line.AccidentId);
+                }
+            }
+
+            hasActiveAccidentIcons = false;
+            if (accidentIconEntries == null)
             {
                 return;
             }
 
-            var hasActiveEvent = !string.IsNullOrWhiteSpace(externalAlertText)
-                || !string.IsNullOrWhiteSpace(internalAccidentAlertText);
-            eventAlertRoot.SetActive(hasActiveEvent);
-            eventAlertIcon.SetActive(hasActiveEvent);
+            foreach (var entry in accidentIconEntries)
+            {
+                if (entry == null)
+                {
+                    continue;
+                }
+
+                var visible = activeAccidentIds.Contains(entry.AccidentId);
+                entry.SetVisible(visible);
+                hasActiveAccidentIcons |= visible;
+            }
+        }
+
+        private void SetMiniGameEvents(IReadOnlyList<EventId> eventIds)
+        {
+            activeMiniGameEventIds.Clear();
+            if (eventIds != null)
+            {
+                foreach (var eventId in eventIds)
+                {
+                    if (IsMiniGameEvent(eventId))
+                    {
+                        activeMiniGameEventIds.Add(eventId);
+                    }
+                }
+            }
+
+            hasActiveMiniGameIcons = false;
+            if (miniGameIconEntries == null)
+            {
+                return;
+            }
+
+            foreach (var entry in miniGameIconEntries)
+            {
+                if (entry == null)
+                {
+                    continue;
+                }
+
+                var visible = activeMiniGameEventIds.Contains(entry.EventId);
+                entry.SetVisible(visible);
+                hasActiveMiniGameIcons |= visible;
+            }
+        }
+
+        private void RefreshAlertPresentation()
+        {
+            if (eventAlertRoot == null || eventAlertIcon == null || iconLineupRoot == null)
+            {
+                return;
+            }
+
+            var hasLineupIcons = hasActiveAccidentIcons || hasActiveMiniGameIcons;
+            var hasGenericExternalAlert = !string.IsNullOrWhiteSpace(externalAlertText)
+                && !hasActiveMiniGameIcons;
+            eventAlertRoot.SetActive(hasLineupIcons || hasGenericExternalAlert);
+            iconLineupRoot.SetActive(hasLineupIcons);
+            eventAlertIcon.SetActive(hasGenericExternalAlert && !hasLineupIcons);
+        }
+
+        private static bool IsMiniGameEvent(EventId eventId)
+        {
+            return eventId == EventId.EnemyScout
+                || eventId == EventId.MeteorAttack
+                || eventId == EventId.EmpAttack;
         }
 
         private void RefreshCurrentMapText()
@@ -266,6 +408,15 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Events
                 Debug.LogError($"PHS_EVENT_HUD_VIEW_SETUP_FAILED reason=event_alert_icon_missing view={name}", this);
                 valid = false;
             }
+
+            if (iconLineupRoot == null)
+            {
+                Debug.LogError($"PHS_EVENT_HUD_VIEW_SETUP_FAILED reason=icon_lineup_root_missing view={name}", this);
+                valid = false;
+            }
+
+            valid &= ValidateAccidentIcons();
+            valid &= ValidateMiniGameIcons();
 
             if (shipMapRoot == null)
             {
@@ -310,6 +461,68 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Events
                         this);
                     valid = false;
                 }
+            }
+
+            return valid;
+        }
+
+        private bool ValidateAccidentIcons()
+        {
+            if (accidentIconEntries == null || accidentIconEntries.Length != 7)
+            {
+                Debug.LogError(
+                    $"PHS_EVENT_HUD_VIEW_SETUP_FAILED reason=accident_icon_count_invalid view={name} " +
+                    $"actual={accidentIconEntries?.Length ?? 0} expected=7",
+                    this);
+                return false;
+            }
+
+            var valid = true;
+            var configuredIds = new HashSet<PHSShipAccidentId>();
+            for (var index = 0; index < accidentIconEntries.Length; index++)
+            {
+                var entry = accidentIconEntries[index];
+                if (entry == null)
+                {
+                    Debug.LogError(
+                        $"PHS_EVENT_HUD_VIEW_SETUP_FAILED reason=accident_icon_entry_missing view={name} index={index}",
+                        this);
+                    valid = false;
+                    continue;
+                }
+
+                valid &= entry.Validate(this, index, configuredIds);
+            }
+
+            return valid;
+        }
+
+        private bool ValidateMiniGameIcons()
+        {
+            if (miniGameIconEntries == null || miniGameIconEntries.Length != 3)
+            {
+                Debug.LogError(
+                    $"PHS_EVENT_HUD_VIEW_SETUP_FAILED reason=minigame_icon_count_invalid view={name} " +
+                    $"actual={miniGameIconEntries?.Length ?? 0} expected=3",
+                    this);
+                return false;
+            }
+
+            var valid = true;
+            var configuredIds = new HashSet<EventId>();
+            for (var index = 0; index < miniGameIconEntries.Length; index++)
+            {
+                var entry = miniGameIconEntries[index];
+                if (entry == null)
+                {
+                    Debug.LogError(
+                        $"PHS_EVENT_HUD_VIEW_SETUP_FAILED reason=minigame_icon_entry_missing view={name} index={index}",
+                        this);
+                    valid = false;
+                    continue;
+                }
+
+                valid &= entry.Validate(this, index, configuredIds);
             }
 
             return valid;

@@ -68,9 +68,7 @@ namespace LastJumpCrew.ParkHanSol.Shop
         {
             if (productLabel != null)
             {
-                productLabel.text = product == null
-                    ? string.Empty
-                    : $"${product.PurchasePrice}";
+                productLabel.text = string.Empty;
             }
 
             if (productNameText != null)
@@ -81,7 +79,7 @@ namespace LastJumpCrew.ParkHanSol.Shop
 
             if (priceText != null)
             {
-                priceText.text = product == null ? string.Empty : $"${product.PurchasePrice}";
+                priceText.text = string.Empty;
             }
 
             RefreshLabelVisibility();
@@ -89,15 +87,14 @@ namespace LastJumpCrew.ParkHanSol.Shop
 
         private void RefreshLabelVisibility()
         {
-            var shouldShow = CurrentProduct != null && IsInStock;
             if (productLabel != null)
             {
-                productLabel.gameObject.SetActive(shouldShow);
+                productLabel.gameObject.SetActive(false);
             }
 
             if (priceText != null && priceText != productLabel)
             {
-                priceText.gameObject.SetActive(shouldShow);
+                priceText.gameObject.SetActive(false);
             }
         }
     }

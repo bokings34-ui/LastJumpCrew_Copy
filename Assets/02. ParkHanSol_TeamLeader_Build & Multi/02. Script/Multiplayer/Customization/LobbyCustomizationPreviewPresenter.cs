@@ -26,7 +26,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Customization
         [SerializeField, Range(1f, 179f)] private float maximumFieldOfView = 45f;
 
         private MaterialPropertyBlock bodyMaterialProperties;
-        private INetworkLobbyCustomizationService service;
+        private ILobbyCustomizationService service;
         private GameObject headVisual;
         private GameObject backVisual;
         private string renderedHeadId = string.Empty;
@@ -38,7 +38,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Customization
         }
 
         public bool TryBind(
-            INetworkLobbyCustomizationService customizationService,
+            ILobbyCustomizationService customizationService,
             out string reason)
         {
             if (!ValidateSetup(out reason)

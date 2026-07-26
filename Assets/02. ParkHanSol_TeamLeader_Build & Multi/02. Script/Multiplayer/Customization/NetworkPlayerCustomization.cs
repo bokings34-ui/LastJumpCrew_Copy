@@ -41,6 +41,9 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Customization
 
         public CosmeticCatalog Catalog => catalog;
         public PersonalLobbyCustomizationCreditsWallet PersonalCreditsWallet => personalCreditsWallet;
+        public int CurrentCredits => personalCreditsWallet == null
+            ? 0
+            : personalCreditsWallet.CurrentCredits;
         public bool IsProfileReady => ownerProfileReady
             && personalCreditsWallet != null
             && personalCreditsWallet.IsProfileReady;
