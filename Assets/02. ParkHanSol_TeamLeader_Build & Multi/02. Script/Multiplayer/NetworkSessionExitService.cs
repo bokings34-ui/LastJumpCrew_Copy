@@ -47,7 +47,9 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
                     : networkManager.GetComponent<MultiplayerRoomService>();
                 if (roomService != null
                     && roomService.IsActive
-                    && !await roomService.LeaveRoomAsync())
+                    && !await roomService.LeaveRoomAsync()
+                    && networkManager != null
+                    && networkManager.IsListening)
                 {
                     activeExitTask = null;
                     Debug.LogError("PHS_SESSION_EXIT_FAILED reason=room_leave_failed");

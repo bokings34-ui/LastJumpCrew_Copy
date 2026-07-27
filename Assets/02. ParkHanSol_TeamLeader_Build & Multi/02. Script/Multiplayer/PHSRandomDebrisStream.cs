@@ -18,6 +18,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
         [SerializeField] private Vector3 passageLaneExtents = new(3f, 1f, 1f);
         [SerializeField, Range(0f, 1f)] private float passageLaneSpawnChance = 1f;
         [SerializeField] private float recycleWorldX = -365f;
+        [SerializeField, Range(0f, 1f)] private float oppositeFlowChance = 0.45f;
         [SerializeField] private bool distributeAcrossPathOnAwake;
         [SerializeField, Min(0.01f)] private float minimumSpeed = 0.8f;
         [SerializeField, Min(0.01f)] private float maximumSpeed = 2.8f;
@@ -25,6 +26,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
 
         private float[] speeds;
         private Vector3[] angularVelocities;
+        private Vector3[] flowDirections;
         private GameObject[] debrisSources;
         private readonly List<Transform> activeDebris = new();
         private readonly List<Transform> runtimeGeneratedDebris = new();
@@ -126,10 +128,13 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
                     continue;
                 }
 
-                debris.position += Vector3.left * (speeds[index] * Time.deltaTime);
+                debris.position += flowDirections[index] * (speeds[index] * Time.deltaTime);
                 debris.Rotate(angularVelocities[index] * Time.deltaTime, Space.Self);
 
-                if (debris.position.x <= recycleWorldX)
+                var movingRight = flowDirections[index].x > 0f;
+                var oppositeRecycleWorldX = spawnCenter.x + (spawnCenter.x - recycleWorldX);
+                if ((!movingRight && debris.position.x <= recycleWorldX)
+                    || (movingRight && debris.position.x >= oppositeRecycleWorldX))
                 {
                     ResetDebris(index, false);
                 }
@@ -154,6 +159,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
 
             speeds = new float[activeDebris.Count];
             angularVelocities = new Vector3[activeDebris.Count];
+            flowDirections = new Vector3[activeDebris.Count];
             for (var index = 0; index < activeDebris.Count; index++)
             {
                 ResetDebris(index, distributeAcrossPathOnAwake);
@@ -341,10 +347,14 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
         {
             var debris = activeDebris[index];
             GetSpawnArea(out var laneCenter, out var laneExtents);
+            var movingRight = Random.value < oppositeFlowChance;
+            var targetRecycleWorldX = movingRight
+                ? spawnCenter.x + (spawnCenter.x - recycleWorldX)
+                : recycleWorldX;
             var spawnX = distributeAcrossPath
                 ? Random.Range(
-                    Mathf.Min(recycleWorldX, laneCenter.x + laneExtents.x),
-                    Mathf.Max(recycleWorldX, laneCenter.x + laneExtents.x))
+                    Mathf.Min(targetRecycleWorldX, laneCenter.x + laneExtents.x),
+                    Mathf.Max(targetRecycleWorldX, laneCenter.x + laneExtents.x))
                 : laneCenter.x + Random.Range(-laneExtents.x, laneExtents.x);
 
             debris.position = new Vector3(
@@ -353,6 +363,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
                 laneCenter.z + Random.Range(-laneExtents.z, laneExtents.z));
             debris.rotation = Random.rotation;
             speeds[index] = Random.Range(minimumSpeed, maximumSpeed);
+            flowDirections[index] = movingRight ? Vector3.right : Vector3.left;
             angularVelocities[index] = Random.insideUnitSphere * maximumAngularSpeed;
         }
 
