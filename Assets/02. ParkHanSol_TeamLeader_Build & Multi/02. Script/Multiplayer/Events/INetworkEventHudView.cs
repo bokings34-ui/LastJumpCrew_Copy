@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using SM;
 
 namespace LastJumpCrew.ParkHanSol.Multiplayer.Events
 {
@@ -32,16 +33,19 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Events
         public PHSNetworkEventHudViewModel(
             string alertText,
             int activeIncidentCount,
-            IReadOnlyList<PHSNetworkEventRoomViewModel> rooms)
+            IReadOnlyList<PHSNetworkEventRoomViewModel> rooms,
+            IReadOnlyList<EventId> activeEventIds)
         {
             AlertText = alertText ?? string.Empty;
             ActiveIncidentCount = activeIncidentCount;
             Rooms = rooms;
+            ActiveEventIds = activeEventIds;
         }
 
         public string AlertText { get; }
         public int ActiveIncidentCount { get; }
         public bool IsAlertVisible => !string.IsNullOrWhiteSpace(AlertText);
         public IReadOnlyList<PHSNetworkEventRoomViewModel> Rooms { get; }
+        public IReadOnlyList<EventId> ActiveEventIds { get; }
     }
 }

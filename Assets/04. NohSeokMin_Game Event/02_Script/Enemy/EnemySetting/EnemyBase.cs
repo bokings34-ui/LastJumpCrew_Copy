@@ -3,11 +3,12 @@ using System.Collections;
 using UnityEngine;
 using UnityEngine.AI;
 using LastJumpCrew.Common;
+using LastJumpCrew.ParkHanSol.Multiplayer;
 
 namespace SM
 {
     [RequireComponent(typeof(NavMeshAgent))]
-    public abstract class EnemyBase : MonoBehaviour, IDamageable, IStatusEffectReceiver, IKnockbackable
+    public abstract class EnemyBase : MonoBehaviour, IDamageable, IKnockbackable
     {
         public event Action<EnemyBase> OnDeath;
 
@@ -25,11 +26,14 @@ namespace SM
         public float MaxHealth => maxHealth;
         public float CurrentHealth => _currentHealth;
 
-        private Coroutine _electricShockRoutine;
         private Coroutine _knockbackRoutine;
+        private StatusEffectController _statusEffectController;
 
         public bool IsAlive { get { return StateMachine.CurrentType != EnemyStateType.Dead; } }
-        public bool IsShocked { get; private set; }
+        public bool IsShocked
+        {
+            get { return _statusEffectController != null && _statusEffectController.IsShocked; }
+        }
 
         public NavMeshAgent Agent { get; private set; }
         public EnemyStateMachine StateMachine { get; private set; }
@@ -45,6 +49,7 @@ namespace SM
             _colliders = GetComponentsInChildren<Collider>();
 
             Anim = GetComponentInChildren<Animator>();
+            _statusEffectController = GetComponent<StatusEffectController>();
 
             StateMachine = new EnemyStateMachine();
             StateMachine.Register(EnemyStateType.Chase, new EnemyChaseState());
@@ -57,7 +62,6 @@ namespace SM
             _enemyPrefab = sourcePrefab;
             _currentHealth = maxHealth;
             _cachedTarget = null;
-            IsShocked = false;
 
             Agent.enabled = true;
             gameObject.SetActive(true);
@@ -72,11 +76,14 @@ namespace SM
         {
             _cachedTarget = null;
 
-            if (_electricShockRoutine != null) 
-            { 
-                StopCoroutine(_electricShockRoutine); 
-                _electricShockRoutine = null;
+            if (_statusEffectController != null
+                && _statusEffectController.CanReceiveStatusEffect(
+                    StatusEffectType.ElectricShok))
+            {
+                _statusEffectController.RemoveStatusEffect(
+                    StatusEffectType.ElectricShok);
             }
+
             if (_knockbackRoutine != null) 
             { 
                 StopCoroutine(_knockbackRoutine); 
@@ -88,7 +95,13 @@ namespace SM
 
         public void Tick(float deltaTime)
         {
-            if (IsShocked) return;
+            if (IsShocked)
+            {
+                if (Agent.enabled) Agent.isStopped = true;
+                return;
+            }
+
+            if (Agent.enabled) Agent.isStopped = false;
             StateMachine.Tick(this, deltaTime);
         }
 
@@ -121,53 +134,6 @@ namespace SM
             {
                 if (Anim != null) Anim.Play(EnemyAnimData.TakeDamage, -1, 0f);
             }
-        }
-
-        // __________ IStatusEffectReceiver __________
-
-        public bool CanReceiveStatusEffect(StatusEffectType effectType)
-        {
-            return IsAlive;
-        }
-
-        public void ApplyStatusEffect(StatusEffectType effectType, float duration, GameObject source)
-        {
-            if (!CanReceiveStatusEffect(effectType)) return;
-
-            switch (effectType)
-            {
-                case StatusEffectType.ElectricShok:
-                    if (_electricShockRoutine != null) StopCoroutine(_electricShockRoutine);
-                    _electricShockRoutine = StartCoroutine(ElectricShockRoutine(duration));
-                    break;
-            }
-        }
-
-        public void RemoveStatusEffect(StatusEffectType effectType)
-        {
-            if (effectType == StatusEffectType.ElectricShok && _electricShockRoutine != null)
-            {
-                StopCoroutine(_electricShockRoutine);
-                _electricShockRoutine = null;
-                EndElectricShock();
-            }
-        }
-
-        private IEnumerator ElectricShockRoutine(float duration)
-        {
-            IsShocked = true;
-            Agent.isStopped = true;
-
-            yield return new WaitForSeconds(duration);
-
-            EndElectricShock();
-        }
-
-        private void EndElectricShock()
-        {
-            IsShocked = false;
-            if (Agent.enabled) Agent.isStopped = false;
-            _electricShockRoutine = null;
         }
 
         // ________ IKnockbackable _________

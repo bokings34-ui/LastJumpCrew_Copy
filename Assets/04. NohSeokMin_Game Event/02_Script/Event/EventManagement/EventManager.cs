@@ -38,6 +38,12 @@ namespace SM
             }
         }
 
+        public EventBase GetActiveEvent(EventId id)
+        {
+            _activeEvents.TryGetValue(id, out var evt);
+            return evt;
+        }
+
         public bool IsActive(EventId id)
         {
             return _activeEvents.ContainsKey(id);

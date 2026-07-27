@@ -27,7 +27,10 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
         private Light[] electricShockLights = Array.Empty<Light>();
         private Coroutine electricShockRoutine;
 
-        public bool IsShocked => electricShockActive.Value;
+        public bool IsShocked => IsSpawned
+            ? electricShockActive.Value
+            : electricShockEffectRoot != null
+                && electricShockEffectRoot.activeSelf;
 
         public event Action<StatusEffectType> StatusEffectStarted;
         public event Action<StatusEffectType> StatusEffectEnded;

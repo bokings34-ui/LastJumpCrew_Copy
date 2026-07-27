@@ -18,6 +18,8 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
         [SerializeField] private Color emptyValueColor = new(0.05f, 0.16f, 0.42f, 1f);
         [SerializeField] private Color fullValueColor = new(0.12f, 0.72f, 1f, 1f);
         [SerializeField, Min(0.01f)] private float fullFlashDuration = 0.42f;
+        [SerializeField, Min(0.01f)] private float increaseFillDuration = 0.28f;
+        [SerializeField, Min(0.01f)] private float decreaseFillDuration = 0.18f;
 
         [Header("Feedback")]
         [SerializeField, Min(0.01f)] private float punchDuration = 0.16f;
@@ -35,12 +37,33 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
                 return;
             }
 
-            currentValue = Mathf.Clamp01(normalizedValue);
-            fillImage.fillAmount = currentValue;
+            var targetValue = Mathf.Clamp01(normalizedValue);
+            var displayedValue = fillImage.fillAmount;
+            var changed = isInitialized && !Mathf.Approximately(displayedValue, targetValue);
+            currentValue = targetValue;
+
+            fillImage.DOKill();
+            var targetColor = Color.Lerp(emptyValueColor, fullValueColor, currentValue);
+            if (changed)
+            {
+                var duration = targetValue > displayedValue ? increaseFillDuration : decreaseFillDuration;
+                fillImage.DOFillAmount(targetValue, duration)
+                    .SetEase(targetValue > displayedValue ? Ease.OutCubic : Ease.OutQuad)
+                    .SetUpdate(true)
+                    .SetLink(gameObject);
+                fillImage.DOColor(targetColor, duration)
+                    .SetEase(Ease.OutQuad)
+                    .SetUpdate(true)
+                    .SetLink(gameObject);
+            }
+            else
+            {
+                fillImage.fillAmount = targetValue;
+                fillImage.color = targetColor;
+            }
+
             if (currentValue < 1f)
             {
-                fillImage.DOKill();
-                fillImage.color = Color.Lerp(emptyValueColor, fullValueColor, currentValue);
                 StopFullGlow();
             }
 

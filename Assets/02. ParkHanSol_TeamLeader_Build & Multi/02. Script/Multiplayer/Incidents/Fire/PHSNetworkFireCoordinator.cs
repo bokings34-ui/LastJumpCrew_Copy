@@ -14,7 +14,6 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Incidents.Fire
     [RequireComponent(typeof(NetworkObject))]
     public sealed class PHSNetworkFireCoordinator : NetworkBehaviour
     {
-        private const string FireExtinguisherItemId = "fire_extinguisher";
         private const ulong FallbackScopeDomain = 0xF17E000000000000UL;
         // Start new neighbors at Medium heat so a visible fire front can keep
         // propagating instead of waiting through several Small-only ticks.
@@ -384,7 +383,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Incidents.Fire
                 return false;
             }
 
-            if (hit.ItemId != FireExtinguisherItemId)
+            if (string.IsNullOrWhiteSpace(hit.ItemId))
             {
                 reason = $"item_mismatch:{hit.ItemId}";
                 return false;
@@ -431,7 +430,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Incidents.Fire
 
             if (itemRecord == null
                 || !itemRecord.IsSpawned
-                || itemRecord.HeldItemId != FireExtinguisherItemId)
+                || itemRecord.HeldItemId != hit.ItemId)
             {
                 reason = "server_item_record_mismatch";
                 return false;
@@ -450,7 +449,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Incidents.Fire
             var itemRevision = itemRecord.Revision;
             if (itemLifecycle == null
                 || !itemLifecycle.TryResolveHeldItemActionServer(
-                    FireExtinguisherItemId,
+                    hit.ItemId,
                     itemRevision,
                     UtilityItemActionKind.FireSuppression,
                     out var actionProfile))
@@ -507,7 +506,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Incidents.Fire
                 1,
                 ushort.MaxValue);
             if (!itemLifecycle.TryCommitHeldItemActionServer(
-                    FireExtinguisherItemId,
+                    hit.ItemId,
                     itemRevision,
                     actionProfile))
             {
@@ -528,6 +527,11 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Incidents.Fire
                 && CountActivePatches(accidentInstanceId) == 1;
 
             suppressionSequences[sequenceKey] = hit.RequestSequence;
+            var feedback =
+                hit.Attacker.GetComponent<PHSNetworkItemUseFeedbackController>();
+            feedback?.PublishConfirmedTargetImpactServer(
+                UtilityItemActionKind.FireSuppression,
+                patch.HazardBounds.ClosestPoint(hit.Attacker.transform.position));
             if (nextHeat == 0)
             {
                 activePatches.RemoveAt(snapshotIndex);
