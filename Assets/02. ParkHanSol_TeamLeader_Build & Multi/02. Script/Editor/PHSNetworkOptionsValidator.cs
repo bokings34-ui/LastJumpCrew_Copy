@@ -115,6 +115,7 @@ namespace LastJumpCrew.ParkHanSol.Editor
                          "fullScreenToggle",
                          "qualityDropdown",
                          "vSyncToggle",
+                         "targetFrameRateDropdown",
                          "applyButton"
                      })
             {
