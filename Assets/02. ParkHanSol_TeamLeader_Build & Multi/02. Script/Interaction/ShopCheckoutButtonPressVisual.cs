@@ -29,6 +29,12 @@ namespace LastJumpCrew.ParkHanSol.Interaction
             ApplyColor(idleColor);
         }
 
+        private void OnValidate()
+        {
+            CaptureRestPosition();
+            ApplyColor(idleColor);
+        }
+
         private void OnEnable()
         {
             CaptureRestPosition();

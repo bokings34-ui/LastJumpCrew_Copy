@@ -29,6 +29,9 @@ namespace LastJumpCrew.ParkHanSol.Interaction
         // dropPoint 기준 로컬 드롭 오프셋이다.
         [SerializeField] private Vector3 droppedLocalOffset = new(0f, 0f, 1f);
 
+        [Header("Drop Motion")]
+        [SerializeField] private ItemDropMotionProfile dropMotionProfile;
+
         [Header("Held Item Scale")]
 
         // 1인칭 화면에서 보이는 아이템 크기 배율이다.
@@ -60,6 +63,9 @@ namespace LastJumpCrew.ParkHanSol.Interaction
         public UtilityItemPrefabData CurrentItemPrefabData => currentItemPrefabData;
         public DebrisItem HeldDebris => heldDebris;
         public float HeldDebrisMass => heldDebris == null ? 0f : heldDebris.Mass;
+        public Transform HeldPresentationTransform => heldItemInstance == null
+            ? null
+            : heldItemInstance.transform;
         LastJumpCrew.Common.IHoldableItem LastJumpCrew.Common.IItemHolder.CurrentItem => currentItemObject;
         public bool HasItem => IsNetworkSessionActive() && networkItemRecord != null && networkItemRecord.IsSpawned
             ? !string.IsNullOrEmpty(networkItemRecord.HeldItemId)
@@ -73,15 +79,18 @@ namespace LastJumpCrew.ParkHanSol.Interaction
             networkItemRecord = GetComponent<NetworkPlayerItemRecord>();
             networkItemLifecycle = GetComponent<NetworkPlayerItemLifecycle>();
 
-            if (visibleHandHoldPoint != null)
+            if (holdPoint == null)
             {
-                return;
+                Debug.LogError(
+                    $"PHS_TEMP_ITEM_SETUP_FAILED reason=first_person_hold_point_missing player={name}",
+                    this);
             }
 
-            visibleHandHoldPoint = FindChildByName(transform, "R_Hand");
             if (visibleHandHoldPoint == null)
             {
-                Debug.LogWarning($"PHS_TEMP_ITEM_VISUAL_HAND_MISSING player={name}");
+                Debug.LogError(
+                    $"PHS_TEMP_ITEM_SETUP_FAILED reason=world_hold_point_missing player={name}",
+                    this);
             }
         }
 
@@ -90,7 +99,14 @@ namespace LastJumpCrew.ParkHanSol.Interaction
             if (networkItemRecord != null)
             {
                 networkItemRecord.HeldItemChanged += HandleNetworkHeldItemChanged;
+                networkItemRecord.DurabilityChanged +=
+                    HandleNetworkDurabilityChanged;
             }
+        }
+
+        private void Start()
+        {
+            SynchronizeNetworkHeldPresentation();
         }
 
         private void OnDisable()
@@ -98,6 +114,8 @@ namespace LastJumpCrew.ParkHanSol.Interaction
             if (networkItemRecord != null)
             {
                 networkItemRecord.HeldItemChanged -= HandleNetworkHeldItemChanged;
+                networkItemRecord.DurabilityChanged -=
+                    HandleNetworkDurabilityChanged;
             }
         }
 
@@ -120,6 +138,16 @@ namespace LastJumpCrew.ParkHanSol.Interaction
             if (!itemPrefabData.HasHeldPrefab)
             {
                 Debug.LogWarning($"PHS_TEMP_ITEM_HOLD_FAILED reason=heldPrefab_missing item={itemPrefabData.ItemId}");
+                return false;
+            }
+
+            if (!itemPrefabData.TryGetHeldPose(
+                    ShouldUseFirstPersonHoldPoint(),
+                    out _))
+            {
+                Debug.LogError(
+                    $"PHS_TEMP_ITEM_HOLD_FAILED reason=held_pose_invalid item={itemPrefabData.ItemId}",
+                    itemPrefabData);
                 return false;
             }
 
@@ -164,18 +192,27 @@ namespace LastJumpCrew.ParkHanSol.Interaction
             }
 
             // 한 손에 하나만 들 수 있으므로 기존 아이템을 먼저 월드에 내려놓는다.
-            PlaceCurrentItem();
+            if (!TryPlaceCurrentItem())
+            {
+                return;
+            }
 
             var activeHoldPoint = ActiveHoldPoint;
 
             // 아이템 프리팹은 손 위치 자식으로 생성하고, 부모 스케일을 보정한다.
             heldItemInstance = Instantiate(itemPrefabData.HeldPrefab, activeHoldPoint);
             heldItemInstance.name = itemPrefabData.HeldPrefab.name;
-            heldItemInstance.transform.SetLocalPositionAndRotation(Vector3.zero, Quaternion.identity);
-            heldItemInstance.transform.localScale = GetCompensatedHeldItemScale(
-                itemPrefabData.HeldPrefab.transform.localScale,
-                activeHoldPoint,
-                GetHeldItemScaleMultiplier());
+            if (!TryApplyHeldItemPose(
+                    heldItemInstance.transform,
+                    itemPrefabData,
+                    activeHoldPoint,
+                    itemPrefabData.HeldPrefab.transform.localScale))
+            {
+                Destroy(heldItemInstance);
+                heldItemInstance = null;
+                return;
+            }
+
             currentItemObject = heldItemInstance.GetComponent<UtilityItemObject>();
             currentItemPrefabData = itemPrefabData;
 
@@ -250,7 +287,10 @@ namespace LastJumpCrew.ParkHanSol.Interaction
             }
 
             var itemObject = debrisItem.GetComponent<UtilityItemObject>();
-            PlaceCurrentItem();
+            if (!TryPlaceCurrentItem())
+            {
+                return false;
+            }
 
             var activeHoldPoint = ActiveHoldPoint;
             heldDebris = debrisItem;
@@ -261,14 +301,22 @@ namespace LastJumpCrew.ParkHanSol.Interaction
             CacheAndPrepareHeldDebrisColliders();
 
             heldItemInstance.transform.SetParent(activeHoldPoint, false);
-            heldItemInstance.transform.SetLocalPositionAndRotation(Vector3.zero, Quaternion.identity);
-            heldItemInstance.transform.localScale = GetCompensatedHeldItemScale(
-                heldDebrisWorldScale,
-                activeHoldPoint,
-                GetHeldItemScaleMultiplier());
+            if (!TryApplyHeldItemPose(
+                    heldItemInstance.transform,
+                    currentItemPrefabData,
+                    activeHoldPoint,
+                    heldDebrisWorldScale))
+            {
+                RestoreHeldDebrisColliders();
+                ClearHeldDebrisState();
+                heldItemInstance = null;
+                currentItemObject = null;
+                currentItemPrefabData = null;
+                return false;
+            }
 
-            currentItemObject.OnPickedUp(this);
             StopHeldDebrisMotion();
+            currentItemObject.OnPickedUp(this);
             ReportHeldItemRecord();
             RefreshHeldItemHud();
             Debug.Log($"PHS_DEBRIS_HELD player={name} debris={debrisItem.name} mass={debrisItem.Mass:F2} value={debrisItem.Value}");
@@ -333,7 +381,7 @@ namespace LastJumpCrew.ParkHanSol.Interaction
                 return;
             }
 
-            PlaceCurrentItem();
+            TryPlaceCurrentItem();
         }
 
         public bool TryConsumeHeldItem(string itemId)
@@ -391,45 +439,62 @@ namespace LastJumpCrew.ParkHanSol.Interaction
             RefreshHeldItemHud();
         }
 
-        private void PlaceCurrentItem()
+        private bool TryPlaceCurrentItem()
         {
             if (currentItemPrefabData == null)
             {
-                return;
+                return true;
             }
 
             if (heldDebris != null)
             {
-                PlaceHeldDebris();
-                return;
+                return TryPlaceHeldDebris();
             }
 
-            // droppedPrefab이 있으면 월드에 새 인스턴스를 만들고 손 인스턴스는 제거한다.
-            var placedPrefab = IsNetworkSessionActive()
-                ? currentItemPrefabData.HeldPrefab
-                : currentItemPrefabData.DroppedPrefab;
+            if (dropMotionProfile == null)
+            {
+                Debug.LogError($"PHS_TEMP_ITEM_PLACE_FAILED reason=drop_motion_profile_missing player={name}");
+                return false;
+            }
+
+            if (IsNetworkSessionActive())
+            {
+                Debug.LogError(
+                    $"PHS_TEMP_ITEM_PLACE_FAILED reason=network_lifecycle_required player={name} item={currentItemPrefabData.ItemId}",
+                    this);
+                return false;
+            }
+
+            var placedPrefab = currentItemPrefabData.DroppedPrefab;
             if (placedPrefab == null)
             {
-                Debug.LogWarning($"PHS_TEMP_ITEM_PLACE_FAILED reason=placedPrefab_missing item={currentItemPrefabData.ItemId}");
+                Debug.LogError($"PHS_TEMP_ITEM_PLACE_FAILED reason=placedPrefab_missing item={currentItemPrefabData.ItemId}");
+                return false;
             }
-            else
+
+            var source = dropPoint == null ? transform : dropPoint;
+            var position = source.TransformPoint(droppedLocalOffset);
+            var droppedItemInstance = Instantiate(placedPrefab, position, source.rotation);
+            var droppedItemObject = droppedItemInstance.GetComponent<UtilityItemObject>();
+            var droppedRigidbody = droppedItemInstance.GetComponent<Rigidbody>();
+            if (droppedItemObject == null || droppedRigidbody == null)
             {
-                var source = dropPoint == null ? transform : dropPoint;
-                var position = source.TransformPoint(droppedLocalOffset);
-                var droppedItemInstance = Instantiate(placedPrefab, position, source.rotation);
-                var droppedItemObject = droppedItemInstance.GetComponent<UtilityItemObject>();
-                if (droppedItemObject == null)
-                {
-                    Debug.LogError($"PHS_TEMP_ITEM_PLACE_FAILED reason=utilityItemObject_missing item={currentItemPrefabData.ItemId}");
-                }
-                else
-                {
-                    droppedItemObject.OnDropped(position);
-                }
-
-                Debug.Log($"PHS_TEMP_ITEM_PLACED player={name} item={currentItemPrefabData.ItemId}");
+                Debug.LogError(
+                    $"PHS_TEMP_ITEM_PLACE_FAILED reason=drop_contract_invalid item={currentItemPrefabData.ItemId} " +
+                    $"itemObject={droppedItemObject != null} rigidbody={droppedRigidbody != null}");
+                Destroy(droppedItemInstance);
+                return false;
             }
 
+            droppedItemObject.OnDropped(position);
+            if (!dropMotionProfile.TryApply(droppedRigidbody, source.rotation))
+            {
+                Debug.LogError($"PHS_TEMP_ITEM_PLACE_FAILED reason=drop_motion_rejected item={currentItemPrefabData.ItemId}");
+                Destroy(droppedItemInstance);
+                return false;
+            }
+
+            Debug.Log($"PHS_TEMP_ITEM_PLACED player={name} item={currentItemPrefabData.ItemId}");
             if (heldItemInstance != null)
             {
                 Destroy(heldItemInstance);
@@ -440,14 +505,27 @@ namespace LastJumpCrew.ParkHanSol.Interaction
             currentItemPrefabData = null;
             ReportHeldItemRecord();
             RefreshHeldItemHud();
+            return true;
         }
 
-        private void PlaceHeldDebris()
+        private bool TryPlaceHeldDebris()
         {
             if (heldDebris == null || heldItemInstance == null || currentItemObject == null)
             {
                 Debug.LogError($"PHS_DEBRIS_PLACE_FAILED reason=held_state_invalid player={name}");
-                return;
+                return false;
+            }
+
+            if (dropMotionProfile == null)
+            {
+                Debug.LogError($"PHS_DEBRIS_PLACE_FAILED reason=drop_motion_profile_missing player={name}");
+                return false;
+            }
+
+            if (!heldDebris.TryGetComponent<Rigidbody>(out var debrisRigidbody))
+            {
+                Debug.LogError($"PHS_DEBRIS_PLACE_FAILED reason=rigidbody_missing player={name} debris={heldDebris.name}");
+                return false;
             }
 
             var source = dropPoint == null ? transform : dropPoint;
@@ -458,6 +536,11 @@ namespace LastJumpCrew.ParkHanSol.Interaction
             heldItemInstance.transform.localScale = heldDebrisWorldScale;
             RestoreHeldDebrisColliders();
             currentItemObject.OnDropped(position);
+            if (!dropMotionProfile.TryApply(debrisRigidbody, source.rotation))
+            {
+                Debug.LogError($"PHS_DEBRIS_PLACE_FAILED reason=drop_motion_rejected player={name} debris={debrisName}");
+                return false;
+            }
 
             heldItemInstance = null;
             currentItemObject = null;
@@ -466,6 +549,7 @@ namespace LastJumpCrew.ParkHanSol.Interaction
             ReportHeldItemRecord();
             RefreshHeldItemHud();
             Debug.Log($"PHS_DEBRIS_PLACED player={name} debris={debrisName}");
+            return true;
         }
 
         private void CacheAndPrepareHeldDebrisColliders()
@@ -562,11 +646,16 @@ namespace LastJumpCrew.ParkHanSol.Interaction
 
             heldItemInstance = Instantiate(itemData.HeldPrefab, activeHoldPoint);
             heldItemInstance.name = itemData.HeldPrefab.name;
-            heldItemInstance.transform.SetLocalPositionAndRotation(Vector3.zero, Quaternion.identity);
-            heldItemInstance.transform.localScale = GetCompensatedHeldItemScale(
-                itemData.HeldPrefab.transform.localScale,
-                activeHoldPoint,
-                GetHeldItemScaleMultiplier());
+            if (!TryApplyHeldItemPose(
+                    heldItemInstance.transform,
+                    itemData,
+                    activeHoldPoint,
+                    itemData.HeldPrefab.transform.localScale))
+            {
+                ClearHeldPresentation();
+                return;
+            }
+
             currentItemObject = heldItemInstance.GetComponent<UtilityItemObject>();
             currentItemPrefabData = itemData;
             if (currentItemObject == null)
@@ -591,11 +680,27 @@ namespace LastJumpCrew.ParkHanSol.Interaction
                 }
             }
 
-            currentItemObject.OnPickedUp(this);
             StopHeldDebrisMotion();
+            currentItemObject.OnPickedUp(this);
             RefreshHeldItemHud();
             Debug.Log(
                 $"PHS_NETWORK_ITEM_PRESENTED player={name} owner={networkObject.OwnerClientId} item={itemId}");
+        }
+
+        private void HandleNetworkDurabilityChanged(int currentDurability)
+        {
+            if (IsNetworkSessionActive() && currentItemPrefabData != null)
+            {
+                RefreshHeldItemHud();
+            }
+        }
+
+        private void SynchronizeNetworkHeldPresentation()
+        {
+            if (IsNetworkSessionActive() && networkItemRecord != null && networkItemRecord.IsSpawned)
+            {
+                HandleNetworkHeldItemChanged(networkItemRecord.HeldItemId);
+            }
         }
 
         private void ClearHeldPresentation()
@@ -633,7 +738,19 @@ namespace LastJumpCrew.ParkHanSol.Interaction
                 return;
             }
 
-            playHudPresenter.SetHeldItem(currentItemPrefabData);
+            var currentDurability = currentItemPrefabData.HasDurability
+                ? currentItemPrefabData.MaxDurability
+                : 0;
+            if (IsNetworkSessionActive()
+                && networkItemRecord != null
+                && networkItemRecord.IsSpawned)
+            {
+                currentDurability = networkItemRecord.CurrentDurability;
+            }
+
+            playHudPresenter.SetHeldItem(
+                currentItemPrefabData,
+                currentDurability);
         }
 
         private void ReportHeldItemRecord()
@@ -653,28 +770,14 @@ namespace LastJumpCrew.ParkHanSol.Interaction
                 return;
             }
 
-            networkItemRecord.ReportHeldItem(currentItemPrefabData == null
-                ? string.Empty
-                : currentItemPrefabData.ItemId);
-        }
-
-        private static Transform FindChildByName(Transform parent, string childName)
-        {
-            foreach (Transform child in parent)
-            {
-                if (child.name == childName)
-                {
-                    return child;
-                }
-
-                var nested = FindChildByName(child, childName);
-                if (nested != null)
-                {
-                    return nested;
-                }
-            }
-
-            return null;
+            networkItemRecord.ReportHeldItem(
+                currentItemPrefabData == null
+                    ? string.Empty
+                    : currentItemPrefabData.ItemId,
+                currentItemPrefabData != null
+                    && currentItemPrefabData.HasDurability
+                        ? currentItemPrefabData.MaxDurability
+                        : 0);
         }
 
         private Vector3 GetCompensatedHeldItemScale(Vector3 prefabLocalScale, Transform activeHoldPoint, float scaleMultiplier)
@@ -693,6 +796,34 @@ namespace LastJumpCrew.ParkHanSol.Interaction
                 prefabLocalScale.x / holdPointScale.x,
                 prefabLocalScale.y / holdPointScale.y,
                 prefabLocalScale.z / holdPointScale.z) * scaleMultiplier;
+        }
+
+        private bool TryApplyHeldItemPose(
+            Transform itemTransform,
+            UtilityItemPrefabData itemData,
+            Transform activeHoldPoint,
+            Vector3 sourceScale)
+        {
+            var firstPerson = ShouldUseFirstPersonHoldPoint();
+            if (itemTransform == null
+                || itemData == null
+                || activeHoldPoint == null
+                || !itemData.TryGetHeldPose(firstPerson, out var heldPose))
+            {
+                Debug.LogError(
+                    $"PHS_TEMP_ITEM_POSE_FAILED player={name} item={(itemData == null ? "missing" : itemData.ItemId)} firstPerson={firstPerson}",
+                    this);
+                return false;
+            }
+
+            itemTransform.SetLocalPositionAndRotation(
+                heldPose.LocalPosition,
+                heldPose.LocalRotation);
+            itemTransform.localScale = GetCompensatedHeldItemScale(
+                sourceScale,
+                activeHoldPoint,
+                GetHeldItemScaleMultiplier() * heldPose.ScaleMultiplier);
+            return true;
         }
 
         private bool ShouldUseFirstPersonHoldPoint()
@@ -723,7 +854,23 @@ namespace LastJumpCrew.ParkHanSol.Interaction
             Quaternion spawnRotation,
             out GameObject thrownItemInstance)
         {
+            return TryCreateThrownItem(
+                spawnPosition,
+                spawnRotation,
+                UtilityItemActionKind.None,
+                out thrownItemInstance,
+                out _);
+        }
+
+        public bool TryCreateThrownItem(
+            Vector3 spawnPosition,
+            Quaternion spawnRotation,
+            UtilityItemActionKind actionKind,
+            out GameObject thrownItemInstance,
+            out int actionAmount)
+        {
             thrownItemInstance = null;
+            actionAmount = 0;
             if (IsNetworkSessionActive())
             {
                 if (networkObject == null
@@ -741,8 +888,29 @@ namespace LastJumpCrew.ParkHanSol.Interaction
 
                 var networkItemId = networkItemRecord.HeldItemId;
                 var expectedRevision = networkItemRecord.Revision;
+                var droppedDurability =
+                    networkItemRecord.CurrentDurability;
+                if (actionKind != UtilityItemActionKind.None)
+                {
+                    if (!networkItemLifecycle.TryResolveHeldItemActionServer(
+                            networkItemId,
+                            expectedRevision,
+                            actionKind,
+                            out var actionProfile))
+                    {
+                        return false;
+                    }
+
+                    actionAmount = actionProfile.Amount;
+                    droppedDurability = Mathf.Max(
+                        0,
+                        droppedDurability
+                        - actionProfile.DurabilityCost);
+                }
+
                 if (!networkItemLifecycle.TryCreateDroppedItemServer(
                         networkItemId,
+                        droppedDurability,
                         spawnPosition,
                         spawnRotation,
                         out var spawnedItem)
@@ -773,6 +941,21 @@ namespace LastJumpCrew.ParkHanSol.Interaction
             {
                 Debug.LogWarning($"PHS_TEMP_ITEM_THROW_FAILED reason=held_item_missing player={name}");
                 return false;
+            }
+
+            if (actionKind != UtilityItemActionKind.None)
+            {
+                if (!currentItemPrefabData.TryGetActionProfile(
+                        actionKind,
+                        out var actionProfile))
+                {
+                    Debug.LogError(
+                        $"PHS_TEMP_ITEM_THROW_FAILED reason=action_profile_missing player={name} item={currentItemPrefabData.ItemId} action={actionKind}",
+                        this);
+                    return false;
+                }
+
+                actionAmount = actionProfile.Amount;
             }
 
             var networkManager = NetworkManager.Singleton;

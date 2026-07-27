@@ -25,21 +25,30 @@ namespace SM
             _effectRuntimeBridge = Context?.RuntimeBridge as IEventEffectRuntimeBridge;
             _effectInstanceIds.Clear();
 
-            var group = EnemySpawnSetting.Instance.GetRandomPoint();
-
-            if (group == null || group.spawnPoint == null)
+            var spawnSetting = EnemySpawnSetting.Peek();
+            if (spawnSetting == null)
             {
-                Debug.Log($"<color=lime>[{SpawnData.EventName}]</color> 사용 가능한 스폰 그룹 없음");
+                Debug.LogError(
+                    $"<color=lime>[{SpawnData.EventName}]</color> EnemySpawnSetting 참조가 씬에 없어 발생 취소.");
                 OnFail();
                 return;
             }
 
-            _spawnPoint = group.spawnPoint;
+            var spawnGroup = spawnSetting.GetRandomPoint();
+
+            if (spawnGroup == null || spawnGroup.spawnPoint == null)
+            {
+                Debug.LogWarning($"<color=lime>[{SpawnData.EventName}]</color> 사용 가능한 스폰 포인트가 없어 발생 취소.");
+                OnFail();
+                return;
+            }
+
+            _spawnPoint = spawnGroup.spawnPoint;
             _chosenPrefab = PickRandomPrefab();
 
             if (_chosenPrefab == null)
             {
-                Debug.LogError($"[{SpawnData.EventName}] 선택된 프리팹이 없습니다.");
+                Debug.LogError($"<color=lime>[{SpawnData.EventName}]</color> 선택된 프리팹이 없습니다.");
                 OnFail();
                 return;
             }

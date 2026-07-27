@@ -20,6 +20,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
     [RequireComponent(typeof(NetworkRunRandomLedger))]
     [RequireComponent(typeof(NetworkRunIncidentLedger))]
     [RequireComponent(typeof(PHSNetworkIncidentDirector))]
+    [RequireComponent(typeof(NetworkShopTransitionVoteCoordinator))]
     public sealed class NetworkRunSessionRoot : NetworkBehaviour
     {
         public static NetworkRunSessionRoot Instance { get; private set; }
@@ -32,6 +33,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
         public NetworkRunRandomLedger Rng { get; private set; }
         public NetworkRunIncidentLedger Incidents { get; private set; }
         public PHSNetworkIncidentDirector IncidentDirector { get; private set; }
+        public NetworkShopTransitionVoteCoordinator ShopTransitionVotes { get; private set; }
 
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
         private static void ResetStatics()
@@ -49,6 +51,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
             Rng = GetComponent<NetworkRunRandomLedger>();
             Incidents = GetComponent<NetworkRunIncidentLedger>();
             IncidentDirector = GetComponent<PHSNetworkIncidentDirector>();
+            ShopTransitionVotes = GetComponent<NetworkShopTransitionVoteCoordinator>();
         }
 
         public override void OnNetworkSpawn()

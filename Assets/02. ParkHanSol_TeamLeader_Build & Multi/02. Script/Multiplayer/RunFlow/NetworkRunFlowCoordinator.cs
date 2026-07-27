@@ -690,6 +690,12 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
         {
             if (!departingWarpSafeZone)
             {
+                if (!TryTeleportConnectedPlayersToSafeZone())
+                {
+                    Debug.LogError("PHS_RUN_FLOW_WARP_SAFE_FAILED reason=player_group_teleport_failed", this);
+                    return;
+                }
+
                 SetPhase(NetworkRunPhase.WarpSafe);
                 gameCommands.SetStageTimerPaused(true);
                 NetworkEventCoordinator.Instance?.TryStopSchedulerServer();
@@ -747,6 +753,76 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
             }
 
             Debug.Log($"PHS_RUN_FLOW_WARP_COMPLETED cleared={gameState.ClearedZoneCount} phase={gameState.Phase}");
+        }
+
+        private bool TryTeleportConnectedPlayersToSafeZone()
+        {
+            var safeZone = NetworkWarpSafeZone.Instance;
+            if (safeZone == null)
+            {
+                Debug.LogError("PHS_RUN_FLOW_WARP_SAFE_FAILED reason=safe_zone_missing", this);
+                return false;
+            }
+
+            var clientIds = new List<ulong>(NetworkManager.ConnectedClients.Keys);
+            clientIds.Sort();
+            var players = new List<NetworkPlayerController>(clientIds.Count);
+            var positions = new List<Vector3>(clientIds.Count);
+            var rotations = new List<Quaternion>(clientIds.Count);
+
+            for (var slot = 0; slot < clientIds.Count; slot++)
+            {
+                var clientId = clientIds[slot];
+                if (!NetworkManager.ConnectedClients.TryGetValue(clientId, out var client)
+                    || client.PlayerObject == null)
+                {
+                    Debug.LogError(
+                        $"PHS_RUN_FLOW_WARP_SAFE_FAILED reason=player_object_missing clientId={clientId}",
+                        this);
+                    return false;
+                }
+
+                var player = client.PlayerObject.GetComponent<NetworkPlayerController>();
+                if (player == null)
+                {
+                    Debug.LogError(
+                        $"PHS_RUN_FLOW_WARP_SAFE_FAILED reason=player_controller_missing clientId={clientId}",
+                        client.PlayerObject);
+                    return false;
+                }
+
+                if (!safeZone.TryGetArrivalPose(slot, out var position, out var rotation))
+                {
+                    Debug.LogError(
+                        $"PHS_RUN_FLOW_WARP_SAFE_FAILED reason=arrival_pose_missing clientId={clientId} slot={slot}",
+                        client.PlayerObject);
+                    return false;
+                }
+
+                players.Add(player);
+                positions.Add(position);
+                rotations.Add(rotation);
+            }
+
+            safePlayerIds.Clear();
+            for (var slot = 0; slot < players.Count; slot++)
+            {
+                if (!players[slot].TryTeleportForWarp(positions[slot], rotations[slot]))
+                {
+                    Debug.LogError(
+                        $"PHS_RUN_FLOW_WARP_SAFE_FAILED reason=arrival_teleport_failed clientId={clientIds[slot]} slot={slot}",
+                        players[slot]);
+                    return false;
+                }
+
+                var clientId = clientIds[slot];
+                safePlayerIds.Add(clientId);
+                debrisPlayerIds.Remove(clientId);
+            }
+
+            RefreshSafePlayerCount();
+            Debug.Log($"PHS_RUN_FLOW_WARP_SAFE_GROUP_TELEPORT players={clientIds.Count}", this);
+            return true;
         }
 
         private float CalculateWarpChargeSpeedMultiplier()

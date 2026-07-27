@@ -10,6 +10,7 @@ namespace LastJumpCrew.ParkHanSol.Shop
         [SerializeField] private TMP_Text productLabel;
         [SerializeField] private TMP_Text productNameText;
         [SerializeField] private TMP_Text priceText;
+        [SerializeField, Min(0.01f)] private float displayScaleMultiplier = 0.75f;
 
         private GameObject displayedItem;
 
@@ -38,6 +39,7 @@ namespace LastJumpCrew.ParkHanSol.Shop
             }
 
             displayedItem = Instantiate(itemData.HeldPrefab, itemSpawnPoint.position, itemSpawnPoint.rotation);
+            displayedItem.transform.localScale *= displayScaleMultiplier;
             displayedItem.name = $"PHS_ShopDisplay_{product.OfferId}";
             if (!displayedItem.TryGetComponent<UtilityItemObject>(out var itemObject) || itemObject.ItemPrefabData != itemData)
             {

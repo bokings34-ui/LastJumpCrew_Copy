@@ -10,14 +10,6 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Events
         [Header("Inspector References")]
         [SerializeField] private NetworkShipSystemsState shipSystemsState;
 
-        [Header("Terminal Failure Impact")]
-        [SerializeField, Min(1)] private int empAttackHullDamage = 10;
-        [SerializeField, Min(1)] private int meteorAttackHullDamage = 10;
-        [SerializeField, Min(1)] private int meteorAttackEngineDamage = 20;
-        [SerializeField, Min(1)] private int enemyScoutHullDamage = 10;
-        [SerializeField, Min(1)] private int enemyScoutEngineDamage = 10;
-        [SerializeField] private bool enemyScoutCausesEngineFault;
-
         private readonly HashSet<ulong> appliedEventInstanceIds = new();
 
         public bool TryApplyTerminalImpact(
@@ -53,97 +45,26 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Events
                 return false;
             }
 
-            if (shipSystemsState == null)
+            if (shipSystemsState == null
+                || !shipSystemsState.IsSpawned
+                || !shipSystemsState.IsServer)
             {
-                reason = "ship_systems_reference_missing";
+                reason = "server_ship_systems_required";
                 Debug.LogError(
-                    $"PHS_SHIP_EVENT_IMPACT_FAILED reason={reason} instance={eventInstanceId} event={eventId}",
-                    this);
-                return false;
-            }
-
-            if (!shipSystemsState.IsSpawned || !shipSystemsState.IsServer)
-            {
-                reason = "server_authority_required";
-                Debug.LogError(
-                    $"PHS_SHIP_EVENT_IMPACT_FAILED reason={reason} instance={eventInstanceId} event={eventId}",
-                    this);
-                return false;
-            }
-
-            if (success)
-            {
-                appliedEventInstanceIds.Add(eventInstanceId);
-                reason = null;
-                Debug.Log(
-                    $"PHS_SHIP_EVENT_IMPACT_SKIPPED reason=terminal_success instance={eventInstanceId} event={eventId}",
-                    this);
-                return true;
-            }
-
-            if (!TryApplyFailureImpact(eventId, out reason))
-            {
-                Debug.LogError(
-                    $"PHS_SHIP_EVENT_IMPACT_FAILED reason={reason} instance={eventInstanceId} event={eventId}",
+                    $"PHS_SHIP_EVENT_IMPACT_FAILED reason={reason} " +
+                    $"instance={eventInstanceId} event={eventId}",
                     this);
                 return false;
             }
 
             appliedEventInstanceIds.Add(eventInstanceId);
+            reason = null;
             Debug.Log(
-                $"PHS_SHIP_EVENT_IMPACT_APPLIED instance={eventInstanceId} event={eventId} success=false shipRevision={shipSystemsState.Revision}",
+                $"PHS_SHIP_EVENT_IMPACT_DELEGATED instance={eventInstanceId} " +
+                $"event={eventId} success={success} " +
+                $"target={(success ? "none" : "incident_consequence_selector")}",
                 this);
             return true;
-        }
-
-        private bool TryApplyFailureImpact(EventId eventId, out string reason)
-        {
-            switch (eventId)
-            {
-                case EventId.EmpAttack:
-                    if (!shipSystemsState.TryApplyShipDamage(
-                            empAttackHullDamage,
-                            "terminal_emp_attack_failed",
-                            out reason))
-                    {
-                        return false;
-                    }
-
-                    return shipSystemsState.TryPowerOff(out reason);
-                case EventId.MeteorAttack:
-                    if (!shipSystemsState.TryApplyShipDamage(
-                            meteorAttackHullDamage,
-                            "terminal_meteor_attack_failed",
-                            out reason))
-                    {
-                        return false;
-                    }
-
-                    return shipSystemsState.TryApplyModuleDamage(
-                        NetworkShipModuleId.Engine,
-                        meteorAttackEngineDamage,
-                        false,
-                        "terminal_meteor_attack_failed",
-                        out reason);
-                case EventId.EnemyScout:
-                    if (!shipSystemsState.TryApplyShipDamage(
-                            enemyScoutHullDamage,
-                            "terminal_enemy_scout_failed",
-                            out reason))
-                    {
-                        return false;
-                    }
-
-                    return shipSystemsState.TryApplyModuleDamage(
-                        NetworkShipModuleId.Engine,
-                        enemyScoutEngineDamage,
-                        enemyScoutCausesEngineFault,
-                        "terminal_enemy_scout_failed",
-                        out reason);
-                default:
-                    reason = "terminal_event_unsupported";
-                    return false;
-            }
         }
 
         private static bool IsSupportedTerminalEvent(EventId eventId)

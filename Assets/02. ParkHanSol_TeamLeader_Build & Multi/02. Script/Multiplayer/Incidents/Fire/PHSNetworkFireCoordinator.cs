@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using LastJumpCrew.Common;
+using LastJumpCrew.ParkHanSol.Items;
 using LastJumpCrew.ParkHanSol.Multiplayer.Incidents.Locations;
 using LastJumpCrew.ParkHanSol.Multiplayer.ShipAccidents;
 using Unity.Collections;
@@ -47,7 +48,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Incidents.Fire
         private readonly Dictionary<uint, ActiveFireRuntime> activeFires =
             new();
         private readonly Dictionary<
-            (ulong ClientId, ulong PlayerNetworkObjectId, uint ItemRevision),
+            (ulong ClientId, ulong PlayerNetworkObjectId),
             uint> suppressionSequences = new();
         private readonly HashSet<uint> activeAccidentIds = new();
         private readonly List<uint> orderedActiveAccidentIds = new();
@@ -436,11 +437,32 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Incidents.Fire
                 return false;
             }
 
+            var itemLifecycle =
+                hit.Attacker.GetComponentInParent<
+                    NetworkPlayerItemLifecycle>();
+            if (itemLifecycle == null)
+            {
+                itemLifecycle =
+                    hit.Attacker.GetComponentInChildren<
+                        NetworkPlayerItemLifecycle>(true);
+            }
+
+            var itemRevision = itemRecord.Revision;
+            if (itemLifecycle == null
+                || !itemLifecycle.TryResolveHeldItemActionServer(
+                    FireExtinguisherItemId,
+                    itemRevision,
+                    UtilityItemActionKind.FireSuppression,
+                    out var actionProfile))
+            {
+                reason = "server_item_profile_mismatch";
+                return false;
+            }
+
             var sequenceKey =
                 (
                     itemRecord.OwnerClientId,
-                    itemRecord.NetworkObjectId,
-                    itemRecord.Revision);
+                    itemRecord.NetworkObjectId);
             if (suppressionSequences.TryGetValue(
                     sequenceKey,
                     out var previousSequence)
@@ -480,11 +502,24 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Incidents.Fire
             var snapshot = activePatches[snapshotIndex];
             var previousHeat = snapshot.Heat;
             var previousIntensity = snapshot.Intensity;
+            var suppressionHeat = (ushort)Mathf.Clamp(
+                actionProfile.Amount,
+                1,
+                ushort.MaxValue);
+            if (!itemLifecycle.TryCommitHeldItemActionServer(
+                    FireExtinguisherItemId,
+                    itemRevision,
+                    actionProfile))
+            {
+                reason = "durability_commit_failed";
+                return false;
+            }
+
             var nextHeat = snapshot.Heat
-                > runtime.Zone.SuppressionHeatPerHit
+                > suppressionHeat
                     ? (ushort)(
                         snapshot.Heat
-                        - runtime.Zone.SuppressionHeatPerHit)
+                        - suppressionHeat)
                     : (ushort)0;
             var nextIntensity =
                 PHSFireIntensityUtility.FromHeat(nextHeat);
@@ -523,6 +558,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Incidents.Fire
                 $"PHS_FIRE_SUPPRESSED instance={accidentInstanceId} " +
                 $"location={locationId} patch={patchId} " +
                 $"heat={previousHeat}->{nextHeat} " +
+                $"amount={suppressionHeat} " +
                 $"intensity={previousIntensity}->{nextIntensity} " +
                 $"client={itemRecord.OwnerClientId} " +
                 $"contained={isLastPatch}",

@@ -3,7 +3,9 @@ using System.Collections;
 using System.Collections.Generic;
 using LastJumpCrew.Common;
 using LastJumpCrew.ParkHanSol.Interaction;
+using LastJumpCrew.ParkHanSol.Items;
 using LastJumpCrew.ParkHanSol.Multiplayer.Events.MiniGames;
+using LastJumpCrew.ParkHanSol.Multiplayer.Events.MiniGames.Runtime;
 using SM;
 using Unity.Collections;
 using Unity.Netcode;
@@ -33,7 +35,6 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Events
         [SerializeField, Min(0.05f)] private float terminalSnapshotRetentionSeconds = 0.25f;
         [SerializeField, Min(0.05f)] private float effectRemovalSnapshotRetentionSeconds = 0.25f;
         [SerializeField, Min(0.1f)] private float serverRepairDistance = 3f;
-        [SerializeField, Min(0.01f)] private float serverRepairStep = 1f;
 
         [Header("Server Ship Impact")]
         [SerializeField, Min(1)] private int fireHullDamagePerEffect = 2;
@@ -51,7 +52,9 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Events
         private readonly Dictionary<ulong, NetworkEventLifecycleSnapshot> snapshotCache = new();
         private readonly Dictionary<uint, NetworkEventEffectSnapshot> effectSnapshotCache = new();
         private readonly Dictionary<uint, IEventRepairableEffect> repairTargets = new();
-        private readonly Dictionary<(ulong ClientId, uint ItemRevision), uint> repairRequestSequences = new();
+        private readonly Dictionary<
+            (ulong ClientId, ulong PlayerNetworkObjectId),
+            uint> repairRequestSequences = new();
         private readonly List<uint> effectRemovalBuffer = new();
 
         private bool setupValid;
@@ -214,16 +217,13 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Events
 
             if (IsServer)
             {
-                var localClientId = NetworkManager != null
-                    ? NetworkManager.LocalClientId
-                    : Unity.Netcode.NetworkManager.ServerClientId;
                 return TryApplyEffectRepairServer(
                     target.EventInstanceId,
                     target.EffectInstanceId,
                     itemId,
                     itemRevision,
                     requestSequence,
-                    localClientId);
+                    itemRecord.OwnerClientId);
             }
 
             RequestEffectRepairServerRpc(
@@ -922,7 +922,10 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Events
             }
 
             var itemRecord = client.PlayerObject.GetComponent<NetworkPlayerItemRecord>();
+            var itemLifecycle =
+                client.PlayerObject.GetComponent<NetworkPlayerItemLifecycle>();
             if (itemRecord == null
+                || itemLifecycle == null
                 || !itemRecord.IsSpawned
                 || itemRecord.OwnerClientId != senderClientId
                 || itemRecord.HeldItemId != expectedItemId
@@ -931,7 +934,22 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Events
                 return RejectRepair("item_record_mismatch", eventInstanceId, effectInstanceId, senderClientId);
             }
 
-            var sequenceKey = (senderClientId, expectedItemRevision);
+            if (!TryGetActionKind(target.EffectKind, out var actionKind)
+                || !itemLifecycle.TryResolveHeldItemActionServer(
+                    expectedItemId,
+                    expectedItemRevision,
+                    actionKind,
+                    out var actionProfile))
+            {
+                return RejectRepair(
+                    "item_profile_mismatch",
+                    eventInstanceId,
+                    effectInstanceId,
+                    senderClientId);
+            }
+
+            var sequenceKey =
+                (senderClientId, itemRecord.NetworkObjectId);
             if (requestSequence == 0U
                 || repairRequestSequences.TryGetValue(sequenceKey, out var previousSequence)
                 && requestSequence <= previousSequence)
@@ -945,16 +963,43 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Events
                 return RejectRepair("distance", eventInstanceId, effectInstanceId, senderClientId);
             }
 
-            repairRequestSequences[sequenceKey] = requestSequence;
-            if (!target.TryApplyRepairStep(serverRepairStep))
+            if (!target.TryApplyRepairStep(actionProfile.Amount))
             {
                 return RejectRepair("apply_failed", eventInstanceId, effectInstanceId, senderClientId);
             }
 
+            if (!itemLifecycle.TryCommitHeldItemActionServer(
+                    expectedItemId,
+                    expectedItemRevision,
+                    actionProfile))
+            {
+                Debug.LogError(
+                    $"PHS_EVENT_REPAIR_INVARIANT_FAILED reason=durability_commit event={eventInstanceId} effect={effectInstanceId} client={senderClientId}",
+                    this);
+                return false;
+            }
+
+            repairRequestSequences[sequenceKey] = requestSequence;
+
             Debug.Log(
-                $"PHS_EVENT_REPAIR_APPLIED event={eventInstanceId} effect={effectInstanceId} client={senderClientId} item={expectedItemId} revision={expectedItemRevision} sequence={requestSequence} distance={distance:F3} complete={target.IsRepairComplete}",
+                $"PHS_EVENT_REPAIR_APPLIED event={eventInstanceId} effect={effectInstanceId} client={senderClientId} item={expectedItemId} amount={actionProfile.Amount} cost={actionProfile.DurabilityCost} revision={expectedItemRevision}->{itemRecord.Revision} sequence={requestSequence} distance={distance:F3} complete={target.IsRepairComplete}",
                 this);
             return true;
+        }
+
+        private static bool TryGetActionKind(
+            EventEffectKind effectKind,
+            out UtilityItemActionKind actionKind)
+        {
+            actionKind = effectKind switch
+            {
+                EventEffectKind.Fire =>
+                    UtilityItemActionKind.FireSuppression,
+                EventEffectKind.OxygenLeak =>
+                    UtilityItemActionKind.OxygenLeakRepair,
+                _ => UtilityItemActionKind.None
+            };
+            return actionKind != UtilityItemActionKind.None;
         }
 
         private bool RejectRepair(
@@ -1100,18 +1145,18 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Events
             }
         }
 
-        private static bool TryGetMiniGameType(EventId eventId, out MiniGameType miniGameType)
+        private static bool TryGetMiniGameType(EventId eventId, out PHSMiniGameType miniGameType)
         {
             switch (eventId)
             {
                 case EventId.EmpAttack:
-                    miniGameType = MiniGameType.WireFix;
+                    miniGameType = PHSMiniGameType.WireFix;
                     return true;
                 case EventId.MeteorAttack:
-                    miniGameType = MiniGameType.Cannon;
+                    miniGameType = PHSMiniGameType.Cannon;
                     return true;
                 case EventId.EnemyScout:
-                    miniGameType = MiniGameType.PowerSync;
+                    miniGameType = PHSMiniGameType.PowerSync;
                     return true;
                 default:
                     miniGameType = default;

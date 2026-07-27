@@ -3,10 +3,14 @@ using System.Collections;
 using System.Collections.Generic;
 using System.Linq;
 using System.Reflection;
+using LastJumpCrew.Common;
 using LastJumpCrew.ParkHanSol.Interaction;
 using LastJumpCrew.ParkHanSol.Items;
 using LastJumpCrew.ParkHanSol.Multiplayer.Events;
 using LastJumpCrew.ParkHanSol.Multiplayer.Events.MiniGames;
+using LastJumpCrew.ParkHanSol.Multiplayer.Events.MiniGames.Runtime;
+using LastJumpCrew.ParkHanSol.Multiplayer.Incidents.Locations;
+using LastJumpCrew.ParkHanSol.Multiplayer.ShipAccidents;
 using LastJumpCrew.ParkHanSol.Shop;
 using LastJumpCrew.SeoBoGyeong;
 using SM;
@@ -21,6 +25,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Validation
     public sealed class P0RuntimeValidationDriver : NetworkBehaviour
     {
         private const string ScenarioFlag = "-phsAutoP0Scenario";
+        private const string ItemScenarioFlag = "-phsAutoItemScenario";
         private const string MapSceneName = "PHS_Map_ver1";
         private const string ShopSceneName = "PHS_ExteriorShopScene";
         private const string LocalDebrisEntryPortalName = "PHS_DebrisCollectionPortal_0715";
@@ -43,6 +48,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Validation
         private readonly Dictionary<ulong, EventSnapshotReport> eventSnapshotReports = new();
         private readonly Dictionary<ulong, EventTerminalReport> eventTerminalReports = new();
         private readonly Dictionary<ulong, ShipPowerReport> shipPowerReports = new();
+        private readonly Dictionary<ulong, int> oxygenHealthReports = new();
         private readonly Dictionary<ulong, bool> thrownItemReports = new();
         private readonly Dictionary<ulong, bool> remoteHeldItemReports = new();
         private readonly HashSet<ulong> eventObservationReadyClients = new();
@@ -54,6 +60,10 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Validation
         private bool remoteItemRequestIssued;
         private bool remoteThrowRequestReported;
         private bool remoteThrowRequestIssued;
+        private bool remotePrimaryUseRequestReported;
+        private bool remotePrimaryUseRequestIssued;
+        private bool remoteItemPositionReported;
+        private Vector3 remoteItemPosition;
         private bool farSelectProbeReported;
         private bool farSelectRequestIssued;
         private bool localPortalProbeReported;
@@ -69,8 +79,10 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Validation
         private ulong activeObservedInstanceId;
         private NetworkEventCoordinator observedEventCoordinator;
         private uint initialStageClockSequence;
+        private uint eventRepairRequestSequence;
         private int validatedIncidentCommandCount;
         private uint validatedIncidentRevision;
+        private int previousMiniGameConsequenceContentId;
 
         private readonly struct GaugeReport
         {
@@ -294,18 +306,15 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Validation
         private readonly struct ExternalMiniGameValidationCase
         {
             public ExternalMiniGameValidationCase(
-                MiniGameType miniGameType,
-                EventId externalEventId,
-                EventId chainedFailureEventId)
+                PHSMiniGameType miniGameType,
+                EventId externalEventId)
             {
                 MiniGameType = miniGameType;
                 ExternalEventId = externalEventId;
-                ChainedFailureEventId = chainedFailureEventId;
             }
 
-            public MiniGameType MiniGameType { get; }
+            public PHSMiniGameType MiniGameType { get; }
             public EventId ExternalEventId { get; }
-            public EventId ChainedFailureEventId { get; }
         }
 
         private readonly struct ShipPowerReport
@@ -318,7 +327,11 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Validation
                 uint shipRevision,
                 uint itemRevision,
                 string heldItemId,
-                bool powerOffActive)
+                bool powerOffActive,
+                bool lightingFound,
+                bool blackoutApplied,
+                bool emergencyLightingActive,
+                float ambientIntensityRatio)
             {
                 StateFound = stateFound;
                 PowerEnabled = powerEnabled;
@@ -328,6 +341,10 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Validation
                 ItemRevision = itemRevision;
                 HeldItemId = heldItemId;
                 PowerOffActive = powerOffActive;
+                LightingFound = lightingFound;
+                BlackoutApplied = blackoutApplied;
+                EmergencyLightingActive = emergencyLightingActive;
+                AmbientIntensityRatio = ambientIntensityRatio;
             }
 
             public bool StateFound { get; }
@@ -338,6 +355,10 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Validation
             public uint ItemRevision { get; }
             public string HeldItemId { get; }
             public bool PowerOffActive { get; }
+            public bool LightingFound { get; }
+            public bool BlackoutApplied { get; }
+            public bool EmergencyLightingActive { get; }
+            public float AmbientIntensityRatio { get; }
         }
 
         public override void OnNetworkSpawn()
@@ -350,7 +371,73 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Validation
 
             expectedClientCount = Mathf.Max(2, GetCommandLineInt("-phsAutoStartClients", 2));
             scenarioRunning = true;
+            if (HasCommandLineFlag(ItemScenarioFlag))
+            {
+                StartCoroutine(RunItemServerScenario());
+                return;
+            }
+
             StartCoroutine(RunServerScenario());
+        }
+
+        private IEnumerator RunItemServerScenario()
+        {
+            Debug.Log($"PHS_ITEM_P0_BEGIN expectedClients={expectedClientCount}", this);
+
+            yield return WaitFor(
+                () => NetworkManager != null
+                    && NetworkManager.ConnectedClients.Count >= expectedClientCount,
+                DefaultStepTimeout,
+                "item_clients_not_connected");
+            if (scenarioFinished) yield break;
+
+            yield return WaitFor(
+                () => SceneManager.GetActiveScene().name == MapSceneName,
+                DefaultStepTimeout,
+                "item_map_scene_not_loaded");
+            if (scenarioFinished) yield break;
+
+            var remoteClientId = NetworkManager.ConnectedClientsIds.FirstOrDefault(
+                clientId => clientId != NetworkManager.ServerClientId);
+            if (remoteClientId == NetworkManager.ServerClientId
+                || !NetworkManager.ConnectedClients.TryGetValue(remoteClientId, out var remoteClient)
+                || remoteClient.PlayerObject == null
+                || remoteClient.PlayerObject.GetComponent<NetworkPlayerItemLifecycle>() is not { } lifecycle
+                || lifecycle.ItemCatalog == null)
+            {
+                Fail("item_remote_catalog_missing");
+                yield break;
+            }
+
+            var itemIds = new[] { "wrench", "fire_extinguisher", "battery_pack" };
+            foreach (var itemId in itemIds)
+            {
+                if (!lifecycle.ItemCatalog.TryGetById(itemId, out var itemData)
+                    || itemData == null
+                    || !itemData.HasHeldPrefab
+                    || !itemData.HasDroppedPrefab
+                    || !itemData.HasDurability)
+                {
+                    Fail($"item_catalog_contract_invalid item={itemId}");
+                    yield break;
+                }
+
+                yield return RunRemoteOwnedThrownItemValidation(itemData, true);
+                if (scenarioFinished) yield break;
+
+                if (string.Equals(
+                        itemData.ItemId,
+                        "battery_pack",
+                        StringComparison.Ordinal))
+                {
+                    yield return RunRemoteOwnedThrownItemValidation(
+                        itemData,
+                        false);
+                    if (scenarioFinished) yield break;
+                }
+            }
+
+            Pass($"item_network_lifecycle peers={expectedClientCount} items={itemIds.Length}");
         }
 
         public override void OnNetworkDespawn()
@@ -1441,6 +1528,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Validation
             NetworkEventCoordinator eventCoordinator,
             EventManager eventManager)
         {
+            previousMiniGameConsequenceContentId = 0;
             if (!NetworkManager.ConnectedClients.TryGetValue(
                     NetworkManager.ServerClientId,
                     out var hostClient)
@@ -1453,17 +1541,14 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Validation
             var validationCases = new[]
             {
                 new ExternalMiniGameValidationCase(
-                    MiniGameType.Cannon,
-                    EventId.MeteorAttack,
-                    EventId.OxygenLeak),
+                    PHSMiniGameType.Cannon,
+                    EventId.MeteorAttack),
                 new ExternalMiniGameValidationCase(
-                    MiniGameType.WireFix,
-                    EventId.EmpAttack,
-                    EventId.PowerOff),
+                    PHSMiniGameType.WireFix,
+                    EventId.EmpAttack),
                 new ExternalMiniGameValidationCase(
-                    MiniGameType.PowerSync,
-                    EventId.EnemyScout,
-                    EventId.EnemySpawn)
+                    PHSMiniGameType.PowerSync,
+                    EventId.EnemyScout)
             };
 
             Debug.Log(
@@ -1518,10 +1603,40 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Validation
             bool succeeded)
         {
             var outcomeLabel = succeeded ? "success" : "failure";
+            var runRoot = NetworkRunSessionRoot.Instance;
+            var incidentLedger = runRoot == null ? null : runRoot.Incidents;
+            var incidentGateway = FindAnyObjectByType<PHSIncidentRequestGateway>(
+                FindObjectsInactive.Include);
+            var consequenceSelector =
+                FindAnyObjectByType<PHSIncidentConsequenceSelector>(
+                    FindObjectsInactive.Include);
+            var accidentCoordinator =
+                FindAnyObjectByType<PHSNetworkShipAccidentCoordinator>(
+                    FindObjectsInactive.Include);
+            var incidentConsumer =
+                FindAnyObjectByType<PHSMapIncidentCommandConsumer>(
+                    FindObjectsInactive.Include);
+            if (runRoot == null
+                || incidentLedger == null
+                || incidentGateway == null
+                || consequenceSelector == null
+                || accidentCoordinator == null
+                || incidentConsumer == null
+                || incidentConsumer.IncidentLayout == null
+                || !incidentGateway.IsReady
+                || !accidentCoordinator.IsSpawned
+                || !accidentCoordinator.IsServer)
+            {
+                Fail(
+                    $"p1_minigame_incident_pipeline_missing " +
+                    $"event={validationCase.ExternalEventId} " +
+                    $"outcome={outcomeLabel}");
+                yield break;
+            }
+
             if (eventCoordinator.IsEventActive(validationCase.ExternalEventId)
                 || eventManager.IsActive(validationCase.ExternalEventId)
-                || eventCoordinator.IsEventActive(validationCase.ChainedFailureEventId)
-                || eventManager.IsActive(validationCase.ChainedFailureEventId))
+                || accidentCoordinator.ActiveAccidentCount != 0)
             {
                 Fail(
                     $"p1_minigame_preexisting_event type={validationCase.MiniGameType} outcome={outcomeLabel}");
@@ -1539,25 +1654,58 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Validation
                 yield break;
             }
 
-            if (!eventCoordinator.TrySpawnEventServer(
+            yield return WaitFor(
+                () => HasAvailableExternalMiniGameLocation(
+                    incidentConsumer,
+                    validationCase.ExternalEventId),
+                DefaultStepTimeout,
+                $"p1_minigame_external_location_not_ready " +
+                $"event={validationCase.ExternalEventId} outcome={outcomeLabel}");
+            if (scenarioFinished) yield break;
+
+            if (!incidentGateway.TrySubmitTerminalEventServer(
                     validationCase.ExternalEventId,
-                    out var externalInstanceId)
-                || externalInstanceId == 0UL)
+                    null,
+                    out var parentCommand,
+                    out var submitReason))
             {
                 Fail(
-                    $"p1_minigame_external_spawn_failed event={validationCase.ExternalEventId} " +
-                    $"outcome={outcomeLabel}");
+                    $"p1_minigame_external_submit_failed " +
+                    $"event={validationCase.ExternalEventId} " +
+                    $"outcome={outcomeLabel} reason={submitReason}");
                 yield break;
             }
 
             yield return WaitFor(
-                () => eventCoordinator.TryGetSnapshot(externalInstanceId, out var snapshot)
-                    && snapshot.EventId == validationCase.ExternalEventId
+                () => incidentLedger.TryGetCommand(
+                        parentCommand.CommandId,
+                        out var currentParent)
+                    && currentParent.State
+                        == NetworkRunIncidentCommandState.Active
+                    && currentParent.RuntimeInstanceId != 0UL
+                    && eventCoordinator.TryGetSnapshot(
+                        currentParent.RuntimeInstanceId,
+                        out var snapshot)
+                    && snapshot.EventId
+                        == validationCase.ExternalEventId
                     && snapshot.State == EventState.InProgress,
                 5f,
                 $"p1_minigame_external_not_in_progress event={validationCase.ExternalEventId} " +
                 $"outcome={outcomeLabel}");
             if (scenarioFinished) yield break;
+
+            if (!incidentLedger.TryGetCommand(
+                    parentCommand.CommandId,
+                    out parentCommand)
+                || parentCommand.RuntimeInstanceId == 0UL)
+            {
+                Fail(
+                    $"p1_minigame_parent_command_activation_missing " +
+                    $"command={parentCommand.CommandId}");
+                yield break;
+            }
+
+            var externalInstanceId = parentCommand.RuntimeInstanceId;
 
             yield return ProbeEventSnapshot(
                 validationCase.ExternalEventId,
@@ -1588,17 +1736,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Validation
             var expectedTerminalState = succeeded ? EventState.Resolve : EventState.Fail;
             yield return WaitFor(
                 () => eventCoordinator.TryGetSnapshot(externalInstanceId, out var snapshot)
-                    && snapshot.State == expectedTerminalState
-                    && (!succeeded
-                        ? validationCase.ChainedFailureEventId == EventId.PowerOff
-                            ? NetworkShipSystemsState.Instance != null
-                                && !NetworkShipSystemsState.Instance.IsPowerEnabled
-                                && !NetworkShipSystemsState.Instance.IsGravityEnabled
-                            : TryFindActiveEventSnapshot(
-                                eventCoordinator,
-                                validationCase.ChainedFailureEventId,
-                                out _)
-                        : !eventCoordinator.IsEventActive(validationCase.ChainedFailureEventId)),
+                    && snapshot.State == expectedTerminalState,
                 5f,
                 $"p1_minigame_terminal_state_missing event={validationCase.ExternalEventId} " +
                 $"outcome={outcomeLabel} expected={expectedTerminalState}");
@@ -1619,6 +1757,27 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Validation
 
             if (succeeded)
             {
+                yield return WaitFor(
+                    () => incidentLedger.TryGetCommand(
+                            parentCommand.CommandId,
+                            out var resolvedParent)
+                        && resolvedParent.State
+                            == NetworkRunIncidentCommandState.Resolved,
+                    5f,
+                    $"p1_minigame_parent_not_resolved " +
+                    $"command={parentCommand.CommandId}");
+                if (scenarioFinished) yield break;
+
+                if (CountConsequenceCommands(
+                        incidentLedger,
+                        parentCommand.CommandId) != 0)
+                {
+                    Fail(
+                        $"p1_minigame_success_created_consequence " +
+                        $"parent={parentCommand.CommandId}");
+                    yield break;
+                }
+
                 Debug.Log(
                     $"PHS_P1_MINIGAME_OUTCOME_OK type={validationCase.MiniGameType} " +
                     $"event={validationCase.ExternalEventId} outcome=success distance={terminalDistance:F3} " +
@@ -1627,105 +1786,301 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Validation
                 yield break;
             }
 
-            if (validationCase.ChainedFailureEventId == EventId.PowerOff)
-            {
-                var shipState = NetworkShipSystemsState.Instance;
-                if (shipState == null || shipState.IsPowerEnabled || shipState.IsGravityEnabled)
-                {
-                    Fail("p1_minigame_power_off_not_applied");
-                    yield break;
-                }
-
-                string restoreReason = null;
-                if (!shipState.TryRestorePowerWithBattery(out restoreReason))
-                {
-                    Fail($"p1_minigame_power_cleanup_failed reason={restoreReason ?? "unknown"}");
-                    yield break;
-                }
-
-                yield return WaitFor(
-                    () => shipState.IsPowerEnabled && shipState.IsGravityEnabled,
-                    5f,
-                    "p1_minigame_power_cleanup_not_applied");
-                if (scenarioFinished) yield break;
-
-                Debug.Log(
-                    $"PHS_P1_MINIGAME_OUTCOME_OK type={validationCase.MiniGameType} " +
-                    $"event={validationCase.ExternalEventId} outcome=failure " +
-                    $"chained={validationCase.ChainedFailureEventId} distance={terminalDistance:F3} " +
-                    $"peers={eventTerminalReports.Count} uiInteraction=false",
-                    this);
-                yield break;
-            }
-
-            if (!TryFindActiveEventSnapshot(
-                    eventCoordinator,
-                    validationCase.ChainedFailureEventId,
-                    out var chainedSnapshot))
-            {
-                Fail(
-                    $"p1_minigame_chained_event_missing external={validationCase.ExternalEventId} " +
-                    $"chained={validationCase.ChainedFailureEventId}");
-                yield break;
-            }
-
-            yield return ProbeEventSnapshot(
-                validationCase.ChainedFailureEventId,
-                chainedSnapshot.InstanceId,
-                requireHostLocalEffect: false);
+            yield return WaitFor(
+                () => incidentLedger.TryGetCommand(
+                        parentCommand.CommandId,
+                        out var failedParent)
+                    && failedParent.State
+                        == NetworkRunIncidentCommandState.Failed
+                    && TryGetSingleConsequenceCommand(
+                        incidentLedger,
+                        parentCommand.CommandId,
+                        out var consequence)
+                    && consequence.State
+                        == NetworkRunIncidentCommandState.Active
+                    && consequence.RuntimeInstanceId != 0UL
+                    && HasActiveAccident(
+                        accidentCoordinator,
+                        consequence.RuntimeInstanceId,
+                        consequence.ContentId),
+                DefaultStepTimeout,
+                $"p1_minigame_consequence_not_active " +
+                $"parent={parentCommand.CommandId}");
             if (scenarioFinished) yield break;
 
-            var chainedActiveSnapshot = eventSnapshotReports.Values.First();
-            yield return BeginEventTerminalObservation(
-                chainedSnapshot.InstanceId,
-                $"p1_minigame_chained_observation_not_ready event={validationCase.ChainedFailureEventId}");
-            if (scenarioFinished) yield break;
-
-            if (!eventCoordinator.TryTerminateAllServer())
+            if (!TryGetSingleConsequenceCommand(
+                    incidentLedger,
+                    parentCommand.CommandId,
+                    out var consequenceCommand))
             {
                 Fail(
-                    $"p1_minigame_chained_cleanup_rejected event={validationCase.ChainedFailureEventId}");
+                    $"p1_minigame_consequence_command_missing " +
+                    $"parent={parentCommand.CommandId}");
                 yield break;
             }
 
-            yield return new WaitForSecondsRealtime(0.75f);
-            yield return ProbeEventTerminal(chainedSnapshot.InstanceId, chainedActiveSnapshot.Revision);
-            if (scenarioFinished) yield break;
-
-            if (eventCoordinator.TryGetSnapshot(chainedSnapshot.InstanceId, out _)
-                || eventManager.IsInstanceActive(chainedSnapshot.InstanceId))
+            var internalEntries = runRoot.IncidentDirector?.Definition?.InternalEntries;
+            if (internalEntries != null
+                && internalEntries.Count > 1
+                && previousMiniGameConsequenceContentId
+                    == consequenceCommand.ContentId)
             {
                 Fail(
-                    $"p1_minigame_chained_cleanup_incomplete event={validationCase.ChainedFailureEventId}");
+                    $"p1_minigame_consequence_repeated " +
+                    $"content={consequenceCommand.ContentId} " +
+                    $"parent={parentCommand.CommandId}");
                 yield break;
             }
 
-            if (validationCase.ChainedFailureEventId == EventId.PowerOff)
-            {
-                var shipState = NetworkShipSystemsState.Instance;
-                string restoreReason = null;
-                if (shipState == null
-                    || ((!shipState.IsPowerEnabled || !shipState.IsGravityEnabled)
-                        && !shipState.TryRestorePowerWithBattery(out restoreReason)))
-                {
-                    Fail(
-                        $"p1_minigame_power_cleanup_failed reason={restoreReason ?? "ship_state_missing"}");
-                    yield break;
-                }
+            previousMiniGameConsequenceContentId =
+                consequenceCommand.ContentId;
 
-                yield return WaitFor(
-                    () => shipState.IsPowerEnabled && shipState.IsGravityEnabled,
-                    5f,
-                    "p1_minigame_power_cleanup_not_applied");
-                if (scenarioFinished) yield break;
+            var replaySnapshot = incidentLedger.Snapshot;
+            var replayCommandCount = incidentLedger.CommandCount;
+            if (!consequenceSelector.TryRequestForFailedExternalEventServer(
+                    parentCommand.CommandId,
+                    out var replayCommand,
+                    out var replayReason)
+                || replayCommand.CommandId != consequenceCommand.CommandId
+                || !incidentLedger.Snapshot.Equals(replaySnapshot)
+                || incidentLedger.CommandCount != replayCommandCount)
+            {
+                Fail(
+                    $"p1_minigame_consequence_replay_not_idempotent " +
+                    $"parent={parentCommand.CommandId} " +
+                    $"reason={replayReason}");
+                yield break;
+            }
+
+            var synchronizedIncidentSnapshot = incidentLedger.Snapshot;
+            var synchronizedIncidentCount = incidentLedger.CommandCount;
+            var synchronizedIncidentSignature =
+                ComputeIncidentCommandSignature(incidentLedger);
+            yield return ProbeIncidentState(
+                synchronizedIncidentSnapshot,
+                synchronizedIncidentCount,
+                synchronizedIncidentSignature);
+            if (scenarioFinished) yield break;
+
+            if (!accidentCoordinator.TryTerminateAccidentServer(
+                    (uint)consequenceCommand.RuntimeInstanceId,
+                    "p1_minigame_consequence_cleanup",
+                    out var terminateReason))
+            {
+                Fail(
+                    $"p1_minigame_consequence_cleanup_rejected " +
+                    $"command={consequenceCommand.CommandId} " +
+                    $"reason={terminateReason}");
+                yield break;
+            }
+
+            yield return WaitFor(
+                () => incidentLedger.TryGetCommand(
+                        consequenceCommand.CommandId,
+                        out var terminatedConsequence)
+                    && terminatedConsequence.IsTerminal
+                    && !HasActiveAccident(
+                        accidentCoordinator,
+                        consequenceCommand.RuntimeInstanceId,
+                        consequenceCommand.ContentId),
+                5f,
+                $"p1_minigame_consequence_cleanup_incomplete " +
+                $"command={consequenceCommand.CommandId}");
+            if (scenarioFinished) yield break;
+
+            if (!TryResetShipAfterConsequence(
+                    NetworkShipSystemsState.Instance,
+                    out var resetReason))
+            {
+                Fail(
+                    $"p1_minigame_consequence_ship_reset_failed " +
+                    $"reason={resetReason}");
+                yield break;
             }
 
             Debug.Log(
                 $"PHS_P1_MINIGAME_OUTCOME_OK type={validationCase.MiniGameType} " +
                 $"event={validationCase.ExternalEventId} outcome=failure " +
-                $"chained={validationCase.ChainedFailureEventId} distance={terminalDistance:F3} " +
-                $"peers={eventTerminalReports.Count} uiInteraction=false",
+                $"parent={parentCommand.CommandId} " +
+                $"consequence={consequenceCommand.ContentId} " +
+                $"consequenceCommand={consequenceCommand.CommandId} " +
+                $"distance={terminalDistance:F3} " +
+                $"eventPeers={eventTerminalReports.Count} " +
+                $"incidentPeers={incidentReports.Count} uiInteraction=false",
                 this);
+        }
+
+        private static int CountConsequenceCommands(
+            NetworkRunIncidentLedger ledger,
+            ulong parentCommandId)
+        {
+            var count = 0;
+            for (var index = 0; index < ledger.CommandCount; index++)
+            {
+                var command = ledger.GetCommandAt(index);
+                if (command.ParentCommandId == parentCommandId
+                    && command.SourceKind
+                        == NetworkRunIncidentSourceKind.Consequence)
+                {
+                    count++;
+                }
+            }
+
+            return count;
+        }
+
+        private static bool TryGetSingleConsequenceCommand(
+            NetworkRunIncidentLedger ledger,
+            ulong parentCommandId,
+            out NetworkRunIncidentCommand consequenceCommand)
+        {
+            consequenceCommand = default;
+            var found = false;
+            for (var index = 0; index < ledger.CommandCount; index++)
+            {
+                var command = ledger.GetCommandAt(index);
+                if (command.ParentCommandId != parentCommandId
+                    || command.SourceKind
+                        != NetworkRunIncidentSourceKind.Consequence)
+                {
+                    continue;
+                }
+
+                if (found)
+                {
+                    consequenceCommand = default;
+                    return false;
+                }
+
+                consequenceCommand = command;
+                found = true;
+            }
+
+            return found;
+        }
+
+        private static bool HasActiveAccident(
+            PHSNetworkShipAccidentCoordinator coordinator,
+            ulong runtimeInstanceId,
+            int contentId)
+        {
+            if (runtimeInstanceId == 0UL
+                || runtimeInstanceId > uint.MaxValue)
+            {
+                return false;
+            }
+
+            for (var index = 0; index < coordinator.ActiveAccidentCount; index++)
+            {
+                var accident = coordinator.GetActiveAccidentAt(index);
+                if (accident.InstanceId == (uint)runtimeInstanceId
+                    && (int)accident.AccidentId == contentId)
+                {
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
+        private bool HasAvailableExternalMiniGameLocation(
+            PHSMapIncidentCommandConsumer incidentConsumer,
+            EventId eventId)
+        {
+            if (incidentConsumer == null
+                || incidentConsumer.IncidentLayout == null
+                || NetworkManager == null
+                || !TryResolveExternalIncidentFamily(eventId, out var family))
+            {
+                return false;
+            }
+
+            var query = new IncidentLocationQuery(
+                NetworkRunIncidentChannel.External,
+                family,
+                (int)eventId,
+                NetworkShipModuleId.None,
+                IncidentLocationKind.None,
+                IncidentLocationCapability.None,
+                null,
+                null,
+                NetworkManager.ServerTime.Time,
+                true);
+            return incidentConsumer.IncidentLayout.Locations.Any(location =>
+                location != null
+                && location.RuntimeTarget is ShipRoom
+                && location.Supports(query));
+        }
+
+        private static bool TryResolveExternalIncidentFamily(
+            EventId eventId,
+            out NetworkRunIncidentFamily family)
+        {
+            switch (eventId)
+            {
+                case EventId.EnemyScout:
+                    family = NetworkRunIncidentFamily.Enemy;
+                    return true;
+                case EventId.MeteorAttack:
+                    family = NetworkRunIncidentFamily.Meteor;
+                    return true;
+                case EventId.EmpAttack:
+                    family = NetworkRunIncidentFamily.EMP;
+                    return true;
+                default:
+                    family = NetworkRunIncidentFamily.None;
+                    return false;
+            }
+        }
+
+        private static bool TryResetShipAfterConsequence(
+            NetworkShipSystemsState shipState,
+            out string reason)
+        {
+            if (shipState == null || !shipState.IsSpawned || !shipState.IsServer)
+            {
+                reason = "ship_state_missing";
+                return false;
+            }
+
+            foreach (var moduleId in new[]
+                     {
+                         NetworkShipModuleId.Power,
+                         NetworkShipModuleId.Gravity,
+                         NetworkShipModuleId.LifeSupport,
+                         NetworkShipModuleId.Engine
+                     })
+            {
+                if (shipState.TryGetModuleSnapshot(moduleId, out var module)
+                    && (module.CurrentHp < module.MaximumHp || module.IsFaulted)
+                    && !shipState.TryRepairModule(moduleId, 1000, out reason))
+                {
+                    return false;
+                }
+            }
+
+            if (!shipState.IsPowerEnabled
+                && !shipState.TryRestorePowerWithBattery(out reason))
+            {
+                return false;
+            }
+
+            if (!shipState.IsGravityEnabled
+                && !shipState.TryRestoreGravityAfterRepair(out reason))
+            {
+                return false;
+            }
+
+            if (shipState.CurrentShipHp < shipState.MaximumShipHp
+                && !shipState.TryRestoreShipDurabilityAtDock(
+                    shipState.MaximumShipHp - shipState.CurrentShipHp,
+                    out reason))
+            {
+                return false;
+            }
+
+            reason = null;
+            return true;
         }
 
         private IEnumerator BeginEventTerminalObservation(ulong instanceId, string failureReason)
@@ -1759,24 +2114,21 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Validation
 
         private IEnumerator RunShipPowerBatteryValidation()
         {
-            var eventCoordinator = FindAnyObjectByType<NetworkEventCoordinator>(FindObjectsInactive.Include);
-            var eventManager = EventManager.Peek();
             var shipState = NetworkShipSystemsState.Instance;
-            var miniGameTerminal = FindObjectsByType<PHSFinalMiniGameTerminal>(
-                    FindObjectsInactive.Exclude,
-                    FindObjectsSortMode.None)
-                .FirstOrDefault(terminal =>
-                    terminal != null && terminal.ConfiguredMiniGameType == MiniGameType.WireFix);
+            var accidentCoordinator =
+                FindAnyObjectByType<PHSNetworkShipAccidentCoordinator>(
+                    FindObjectsInactive.Include);
             var batterySocket = FindObjectsByType<BatteryInsertPowerStationSocket>(
                     FindObjectsInactive.Exclude,
                     FindObjectsSortMode.None)
                 .FirstOrDefault(socket => socket != null && socket.IsSpawned);
             if (validationBatteryItem == null || !validationBatteryItem.HasHeldPrefab
                 || string.IsNullOrWhiteSpace(validationBatteryItem.ItemId)
-                || eventCoordinator == null || !eventCoordinator.IsSpawned || !eventCoordinator.IsServer
-                || eventManager == null || !eventManager.HasRuntimeBridge() || !eventManager.IsRuntimeAuthority()
                 || shipState == null || !shipState.IsSpawned || !shipState.IsServer
-                || miniGameTerminal == null || batterySocket == null
+                || accidentCoordinator == null
+                || !accidentCoordinator.IsSpawned
+                || !accidentCoordinator.IsServer
+                || batterySocket == null
                 || !NetworkManager.ConnectedClients.TryGetValue(
                     NetworkManager.ServerClientId,
                     out var hostClient)
@@ -1791,44 +2143,50 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Validation
             var itemRecord = playerObject.GetComponent<NetworkPlayerItemRecord>();
             if (holder == null || itemRecord == null || !itemRecord.IsSpawned
                 || holder.HasItem || !string.IsNullOrEmpty(itemRecord.HeldItemId)
-                || eventCoordinator.IsEventActive(EventId.PowerOff)
-                || eventManager.IsActive(EventId.PowerOff))
+                || accidentCoordinator.ActiveAccidentCount != 0)
             {
-                Fail("p2_ship_power_player_or_event_state_invalid");
+                Fail("p2_ship_power_player_or_accident_state_invalid");
                 yield break;
             }
 
-            if (!eventCoordinator.IsEventActive(EventId.EmpAttack)
-                && !eventManager.IsActive(EventId.EmpAttack)
-                && !eventCoordinator.TrySpawnEventServer(EventId.EmpAttack, out _))
+            var powerAnchorIds = new List<string>();
+            if (!accidentCoordinator.TryCopyAvailableCompatibleAnchorIdsServer(
+                    PHSShipAccidentId.PowerFailure,
+                    powerAnchorIds,
+                    out var anchorReason)
+                || powerAnchorIds.Count == 0)
             {
-                Fail("p2_emp_spawn_failed");
+                Fail(
+                    $"p2_power_failure_anchor_missing " +
+                    $"reason={anchorReason}");
+                yield break;
+            }
+
+            if (!accidentCoordinator.TrySpawnAccidentServer(
+                    PHSShipAccidentId.PowerFailure,
+                    powerAnchorIds[0],
+                    out var powerFailureInstanceId,
+                    out var spawnReason))
+            {
+                Fail(
+                    $"p2_power_failure_spawn_failed " +
+                    $"reason={spawnReason}");
                 yield break;
             }
 
             yield return WaitFor(
-                () => eventCoordinator.IsEventActive(EventId.EmpAttack)
-                    && eventManager.IsActive(EventId.EmpAttack),
-                5f,
-                "p2_emp_not_active");
-            if (scenarioFinished) yield break;
-
-            SetPlayerPosition(playerObject, miniGameTerminal.transform.position);
-            yield return null;
-            if (!eventCoordinator.RequestMiniGameResult(EventId.EmpAttack, false))
-            {
-                Fail("p2_emp_failure_request_rejected");
-                yield break;
-            }
-
-            yield return WaitFor(
-                () => !eventCoordinator.IsEventActive(EventId.EmpAttack)
-                    && !eventManager.IsActive(EventId.EmpAttack)
+                () => HasActiveAccident(
+                        accidentCoordinator,
+                        powerFailureInstanceId,
+                        (int)PHSShipAccidentId.PowerFailure)
                     && !shipState.IsPowerEnabled
                     && !shipState.IsGravityEnabled
                     && !shipState.IsBatteryInstalled,
                 5f,
                 "p2_power_off_not_applied");
+            if (scenarioFinished) yield break;
+
+            yield return ProbeShipPowerVisualState(true);
             if (scenarioFinished) yield break;
 
             var itemRevisionBeforeHold = itemRecord.Revision;
@@ -1867,10 +2225,12 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Validation
             if (scenarioFinished) yield break;
 
             yield return WaitFor(
-                () => !eventCoordinator.IsEventActive(EventId.PowerOff)
-                    && !eventManager.IsActive(EventId.PowerOff),
+                () => !HasActiveAccident(
+                    accidentCoordinator,
+                    powerFailureInstanceId,
+                    (int)PHSShipAccidentId.PowerFailure),
                 5f,
-                "p2_power_off_not_resolved");
+                "p2_power_failure_not_resolved");
             if (scenarioFinished) yield break;
 
             var consumedItemRevision = itemRecord.Revision;
@@ -1902,8 +2262,63 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Validation
             Debug.Log(
                 $"PHS_P2_SHIP_POWER_BATTERY_OK item={validationBatteryItem.ItemId} " +
                 $"shipRevision={restoredShipRevision} itemRevision={consumedItemRevision} " +
-                $"peers={shipPowerReports.Count} duplicateReason={repeatedRestoreReason}",
+                $"peers={shipPowerReports.Count} blackoutRestored=true " +
+                $"duplicateReason={repeatedRestoreReason}",
                 this);
+        }
+
+        private IEnumerator ProbeShipPowerVisualState(bool expectedBlackout)
+        {
+            var deadline = Time.realtimeSinceStartup + 10f;
+            while (scenarioRunning && !scenarioFinished
+                && Time.realtimeSinceStartup < deadline)
+            {
+                shipPowerReports.Clear();
+                var token = ++activeProbeToken;
+                ProbeShipPowerStateClientRpc(token);
+
+                var probeDeadline = Mathf.Min(
+                    deadline,
+                    Time.realtimeSinceStartup + 2f);
+                while (shipPowerReports.Count < expectedClientCount
+                    && Time.realtimeSinceStartup < probeDeadline)
+                {
+                    yield return null;
+                }
+
+                if (shipPowerReports.Count >= expectedClientCount
+                    && shipPowerReports.Values.All(report =>
+                        report.StateFound
+                        && report.LightingFound
+                        && report.BlackoutApplied == expectedBlackout
+                        && report.EmergencyLightingActive == expectedBlackout
+                        && Mathf.Abs(
+                            report.AmbientIntensityRatio
+                            - (expectedBlackout ? 0.12f : 1f)) <= 0.03f))
+                {
+                    Debug.Log(
+                        $"PHS_P2_SHIP_POWER_VISUAL_OK blackout={expectedBlackout} " +
+                        $"peers={shipPowerReports.Count} ambientRatio=" +
+                        $"{shipPowerReports.Values.First().AmbientIntensityRatio:F3}",
+                        this);
+                    yield break;
+                }
+
+                yield return new WaitForSecondsRealtime(0.25f);
+            }
+
+            var reports = shipPowerReports.Count == 0
+                ? "none"
+                : string.Join(
+                    ";",
+                    shipPowerReports.OrderBy(report => report.Key).Select(report =>
+                        $"{report.Key}:found={report.Value.LightingFound}," +
+                        $"blackout={report.Value.BlackoutApplied}," +
+                        $"emergency={report.Value.EmergencyLightingActive}," +
+                        $"ambient={report.Value.AmbientIntensityRatio:F3}"));
+            Fail(
+                $"p2_ship_power_visual_sync_timeout blackout={expectedBlackout} " +
+                $"reports={reports}");
         }
 
         private IEnumerator ProbeShipPowerState(uint expectedShipRevision, uint expectedItemRevision)
@@ -1931,7 +2346,11 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Validation
                         && report.ShipRevision == expectedShipRevision
                         && report.ItemRevision == expectedItemRevision
                         && string.IsNullOrEmpty(report.HeldItemId)
-                        && !report.PowerOffActive))
+                        && !report.PowerOffActive
+                        && report.LightingFound
+                        && !report.BlackoutApplied
+                        && !report.EmergencyLightingActive
+                        && Mathf.Abs(report.AmbientIntensityRatio - 1f) <= 0.03f))
                 {
                     yield break;
                 }
@@ -1948,7 +2367,10 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Validation
                         $"power={report.Value.PowerEnabled},gravity={report.Value.GravityEnabled}," +
                         $"battery={report.Value.BatteryInstalled},shipRev={report.Value.ShipRevision}," +
                         $"itemRev={report.Value.ItemRevision},held={report.Value.HeldItemId}," +
-                        $"powerOff={report.Value.PowerOffActive}"));
+                        $"powerOff={report.Value.PowerOffActive}," +
+                        $"lighting={report.Value.LightingFound},blackout={report.Value.BlackoutApplied}," +
+                        $"emergency={report.Value.EmergencyLightingActive}," +
+                        $"ambient={report.Value.AmbientIntensityRatio:F3}"));
             Fail(
                 $"p2_ship_power_peer_sync_timeout expectedShipRevision={expectedShipRevision} " +
                 $"expectedItemRevision={expectedItemRevision} reports={reports}");
@@ -2059,20 +2481,34 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Validation
             }
 
             var originalPosition = playerObject.transform.position;
+            if (eventId == EventId.OxygenLeak)
+            {
+                yield return ValidateOxygenSuffocation(
+                    playerObject,
+                    repairTarget);
+                if (scenarioFinished) yield break;
+            }
+
             var requiredItemId = eventId == EventId.Fire ? "fire_extinguisher" : "wrench";
             var wrongItemId = eventId == EventId.Fire ? "wrench" : "fire_extinguisher";
-            itemRecord.ReportHeldItem(wrongItemId);
-            if (coordinator.RequestEffectRepair(repairTarget, itemRecord, 1U))
+            itemRecord.ReportHeldItem(wrongItemId, 100);
+            if (coordinator.RequestEffectRepair(
+                    repairTarget,
+                    itemRecord,
+                    NextEventRepairRequestSequence()))
             {
                 Fail($"event_repair_wrong_item_accepted event={eventId}");
                 yield break;
             }
 
-            itemRecord.ReportHeldItem(requiredItemId);
+            itemRecord.ReportHeldItem(requiredItemId, 100);
             SetPlayerPosition(playerObject, repairTarget is IEventRepairableEffect serverTarget
                 ? serverTarget.RepairPosition + Vector3.right * 10f
                 : originalPosition + Vector3.right * 10f);
-            if (coordinator.RequestEffectRepair(repairTarget, itemRecord, 1U))
+            if (coordinator.RequestEffectRepair(
+                    repairTarget,
+                    itemRecord,
+                    NextEventRepairRequestSequence()))
             {
                 Fail($"event_repair_far_request_accepted event={eventId}");
                 yield break;
@@ -2082,7 +2518,8 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Validation
                 ? authoritativeTarget.RepairPosition
                 : originalPosition;
             SetPlayerPosition(playerObject, targetPosition);
-            var requestSequence = 2U;
+            var requestSequence = NextEventRepairRequestSequence();
+            var acceptedStepCount = 1U;
             if (!coordinator.RequestEffectRepair(repairTarget, itemRecord, requestSequence))
             {
                 Fail($"event_repair_first_step_rejected event={eventId}");
@@ -2098,7 +2535,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Validation
             var deadline = Time.realtimeSinceStartup + 10f;
             while (coordinator.IsEventActive(eventId) && Time.realtimeSinceStartup < deadline)
             {
-                requestSequence++;
+                requestSequence = NextEventRepairRequestSequence();
                 if (!coordinator.RequestEffectRepair(repairTarget, itemRecord, requestSequence))
                 {
                     Fail(
@@ -2106,10 +2543,11 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Validation
                     yield break;
                 }
 
+                acceptedStepCount++;
                 yield return null;
             }
 
-            itemRecord.ReportHeldItem(string.Empty);
+            itemRecord.ReportHeldItem(string.Empty, 0);
             SetPlayerPosition(playerObject, originalPosition);
             if (coordinator.IsEventActive(eventId))
             {
@@ -2119,7 +2557,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Validation
 
             Debug.Log(
                 $"PHS_P1_EVENT_REPAIR_OK event={eventId} instance={instanceId} item={requiredItemId} " +
-                $"steps={requestSequence - 1U} wrongItemReject=true farReject=true duplicateReject=true authority=server",
+                $"steps={acceptedStepCount} wrongItemReject=true farReject=true duplicateReject=true authority=server",
                 this);
         }
 
@@ -2329,6 +2767,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Validation
                 SetPlayerPosition(playerObject, entryPortal.transform.position);
                 yield return null;
                 entryPortal.Interact(holder);
+                RequestRemoteShopTransitionVotes();
                 yield return WaitFor(
                     () => SceneManager.GetActiveScene().name == ShopSceneName,
                     30f,
@@ -2558,6 +2997,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Validation
             SetPlayerPosition(playerObject, returnPortal.transform.position);
             yield return null;
             returnPortal.Interact(holder);
+            RequestRemoteShopTransitionVotes();
             yield return WaitFor(
                 () => SceneManager.GetActiveScene().name == MapSceneName,
                 30f,
@@ -3307,11 +3747,23 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Validation
                 $"networkObjectId={networkObjectId} peers={thrownItemReports.Count}",
                 this);
 
-            yield return RunRemoteOwnedThrownItemValidation();
+            yield return RunRemoteOwnedThrownItemValidation(validationThrownItem, false);
         }
 
-        private IEnumerator RunRemoteOwnedThrownItemValidation()
+        private IEnumerator RunRemoteOwnedThrownItemValidation(
+            UtilityItemPrefabData itemData,
+            bool exercisePrimaryUse)
         {
+            if (itemData == null)
+            {
+                Fail("remote_item_data_missing");
+                yield break;
+            }
+
+            var expectedDurability = itemData.HasDurability
+                ? itemData.MaxDurability
+                : 0;
+
             var remoteClientId = NetworkManager.ConnectedClientsIds.FirstOrDefault(
                 clientId => clientId != NetworkManager.ServerClientId);
             if (remoteClientId == NetworkManager.ServerClientId
@@ -3336,9 +3788,71 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Validation
                 yield break;
             }
 
-            var pickupPosition = remotePlayer.transform.position + Vector3.up * 0.5f;
+            var gameplayContext = GameplaySceneContext.FindForScene(SceneManager.GetActiveScene());
+            if (gameplayContext == null
+                || !gameplayContext.TryGetSpawnPoint(remoteClientId, out var expectedSpawnPoint)
+                || expectedSpawnPoint == null)
+            {
+                Fail($"remote_item_spawn_point_missing client={remoteClientId}");
+                yield break;
+            }
+
+            yield return WaitFor(
+                () => Vector3.Distance(remotePlayer.transform.position, expectedSpawnPoint.position) <= 1f,
+                10f,
+                "remote_item_server_spawn_not_ready");
+            if (scenarioFinished) yield break;
+
+            activeRemoteItemClientId = remoteClientId;
+            var positionSynchronized = false;
+            var positionProbeDeadline = Time.realtimeSinceStartup + 10f;
+            while (!positionSynchronized
+                && Time.realtimeSinceStartup < positionProbeDeadline)
+            {
+                remoteItemPositionReported = false;
+                remoteItemPosition = default;
+                var positionProbeToken = ++activeProbeToken;
+                ProbeRemoteItemPositionClientRpc(
+                    positionProbeToken,
+                    new ClientRpcParams
+                    {
+                        Send = new ClientRpcSendParams { TargetClientIds = new[] { remoteClientId } }
+                    });
+
+                var responseDeadline = Time.realtimeSinceStartup + 2f;
+                while (!remoteItemPositionReported
+                    && Time.realtimeSinceStartup < responseDeadline)
+                {
+                    yield return null;
+                }
+
+                positionSynchronized = remoteItemPositionReported
+                    && Vector3.Distance(
+                        remotePlayer.transform.position,
+                        remoteItemPosition) <= 1f;
+                if (!positionSynchronized)
+                {
+                    yield return new WaitForSecondsRealtime(0.2f);
+                }
+            }
+
+            Debug.Log(
+                $"PHS_ITEM_REMOTE_POSITION client={remoteClientId} " +
+                $"server={remotePlayer.transform.position} owner={remoteItemPosition} " +
+                $"distance={Vector3.Distance(remotePlayer.transform.position, remoteItemPosition):F3}",
+                this);
+
+            if (!positionSynchronized)
+            {
+                Fail(remoteItemPositionReported
+                    ? "remote_item_position_not_synchronized"
+                    : "remote_item_position_probe_timeout");
+                yield break;
+            }
+
+            var pickupPosition = remoteItemPosition + Vector3.up * 0.5f;
             if (!remoteLifecycle.TryCreateDroppedItemServer(
-                    validationThrownItem.ItemId,
+                    itemData.ItemId,
                     pickupPosition,
                     remotePlayer.transform.rotation,
                     out var pickupNetworkObject)
@@ -3349,7 +3863,6 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Validation
                 yield break;
             }
 
-            activeRemoteItemClientId = remoteClientId;
             remoteItemRequestReported = false;
             remoteItemRequestIssued = false;
             var pickupNetworkObjectId = pickupNetworkObject.NetworkObjectId;
@@ -3376,8 +3889,9 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Validation
             yield return WaitFor(
                 () => string.Equals(
                         remoteRecord.HeldItemId,
-                        validationThrownItem.ItemId,
+                        itemData.ItemId,
                         StringComparison.Ordinal)
+                    && remoteRecord.CurrentDurability == expectedDurability
                     && !NetworkManager.SpawnManager.SpawnedObjects.ContainsKey(
                         pickupNetworkObjectId),
                 10f,
@@ -3390,7 +3904,8 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Validation
                 heldProbeToken,
                 remoteClientId,
                 pickupNetworkObjectId,
-                validationThrownItem.ItemId);
+                itemData.ItemId,
+                expectedDurability);
             yield return WaitFor(
                 () => remoteHeldItemReports.Count >= expectedClientCount,
                 10f,
@@ -3403,13 +3918,144 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Validation
                 yield break;
             }
 
+            if (exercisePrimaryUse)
+            {
+                var knownPrimaryUseNetworkObjectIds =
+                    NetworkManager.SpawnManager.SpawnedObjects.Keys.ToHashSet();
+                remotePrimaryUseRequestReported = false;
+                remotePrimaryUseRequestIssued = false;
+                var primaryUseToken = ++activeProbeToken;
+                RequestRemoteItemPrimaryUseClientRpc(
+                    primaryUseToken,
+                    itemData.ItemId,
+                    new ClientRpcParams
+                    {
+                        Send = new ClientRpcSendParams { TargetClientIds = new[] { remoteClientId } }
+                    });
+                yield return WaitFor(
+                    () => remotePrimaryUseRequestReported,
+                    10f,
+                    $"remote_item_primary_use_request_timeout:{itemData.ItemId}");
+                if (scenarioFinished) yield break;
+
+                if (!remotePrimaryUseRequestIssued)
+                {
+                    Fail($"remote_item_primary_use_not_issued item={itemData.ItemId}");
+                    yield break;
+                }
+
+                if (string.Equals(itemData.ItemId, "battery_pack", StringComparison.Ordinal))
+                {
+                    NetworkObject usedBatteryNetworkObject = null;
+                    yield return WaitFor(
+                        () => string.IsNullOrEmpty(remoteRecord.HeldItemId)
+                            && remoteRecord.CurrentDurability == 0
+                            && TryFindNewSpawnedUtilityItem(
+                                knownPrimaryUseNetworkObjectIds,
+                                itemData.ItemId,
+                                out usedBatteryNetworkObject),
+                        10f,
+                        "remote_battery_primary_use_not_committed");
+                    if (scenarioFinished) yield break;
+
+                    var durabilityState = usedBatteryNetworkObject
+                        .GetComponent<NetworkUtilityItemDurabilityState>();
+                    var batteryImpact = usedBatteryNetworkObject
+                        .GetComponent<BatteryThrownImpact>();
+                    if (durabilityState == null
+                        || durabilityState.CurrentDurability != expectedDurability
+                        || batteryImpact == null
+                        || batteryImpact.WasAttackThrow
+                        || batteryImpact.HasExploded)
+                    {
+                        Fail("remote_battery_primary_use_contract_invalid");
+                        yield break;
+                    }
+
+                    yield return new WaitForSecondsRealtime(0.5f);
+                    if (!usedBatteryNetworkObject.IsSpawned
+                        || durabilityState.CurrentDurability != expectedDurability
+                        || batteryImpact.HasExploded)
+                    {
+                        Fail("remote_battery_safe_place_exploded");
+                        yield break;
+                    }
+
+                    var usedBatteryNetworkObjectId = usedBatteryNetworkObject.NetworkObjectId;
+                    usedBatteryNetworkObject.Despawn(true);
+                    activeRemoteItemClientId = ulong.MaxValue;
+                    Debug.Log(
+                        $"PHS_ITEM_BATTERY_SAFE_USE_OK client={remoteClientId} " +
+                        $"item={itemData.ItemId} durability={expectedDurability} " +
+                        $"networkObjectId={usedBatteryNetworkObjectId}",
+                        this);
+                    yield break;
+                }
+
+                yield return new WaitForSecondsRealtime(0.25f);
+                if (!string.Equals(remoteRecord.HeldItemId, itemData.ItemId, StringComparison.Ordinal)
+                    || remoteRecord.CurrentDurability != expectedDurability)
+                {
+                    Fail($"remote_item_primary_use_state_invalid item={itemData.ItemId}");
+                    yield break;
+                }
+
+                Debug.Log(
+                    $"PHS_ITEM_REMOTE_PRIMARY_USE_OK client={remoteClientId} " +
+                    $"item={itemData.ItemId} durability={remoteRecord.CurrentDurability}",
+                    this);
+            }
+
+            var isBatteryThrow = string.Equals(
+                itemData.ItemId,
+                "battery_pack",
+                StringComparison.Ordinal);
+            NetworkObject batteryReactionTarget = null;
+            Vector3 batteryReactionTargetOriginalPosition = default;
+            StatusEffectController batteryStatusReceiver = null;
+            NetworkPlayerKnockbackReceiver batteryKnockbackReceiver = null;
+            uint batteryKnockbackCountBefore = 0;
+            if (isBatteryThrow)
+            {
+                var remoteCombat = remoteClient.PlayerObject
+                    .GetComponent<NetworkPlayerCombatController>();
+                batteryReactionTarget = NetworkManager.ConnectedClients[
+                    NetworkManager.ServerClientId].PlayerObject;
+                batteryStatusReceiver = batteryReactionTarget == null
+                    ? null
+                    : batteryReactionTarget.GetComponent<StatusEffectController>();
+                batteryKnockbackReceiver = batteryReactionTarget == null
+                    ? null
+                    : batteryReactionTarget
+                        .GetComponent<NetworkPlayerKnockbackReceiver>();
+                if (remoteCombat == null
+                    || remoteCombat.GeneralThrowOrigin == null
+                    || batteryReactionTarget == null
+                    || batteryStatusReceiver == null
+                    || batteryKnockbackReceiver == null)
+                {
+                    Fail("battery_player_reaction_setup_missing");
+                    yield break;
+                }
+
+                batteryReactionTargetOriginalPosition =
+                    batteryReactionTarget.transform.position;
+                batteryKnockbackCountBefore =
+                    batteryKnockbackReceiver.AppliedCount;
+                SetPlayerPosition(
+                    batteryReactionTarget,
+                    remoteClient.PlayerObject.transform.position
+                    + remoteCombat.GeneralThrowOrigin.forward * 1.5f);
+                yield return new WaitForSecondsRealtime(0.25f);
+            }
+
             var knownNetworkObjectIds = NetworkManager.SpawnManager.SpawnedObjects.Keys.ToHashSet();
             remoteThrowRequestReported = false;
             remoteThrowRequestIssued = false;
             var throwRequestToken = ++activeProbeToken;
             RequestRemoteItemThrowClientRpc(
                 throwRequestToken,
-                validationThrownItem.ItemId,
+                itemData.ItemId,
                 new ClientRpcParams
                 {
                     Send = new ClientRpcSendParams { TargetClientIds = new[] { remoteClientId } }
@@ -3431,11 +4077,41 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Validation
                 () => string.IsNullOrEmpty(remoteRecord.HeldItemId)
                     && TryFindNewSpawnedUtilityItem(
                         knownNetworkObjectIds,
-                        validationThrownItem.ItemId,
+                        itemData.ItemId,
                         out remoteThrownNetworkObject),
                 10f,
                 "remote_item_throw_not_committed");
             if (scenarioFinished) yield break;
+
+            if (isBatteryThrow)
+            {
+                var batteryImpact = remoteThrownNetworkObject
+                    .GetComponent<BatteryThrownImpact>();
+                if (batteryImpact == null || !batteryImpact.WasAttackThrow)
+                {
+                    Fail("battery_attack_throw_not_armed");
+                    yield break;
+                }
+
+                yield return WaitFor(
+                    () => batteryImpact.HasExploded
+                        && batteryStatusReceiver.IsShocked
+                        && batteryKnockbackReceiver.AppliedCount
+                            > batteryKnockbackCountBefore,
+                    5f,
+                    "battery_player_reaction_timeout");
+                if (scenarioFinished) yield break;
+
+                SetPlayerPosition(
+                    batteryReactionTarget,
+                    batteryReactionTargetOriginalPosition);
+                Debug.Log(
+                    $"PHS_P0_BATTERY_PLAYER_REACTION_OK " +
+                    $"target={batteryReactionTarget.name} " +
+                    $"shocked={batteryStatusReceiver.IsShocked} " +
+                    $"knockbacks={batteryKnockbackReceiver.AppliedCount}",
+                    this);
+            }
 
             thrownItemReports.Clear();
             var throwProbeToken = ++activeProbeToken;
@@ -3443,7 +4119,9 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Validation
                 throwProbeToken,
                 remoteClientId,
                 remoteThrownNetworkObject.NetworkObjectId,
-                validationThrownItem.ItemId);
+                itemData.ItemId,
+                itemData.HasDurability,
+                expectedDurability);
             yield return WaitFor(
                 () => thrownItemReports.Count >= expectedClientCount,
                 10f,
@@ -3461,10 +4139,98 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Validation
             activeRemoteItemClientId = ulong.MaxValue;
             Debug.Log(
                 $"PHS_P0_REMOTE_ITEM_OWNERSHIP_OK client={remoteClientId} " +
-                $"item={validationThrownItem.ItemId} pickupNetworkObjectId={pickupNetworkObjectId} " +
+                $"item={itemData.ItemId} pickupNetworkObjectId={pickupNetworkObjectId} " +
                 $"thrownNetworkObjectId={thrownNetworkObjectId} peers={thrownItemReports.Count} " +
-                $"heldVisualNetworkObjects=0 recordRevision={remoteRecord.Revision}",
+                $"heldVisualNetworkObjects=0 durability={expectedDurability} " +
+                $"recordRevision={remoteRecord.Revision}",
                 this);
+        }
+
+        private IEnumerator ValidateOxygenSuffocation(
+            NetworkObject playerObject,
+            IEventRepairTargetHandle repairTarget)
+        {
+            var lifeState = playerObject.GetComponent<NetworkPlayerLifeState>();
+            var repairableEffect = repairTarget as IEventRepairableEffect;
+            var matchingZones = FindObjectsByType<PHSOxygenDeprivationZone>(
+                    FindObjectsInactive.Include,
+                    FindObjectsSortMode.None)
+                .Where(zone => repairableEffect != null
+                    && Vector3.SqrMagnitude(
+                        zone.RepairPosition - repairableEffect.RepairPosition) < 0.01f)
+                .ToArray();
+            if (lifeState == null
+                || repairableEffect == null
+                || matchingZones.Length != 1
+                || matchingZones[0].GetComponent<BoxCollider>() is not { } zoneBounds)
+            {
+                Fail("oxygen_suffocation_contract_missing");
+                yield break;
+            }
+
+            var healthBeforeExposure = lifeState.CurrentHealth;
+            SetPlayerPosition(playerObject, zoneBounds.bounds.center);
+            yield return WaitFor(
+                () => lifeState.CurrentHealth < healthBeforeExposure,
+                5f,
+                "oxygen_suffocation_damage_timeout");
+            if (scenarioFinished) yield break;
+
+            var damagedHealth = lifeState.CurrentHealth;
+            var outsidePosition = zoneBounds.bounds.center
+                + Vector3.right * (zoneBounds.bounds.extents.x + 5f);
+            SetPlayerPosition(playerObject, outsidePosition);
+            yield return new WaitForSecondsRealtime(0.5f);
+            yield return ProbeOxygenHealth(
+                playerObject.NetworkObjectId,
+                damagedHealth,
+                "after_exposure");
+            if (scenarioFinished) yield break;
+
+            yield return new WaitForSecondsRealtime(1.75f);
+            if (lifeState.CurrentHealth != damagedHealth)
+            {
+                Fail(
+                    $"oxygen_suffocation_outside_damage before={damagedHealth} " +
+                    $"after={lifeState.CurrentHealth}");
+                yield break;
+            }
+
+            yield return ProbeOxygenHealth(
+                playerObject.NetworkObjectId,
+                damagedHealth,
+                "outside");
+            if (scenarioFinished) yield break;
+
+            Debug.Log(
+                $"PHS_P1_OXYGEN_SUFFOCATION_OK damage={healthBeforeExposure - damagedHealth} " +
+                $"health={damagedHealth} peers={oxygenHealthReports.Count} outsideStable=true",
+                this);
+        }
+
+        private IEnumerator ProbeOxygenHealth(
+            ulong playerNetworkObjectId,
+            int expectedHealth,
+            string label)
+        {
+            oxygenHealthReports.Clear();
+            var token = ++activeProbeToken;
+            ProbeOxygenHealthClientRpc(token, playerNetworkObjectId);
+            yield return WaitFor(
+                () => oxygenHealthReports.Count >= expectedClientCount,
+                5f,
+                $"oxygen_health_peer_timeout label={label}");
+            if (scenarioFinished) yield break;
+
+            if (oxygenHealthReports.Values.Any(health => health != expectedHealth))
+            {
+                var reports = string.Join(
+                    ",",
+                    oxygenHealthReports.Select(pair => $"{pair.Key}:{pair.Value}"));
+                Fail(
+                    $"oxygen_health_peer_mismatch label={label} " +
+                    $"expected={expectedHealth} reports={reports}");
+            }
         }
 
         private bool TryFindNewSpawnedUtilityItem(
@@ -4107,6 +4873,85 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Validation
         }
 
         [ClientRpc]
+        private void SubmitShopTransitionVoteClientRpc(ClientRpcParams clientRpcParams = default)
+        {
+            StartCoroutine(SubmitShopTransitionVoteWhenReady());
+        }
+
+        private IEnumerator SubmitShopTransitionVoteWhenReady()
+        {
+            var deadline = Time.realtimeSinceStartup + 5f;
+            while (Time.realtimeSinceStartup < deadline)
+            {
+                var voteCoordinator = NetworkShopTransitionVoteCoordinator.Instance;
+                if (voteCoordinator != null && voteCoordinator.IsVoteActive)
+                {
+                    voteCoordinator.SubmitLocalVote(true);
+                    Debug.Log(
+                        $"PHS_P0_SHOP_VOTE_CLIENT_OK client={NetworkManager.LocalClientId}",
+                        this);
+                    yield break;
+                }
+
+                yield return null;
+            }
+
+            Debug.LogError(
+                $"PHS_P0_SHOP_VOTE_CLIENT_FAILED reason=vote_not_active client={NetworkManager.LocalClientId}",
+                this);
+        }
+
+        private void RequestRemoteShopTransitionVotes()
+        {
+            var remoteClientIds = NetworkManager.ConnectedClientsIds
+                .Where(clientId => clientId != NetworkManager.ServerClientId)
+                .ToArray();
+            if (remoteClientIds.Length == 0)
+            {
+                return;
+            }
+
+            SubmitShopTransitionVoteClientRpc(
+                new ClientRpcParams
+                {
+                    Send = new ClientRpcSendParams { TargetClientIds = remoteClientIds }
+                });
+        }
+
+        [ClientRpc]
+        private void ProbeOxygenHealthClientRpc(
+            uint token,
+            ulong playerNetworkObjectId)
+        {
+            if (!IsScenarioEnabled()) return;
+
+            var health = -1;
+            var spawnManager = NetworkManager == null
+                ? null
+                : NetworkManager.SpawnManager;
+            if (spawnManager != null
+                && spawnManager.SpawnedObjects.TryGetValue(
+                    playerNetworkObjectId,
+                    out var playerObject)
+                && playerObject.GetComponent<NetworkPlayerLifeState>() is { } lifeState)
+            {
+                health = lifeState.CurrentHealth;
+            }
+
+            ReportOxygenHealthServerRpc(token, health);
+        }
+
+        [ServerRpc(RequireOwnership = false)]
+        private void ReportOxygenHealthServerRpc(
+            uint token,
+            int health,
+            ServerRpcParams rpcParams = default)
+        {
+            if (!AcceptProbe(token)) return;
+            oxygenHealthReports[rpcParams.Receive.SenderClientId] = health;
+        }
+
+        [ClientRpc]
         private void ProbeEventSnapshotClientRpc(uint token, EventId eventId, ulong instanceId)
         {
             if (!IsScenarioEnabled()) return;
@@ -4353,6 +5198,41 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Validation
         }
 
         [ClientRpc]
+        private void ProbeRemoteItemPositionClientRpc(
+            uint token,
+            ClientRpcParams clientRpcParams = default)
+        {
+            if (!IsScenarioEnabled()) return;
+
+            var localLifecycle = FindObjectsByType<NetworkPlayerItemLifecycle>(
+                    FindObjectsInactive.Include,
+                    FindObjectsSortMode.None)
+                .FirstOrDefault(lifecycle => lifecycle.IsSpawned && lifecycle.IsOwner);
+            ReportRemoteItemPositionServerRpc(
+                token,
+                localLifecycle != null,
+                localLifecycle == null ? default : localLifecycle.transform.position);
+        }
+
+        [ServerRpc(RequireOwnership = false)]
+        private void ReportRemoteItemPositionServerRpc(
+            uint token,
+            bool found,
+            Vector3 position,
+            ServerRpcParams rpcParams = default)
+        {
+            if (!AcceptProbe(token)
+                || rpcParams.Receive.SenderClientId != activeRemoteItemClientId
+                || !found)
+            {
+                return;
+            }
+
+            remoteItemPosition = position;
+            remoteItemPositionReported = true;
+        }
+
+        [ClientRpc]
         private void RequestRemoteItemPickupClientRpc(
             uint token,
             ulong targetNetworkObjectId,
@@ -4415,21 +5295,24 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Validation
             uint token,
             ulong ownerClientId,
             ulong despawnedNetworkObjectId,
-            string expectedItemId)
+            string expectedItemId,
+            int expectedDurability)
         {
             if (!IsScenarioEnabled()) return;
             StartCoroutine(ProbeRemoteHeldItemWhenReady(
                 token,
                 ownerClientId,
                 despawnedNetworkObjectId,
-                expectedItemId));
+                expectedItemId,
+                expectedDurability));
         }
 
         private IEnumerator ProbeRemoteHeldItemWhenReady(
             uint token,
             ulong ownerClientId,
             ulong despawnedNetworkObjectId,
-            string expectedItemId)
+            string expectedItemId,
+            int expectedDurability)
         {
             var deadline = Time.realtimeSinceStartup + 5f;
             while (Time.realtimeSinceStartup < deadline)
@@ -4461,6 +5344,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Validation
                         itemRecord.HeldItemId,
                         expectedItemId,
                         StringComparison.Ordinal)
+                    && itemRecord.CurrentDurability == expectedDurability
                     && holder != null
                     && holder.CurrentItemPrefabData != null
                     && string.Equals(
@@ -4489,6 +5373,78 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Validation
         {
             if (!AcceptProbe(token)) return;
             remoteHeldItemReports[rpcParams.Receive.SenderClientId] = valid;
+        }
+
+        [ClientRpc]
+        private void RequestRemoteItemPrimaryUseClientRpc(
+            uint token,
+            string expectedItemId,
+            ClientRpcParams clientRpcParams = default)
+        {
+            if (!IsScenarioEnabled()) return;
+
+            var localCombatController = FindObjectsByType<NetworkPlayerCombatController>(
+                    FindObjectsInactive.Include,
+                    FindObjectsSortMode.None)
+                .FirstOrDefault(controller => controller.IsSpawned && controller.IsOwner);
+            var holder = localCombatController == null
+                ? null
+                : localCombatController.GetComponent<TempPlayerItemHolder>();
+            var issued = localCombatController != null
+                && holder != null
+                && holder.IsHoldingItem(expectedItemId);
+            if (issued)
+            {
+                switch (expectedItemId)
+                {
+                    case "wrench":
+                        localCombatController.RequestWrenchAttack();
+                        break;
+                    case "fire_extinguisher":
+                        localCombatController.RequestExtinguisherSpray();
+                        break;
+                    case "battery_pack":
+                        var heldItemComponent =
+                            ((LastJumpCrew.Common.IItemHolder)holder).CurrentItem
+                            as Component;
+                        var batteryUse = heldItemComponent == null
+                            ? null
+                            : heldItemComponent
+                                .GetComponents<MonoBehaviour>()
+                                .OfType<IUsableItem>()
+                                .FirstOrDefault();
+                        if (batteryUse == null
+                            || !batteryUse.CanUse(holder, null))
+                        {
+                            issued = false;
+                            break;
+                        }
+
+                        batteryUse.Use(holder, null);
+                        break;
+                    default:
+                        issued = false;
+                        break;
+                }
+            }
+
+            ReportRemoteItemPrimaryUseRequestServerRpc(token, issued);
+        }
+
+        [ServerRpc(RequireOwnership = false)]
+        private void ReportRemoteItemPrimaryUseRequestServerRpc(
+            uint token,
+            bool issued,
+            ServerRpcParams rpcParams = default)
+        {
+            if (!AcceptProbe(token)
+                || rpcParams.Receive.SenderClientId != activeRemoteItemClientId)
+            {
+                return;
+            }
+
+            remotePrimaryUseRequestReported = true;
+            remotePrimaryUseRequestIssued = issued;
         }
 
         [ClientRpc]
@@ -4538,21 +5494,27 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Validation
             uint token,
             ulong ownerClientId,
             ulong networkObjectId,
-            string expectedItemId)
+            string expectedItemId,
+            bool expectsDurability,
+            int expectedDurability)
         {
             if (!IsScenarioEnabled()) return;
             StartCoroutine(ProbeRemoteThrownItemWhenReady(
                 token,
                 ownerClientId,
                 networkObjectId,
-                expectedItemId));
+                expectedItemId,
+                expectsDurability,
+                expectedDurability));
         }
 
         private IEnumerator ProbeRemoteThrownItemWhenReady(
             uint token,
             ulong ownerClientId,
             ulong networkObjectId,
-            string expectedItemId)
+            string expectedItemId,
+            bool expectsDurability,
+            int expectedDurability)
         {
             var deadline = Time.realtimeSinceStartup + 5f;
             while (Time.realtimeSinceStartup < deadline)
@@ -4574,6 +5536,15 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Validation
                                 itemObject.ItemPrefabData.ItemId,
                                 expectedItemId,
                                 StringComparison.Ordinal));
+                var durabilityState = NetworkManager == null
+                    || !NetworkManager.SpawnManager.SpawnedObjects.TryGetValue(
+                        networkObjectId,
+                        out var durabilityNetworkObject)
+                    ? null
+                    : durabilityNetworkObject.GetComponent<NetworkUtilityItemDurabilityState>();
+                var durabilityValid = !expectsDurability
+                    || durabilityState != null
+                    && durabilityState.CurrentDurability == expectedDurability;
                 var valid = NetworkManager != null
                     && NetworkManager.SpawnManager.SpawnedObjects.TryGetValue(
                         networkObjectId,
@@ -4586,6 +5557,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Validation
                         itemObject.ItemPrefabData.ItemId,
                         expectedItemId,
                         StringComparison.Ordinal)
+                    && durabilityValid
                     && networkObject.GetComponent<Rigidbody>() != null
                     && networkObject.GetComponent<Unity.Netcode.Components.NetworkTransform>() != null
                     && networkObject.GetComponent<ThrownItemImpact>() != null
@@ -4842,6 +5814,10 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Validation
                     FindObjectsSortMode.None)
                 .FirstOrDefault(record => record.IsSpawned
                     && record.OwnerClientId == NetworkManager.ServerClientId);
+            var lighting = FindObjectsByType<PHSShipPowerFailureLighting>(
+                    FindObjectsInactive.Include,
+                    FindObjectsSortMode.None)
+                .FirstOrDefault(controller => controller.isActiveAndEnabled);
             ReportShipPowerStateServerRpc(
                 token,
                 shipState != null && shipState.IsSpawned,
@@ -4851,7 +5827,11 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Validation
                 shipState == null ? uint.MaxValue : shipState.Revision,
                 hostRecord == null ? uint.MaxValue : hostRecord.Revision,
                 hostRecord == null ? "record_missing" : hostRecord.HeldItemId,
-                eventCoordinator != null && eventCoordinator.IsEventActive(EventId.PowerOff));
+                eventCoordinator != null && eventCoordinator.IsEventActive(EventId.PowerOff),
+                lighting != null,
+                lighting != null && lighting.IsBlackoutApplied,
+                lighting != null && lighting.IsEmergencyLightingActive,
+                lighting == null ? -1f : lighting.CurrentAmbientIntensityRatio);
         }
 
         [ServerRpc(RequireOwnership = false)]
@@ -4865,6 +5845,10 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Validation
             uint itemRevision,
             string heldItemId,
             bool powerOffActive,
+            bool lightingFound,
+            bool blackoutApplied,
+            bool emergencyLightingActive,
+            float ambientIntensityRatio,
             ServerRpcParams rpcParams = default)
         {
             if (!AcceptProbe(token)) return;
@@ -4876,7 +5860,11 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Validation
                 shipRevision,
                 itemRevision,
                 heldItemId,
-                powerOffActive);
+                powerOffActive,
+                lightingFound,
+                blackoutApplied,
+                emergencyLightingActive,
+                ambientIntensityRatio);
         }
 
         [ServerRpc(RequireOwnership = false)]
@@ -5131,6 +6119,13 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Validation
             return IsServer && scenarioRunning && !scenarioFinished && token == activeProbeToken;
         }
 
+        private uint NextEventRepairRequestSequence()
+        {
+            eventRepairRequestSequence =
+                NextNonZeroSequence(eventRepairRequestSequence);
+            return eventRepairRequestSequence;
+        }
+
         private static uint NextNonZeroSequence(uint sequence)
         {
             sequence++;
@@ -5181,7 +6176,9 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Validation
 
         private static bool IsScenarioEnabled()
         {
-            return Debug.isDebugBuild && HasCommandLineFlag(ScenarioFlag);
+            return Debug.isDebugBuild
+                && (HasCommandLineFlag(ScenarioFlag)
+                    || HasCommandLineFlag(ItemScenarioFlag));
         }
 
         private static bool HasCommandLineFlag(string flag)

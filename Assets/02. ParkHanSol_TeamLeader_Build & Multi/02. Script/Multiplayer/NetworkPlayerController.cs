@@ -1,6 +1,6 @@
 using Unity.Netcode;
+using Unity.Netcode.Components;
 using UnityEngine;
-using UnityEngine.InputSystem;
 using UnityEngine.SceneManagement;
 using LastJumpCrew.ParkHanSol.Shop;
 using LastJumpCrew.Common;
@@ -8,6 +8,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using LastJumpCrew.ParkHanSol.Interaction;
+using LastJumpCrew.ParkHanSol.Multiplayer.Input;
 
 namespace LastJumpCrew.ParkHanSol.Multiplayer
 {
@@ -51,6 +52,8 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
         [SerializeField, Min(0.1f)] private float thrusterAudioAttackSpeed = 12f;
         [SerializeField, Min(0.1f)] private float thrusterAudioReleaseSpeed = 2.5f;
         [SerializeField] private ParkHanSolPlayHudMockPresenter playHudPresenter;
+        [Header("Input")]
+        [SerializeField] private PlayerControlInput playerControlInput;
         public const string MouseSensitivityPreferenceKey = "PHS_MouseSensitivity";
         public const float DefaultMouseSensitivity = 0.6f;
         public const float MinimumMouseSensitivity = 0.05f;
@@ -64,6 +67,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
 
         private CharacterController characterController;
         private NetworkPlayerGrappleController grappleController;
+        private NetworkPlayerUpgradeState upgradeState;
         private NetworkPlayerLifeState playerLifeState;
         private Rigidbody attachedRigidbody;
         private IDebrisHolder debrisHolder;
@@ -100,6 +104,9 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
         private float hudBindingErrorLogTime;
         private GameplaySceneContext gameplaySceneContext;
         private ulong initializedGameplaySceneHandle = ulong.MaxValue;
+        private uint gameplaySpawnRequestToken;
+        private uint pendingGameplaySpawnAckToken;
+        private ulong pendingGameplaySpawnSceneHandle = ulong.MaxValue;
 
         public bool IsGrounded { get; private set; }
         public bool HasMoveInput { get; private set; }
@@ -107,7 +114,9 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
         public Vector3 PlanarVelocity { get; private set; }
         public float VerticalVelocity => verticalVelocity;
         public NetworkPlayerGravityMode GravityMode => gravityMode;
-        public float ThrusterFuelNormalized => Mathf.Clamp01(GetThrusterFuel() / thrusterFuelCapacity);
+        public float EffectiveThrusterFuelCapacity =>
+            thrusterFuelCapacity + upgradeState.ThrusterCapacityBonus;
+        public float ThrusterFuelNormalized => Mathf.Clamp01(GetThrusterFuel() / EffectiveThrusterFuelCapacity);
         public float SpaceMass => Mathf.Max(
             0.1f,
             spaceMass + (debrisHolder == null ? 0f : debrisHolder.HeldDebrisMass * heldDebrisMassInfluence));
@@ -298,7 +307,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
                 return;
             }
 
-            var matchingPortal = false;
+            NetworkScenePortalInteractable matchingPortal = null;
             foreach (var portal in UnityEngine.Object.FindObjectsByType<NetworkScenePortalInteractable>(
                          UnityEngine.FindObjectsInactive.Exclude,
                          UnityEngine.FindObjectsSortMode.None))
@@ -308,47 +317,54 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
                         destinationSceneName,
                         shopTransitionMode))
                 {
-                    matchingPortal = true;
+                    matchingPortal = portal;
                     break;
                 }
             }
 
-            if (!matchingPortal)
+            if (matchingPortal == null)
             {
                 Debug.LogWarning(
                     $"PHS_NETWORK_PORTAL_FAILED reason=portal_missing_or_out_of_range clientId={activatorClientId} scene={destinationSceneName} mode={shopTransitionMode}");
                 return;
             }
 
-            if (shopTransitionMode != ShopSceneTransitionMode.None)
+            if (!matchingPortal.RequiresPartyVote)
             {
-                var runFlowAdapter = UnityEngine.Object.FindAnyObjectByType<ShopRunFlowAdapter>(
-                    UnityEngine.FindObjectsInactive.Include);
-                IShopRunFlowService runFlow = runFlowAdapter;
-                if (runFlow == null || !runFlow.IsReady)
+                var directCoordinator = NetworkShopTransitionVoteCoordinator.Instance;
+                var directReason = "vote_coordinator_missing";
+                if (directCoordinator == null
+                    || !directCoordinator.TryExecuteImmediate(
+                        destinationSceneName,
+                        shopTransitionMode,
+                        out directReason))
                 {
-                    Debug.LogError($"PHS_NETWORK_PORTAL_FAILED reason=run_flow_missing scene={destinationSceneName}");
-                    return;
+                    Debug.LogError(
+                        $"PHS_NETWORK_PORTAL_FAILED reason={directReason} portal={matchingPortal.name} scene={destinationSceneName}");
                 }
 
-                var allowed = shopTransitionMode == ShopSceneTransitionMode.CompleteShop
-                    ? runFlow.TryCompleteShop(out var reason)
-                    : runFlow.CanEnterShop(out reason);
-                if (!allowed)
-                {
-                    Debug.LogWarning($"PHS_NETWORK_PORTAL_FAILED reason={reason} scene={destinationSceneName} mode={shopTransitionMode}");
-                    return;
-                }
-            }
-
-            if (!Application.CanStreamedLevelBeLoaded(destinationSceneName))
-            {
-                Debug.LogError($"PHS_NETWORK_PORTAL_FAILED reason=scene_not_in_build scene={destinationSceneName}");
                 return;
             }
 
-            networkManager.SceneManager.LoadScene(destinationSceneName, LoadSceneMode.Single);
-            Debug.Log($"PHS_NETWORK_PORTAL_LOAD scene={destinationSceneName}");
+            var voteCoordinator = NetworkShopTransitionVoteCoordinator.Instance;
+            if (voteCoordinator == null)
+            {
+                Debug.LogError(
+                    $"PHS_NETWORK_PORTAL_FAILED reason=vote_coordinator_missing scene={destinationSceneName}");
+                return;
+            }
+
+            var isShopExit = SceneManager.GetActiveScene().name == "PHS_ExteriorShopScene";
+            if (!voteCoordinator.TryStartVote(
+                    activatorClientId,
+                    destinationSceneName,
+                    shopTransitionMode,
+                    isShopExit,
+                    out var reason))
+            {
+                Debug.LogWarning(
+                    $"PHS_NETWORK_PORTAL_FAILED reason={reason} scene={destinationSceneName} mode={shopTransitionMode}");
+            }
         }
 
         public void RequestWarpActivation()
@@ -376,7 +392,31 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
                 return false;
             }
 
-            TeleportTo(targetPosition, targetRotation);
+            var networkTransform = GetComponent<NetworkTransform>();
+            if (networkTransform == null)
+            {
+                Debug.LogError($"PHS_WARP_TELEPORT_FAILED reason=network_transform_missing player={name}", this);
+                return false;
+            }
+
+            ResetGravityTracking();
+            var wasEnabled = characterController != null && characterController.enabled;
+            if (characterController != null)
+            {
+                characterController.enabled = false;
+            }
+
+            networkTransform.Teleport(targetPosition, targetRotation, transform.localScale);
+            PlanarVelocity = Vector3.zero;
+            verticalVelocity = 0f;
+            zeroGravityVelocity = Vector3.zero;
+
+            if (characterController != null)
+            {
+                characterController.enabled = wasEnabled;
+            }
+
+            Debug.Log($"PHS_WARP_TELEPORT_OK player={name} pos={targetPosition}", this);
             return true;
         }
 
@@ -462,11 +502,12 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
         {
             characterController = GetComponent<CharacterController>();
             grappleController = GetComponent<NetworkPlayerGrappleController>();
+            upgradeState = GetComponent<NetworkPlayerUpgradeState>();
             playerLifeState = GetComponent<NetworkPlayerLifeState>();
             ConfigureNetworkRigidbody(true);
             if (IsServer)
             {
-                thrusterFuel.Value = thrusterFuelCapacity;
+                thrusterFuel.Value = EffectiveThrusterFuelCapacity;
             }
 
             RefreshForActiveScene();
@@ -475,6 +516,8 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
         public override void OnNetworkDespawn()
         {
             initializedGameplaySceneHandle = ulong.MaxValue;
+            pendingGameplaySpawnAckToken = 0U;
+            pendingGameplaySpawnSceneHandle = ulong.MaxValue;
             ConfigureNetworkRigidbody(false);
         }
 
@@ -482,9 +525,15 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
         {
             characterController = GetComponent<CharacterController>();
             grappleController = GetComponent<NetworkPlayerGrappleController>();
+            upgradeState = GetComponent<NetworkPlayerUpgradeState>();
             playerLifeState = GetComponent<NetworkPlayerLifeState>();
             attachedRigidbody = GetComponent<Rigidbody>();
             debrisHolder = GetComponent<IDebrisHolder>();
+            if (playerControlInput == null)
+            {
+                Debug.LogError($"PHS_PLAYER_INPUT_SETUP_FAILED reason=control_input_reference_missing player={name}", this);
+            }
+
             if (debrisHolder == null)
             {
                 Debug.LogError($"PHS_PLAYER_MASS_SETUP_FAILED reason=debris_holder_missing player={name}");
@@ -496,7 +545,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
             }
 
             ConfigureNetworkRigidbody(true);
-            standaloneThrusterFuel = thrusterFuelCapacity;
+            standaloneThrusterFuel = EffectiveThrusterFuelCapacity;
             targetYaw = transform.eulerAngles.y;
             currentCameraPitch = cameraPitch;
             CacheLocalOwnerHiddenRenderers();
@@ -531,11 +580,13 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
 
             var verticalMove = ReadVerticalMove();
             var look = ReadLook();
-            var spacebarPressedThisFrame = Keyboard.current != null
-                && Keyboard.current.spaceKey.wasPressedThisFrame;
-            var jump = spacebarPressedThisFrame;
-            var shiftPressed = Keyboard.current != null
-                && Keyboard.current.leftShiftKey.isPressed;
+            if (playerControlInput == null)
+            {
+                return;
+            }
+
+            var jump = playerControlInput.JumpPressedThisFrame;
+            var shiftPressed = playerControlInput.SprintPressed;
             var ascend = gravityMode != NetworkPlayerGravityMode.ShipGravity
                 && shiftPressed;
             var thrusterFeedback = gravityMode != NetworkPlayerGravityMode.ShipGravity
@@ -663,7 +714,22 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
             {
                 ReleaseWarpInputForShop();
                 hudBindingErrorLogTime = Time.time + 0.5f;
-                MoveToGameplaySpawnPointIfServer(activeScene);
+                if (IsServer && IsOwner)
+                {
+                    MoveToGameplaySpawnPointIfServer(activeScene);
+                }
+                else if (IsOwner)
+                {
+                    gameplaySpawnRequestToken++;
+                    if (gameplaySpawnRequestToken == 0U)
+                    {
+                        gameplaySpawnRequestToken = 1U;
+                    }
+
+                    RequestGameplaySpawnPointServerRpc(
+                        activeScene.name,
+                        gameplaySpawnRequestToken);
+                }
             }
 
             if (gameplayInputEnabled && autoMoveEnabled && !autoMoveStarted)
@@ -965,13 +1031,14 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
         private void RecoverThrusterFuel(float deltaTime)
         {
             var fuel = GetThrusterFuel();
-            if (Time.time - lastThrusterUseTime < thrusterFuelRecoveryDelay || fuel >= thrusterFuelCapacity)
+            var capacity = EffectiveThrusterFuelCapacity;
+            if (Time.time - lastThrusterUseTime < thrusterFuelRecoveryDelay || fuel >= capacity)
             {
                 return;
             }
 
             SetThrusterFuel(Mathf.Min(
-                thrusterFuelCapacity,
+                capacity,
                 fuel + thrusterFuelRecoveryPerSecond * deltaTime));
         }
 
@@ -982,7 +1049,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
 
         private void SetThrusterFuel(float value)
         {
-            var clampedValue = Mathf.Clamp(value, 0f, thrusterFuelCapacity);
+            var clampedValue = Mathf.Clamp(value, 0f, EffectiveThrusterFuelCapacity);
             if (IsSpawned)
             {
                 if (IsServer)
@@ -1010,8 +1077,31 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
             }
 
             var currentFuel = Mathf.RoundToInt(GetThrusterFuel());
-            var maxFuel = Mathf.RoundToInt(thrusterFuelCapacity);
+            var maxFuel = Mathf.RoundToInt(EffectiveThrusterFuelCapacity);
             playHudPresenter.SetThrusterFuel(currentFuel, maxFuel);
+        }
+
+        public bool TryRestoreThrusterFuelForUpgrade(float amount, out string reason)
+        {
+            if (!IsSpawned || !IsServer)
+            {
+                reason = "server_required";
+                return false;
+            }
+
+            if (amount <= 0f)
+            {
+                reason = "positive_amount_required";
+                return false;
+            }
+
+            var capacityAfterUpgrade = EffectiveThrusterFuelCapacity + amount;
+            thrusterFuel.Value = Mathf.Clamp(
+                GetThrusterFuel() + amount,
+                0f,
+                capacityAfterUpgrade);
+            reason = null;
+            return true;
         }
 
         private void ApplyGravityAreaMode()
@@ -1084,18 +1174,25 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
             attachedRigidbody.isKinematic = isNetworkSpawned ? true : originalRigidbodyIsKinematic;
         }
 
-        private void MoveToGameplaySpawnPointIfServer(Scene activeScene)
+        private bool MoveToGameplaySpawnPointIfServer(Scene activeScene, bool force = false)
         {
             if (!IsSpawned || !IsServer || gameplaySceneContext == null
-                || initializedGameplaySceneHandle == activeScene.handle.GetRawData())
+                || (!force && initializedGameplaySceneHandle == activeScene.handle.GetRawData()))
             {
-                return;
+                return false;
             }
 
             if (!gameplaySceneContext.TryGetSpawnPoint(OwnerClientId, out var spawnPoint))
             {
                 Debug.LogWarning($"PHS_SPAWN_POINT_MISSING scene={SceneManager.GetActiveScene().name}");
-                return;
+                return false;
+            }
+
+            var networkTransform = GetComponent<NetworkTransform>();
+            if (networkTransform == null)
+            {
+                Debug.LogError($"PHS_SPAWN_POINT_FAILED reason=network_transform_missing player={name}", this);
+                return false;
             }
 
             var wasEnabled = characterController != null && characterController.enabled;
@@ -1104,7 +1201,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
                 characterController.enabled = false;
             }
 
-            transform.SetPositionAndRotation(spawnPoint.position, spawnPoint.rotation);
+            networkTransform.Teleport(spawnPoint.position, spawnPoint.rotation, transform.localScale);
             verticalVelocity = 0f;
             initializedGameplaySceneHandle = activeScene.handle.GetRawData();
 
@@ -1114,6 +1211,141 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
             }
 
             Debug.Log($"PHS_PLAYER_SPAWN_POINT ownerClientId={OwnerClientId} pos={transform.position}");
+            return true;
+        }
+
+        [ServerRpc]
+        private void RequestGameplaySpawnPointServerRpc(
+            string sceneName,
+            uint requestToken,
+            ServerRpcParams rpcParams = default)
+        {
+            if (rpcParams.Receive.SenderClientId != OwnerClientId)
+            {
+                Debug.LogError($"PHS_SPAWN_POINT_FAILED reason=owner_mismatch player={name}", this);
+                return;
+            }
+
+            var activeScene = SceneManager.GetActiveScene();
+            if (!string.Equals(activeScene.name, sceneName, StringComparison.Ordinal))
+            {
+                Debug.LogError(
+                    $"PHS_SPAWN_POINT_FAILED reason=scene_mismatch requested={sceneName} active={activeScene.name}",
+                    this);
+                return;
+            }
+
+            gameplaySceneContext = GameplaySceneContext.FindForScene(activeScene);
+            if (gameplaySceneContext == null || !gameplaySceneContext.IsGameplayScene)
+            {
+                Debug.LogError(
+                    $"PHS_SPAWN_POINT_FAILED reason=gameplay_context_missing scene={activeScene.name}",
+                    this);
+                return;
+            }
+
+            if (initializedGameplaySceneHandle == activeScene.handle.GetRawData())
+            {
+                return;
+            }
+
+            if (!MoveToGameplaySpawnPointIfServer(activeScene))
+            {
+                return;
+            }
+
+            pendingGameplaySpawnAckToken = requestToken;
+            pendingGameplaySpawnSceneHandle = activeScene.handle.GetRawData();
+
+            ApplyGameplaySpawnPointClientRpc(
+                activeScene.name,
+                requestToken,
+                transform.position,
+                transform.rotation,
+                new ClientRpcParams
+                {
+                    Send = new ClientRpcSendParams
+                    {
+                        TargetClientIds = new[] { OwnerClientId }
+                    }
+                });
+        }
+
+        [ClientRpc]
+        private void ApplyGameplaySpawnPointClientRpc(
+            string sceneName,
+            uint requestToken,
+            Vector3 position,
+            Quaternion rotation,
+            ClientRpcParams clientRpcParams = default)
+        {
+            if (!IsOwner)
+            {
+                return;
+            }
+
+            var activeScene = SceneManager.GetActiveScene();
+            if (!string.Equals(activeScene.name, sceneName, StringComparison.Ordinal))
+            {
+                Debug.LogError(
+                    $"PHS_SPAWN_POINT_FAILED reason=client_scene_mismatch requested={sceneName} active={activeScene.name}",
+                    this);
+                return;
+            }
+
+            TeleportTo(position, rotation);
+            ConfirmGameplaySpawnPointServerRpc(sceneName, requestToken);
+            Debug.Log($"PHS_PLAYER_SPAWN_POINT_CLIENT ownerClientId={OwnerClientId} pos={transform.position}", this);
+        }
+
+        [ServerRpc]
+        private void ConfirmGameplaySpawnPointServerRpc(
+            string sceneName,
+            uint requestToken,
+            ServerRpcParams rpcParams = default)
+        {
+            if (rpcParams.Receive.SenderClientId != OwnerClientId)
+            {
+                Debug.LogError($"PHS_SPAWN_POINT_CONFIRM_FAILED reason=owner_mismatch player={name}", this);
+                return;
+            }
+
+            var activeScene = SceneManager.GetActiveScene();
+            var activeSceneHandle = activeScene.handle.GetRawData();
+            if (!string.Equals(activeScene.name, sceneName, StringComparison.Ordinal)
+                || requestToken == 0U
+                || requestToken != pendingGameplaySpawnAckToken
+                || activeSceneHandle != pendingGameplaySpawnSceneHandle)
+            {
+                Debug.LogError(
+                    $"PHS_SPAWN_POINT_CONFIRM_FAILED reason=stale_ack requested={sceneName}:{requestToken} " +
+                    $"active={activeScene.name}:{activeSceneHandle} " +
+                    $"pending={pendingGameplaySpawnSceneHandle}:{pendingGameplaySpawnAckToken}",
+                    this);
+                return;
+            }
+
+            gameplaySceneContext = GameplaySceneContext.FindForScene(activeScene);
+            if (gameplaySceneContext == null || !gameplaySceneContext.IsGameplayScene)
+            {
+                Debug.LogError(
+                    $"PHS_SPAWN_POINT_CONFIRM_FAILED reason=gameplay_context_missing scene={activeScene.name}",
+                    this);
+                return;
+            }
+
+            if (!MoveToGameplaySpawnPointIfServer(activeScene, true))
+            {
+                Debug.LogError($"PHS_SPAWN_POINT_CONFIRM_FAILED reason=teleport_failed scene={activeScene.name}", this);
+                return;
+            }
+
+            pendingGameplaySpawnAckToken = 0U;
+            pendingGameplaySpawnSceneHandle = ulong.MaxValue;
+            Debug.Log(
+                $"PHS_PLAYER_SPAWN_POINT_CONFIRMED ownerClientId={OwnerClientId} " +
+                $"scene={activeScene.name} pos={transform.position}",
+                this);
         }
 
         private void TeleportTo(Vector3 targetPosition, Quaternion targetRotation)
@@ -1274,19 +1506,11 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
             }
         }
 
-        private static Vector2 ReadMove()
+        private Vector2 ReadMove()
         {
-            if (Keyboard.current == null)
-            {
-                return Vector2.zero;
-            }
-
-            var move = Vector2.zero;
-            if (Keyboard.current.aKey.isPressed) move.x -= 1f;
-            if (Keyboard.current.dKey.isPressed) move.x += 1f;
-            if (Keyboard.current.sKey.isPressed) move.y -= 1f;
-            if (Keyboard.current.wKey.isPressed) move.y += 1f;
-            return Vector2.ClampMagnitude(move, 1f);
+            return playerControlInput == null
+                ? Vector2.zero
+                : Vector2.ClampMagnitude(playerControlInput.Move, 1f);
         }
 
         private bool CanProcessLocalInput()
@@ -1303,26 +1527,21 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
                 && !warpInputBlocked;
         }
 
-        private static float ReadVerticalMove()
+        private float ReadVerticalMove()
         {
-            if (Keyboard.current == null)
-            {
-                return 0f;
-            }
-
-            var verticalMove = 0f;
-            if (Keyboard.current.leftCtrlKey.isPressed) verticalMove -= 1f;
-            return Mathf.Clamp(verticalMove, -1f, 1f);
+            return playerControlInput == null
+                ? 0f
+                : Mathf.Clamp(playerControlInput.Descend, -1f, 1f);
         }
 
         private Vector2 ReadLook()
         {
-            if (Mouse.current == null)
+            if (playerControlInput == null)
             {
                 return Vector2.zero;
             }
 
-            var look = Mouse.current.delta.ReadValue();
+            var look = playerControlInput.Look;
             var degreesPerCount = Mathf.Max(0.0001f, GetMouseLookDegrees());
             var maximumCountsPerFrame = 6f / degreesPerCount;
             return new Vector2(

@@ -35,7 +35,6 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Incidents.Fire
         [SerializeField] private LayerMask damageableLayers = ~0;
 
         [Header("Suppression And Presentation")]
-        [SerializeField] private ushort suppressionHeatPerHit = 35;
         [SerializeField, Min(0.1f)]
         private float containmentGraceSeconds = 2.5f;
         [SerializeField] private GameObject patchPresentationPrefab;
@@ -61,7 +60,6 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Incidents.Fire
         public float BaseSpreadChance => baseSpreadChance;
         public float DamageTickSeconds => damageTickSeconds;
         public int BaseDamagePerTick => baseDamagePerTick;
-        public ushort SuppressionHeatPerHit => suppressionHeatPerHit;
         public float ContainmentGraceSeconds =>
             containmentGraceSeconds;
         public LayerMask DamageableLayers => damageableLayers;
@@ -281,15 +279,6 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Incidents.Fire
             if (damageableLayers.value == 0)
             {
                 reason = "damageable_layers_empty";
-                return false;
-            }
-
-            if (suppressionHeatPerHit == 0
-                || suppressionHeatPerHit > maximumHeat)
-            {
-                reason =
-                    $"suppression_heat_per_hit_invalid:" +
-                    $"{suppressionHeatPerHit}";
                 return false;
             }
 
