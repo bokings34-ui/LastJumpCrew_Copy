@@ -10,8 +10,8 @@ namespace SM
         {
             if (Keyboard.current == null) return;
 
-            // [ Y ] 키 → EventScheduler 시작
-            if (Keyboard.current.yKey.wasPressedThisFrame)
+            // [ Q ] 키 → EventScheduler 시작
+            if (Keyboard.current.qKey.wasPressedThisFrame)
             {
                 ZoneEventScheduler.Instance.SetCurrentZone(ZoneType.PatrolZone);
                 EventScheduler.Instance.StartScheduler();
@@ -36,8 +36,8 @@ namespace SM
                 Debug.Log("E → EnemySpawn 수동 발생");
             }
 
-            // [ T ] 키 → OxygenLeak 수동 발생
-            if (Keyboard.current.tKey.wasPressedThisFrame)
+            // [ r ] 키 → OxygenLeak 수동 발생
+            if (Keyboard.current.rKey.wasPressedThisFrame)
             {
                 var room = RoomRegistry.Instance.GetRandomRoom();
                 EventManager.Instance.SpawnEvent(EventId.OxygenLeak, room);
