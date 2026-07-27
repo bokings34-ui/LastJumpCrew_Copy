@@ -1,7 +1,6 @@
 using DG.Tweening;
 using TMPro;
 using UnityEngine;
-using UnityEngine.SceneManagement;
 using UnityEngine.Serialization;
 
 namespace LastJumpCrew.ParkHanSol.Multiplayer
@@ -15,8 +14,11 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
         [FormerlySerializedAs("quotaMotion")]
         [SerializeField] private ParkHanSolHudTextMotion warpMotion;
         [SerializeField] private ParkHanSolHudTextMotion shipHpMotion;
+        [SerializeField] private ParkHanSolHudGaugeMotion warpGaugeMotion;
+        [SerializeField] private ParkHanSolHudGaugeMotion shipHpGaugeMotion;
         [SerializeField] private ParkHanSolHudTimerMotion timerMotion;
         [SerializeField] private GameObject boostGaugeRoot;
+        [SerializeField] private GameObject economyRoot;
 
         [Header("Held Item")]
         [SerializeField] private RectTransform heldItemRoot;
@@ -41,9 +43,6 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
         [SerializeField, Min(0.01f)] private float showDuration = 0.16f;
         [SerializeField, Min(0.01f)] private float hideDuration = 0.12f;
         [SerializeField, Min(1f)] private float timeLimitTotalSeconds = 300f;
-        [SerializeField, Min(0.1f)] private float economyChangeVisibleSeconds = 2.5f;
-
-        private const string ShopSceneName = "PHS_ExteriorShopScene";
 
         private int previousHealth;
         private int previousBoost;
@@ -61,8 +60,6 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
         private bool isGravityWarningVisible;
         private bool isHazardWarningVisible;
         private bool isWarningPanelVisible;
-        private bool isEconomyVisible;
-        private float economyVisibleUntil;
         private string defaultGravityWarningText;
         private Vector2 interactionPromptShownPosition;
         private Vector2 gravityWarningShownPosition;
@@ -95,21 +92,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
 
         private void OnEnable()
         {
-            SceneManager.activeSceneChanged += HandleActiveSceneChanged;
-            RefreshEconomyVisibility();
-        }
-
-        private void OnDisable()
-        {
-            SceneManager.activeSceneChanged -= HandleActiveSceneChanged;
-        }
-
-        private void Update()
-        {
-            if (!IsShopScene() && isEconomyVisible && Time.unscaledTime >= economyVisibleUntil)
-            {
-                SetEconomyVisible(false);
-            }
+            SetEconomyVisible(true);
         }
 
         public void SetVitals(int health, int maxHealth, int stamina, int maxStamina)
@@ -134,15 +117,15 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
             previousBoost = currentFuel;
             hasBoost = true;
 
-            var shouldShow = currentFuel < safeMaxFuel;
+            var shouldShowGauge = currentFuel < safeMaxFuel;
             if (boostMotion != null)
             {
-                boostMotion.gameObject.SetActive(shouldShow);
+                boostMotion.gameObject.SetActive(true);
             }
 
             if (boostGaugeRoot != null)
             {
-                boostGaugeRoot.SetActive(shouldShow);
+                boostGaugeRoot.SetActive(shouldShowGauge);
             }
         }
 
@@ -160,52 +143,20 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
             previousBank = bank;
             hasEconomy = true;
 
-            if (IsShopScene())
-            {
-                SetEconomyVisible(true);
-                return;
-            }
-
-            if (valueChanged)
-            {
-                economyVisibleUntil = Time.unscaledTime + economyChangeVisibleSeconds;
-                SetEconomyVisible(true);
-                return;
-            }
-
-            if (isEconomyVisible && Time.unscaledTime < economyVisibleUntil)
-            {
-                return;
-            }
-
-            SetEconomyVisible(false);
-        }
-
-        private void HandleActiveSceneChanged(Scene _, Scene __)
-        {
-            RefreshEconomyVisibility();
-        }
-
-        private void RefreshEconomyVisibility()
-        {
-            SetEconomyVisible(IsShopScene());
+            SetEconomyVisible(true);
         }
 
         private void SetEconomyVisible(bool visible)
         {
-            isEconomyVisible = visible;
+            if (economyRoot != null)
+            {
+                economyRoot.SetActive(visible);
+            }
+
             if (bankMotion != null)
             {
                 bankMotion.gameObject.SetActive(visible);
             }
-        }
-
-        private static bool IsShopScene()
-        {
-            return string.Equals(
-                SceneManager.GetActiveScene().name,
-                ShopSceneName,
-                System.StringComparison.Ordinal);
         }
 
         public void SetWarpGauge(float normalizedValue)
@@ -213,11 +164,14 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
             var clampedValue = Mathf.Clamp01(normalizedValue);
             var percentage = Mathf.RoundToInt(clampedValue * 100f);
             warpMotion?.SetValue($"{percentage}%", clampedValue);
+            warpGaugeMotion?.SetValue(clampedValue);
 
             if (hasWarpValue && percentage != previousWarpPercent)
             {
                 if (percentage > previousWarpPercent) warpMotion?.PlayIncreaseFeedback();
                 else warpMotion?.PlayDecreaseFeedback();
+                if (percentage > previousWarpPercent) warpGaugeMotion?.PlayRecoveryFeedback();
+                else warpGaugeMotion?.PlayConsumeFeedback();
             }
 
             previousWarpPercent = percentage;
@@ -227,8 +181,15 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
         public void SetShipHp(int current, int max)
         {
             var safeMax = Mathf.Max(1, max);
-            shipHpMotion?.SetValue($"SHIP {current}<size=20>/{safeMax}</size>", (float)current / safeMax);
+            var normalizedValue = (float)current / safeMax;
+            shipHpMotion?.SetValue($"SHIP {current}<size=20>/{safeMax}</size>", normalizedValue);
+            shipHpGaugeMotion?.SetValue(normalizedValue);
             PlayValueFeedback(shipHpMotion, hasShipHp, previousShipHp, current, true);
+            if (hasShipHp && current != previousShipHp)
+            {
+                if (current > previousShipHp) shipHpGaugeMotion?.PlayRecoveryFeedback();
+                else shipHpGaugeMotion?.PlayConsumeFeedback();
+            }
             previousShipHp = current;
             hasShipHp = true;
         }

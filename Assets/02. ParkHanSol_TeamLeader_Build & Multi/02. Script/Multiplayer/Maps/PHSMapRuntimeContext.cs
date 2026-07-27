@@ -78,6 +78,16 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Maps
 
             if (runFlowCoordinator == null)
             {
+                var networkManager = NetworkManager.Singleton;
+                if (networkManager == null
+                    || !networkManager.IsListening
+                    || networkManager.ShutdownInProgress)
+                {
+                    bindStartedAt = Time.unscaledTime;
+                    bindErrorLogged = false;
+                    return;
+                }
+
                 TryBindRunFlow();
                 if (runFlowCoordinator == null
                     && !bindErrorLogged

@@ -28,6 +28,9 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
         [SerializeField, Min(0.1f)]
         private float wrenchAttackRadius = 1.2f; //렌치 공격의 구형 판정 범위
 
+        [SerializeField, Min(0.1f)]
+        private float wrenchRepairRadius = 2.4f;
+
         [SerializeField, Min(0)]
         private int wrenchDamage = 15; //몬스터한테 적용되는 데미지
 
@@ -213,7 +216,11 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
             }
             nextWrenchAttackTime = Time.time + wrenchCooldown;
 
-            var hits = Physics.OverlapSphere(wrenchAttackPoint.position, wrenchAttackRadius, wrenchTargetLayers, QueryTriggerInteraction.Collide);
+            var hits = Physics.OverlapSphere(
+                wrenchAttackPoint.position,
+                Mathf.Max(wrenchAttackRadius, wrenchRepairRadius),
+                wrenchTargetLayers,
+                QueryTriggerInteraction.Collide);
 
             processedTargets.Clear();
             itemFeedbackTargetPositions.Clear();
@@ -237,6 +244,9 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
                     continue;
                 }
                 var requestSequence = NextUtilityAttackSequence();
+                var hitDistance = Vector3.Distance(
+                    wrenchAttackPoint.position,
+                    hit.ClosestPoint(wrenchAttackPoint.position));
                 if (CombatHitResolver.TryResolveUtilityAttack(
                         targetObject,
                         gameObject,
@@ -249,6 +259,11 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
                         "utility_repair",
                         hit.ClosestPoint(wrenchAttackPoint.position),
                         requestSequence);
+                    continue;
+                }
+
+                if (hitDistance > wrenchAttackRadius)
+                {
                     continue;
                 }
 

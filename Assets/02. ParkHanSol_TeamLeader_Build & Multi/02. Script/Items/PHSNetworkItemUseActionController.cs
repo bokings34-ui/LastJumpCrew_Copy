@@ -20,6 +20,7 @@ namespace LastJumpCrew.ParkHanSol.Items
     public sealed class PHSNetworkItemUseActionController : NetworkBehaviour
     {
         [SerializeField] private TempPlayerItemHolder itemHolder;
+        [SerializeField] private PHSUtilityFamilyUseVfxPresenter useVfxPresenter;
         [SerializeField, Min(0.05f)] private float defaultDuration = 0.28f;
         [SerializeField, Range(0.05f, 0.95f)] private float defaultImpactNormalizedTime = 0.58f;
         [SerializeField, Range(1f, 120f)] private float swingDegrees = 42f;
@@ -29,11 +30,18 @@ namespace LastJumpCrew.ParkHanSol.Items
         private Coroutine remoteActionRoutine;
         private uint localActionSequence;
 
+        public event Action<PHSItemUseActionKind> LocalActionStarted;
+
         private void Awake()
         {
             if (itemHolder == null)
             {
                 itemHolder = GetComponent<TempPlayerItemHolder>();
+            }
+
+            if (useVfxPresenter == null)
+            {
+                useVfxPresenter = GetComponent<PHSUtilityFamilyUseVfxPresenter>();
             }
 
             if (itemHolder == null)
@@ -85,6 +93,7 @@ namespace LastJumpCrew.ParkHanSol.Items
                     resolvedImpactTime,
                     impactAction,
                     true));
+            LocalActionStarted?.Invoke(actionKind);
             BroadcastAction(actionKind, resolvedDuration, sequence);
             return true;
         }
@@ -107,6 +116,7 @@ namespace LastJumpCrew.ParkHanSol.Items
             var sequence = NextLocalActionSequence();
             localActionRoutine = StartCoroutine(
                 RunAction(actionKind, resolvedDuration, 1f, null, true));
+            LocalActionStarted?.Invoke(actionKind);
             BroadcastAction(actionKind, resolvedDuration, sequence);
             return true;
         }
@@ -188,6 +198,7 @@ namespace LastJumpCrew.ParkHanSol.Items
 
             var initialPosition = visual.localPosition;
             var initialRotation = visual.localRotation;
+            useVfxPresenter?.Play(actionKind);
             var elapsed = 0f;
             var impactSent = false;
 

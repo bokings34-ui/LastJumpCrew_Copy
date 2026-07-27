@@ -76,6 +76,14 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
                 return Reject("upgrade_item_missing", senderClientId, itemId);
             }
 
+            if (!NetworkShopTransitionVoteCoordinator.TryAuthorizeHeldItemUseServer(
+                    senderClientId,
+                    itemId,
+                    out var policyReason))
+            {
+                return Reject(policyReason, senderClientId, itemId);
+            }
+
             if (!CanApply(itemData, out var reason))
             {
                 return Reject(reason, senderClientId, itemId);

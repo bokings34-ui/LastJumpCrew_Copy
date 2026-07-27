@@ -2,6 +2,7 @@ using System.Collections.Generic;
 using System.Linq;
 using TMPro;
 using UnityEngine;
+using UnityEngine.Audio;
 using UnityEngine.UI;
 
 namespace LastJumpCrew.ParkHanSol.Multiplayer
@@ -24,8 +25,14 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
         private const string ResolutionWidthKey = "PHS_ResolutionWidth";
         private const string ResolutionHeightKey = "PHS_ResolutionHeight";
         private const string VSyncKey = "PHS_VSync";
+        private const string MasterMixerParameter = "PHS_MasterVolumeDb";
+        private const string UiMixerParameter = "PHS_UIVolumeDb";
+        private const string EffectsMixerParameter = "PHS_SFXVolumeDb";
+        private const string EnvironmentMixerParameter = "PHS_AmbientVolumeDb";
+        private const float MutedDecibels = -80f;
 
         [SerializeField] private ProximityVoiceChatSession voiceChatSession;
+        [SerializeField] private AudioMixer gameAudioMixer;
         [SerializeField] private TMP_Dropdown resolutionDropdown;
         [SerializeField] private Toggle fullScreenToggle;
         [SerializeField] private TMP_Dropdown qualityDropdown;
@@ -257,7 +264,10 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
 
         private void ApplySavedRuntimeValues()
         {
-            AudioListener.volume = Mathf.Clamp01(PlayerPrefs.GetFloat(MasterVolumeKey, AudioListener.volume));
+            var masterVolume = Mathf.Clamp01(PlayerPrefs.GetFloat(MasterVolumeKey, 1f));
+            var environmentVolume = Mathf.Clamp01(PlayerPrefs.GetFloat(EnvironmentVolumeKey, 1f));
+            var effectsVolume = Mathf.Clamp01(PlayerPrefs.GetFloat(EffectsVolumeKey, 1f));
+            ApplyGameAudioVolumes(masterVolume, environmentVolume, effectsVolume);
             ApplySavedResolution();
 
             if (QualitySettings.names.Length > 0)
@@ -348,18 +358,23 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
         private void SetMasterVolume(float value)
         {
             var volume = Mathf.Clamp01(value);
-            AudioListener.volume = volume;
+            ApplyMixerVolume(MasterMixerParameter, volume);
             SetStatus($"MASTER {Mathf.RoundToInt(volume * 100f)}%");
         }
 
         private void SetEnvironmentVolume(float value)
         {
-            SetStatus($"ENV {Mathf.RoundToInt(Mathf.Clamp01(value) * 100f)}");
+            var volume = Mathf.Clamp01(value);
+            ApplyMixerVolume(EnvironmentMixerParameter, volume);
+            SetStatus($"ENV {Mathf.RoundToInt(volume * 100f)}");
         }
 
         private void SetEffectsVolume(float value)
         {
-            SetStatus($"FX {Mathf.RoundToInt(Mathf.Clamp01(value) * 100f)}");
+            var volume = Mathf.Clamp01(value);
+            ApplyMixerVolume(EffectsMixerParameter, volume);
+            ApplyMixerVolume(UiMixerParameter, volume);
+            SetStatus($"FX {Mathf.RoundToInt(volume * 100f)}");
         }
 
         private void SetGameVoiceVolume(float value)
@@ -560,7 +575,9 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
                 ResolutionWidth = resolutionWidth,
                 ResolutionHeight = resolutionHeight,
                 FullScreen = Screen.fullScreen,
-                MasterVolume = AudioListener.volume,
+                MasterVolume = masterVolumeSlider == null
+                    ? PlayerPrefs.GetFloat(MasterVolumeKey, 1f)
+                    : masterVolumeSlider.value,
                 EnvironmentVolume = environmentVolumeSlider == null ? PlayerPrefs.GetFloat(EnvironmentVolumeKey, 1f) : environmentVolumeSlider.value,
                 EffectsVolume = effectsVolumeSlider == null ? PlayerPrefs.GetFloat(EffectsVolumeKey, 1f) : effectsVolumeSlider.value,
                 GameVoiceVolume = gameVoiceVolumeSlider == null ? PlayerPrefs.GetFloat(GameVoiceVolumeKey, 1f) : gameVoiceVolumeSlider.value,
@@ -621,7 +638,10 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
                 Screen.fullScreenMode = snapshot.FullScreen ? FullScreenMode.FullScreenWindow : FullScreenMode.Windowed;
             }
 
-            AudioListener.volume = Mathf.Clamp01(snapshot.MasterVolume);
+            ApplyGameAudioVolumes(
+                snapshot.MasterVolume,
+                snapshot.EnvironmentVolume,
+                snapshot.EffectsVolume);
             if (QualitySettings.names.Length > 0)
             {
                 QualitySettings.SetQualityLevel(Mathf.Clamp(snapshot.Quality, 0, QualitySettings.names.Length - 1));
@@ -777,6 +797,50 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
         private static string FormatSignedLevel(int value)
         {
             return value > 0 ? $"+{value}" : value.ToString();
+        }
+
+        private void ApplyGameAudioVolumes(
+            float masterVolume,
+            float environmentVolume,
+            float effectsVolume)
+        {
+            if (gameAudioMixer == null)
+            {
+                AudioListener.volume = Mathf.Clamp01(masterVolume);
+                return;
+            }
+
+            // Mixer owns game attenuation. Keep the listener neutral so volume
+            // is not applied twice when returning from an older saved profile.
+            AudioListener.volume = 1f;
+            ApplyMixerVolume(MasterMixerParameter, masterVolume);
+            ApplyMixerVolume(EnvironmentMixerParameter, environmentVolume);
+            ApplyMixerVolume(EffectsMixerParameter, effectsVolume);
+            ApplyMixerVolume(UiMixerParameter, effectsVolume);
+        }
+
+        private void ApplyMixerVolume(string parameterName, float normalizedVolume)
+        {
+            if (gameAudioMixer == null)
+            {
+                if (parameterName == MasterMixerParameter)
+                {
+                    AudioListener.volume = Mathf.Clamp01(normalizedVolume);
+                }
+
+                return;
+            }
+
+            var volume = Mathf.Clamp01(normalizedVolume);
+            var decibels = volume <= 0.0001f
+                ? MutedDecibels
+                : Mathf.Log10(volume) * 20f;
+            if (!gameAudioMixer.SetFloat(parameterName, decibels))
+            {
+                Debug.LogError(
+                    $"PHS_GAME_AUDIO_MIXER_PARAMETER_MISSING parameter={parameterName}",
+                    this);
+            }
         }
 
         private void SetStatus(string value)

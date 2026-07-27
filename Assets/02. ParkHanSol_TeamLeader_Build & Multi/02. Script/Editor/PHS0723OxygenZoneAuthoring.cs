@@ -18,6 +18,7 @@ namespace LastJumpCrew.ParkHanSol.EditorTools
             "RepairPoint";
         private const string NoPlayerInteractLayerName =
             "NoPlayerInteract";
+        private const string PlayerLayerName = "Player";
 
         [MenuItem("Tools/ParkHanSol/Author 0723 Oxygen Zones")]
         public static void AuthorRuntimePrefab()
@@ -117,6 +118,23 @@ namespace LastJumpCrew.ParkHanSol.EditorTools
                         throw new InvalidOperationException(
                             $"PHS_OXYGEN_PREFAB_VALIDATION_FAILED " +
                             $"reason=interaction_layer_invalid room={room.RoomId}");
+                    }
+
+                    var expectedPlayerLayer = LayerMask.NameToLayer(
+                        PlayerLayerName);
+                    var expectedPlayerMask = expectedPlayerLayer < 0
+                        ? 0
+                        : 1 << expectedPlayerLayer;
+                    var zoneSerialized = new SerializedObject(roomZones[0]);
+                    var playerLayers = zoneSerialized.FindProperty(
+                        "playerLayers");
+                    if (expectedPlayerMask == 0
+                        || playerLayers == null
+                        || playerLayers.intValue != expectedPlayerMask)
+                    {
+                        throw new InvalidOperationException(
+                            $"PHS_OXYGEN_PREFAB_VALIDATION_FAILED " +
+                            $"reason=player_layer_mask_invalid room={room.RoomId}");
                     }
                 }
 
@@ -228,6 +246,14 @@ namespace LastJumpCrew.ParkHanSol.EditorTools
                     "reason=no_player_interact_layer_missing");
             }
 
+            var playerLayer = LayerMask.NameToLayer(PlayerLayerName);
+            if (playerLayer < 0)
+            {
+                throw new InvalidOperationException(
+                    "PHS_OXYGEN_AUTHORING_FAILED " +
+                    "reason=player_layer_missing");
+            }
+
             zone.gameObject.layer = noPlayerInteractLayer;
             zoneTransform.localPosition = new Vector3(
                 pointBounds.center.x,
@@ -275,7 +301,8 @@ namespace LastJumpCrew.ParkHanSol.EditorTools
             zoneSerialized.FindProperty("repairPoint").objectReferenceValue =
                 repairPoint;
             zoneSerialized.FindProperty("activeOnEnable").boolValue = false;
-            zoneSerialized.FindProperty("playerLayers").intValue = 1;
+            zoneSerialized.FindProperty("playerLayers").intValue =
+                1 << playerLayer;
             zoneSerialized.ApplyModifiedPropertiesWithoutUndo();
 
             var providerSerialized = new SerializedObject(provider);
