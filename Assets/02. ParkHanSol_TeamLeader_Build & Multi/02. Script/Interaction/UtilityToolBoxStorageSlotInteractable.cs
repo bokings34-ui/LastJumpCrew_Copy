@@ -1,4 +1,5 @@
 using LastJumpCrew.ParkHanSol.Items;
+using LastJumpCrew.ParkHanSol.Multiplayer;
 using UnityEngine;
 
 namespace LastJumpCrew.ParkHanSol.Interaction
@@ -61,11 +62,34 @@ namespace LastJumpCrew.ParkHanSol.Interaction
 
         // 초점 상태 캐시다. glowOutlineRoot 활성화 계산에 사용한다.
         private bool hasInteractionFocus;
+        private NetworkToolBoxStorageCoordinator networkCoordinator;
+        private int networkSlotIndex = -1;
 
         public string InteractionPrompt => interactionPrompt;
+        public UtilityItemPrefabData InitialStoredItemPrefabData => storedItemPrefabData;
+        public bool IsNetworkManaged => networkCoordinator != null && networkCoordinator.IsSpawned;
+
+        public void BindNetworkCoordinator(
+            NetworkToolBoxStorageCoordinator coordinator,
+            int slotIndex)
+        {
+            networkCoordinator = coordinator;
+            networkSlotIndex = slotIndex;
+        }
+
+        public void ApplyNetworkStoredItem(UtilityItemPrefabData itemPrefabData)
+        {
+            storedItemPrefabData = itemPrefabData;
+            RefreshVisual();
+        }
 
         public bool TryReceiveDelivery(UtilityItemPrefabData itemPrefabData)
         {
+            if (IsNetworkManaged)
+            {
+                return networkCoordinator.TryReceiveDeliveryServer(this, itemPrefabData);
+            }
+
             if (storedItemPrefabData != null || !CanDisplayItem(itemPrefabData))
             {
                 return false;
@@ -79,6 +103,7 @@ namespace LastJumpCrew.ParkHanSol.Interaction
 
         private void Awake()
         {
+            networkCoordinator ??= GetComponentInParent<NetworkToolBoxStorageCoordinator>();
             RefreshVisual();
         }
 
@@ -94,6 +119,11 @@ namespace LastJumpCrew.ParkHanSol.Interaction
             if (!ValidateSetup())
             {
                 return false;
+            }
+
+            if (IsNetworkManaged)
+            {
+                return networkCoordinator.CanRequestInteraction(this, itemHolder);
             }
 
             var heldItem = itemHolder.CurrentItemPrefabData;
@@ -126,6 +156,12 @@ namespace LastJumpCrew.ParkHanSol.Interaction
             // 현재 손 상태와 슬롯 상태에 따라 꺼내기, 보관, 교체 중 하나만 수행한다.
             if (!CanInteract(itemHolder))
             {
+                return;
+            }
+
+            if (IsNetworkManaged)
+            {
+                networkCoordinator.RequestInteraction(this, itemHolder);
                 return;
             }
 
@@ -171,6 +207,11 @@ namespace LastJumpCrew.ParkHanSol.Interaction
             if (itemHolder == null || visualRoot == null || slotCollider == null)
             {
                 return false;
+            }
+
+            if (IsNetworkManaged)
+            {
+                return networkCoordinator.CanRequestInteraction(this, itemHolder);
             }
 
             var heldItem = itemHolder.CurrentItemPrefabData;

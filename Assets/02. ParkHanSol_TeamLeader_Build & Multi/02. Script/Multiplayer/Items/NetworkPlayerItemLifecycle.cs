@@ -63,6 +63,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
         }
 
         public UtilityItemCatalogSO ItemCatalog => itemCatalog;
+        public NetworkPlayerItemRecord ItemRecord => itemRecord;
 
         private void Awake()
         {
@@ -295,7 +296,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
             itemObject.OnDropped(position);
             try
             {
-                networkObject.Spawn();
+                networkObject.Spawn(destroyWithScene: true);
             }
             catch (Exception exception)
             {

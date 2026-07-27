@@ -17,6 +17,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
         private const string DefaultShopSceneName = "PHS_ExteriorShopScene";
 
         [SerializeField, Min(5f)] private float voteDurationSeconds = 20f;
+        [SerializeField, Min(1)] private int maximumRequiredAgreeCount = 4;
         [SerializeField] private string shopSceneName = DefaultShopSceneName;
 
         private readonly NetworkVariable<bool> voteActive = new(
@@ -204,7 +205,9 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
             transitionMode.Value = requestedTransitionMode;
             shopExitVote.Value = isShopExit;
             eligiblePlayerCount.Value = eligibleClientIds.Count;
-            requiredAgreeCount.Value = eligibleClientIds.Count;
+            requiredAgreeCount.Value = Mathf.Min(
+                eligibleClientIds.Count,
+                maximumRequiredAgreeCount);
             agreeCount.Value = 0;
             voteDeadline = Time.unscaledTime + voteDurationSeconds;
             voteActive.Value = true;
@@ -546,7 +549,9 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
             agreeingClientIds.RemoveWhere(clientId => !eligibleClientIds.Contains(clientId));
             decliningClientIds.RemoveWhere(clientId => !eligibleClientIds.Contains(clientId));
             eligiblePlayerCount.Value = eligibleClientIds.Count;
-            requiredAgreeCount.Value = eligibleClientIds.Count;
+            requiredAgreeCount.Value = Mathf.Min(
+                eligibleClientIds.Count,
+                maximumRequiredAgreeCount);
             agreeCount.Value = agreeingClientIds.Count;
 
             if (eligibleClientIds.Count == 0)

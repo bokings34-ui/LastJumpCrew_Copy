@@ -25,6 +25,9 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
         [SerializeField, Min(0.1f)] private float extinguisherRadius = 0.45f;
         [SerializeField, Min(0.02f)] private float wrenchInterval = 0.35f;
         [SerializeField, Min(0.02f)] private float extinguisherInterval = 0.16f;
+        [Header("Player Knockback")]
+        [SerializeField, Min(0f)] private float wrenchPlayerKnockbackForce = 4f;
+        [SerializeField, Min(0f)] private float extinguisherPlayerKnockbackForce = 2f;
         [SerializeField] private LayerMask targetLayers = ~0;
 
         private NetworkPlayerItemRecord itemRecord;
@@ -236,7 +239,77 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
                 }
             }
 
-            return false;
+            return TryApplyPlayerKnockbackServer(
+                familyKind,
+                origin,
+                forward,
+                range,
+                colliders);
+        }
+
+        private bool TryApplyPlayerKnockbackServer(
+            PHSUtilityFamilyActionKind familyKind,
+            Vector3 origin,
+            Vector3 forward,
+            float range,
+            Collider[] colliders)
+        {
+            var force = familyKind == PHSUtilityFamilyActionKind.Wrench
+                ? wrenchPlayerKnockbackForce
+                : extinguisherPlayerKnockbackForce;
+            if (force <= 0f)
+            {
+                return false;
+            }
+
+            IKnockbackable nearestTarget = null;
+            Vector3 nearestPoint = default;
+            var nearestDistance = float.MaxValue;
+            foreach (var collider in colliders)
+            {
+                if (collider == null || collider.transform.IsChildOf(transform))
+                {
+                    continue;
+                }
+
+                var target = collider.GetComponentInParent<IKnockbackable>();
+                if (target == null || !target.CanReceiveKnockback)
+                {
+                    continue;
+                }
+
+                var point = collider.ClosestPoint(origin);
+                var offset = point - origin;
+                var distance = offset.magnitude;
+                if (distance > range
+                    || familyKind == PHSUtilityFamilyActionKind.FireExtinguisher
+                    && distance > 0.01f
+                    && Vector3.Dot(forward, offset / distance) < 0.45f
+                    || distance >= nearestDistance)
+                {
+                    continue;
+                }
+
+                nearestTarget = target;
+                nearestPoint = point;
+                nearestDistance = distance;
+            }
+
+            if (nearestTarget == null)
+            {
+                return false;
+            }
+
+            var direction = nearestPoint - origin;
+            nearestTarget.ApplyKnockback(
+                direction.sqrMagnitude > 0.001f ? direction.normalized : forward,
+                force,
+                gameObject);
+            Debug.Log(
+                $"PHS_UTILITY_PLAYER_KNOCKBACK_APPLIED family={familyKind} " +
+                $"target={nearestTarget} force={force:F2}",
+                this);
+            return true;
         }
 
         private static bool TryCreateCandidate(

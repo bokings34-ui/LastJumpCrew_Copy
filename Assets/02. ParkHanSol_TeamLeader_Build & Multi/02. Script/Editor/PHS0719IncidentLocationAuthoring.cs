@@ -998,13 +998,13 @@ namespace LastJumpCrew.ParkHanSol.Editor
                 serializedFireZone,
                 "maximumHeatGrowthPerTick",
                 22);
-            SetFloat(serializedFireZone, "spreadTickSeconds", 1.35f);
-            SetInt(serializedFireZone, "spreadAttemptsPerTick", 3);
+            SetFloat(serializedFireZone, "spreadTickSeconds", 2.5f);
+            SetInt(serializedFireZone, "spreadAttemptsPerTick", 2);
             SetInt(
                 serializedFireZone,
                 "maximumNewIgnitionsPerTick",
-                2);
-            SetFloat(serializedFireZone, "baseSpreadChance", 0.52f);
+                1);
+            SetFloat(serializedFireZone, "baseSpreadChance", 0.45f);
             SetFloat(serializedFireZone, "damageTickSeconds", 1f);
             SetInt(serializedFireZone, "baseDamagePerTick", 2);
             SetInt(serializedFireZone, "damageableLayers", ~0);

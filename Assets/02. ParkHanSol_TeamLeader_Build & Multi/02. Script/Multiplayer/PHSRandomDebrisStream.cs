@@ -11,6 +11,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
         [SerializeField] private Transform[] debrisRoots;
         [SerializeField, Min(1)] private int minimumDebrisCount = 20;
         [SerializeField, Min(1)] private int maximumDebrisCount = 30;
+        [SerializeField, Range(1f, 2f)] private float densityMultiplier = 1.35f;
         [SerializeField] private Vector3 spawnCenter = new(-330f, 6f, -15f);
         [SerializeField] private Vector3 spawnExtents = new(3f, 5f, 12f);
         [SerializeField] private Vector3[] passageLaneCenters;
@@ -142,9 +143,10 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
                 return;
             }
 
-            targetDebrisCount = Random.Range(
+            targetDebrisCount = Mathf.RoundToInt(Random.Range(
                 Mathf.Min(minimumDebrisCount, maximumDebrisCount),
-                Mathf.Max(minimumDebrisCount, maximumDebrisCount) + 1);
+                Mathf.Max(minimumDebrisCount, maximumDebrisCount) + 1)
+                * densityMultiplier);
             while (activeDebris.Count < targetDebrisCount)
             {
                 activeDebris.Add(CreateDebris(activeDebris.Count));
