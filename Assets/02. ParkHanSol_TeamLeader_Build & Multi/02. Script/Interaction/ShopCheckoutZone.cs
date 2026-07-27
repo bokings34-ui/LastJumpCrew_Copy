@@ -25,6 +25,7 @@ namespace LastJumpCrew.ParkHanSol.Interaction
 
         [SerializeField] private BoxCollider checkoutTrigger;
         [SerializeField] private TMP_Text priceText;
+        [SerializeField] private TMP_Text purchaseUnavailableText;
         [SerializeField] private string pricePrefix = "TOTAL";
         [SerializeField] private ShopCatalogSO catalog;
         [SerializeField] private MonoBehaviour purchaseServiceSource;
@@ -41,6 +42,7 @@ namespace LastJumpCrew.ParkHanSol.Interaction
         private int lastDisplayedCredits = -1;
         private string temporaryStatus;
         private float temporaryStatusUntil;
+        private bool temporaryPurchaseUnavailable;
 
         public int CurrentTotalPrice => CalculateTotalPrice();
 
@@ -111,7 +113,7 @@ namespace LastJumpCrew.ParkHanSol.Interaction
 
             if (!ValidateSetup())
             {
-                ShowTemporaryStatus("CHECKOUT ERROR");
+                ShowTemporaryStatus("CHECKOUT ERROR", true);
                 return false;
             }
 
@@ -119,14 +121,14 @@ namespace LastJumpCrew.ParkHanSol.Interaction
             var entries = new List<CheckoutEntry>();
             if (!BuildCheckoutSnapshot(entries, out var totalPrice, true) || totalPrice <= 0)
             {
-                ShowTemporaryStatus("NO SHOP ITEMS");
+                ShowTemporaryStatus("NO SHOP ITEMS", true);
                 return false;
             }
 
             var availableCredits = purchaseService.AvailableCredits;
             if (totalPrice > availableCredits)
             {
-                ShowTemporaryStatus($"NOT ENOUGH CR\nNEED {totalPrice} / HAVE {availableCredits}");
+                ShowTemporaryStatus($"NOT ENOUGH CR\nNEED {totalPrice} / HAVE {availableCredits}", true);
                 return false;
             }
 
@@ -163,7 +165,7 @@ namespace LastJumpCrew.ParkHanSol.Interaction
                     "out_of_stock" => "ITEM SOLD OUT",
                     _ => "PURCHASE FAILED"
                 };
-                ShowTemporaryStatus(status);
+                ShowTemporaryStatus(status, true);
                 return;
             }
 
@@ -374,12 +376,17 @@ namespace LastJumpCrew.ParkHanSol.Interaction
             if (!string.IsNullOrEmpty(temporaryStatus) && Time.unscaledTime < temporaryStatusUntil)
             {
                 priceText.text = temporaryStatus;
+                SetPurchaseUnavailable(temporaryPurchaseUnavailable);
                 return;
             }
 
             temporaryStatus = string.Empty;
+            temporaryPurchaseUnavailable = false;
             var totalPrice = CalculateTotalPrice();
             var availableCredits = purchaseService?.AvailableCredits ?? -1;
+            SetPurchaseUnavailable(totalPrice > 0 &&
+                availableCredits >= 0 &&
+                totalPrice > availableCredits);
             if (!force &&
                 totalPrice == lastDisplayedPrice &&
                 availableCredits == lastDisplayedCredits)
@@ -396,13 +403,24 @@ namespace LastJumpCrew.ParkHanSol.Interaction
                     : $"{pricePrefix} ${totalPrice}";
         }
 
-        private void ShowTemporaryStatus(string message)
+        private void ShowTemporaryStatus(string message, bool showPurchaseUnavailable = false)
         {
             temporaryStatus = message;
             temporaryStatusUntil = Time.unscaledTime + statusDuration;
+            temporaryPurchaseUnavailable = showPurchaseUnavailable;
             lastDisplayedPrice = -1;
             lastDisplayedCredits = -1;
             RefreshPriceText(true);
+        }
+
+        private void SetPurchaseUnavailable(bool isVisible)
+        {
+            if (purchaseUnavailableText == null)
+            {
+                return;
+            }
+
+            purchaseUnavailableText.gameObject.SetActive(isVisible);
         }
 
         private bool ValidateSetup()
@@ -422,6 +440,12 @@ namespace LastJumpCrew.ParkHanSol.Interaction
             if (purchaseService == null)
             {
                 Debug.LogError($"PHS_SHOP_CHECKOUT_SETUP_FAILED reason=purchase_service_missing zone={name}");
+                isValid = false;
+            }
+
+            if (purchaseUnavailableText == null)
+            {
+                Debug.LogError($"PHS_SHOP_CHECKOUT_SETUP_FAILED reason=purchase_unavailable_text_missing zone={name}");
                 isValid = false;
             }
 

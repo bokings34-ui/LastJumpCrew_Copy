@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using Unity.Collections;
 using UnityEngine;
+using SM;
 
 namespace LastJumpCrew.ParkHanSol.Multiplayer
 {
@@ -323,6 +324,220 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
             return true;
         }
 
+        public bool TrySubmitTerminalEventServer(
+            EventId eventId,
+            string targetId,
+            out NetworkRunIncidentCommand command,
+            out string reason)
+        {
+            command = default;
+            if (!TryRequireServer(out reason))
+            {
+                return false;
+            }
+
+            var director = runSessionRoot.IncidentDirector;
+            var definition = director == null ? null : director.Definition;
+            if (definition == null)
+            {
+                reason = "incident_schedule_definition_missing";
+                return false;
+            }
+
+            var entryFound = false;
+            var selectedEntry = default(RunIncidentWeightedEntry);
+            foreach (var entry in definition.ExternalEntries)
+            {
+                if (entry.ContentId != (int)eventId)
+                {
+                    continue;
+                }
+
+                selectedEntry = entry;
+                entryFound = true;
+                break;
+            }
+
+            if (!entryFound)
+            {
+                reason = $"external_event_not_configured:{eventId}";
+                return false;
+            }
+
+            if (!IncidentRequestContentContract.TryValidate(
+                    NetworkRunIncidentChannel.External,
+                    NetworkRunIncidentPayloadKind.EventManagerEvent,
+                    selectedEntry.IncidentFamily,
+                    selectedEntry.ContentId,
+                    out var contractReason))
+            {
+                reason = $"content_contract_invalid:{contractReason}";
+                return false;
+            }
+
+            if (!TryCreateTargetId(targetId, out var fixedTargetId, out reason))
+            {
+                return false;
+            }
+
+            var snapshot = incidentLedger.Snapshot;
+            var requestOrdinal = snapshot.StageIssuedCount == uint.MaxValue
+                ? 1U
+                : snapshot.StageIssuedCount + 1U;
+            var fixedRequestId = default(FixedString64Bytes);
+            var requestId =
+                $"terminal:{snapshot.StageSequence}:{selectedEntry.ContentId}:{requestOrdinal}";
+            if (fixedRequestId.CopyFrom(requestId) != CopyError.None)
+            {
+                reason = "request_id_too_long";
+                return false;
+            }
+
+            var request = new NetworkRunIncidentRequest(
+                fixedRequestId,
+                0UL,
+                snapshot.StageSequence,
+                snapshot.MapId,
+                NetworkRunIncidentChannel.External,
+                NetworkRunIncidentPayloadKind.EventManagerEvent,
+                selectedEntry.IncidentFamily,
+                selectedEntry.ContentId,
+                NetworkRunIncidentSourceKind.Terminal,
+                selectedEntry.PressureCost,
+                selectedEntry.WarpChargeMultiplier,
+                fixedTargetId);
+            if (!incidentLedger.TryReserveCommandServer(
+                    in request,
+                    out command,
+                    out reason))
+            {
+                return false;
+            }
+
+            Debug.Log(
+                $"PHS_INCIDENT_TERMINAL_ACCEPTED event={eventId} " +
+                $"target={fixedTargetId} command={command.CommandId}",
+                this);
+            reason = null;
+            return true;
+        }
+
+        public bool TrySubmitConsequenceServer(
+            in RunIncidentWeightedEntry entry,
+            ulong parentCommandId,
+            out NetworkRunIncidentCommand command,
+            out string reason)
+        {
+            command = default;
+            if (!TryRequireServer(out reason))
+            {
+                return false;
+            }
+
+            if (parentCommandId == 0UL)
+            {
+                reason = "consequence_parent_command_required";
+                return false;
+            }
+
+            if (!incidentLedger.TryGetCommand(
+                    parentCommandId,
+                    out var parentCommand))
+            {
+                reason = "parent_command_missing";
+                return false;
+            }
+
+            if (parentCommand.Channel != NetworkRunIncidentChannel.External
+                || parentCommand.State != NetworkRunIncidentCommandState.Failed)
+            {
+                reason =
+                    $"parent_command_not_failed_external:" +
+                    $"{parentCommand.Channel}:{parentCommand.State}";
+                return false;
+            }
+
+            var snapshot = incidentLedger.Snapshot;
+            if (parentCommand.StageSequence != snapshot.StageSequence
+                || parentCommand.MapId != snapshot.MapId)
+            {
+                reason = "parent_command_stage_mismatch";
+                return false;
+            }
+
+            var director = runSessionRoot.IncidentDirector;
+            var definition = director == null ? null : director.Definition;
+            if (definition == null)
+            {
+                reason = "incident_schedule_definition_missing";
+                return false;
+            }
+
+            var configured = false;
+            foreach (var candidate in definition.InternalEntries)
+            {
+                if (candidate.Equals(entry))
+                {
+                    configured = true;
+                    break;
+                }
+            }
+
+            if (!configured)
+            {
+                reason = $"internal_consequence_not_configured:{entry.ContentId}";
+                return false;
+            }
+
+            if (!IncidentRequestContentContract.TryValidate(
+                    NetworkRunIncidentChannel.Internal,
+                    NetworkRunIncidentPayloadKind.ShipAccident,
+                    entry.IncidentFamily,
+                    entry.ContentId,
+                    out var contractReason))
+            {
+                reason = $"content_contract_invalid:{contractReason}";
+                return false;
+            }
+
+            var fixedRequestId = default(FixedString64Bytes);
+            var requestId =
+                $"consequence:{snapshot.StageSequence}:{parentCommandId}";
+            if (fixedRequestId.CopyFrom(requestId) != CopyError.None)
+            {
+                reason = "request_id_too_long";
+                return false;
+            }
+
+            var request = new NetworkRunIncidentRequest(
+                fixedRequestId,
+                parentCommandId,
+                snapshot.StageSequence,
+                snapshot.MapId,
+                NetworkRunIncidentChannel.Internal,
+                NetworkRunIncidentPayloadKind.ShipAccident,
+                entry.IncidentFamily,
+                entry.ContentId,
+                NetworkRunIncidentSourceKind.Consequence,
+                entry.PressureCost,
+                entry.WarpChargeMultiplier,
+                default);
+            if (!incidentLedger.TryReserveCommandServer(
+                    in request,
+                    out command,
+                    out reason))
+            {
+                return false;
+            }
+
+            Debug.Log(
+                $"PHS_INCIDENT_CONSEQUENCE_ACCEPTED parent={parentCommandId} " +
+                $"command={command.CommandId} content={entry.ContentId}",
+                this);
+            reason = null;
+            return true;
+        }
+
         private void HandleRootAvailable(NetworkRunSessionRoot root)
         {
             TryBindRoot(root);
@@ -401,6 +616,34 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
             {
                 nextAllowedServerTimes.Clear();
                 observedStageSequence = snapshot.StageSequence;
+            }
+
+            reason = null;
+            return true;
+        }
+
+        private static bool TryCreateTargetId(
+            string targetId,
+            out FixedString64Bytes fixedTargetId,
+            out string reason)
+        {
+            fixedTargetId = default;
+            if (string.IsNullOrEmpty(targetId))
+            {
+                reason = null;
+                return true;
+            }
+
+            if (!IncidentStableId.IsValid(targetId))
+            {
+                reason = "target_id_invalid";
+                return false;
+            }
+
+            if (fixedTargetId.CopyFrom(targetId) != CopyError.None)
+            {
+                reason = "target_id_too_long";
+                return false;
             }
 
             reason = null;

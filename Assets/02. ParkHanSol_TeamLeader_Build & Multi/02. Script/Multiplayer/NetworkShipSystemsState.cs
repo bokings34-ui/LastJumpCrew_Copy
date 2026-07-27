@@ -594,6 +594,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
             {
                 synchronizedPowerEnabled.Value = false;
                 synchronizedGravityEnabled.Value = false;
+                synchronizedBatteryInstalled.Value = false;
                 return;
             }
 

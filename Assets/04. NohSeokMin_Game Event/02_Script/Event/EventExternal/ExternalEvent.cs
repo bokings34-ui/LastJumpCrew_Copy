@@ -46,7 +46,10 @@ namespace SM
         public override void OnFail()
         {
             ChangeState(EventState.Fail);
-            Spawner?.SpawnEvent(GetNextEventId(), TargetRoom);
+            if (Context?.RuntimeBridge == null)
+            {
+                Spawner?.SpawnEvent(GetNextEventId(), TargetRoom);
+            }
         }
 
         protected abstract EventId GetNextEventId();

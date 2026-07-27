@@ -12,7 +12,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Customization
         [SerializeField] private string itemId;
         [SerializeField] private string displayName;
         [SerializeField] private CosmeticSlot slot;
-        [SerializeField, Min(0)] private int price;
+        [SerializeField, Min(1)] private int price = 1;
         [SerializeField] private Sprite icon;
 
         // 플레이어 장착 슬롯 아래에 생성할 시각 프리팹이다.

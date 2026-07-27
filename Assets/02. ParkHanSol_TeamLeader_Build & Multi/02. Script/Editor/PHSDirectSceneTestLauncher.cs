@@ -15,10 +15,16 @@ namespace LastJumpCrew.ParkHanSol.Editor
     public static class PHSDirectSceneTestLauncher
     {
         private const string LobbyScenePath =
-            "Assets/02. ParkHanSol_TeamLeader_Build & Multi/01. Scene/0715/ParkHanSol_LobbyScene.unity";
+            "Assets/01. MainGame/01. MainScene/Beta/ParkHanSol_LobbyScene.unity";
+        private const string FeatureInspectionScenePath =
+            "Assets/02. ParkHanSol_TeamLeader_Build & Multi/01. Scene/test/PHS_FeatureInspectionScene.unity";
         private const string PlayMenuPath =
             "Tools/ParkHanSol/Scene Test/Play Current Scene As Local Host _F6";
+        private const string MainLoopValidationMenuPath =
+            "Tools/ParkHanSol/Scene Test/Run Main Loop Validation";
         private const string PendingTargetSceneKey = "PHS.DirectSceneTest.PendingTargetScene";
+        private const string AutoLaunchQueuedKey = "PHS.DirectSceneTest.AutoLaunchQueued";
+        private const string AutoLaunchTargetSceneKey = "PHS.DirectSceneTest.AutoLaunchTargetScene";
         private const string PreviousStartSceneKey = "PHS.DirectSceneTest.PreviousStartScene";
         private const string PreviousStartSceneStoredKey = "PHS.DirectSceneTest.PreviousStartSceneStored";
         private const double LaunchTimeoutSeconds = 20d;
@@ -41,6 +47,8 @@ namespace LastJumpCrew.ParkHanSol.Editor
             EditorApplication.playModeStateChanged -= HandlePlayModeStateChanged;
             EditorApplication.playModeStateChanged += HandlePlayModeStateChanged;
             EditorApplication.delayCall += ResumePendingLaunch;
+            EditorApplication.update -= ResumeFeatureInspectionAutoLaunch;
+            EditorApplication.update += ResumeFeatureInspectionAutoLaunch;
         }
 
         [MenuItem(PlayMenuPath)]
@@ -75,6 +83,47 @@ namespace LastJumpCrew.ParkHanSol.Editor
 
             Debug.Log($"PHS_DIRECT_SCENE_TEST_QUEUED target={targetScene.path}");
             EditorApplication.EnterPlaymode();
+        }
+
+        [MenuItem(MainLoopValidationMenuPath)]
+        public static void RunMainLoopValidation()
+        {
+            if (EditorApplication.isPlayingOrWillChangePlaymode)
+            {
+                Debug.LogError(
+                    "PHS_EDITOR_LOOP_VALIDATION_FAILED reason=play_mode_active");
+                return;
+            }
+
+            var lobbyScene = AssetDatabase.LoadAssetAtPath<SceneAsset>(LobbyScenePath);
+            if (lobbyScene == null)
+            {
+                Debug.LogError(
+                    $"PHS_EDITOR_LOOP_VALIDATION_FAILED reason=lobby_scene_missing path={LobbyScenePath}");
+                return;
+            }
+
+            var openedScene = EditorSceneManager.OpenScene(
+                LobbyScenePath,
+                OpenSceneMode.Single);
+            if (!openedScene.IsValid() || !openedScene.isLoaded)
+            {
+                Debug.LogError(
+                    $"PHS_EDITOR_LOOP_VALIDATION_FAILED reason=lobby_scene_open_failed path={LobbyScenePath}");
+                return;
+            }
+
+            StorePreviousPlayModeStartScene();
+            EditorSceneManager.playModeStartScene = lobbyScene;
+            Debug.Log(
+                $"PHS_EDITOR_LOOP_VALIDATION_QUEUED scene={LobbyScenePath}");
+            EditorApplication.EnterPlaymode();
+        }
+
+        [MenuItem(MainLoopValidationMenuPath, true)]
+        private static bool ValidateRunMainLoopValidation()
+        {
+            return !EditorApplication.isPlayingOrWillChangePlaymode;
         }
 
         [MenuItem(PlayMenuPath, true)]
@@ -141,6 +190,10 @@ namespace LastJumpCrew.ParkHanSol.Editor
         {
             switch (state)
             {
+                case PlayModeStateChange.ExitingEditMode:
+                    QueueFeatureInspectionAutoLaunch();
+                    break;
+
                 case PlayModeStateChange.EnteredPlayMode:
                     RestorePreviousPlayModeStartScene();
                     BeginPendingLaunch();
@@ -155,6 +208,68 @@ namespace LastJumpCrew.ParkHanSol.Editor
                     ClearPendingLaunch();
                     break;
             }
+        }
+
+        private static void QueueFeatureInspectionAutoLaunch()
+        {
+            if (!string.IsNullOrWhiteSpace(
+                    SessionState.GetString(PendingTargetSceneKey, string.Empty))
+                || SessionState.GetBool(AutoLaunchQueuedKey, false))
+            {
+                return;
+            }
+
+            var activeScene = SceneManager.GetActiveScene();
+            if (!string.Equals(
+                    activeScene.path,
+                    FeatureInspectionScenePath,
+                    StringComparison.Ordinal))
+            {
+                return;
+            }
+
+            SessionState.SetBool(AutoLaunchQueuedKey, true);
+            SessionState.SetString(AutoLaunchTargetSceneKey, activeScene.path);
+            Debug.Log(
+                $"PHS_FEATURE_INSPECTION_AUTO_BOOTSTRAP_QUEUED target={activeScene.path}");
+            EditorApplication.update -= ResumeFeatureInspectionAutoLaunch;
+            EditorApplication.update += ResumeFeatureInspectionAutoLaunch;
+            EditorApplication.isPlaying = false;
+        }
+
+        private static void ResumeFeatureInspectionAutoLaunch()
+        {
+            if (!SessionState.GetBool(AutoLaunchQueuedKey, false))
+            {
+                EditorApplication.update -= ResumeFeatureInspectionAutoLaunch;
+                return;
+            }
+
+            if (EditorApplication.isPlayingOrWillChangePlaymode)
+            {
+                return;
+            }
+
+            EditorApplication.update -= ResumeFeatureInspectionAutoLaunch;
+
+            var expectedTargetScene = SessionState.GetString(
+                AutoLaunchTargetSceneKey,
+                string.Empty);
+            SessionState.SetBool(AutoLaunchQueuedKey, false);
+            SessionState.SetString(AutoLaunchTargetSceneKey, string.Empty);
+
+            var activeScene = SceneManager.GetActiveScene();
+            if (!string.Equals(
+                    activeScene.path,
+                    expectedTargetScene,
+                    StringComparison.Ordinal))
+            {
+                Debug.LogError(
+                    $"PHS_FEATURE_INSPECTION_AUTO_BOOTSTRAP_FAILED reason=active_scene_changed expected={expectedTargetScene} actual={activeScene.path}");
+                return;
+            }
+
+            PlayCurrentSceneAsLocalHost();
         }
 
         private static void ResumePendingLaunch()

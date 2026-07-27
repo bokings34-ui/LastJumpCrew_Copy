@@ -4,20 +4,7 @@ namespace SM
     {
         protected override EventId GetNextEventId()
         {
-            return Context?.RuntimeBridge == null
-                ? EventId.Fire
-                : EventId.PowerOff;
-        }
-
-        public override void OnFail()
-        {
-            if (Context?.RuntimeBridge != null)
-            {
-                ChangeState(EventState.Fail);
-                return;
-            }
-
-            base.OnFail();
+            return EventId.Fire;
         }
 
         public override void OnResolve()

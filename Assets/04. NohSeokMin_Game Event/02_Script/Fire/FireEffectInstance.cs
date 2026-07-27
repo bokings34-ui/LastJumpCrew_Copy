@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using UnityEngine;
 using LastJumpCrew.Common;
+using LastJumpCrew.ParkHanSol.Multiplayer;
 
 namespace SM
 {
@@ -14,7 +15,6 @@ namespace SM
         IUtilityAttackTarget
     {
         private const string FireExtinguisherItemId = "fire_extinguisher";
-        private const float RepairAmountPerHit = 1f;
 
         [Header("데미지 틱 설정")]
         [SerializeField] private float tickInterval = 1f;
@@ -147,13 +147,36 @@ namespace SM
         // ___________ 플레이어가 수리할 때 호출하는 함수 ____________
         public bool TryResolveUtilityAttack(in UtilityAttackHit hit)
         {
-            if (IsRepaired || hit.ItemId != RequiredItemId)
+            if (IsRepaired
+                || hit.ItemId != RequiredItemId
+                || hit.Attacker == null
+                || hit.RequestSequence == 0U
+                || _repairRuntimeBridge == null)
             {
                 return false;
             }
 
-            ApplyRepair(RepairAmountPerHit);
-            return true;
+            var itemRecord =
+                hit.Attacker.GetComponentInParent<NetworkPlayerItemRecord>();
+            if (itemRecord == null)
+            {
+                itemRecord =
+                    hit.Attacker.GetComponentInChildren<
+                        NetworkPlayerItemRecord>(true);
+            }
+
+            if (itemRecord == null)
+            {
+                Debug.LogError(
+                    $"PHS_EVENT_REPAIR_REQUEST_REJECTED reason=item_record_missing target={name}",
+                    this);
+                return false;
+            }
+
+            return _repairRuntimeBridge.RequestEffectRepair(
+                this,
+                itemRecord,
+                hit.RequestSequence);
         }
 
         public void ApplyRepair(float amount)
