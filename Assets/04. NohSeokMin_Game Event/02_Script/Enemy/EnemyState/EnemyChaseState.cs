@@ -15,6 +15,8 @@ namespace SM
             owner.Agent.isStopped = false;
             _timer = 0f;
             _lastPosition = owner.transform.position;
+
+            if (owner.Anim != null) owner.Anim.CrossFade(EnemyAnimData.Chase, 0.1f);
         }
 
         public void Tick(EnemyBase owner, float deltaTime)

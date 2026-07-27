@@ -761,7 +761,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
 
         private bool IsSettingsLoadCurrent(int loadVersion)
         {
-            return isActiveAndEnabled && loadVersion == settingsLoadVersion;
+            return this != null && isActiveAndEnabled && loadVersion == settingsLoadVersion;
         }
 
         private static string GetQualityDisplayName(string qualityName)

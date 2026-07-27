@@ -1,0 +1,20 @@
+{
+  "owner": "NohSeokMin",
+  "bundleType": "FirePresentation",
+  "version": "0.1.0",
+  "prefabPath": "Assets/01. MainGame/02. Final_Prefab/03. Prefab_NohSeokMin_Game Event/Event_Internal/Fire/FirePresentation_Root.prefab",
+  "contentId": "7101",
+  "requiredLocation": {
+    "kind": "N/A",
+    "note": "Visual Socket child placement"
+  },
+  "inputs": [
+    "Telegraph()",
+    "Activate(FireIntensity intensity)",
+    "SetIntensity(FireIntensity intensity)",
+    "Extinguish()",
+    "ResetPresentation()"
+  ],
+  "outputs": [],
+  "resetContract": "Call ResetPresentation() before reusing the instance."
+}

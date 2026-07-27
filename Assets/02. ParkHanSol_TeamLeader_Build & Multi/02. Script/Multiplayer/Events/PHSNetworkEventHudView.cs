@@ -82,6 +82,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Events
 
         [Header("Dedicated Ship Map")]
         [SerializeField] private GameObject shipMapRoot;
+        [SerializeField] private TMP_Text currentMapLabelText;
         [SerializeField] private RoomViewEntry[] roomViews = new RoomViewEntry[4];
 
         private readonly Dictionary<string, RoomViewEntry> roomViewsById =
@@ -93,7 +94,6 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Events
         private string externalAlertText = string.Empty;
         private string internalAccidentAlertText = string.Empty;
         private string currentMapText = string.Empty;
-        private float currentMapVisibleUntil;
 
         public bool IsConfigured
         {
@@ -110,15 +110,6 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Events
             HideOffline();
         }
 
-        private void Update()
-        {
-            if (!string.IsNullOrWhiteSpace(currentMapText)
-                && Time.unscaledTime >= currentMapVisibleUntil)
-            {
-                ClearCurrentMap();
-            }
-        }
-
         public void ShowCurrentMap(string displayName, float visibleSeconds)
         {
             if (!IsConfigured || string.IsNullOrWhiteSpace(displayName))
@@ -127,16 +118,14 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Events
                 return;
             }
 
-            currentMapText = $"<color=#58E6FF>현재 구역 · {displayName.Trim()}</color>";
-            currentMapVisibleUntil = Time.unscaledTime + Mathf.Max(0.1f, visibleSeconds);
-            RefreshAlertText();
+            currentMapText = $"현재 구역 · {displayName.Trim()}";
+            RefreshCurrentMapText();
         }
 
         public void ClearCurrentMap()
         {
             currentMapText = string.Empty;
-            currentMapVisibleUntil = 0f;
-            RefreshAlertText();
+            RefreshCurrentMapText();
         }
 
         public void Apply(PHSNetworkEventHudViewModel viewModel)
@@ -182,6 +171,8 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Events
             {
                 shipMapRoot.SetActive(IsConfigured && isVisible);
             }
+
+            RefreshCurrentMapText();
         }
 
         public void HideOffline()
@@ -217,18 +208,17 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Events
             }
 
             var builder = new System.Text.StringBuilder(128);
-            builder.Append("내부 사고");
             foreach (var line in lines)
             {
-                builder.Append('\n');
+                if (builder.Length > 0)
+                {
+                    builder.Append('\n');
+                }
+
                 builder.Append("• ");
                 builder.Append(line.DisplayName);
                 builder.Append(" · ");
                 builder.Append(line.ModuleName);
-                builder.Append(" · ");
-                builder.Append(line.RepairProgress);
-                builder.Append('/');
-                builder.Append(line.RequiredRepairProgress);
             }
 
             internalAccidentAlertText = builder.ToString();
@@ -247,13 +237,22 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Events
                 : string.IsNullOrWhiteSpace(internalAccidentAlertText)
                     ? externalAlertText
                     : $"{externalAlertText}\n{internalAccidentAlertText}";
-            text = string.IsNullOrWhiteSpace(currentMapText)
-                ? text
-                : string.IsNullOrWhiteSpace(text)
-                    ? currentMapText
-                    : $"{currentMapText}\n{text}";
             eventAlertRoot.SetActive(!string.IsNullOrWhiteSpace(text));
             eventAlertText.text = text;
+        }
+
+        private void RefreshCurrentMapText()
+        {
+            if (currentMapLabelText == null)
+            {
+                return;
+            }
+
+            currentMapLabelText.text = currentMapText;
+            currentMapLabelText.gameObject.SetActive(
+                shipMapRoot != null &&
+                shipMapRoot.activeSelf &&
+                !string.IsNullOrWhiteSpace(currentMapText));
         }
 
         private bool ValidateSetup()
@@ -274,6 +273,12 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Events
             if (shipMapRoot == null)
             {
                 Debug.LogError($"PHS_EVENT_HUD_VIEW_SETUP_FAILED reason=ship_map_root_missing view={name}", this);
+                valid = false;
+            }
+
+            if (currentMapLabelText == null)
+            {
+                Debug.LogError($"PHS_EVENT_HUD_VIEW_SETUP_FAILED reason=current_map_label_missing view={name}", this);
                 valid = false;
             }
 

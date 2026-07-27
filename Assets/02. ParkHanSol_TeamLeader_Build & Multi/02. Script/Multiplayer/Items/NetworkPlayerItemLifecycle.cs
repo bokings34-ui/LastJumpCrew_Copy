@@ -136,7 +136,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
                 return false;
             }
 
-            if (!itemCatalog.TryGetById(itemId, out _))
+            if (!itemCatalog.TryGetById(itemId, out var itemData))
             {
                 Debug.LogWarning(
                     $"PHS_NETWORK_ITEM_ASSIGN_FAILED reason=item_not_in_catalog player={name} item={itemId}",
@@ -144,7 +144,13 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
                 return false;
             }
 
-            return itemRecord.TrySetHeldItemServer(itemId, expectedRevision);
+            var initialDurability = itemData.HasDurability
+                ? itemData.MaxDurability
+                : 0;
+            return itemRecord.TrySetHeldItemServer(
+                itemId,
+                initialDurability,
+                expectedRevision);
         }
 
         public bool TryAssignHeldItemServer(UtilityItemPrefabData itemData)
@@ -157,6 +163,31 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
 
         public bool TryCreateDroppedItemServer(
             string itemId,
+            Vector3 position,
+            Quaternion rotation,
+            out NetworkObject spawnedItem)
+        {
+            spawnedItem = null;
+            if (itemCatalog == null
+                || !itemCatalog.TryGetById(itemId, out var itemData))
+            {
+                Debug.LogWarning(
+                    $"PHS_NETWORK_ITEM_CREATE_FAILED reason=item_not_in_catalog player={name} item={itemId}",
+                    this);
+                return false;
+            }
+
+            return TryCreateDroppedItemServer(
+                itemId,
+                itemData.HasDurability ? itemData.MaxDurability : 0,
+                position,
+                rotation,
+                out spawnedItem);
+        }
+
+        public bool TryCreateDroppedItemServer(
+            string itemId,
+            int currentDurability,
             Vector3 position,
             Quaternion rotation,
             out NetworkObject spawnedItem)
@@ -194,11 +225,15 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
             var physicsAuthority = instance == null
                 ? null
                 : instance.GetComponent<NetworkItemPhysicsAuthority>();
+            var durabilityState = instance == null
+                ? null
+                : instance.GetComponent<NetworkUtilityItemDurabilityState>();
 
             if (networkObject == null
                 || itemObject == null
                 || itemObject.ItemPrefabData != itemData
-                || physicsAuthority == null)
+                || physicsAuthority == null
+                || itemData.HasDurability && durabilityState == null)
             {
                 Debug.LogError(
                     $"PHS_NETWORK_ITEM_CREATE_FAILED reason=prefab_contract player={name} item={itemId}",
@@ -208,6 +243,18 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
                     Destroy(instance);
                 }
 
+                return false;
+            }
+
+            if (itemData.HasDurability
+                && !durabilityState.PrepareForServerSpawn(
+                    itemData,
+                    currentDurability))
+            {
+                Debug.LogError(
+                    $"PHS_NETWORK_ITEM_CREATE_FAILED reason=durability_prepare player={name} item={itemId} durability={currentDurability}",
+                    this);
+                Destroy(instance);
                 return false;
             }
 
@@ -227,6 +274,70 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
 
             spawnedItem = networkObject;
             return true;
+        }
+
+        public bool TryResolveHeldItemActionServer(
+            string expectedItemId,
+            uint expectedRevision,
+            UtilityItemActionKind actionKind,
+            out UtilityItemActionProfile actionProfile)
+        {
+            actionProfile = default;
+            if (!IsSpawned
+                || !IsServer
+                || itemCatalog == null
+                || itemRecord == null
+                || !itemRecord.IsSpawned)
+            {
+                Debug.LogError(
+                    $"PHS_ITEM_ACTION_REJECTED reason=server_contract player={name} action={actionKind}",
+                    this);
+                return false;
+            }
+
+            if (itemRecord.HeldItemId != expectedItemId
+                || itemRecord.Revision != expectedRevision
+                || !itemCatalog.TryGetById(expectedItemId, out var itemData)
+                || !itemData.TryGetActionProfile(actionKind, out actionProfile))
+            {
+                Debug.LogWarning(
+                    $"PHS_ITEM_ACTION_REJECTED reason=profile_or_record player={name} item={expectedItemId} action={actionKind} expectedRevision={expectedRevision} actualRevision={itemRecord.Revision}",
+                    this);
+                return false;
+            }
+
+            if (actionProfile.DurabilityCost > 0 && !itemData.HasDurability)
+            {
+                Debug.LogError(
+                    $"PHS_ITEM_ACTION_REJECTED reason=durability_contract item={expectedItemId} action={actionKind}",
+                    itemData);
+                return false;
+            }
+
+            return itemRecord.CanSpendHeldItemDurabilityServer(
+                expectedItemId,
+                expectedRevision,
+                actionProfile.DurabilityCost);
+        }
+
+        public bool TryCommitHeldItemActionServer(
+            string expectedItemId,
+            uint expectedRevision,
+            UtilityItemActionProfile actionProfile)
+        {
+            if (!actionProfile.IsValid)
+            {
+                Debug.LogError(
+                    $"PHS_ITEM_ACTION_COMMIT_FAILED reason=profile_invalid player={name} item={expectedItemId}",
+                    this);
+                return false;
+            }
+
+            return itemRecord != null
+                && itemRecord.TrySpendHeldItemDurabilityServer(
+                    expectedItemId,
+                    expectedRevision,
+                    actionProfile.DurabilityCost);
         }
 
         [ServerRpc]
@@ -302,8 +413,29 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
                 return RejectPickup("item_not_in_catalog", senderClientId, targetNetworkObjectId);
             }
 
+            var pickupDurability = 0;
+            if (itemData.HasDurability)
+            {
+                var durabilityState =
+                    targetNetworkObject.GetComponent<
+                        NetworkUtilityItemDurabilityState>();
+                if (durabilityState == null
+                    || !durabilityState.TryGetServerDurability(
+                        itemData,
+                        out pickupDurability))
+                {
+                    return RejectPickup(
+                        "durability_state_missing",
+                        senderClientId,
+                        targetNetworkObjectId);
+                }
+            }
+
             var expectedRevision = itemRecord.Revision;
-            if (!itemRecord.TrySetHeldItemServer(itemData.ItemId, expectedRevision))
+            if (!itemRecord.TrySetHeldItemServer(
+                    itemData.ItemId,
+                    pickupDurability,
+                    expectedRevision))
             {
                 return RejectPickup("record_set_failed", senderClientId, targetNetworkObjectId);
             }
@@ -343,6 +475,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
             var expectedRevision = itemRecord.Revision;
             if (!TryCreateDroppedItemServer(
                     itemId,
+                    itemRecord.CurrentDurability,
                     requestedPosition,
                     normalizedRotation,
                     out var spawnedItem))

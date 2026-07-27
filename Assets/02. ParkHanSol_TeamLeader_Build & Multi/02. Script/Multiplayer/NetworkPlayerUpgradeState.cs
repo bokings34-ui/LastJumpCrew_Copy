@@ -10,6 +10,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
     [RequireComponent(typeof(NetworkPlayerController))]
     [RequireComponent(typeof(NetworkPlayerItemRecord))]
     [RequireComponent(typeof(NetworkPlayerItemLifecycle))]
+    [RequireComponent(typeof(NetworkPlayerLifeState))]
     public sealed class NetworkPlayerUpgradeState : NetworkBehaviour
     {
         private readonly NetworkVariable<float> hookPowerMultiplier = new(
@@ -24,6 +25,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
         [SerializeField] private NetworkPlayerController playerController;
         [SerializeField] private NetworkPlayerItemRecord itemRecord;
         [SerializeField] private NetworkPlayerItemLifecycle itemLifecycle;
+        [SerializeField] private NetworkPlayerLifeState playerLifeState;
 
         public float HookPowerMultiplier => IsSpawned ? hookPowerMultiplier.Value : 1f;
         public float ThrusterCapacityBonus => IsSpawned ? thrusterCapacityBonus.Value : 0f;
@@ -175,6 +177,36 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
                     }
 
                     break;
+                case UtilityItemUpgradeEffect.IncreasePlayerMaximumHp:
+                    var playerMaximumIncrease = Mathf.RoundToInt(itemData.UpgradeAmount);
+                    if (playerMaximumIncrease <= 0)
+                    {
+                        reason = "positive_rounded_amount_required";
+                        return false;
+                    }
+
+                    if (playerLifeState == null
+                        || !playerLifeState.IsSpawned
+                        || !playerLifeState.IsServer)
+                    {
+                        reason = "player_life_state_missing";
+                        return false;
+                    }
+
+                    if (!playerLifeState.IsAlive)
+                    {
+                        reason = "player_dead";
+                        return false;
+                    }
+
+                    if (playerLifeState.MaximumHealth > int.MaxValue - playerMaximumIncrease
+                        || playerLifeState.CurrentHealth > int.MaxValue - playerMaximumIncrease)
+                    {
+                        reason = "maximum_player_hp_overflow";
+                        return false;
+                    }
+
+                    break;
                 default:
                     reason = "upgrade_effect_invalid";
                     return false;
@@ -210,6 +242,10 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
 
                     thrusterCapacityBonus.Value += itemData.UpgradeAmount;
                     return true;
+                case UtilityItemUpgradeEffect.IncreasePlayerMaximumHp:
+                    return playerLifeState.TryIncreaseMaximumHealthServer(
+                        Mathf.RoundToInt(itemData.UpgradeAmount),
+                        out reason);
                 default:
                     reason = "upgrade_effect_invalid";
                     return false;

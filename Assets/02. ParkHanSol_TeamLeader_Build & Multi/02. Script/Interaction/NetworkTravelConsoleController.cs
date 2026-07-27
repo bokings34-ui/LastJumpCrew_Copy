@@ -579,7 +579,7 @@ namespace LastJumpCrew.ParkHanSol.Interaction
             }
             else if (runFlow.Phase == NetworkRunPhase.WarpReady)
             {
-                actionScreenText.text = "안전 구역으로\n워프 실행";
+                actionScreenText.text = "안전 구역으로 이동";
             }
             else if (canExecute)
             {

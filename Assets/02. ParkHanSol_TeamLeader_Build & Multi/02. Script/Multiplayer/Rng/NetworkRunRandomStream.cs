@@ -11,6 +11,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
         ExternalThreat = 200,
         InternalAccident = 300,
         InternalAccidentAnchor = 301,
+        IncidentConsequence = 302,
         DebrisLayout = 400,
         DebrisRecycle = 401,
         ShopStock = 500,

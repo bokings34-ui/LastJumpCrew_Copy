@@ -28,6 +28,16 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Customization
         private GameObject headVisual;
         private GameObject backVisual;
         private bool serverProfileLoaded;
+        private bool ownerProfileReady;
+
+        public event Action StateChanged;
+
+        public CosmeticCatalog Catalog => catalog;
+        public PersonalLobbyCustomizationCreditsWallet PersonalCreditsWallet => personalCreditsWallet;
+        public bool IsProfileReady => ownerProfileReady;
+        public string EquippedHeadId => equippedHeadId.Value.ToString();
+        public string EquippedBackId => equippedBackId.Value.ToString();
+        public Color32 BodyColor => bodyColor.Value;
 
         private void Awake()
         {
@@ -62,12 +72,12 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Customization
             equippedBackId.OnValueChanged -= HandleAppearanceChanged;
             bodyColor.OnValueChanged -= HandleColorChanged;
             ownedItemIds.OnListChanged -= HandleOwnedItemsChanged;
-            if (IsOwner) SaveProfile();
+            if (IsOwner && ownerProfileReady) SaveProfile();
         }
 
         public void RequestPurchase(string itemId)
         {
-            if (!IsOwner || string.IsNullOrWhiteSpace(itemId))
+            if (!IsOwner || !ownerProfileReady || string.IsNullOrWhiteSpace(itemId))
             {
                 Debug.LogError($"PHS_COSMETIC_PURCHASE_FAILED reason=owner_or_item_invalid player={name}");
                 return;
@@ -77,7 +87,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Customization
 
         public void RequestEquip(string itemId)
         {
-            if (!IsOwner || string.IsNullOrWhiteSpace(itemId))
+            if (!IsOwner || !ownerProfileReady || string.IsNullOrWhiteSpace(itemId))
             {
                 Debug.LogError($"PHS_COSMETIC_EQUIP_FAILED reason=owner_or_item_invalid player={name}");
                 return;
@@ -87,12 +97,28 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Customization
 
         public void RequestSetBodyColor(Color32 color)
         {
-            if (!IsOwner)
+            if (!IsOwner || !ownerProfileReady)
             {
                 Debug.LogError($"PHS_COSMETIC_COLOR_FAILED reason=owner_required player={name}");
                 return;
             }
             RequestSetBodyColorServerRpc(color);
+        }
+
+        public void RequestUnequip(CosmeticSlot slot)
+        {
+            if (!IsOwner || !ownerProfileReady)
+            {
+                Debug.LogError($"PHS_COSMETIC_UNEQUIP_FAILED reason=owner_or_profile_not_ready player={name}");
+                return;
+            }
+
+            RequestUnequipServerRpc(slot);
+        }
+
+        public bool OwnsItem(string itemId)
+        {
+            return !string.IsNullOrWhiteSpace(itemId) && Owns(itemId);
         }
 
         [ServerRpc]
@@ -108,15 +134,43 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Customization
             {
                 if (catalog.TryGetItem(id, out _)) ownedItemIds.Add(new FixedString64Bytes(id));
             }
-            bodyColor.Value = savedColor;
+            if (catalog.IsBodyColorAllowed(savedColor))
+            {
+                bodyColor.Value = savedColor;
+            }
+            else
+            {
+                Debug.LogError($"PHS_COSMETIC_PROFILE_LOAD_FAILED reason=color_not_allowed color={savedColor} player={name}");
+            }
             TryEquipServer(headId, CosmeticSlot.Head);
             TryEquipServer(backId, CosmeticSlot.Back);
+            ConfirmProfileLoadedClientRpc(new ClientRpcParams
+            {
+                Send = new ClientRpcSendParams
+                {
+                    TargetClientIds = new[] { OwnerClientId }
+                }
+            });
+        }
+
+        [ClientRpc]
+        private void ConfirmProfileLoadedClientRpc(ClientRpcParams clientRpcParams = default)
+        {
+            if (!IsOwner)
+            {
+                return;
+            }
+
+            ownerProfileReady = true;
+            StateChanged?.Invoke();
         }
 
         [ServerRpc]
         private void RequestPurchaseServerRpc(FixedString64Bytes itemId, ServerRpcParams rpcParams = default)
         {
-            if (rpcParams.Receive.SenderClientId != OwnerClientId || !catalog.TryGetItem(itemId.ToString(), out var item))
+            if (rpcParams.Receive.SenderClientId != OwnerClientId
+                || !serverProfileLoaded
+                || !catalog.TryGetItem(itemId.ToString(), out var item))
             {
                 Debug.LogError($"PHS_COSMETIC_PURCHASE_FAILED reason=owner_or_catalog_invalid player={name}");
                 return;
@@ -134,7 +188,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Customization
         [ServerRpc]
         private void RequestEquipServerRpc(FixedString64Bytes itemId, ServerRpcParams rpcParams = default)
         {
-            if (rpcParams.Receive.SenderClientId != OwnerClientId)
+            if (rpcParams.Receive.SenderClientId != OwnerClientId || !serverProfileLoaded)
             {
                 Debug.LogError($"PHS_COSMETIC_EQUIP_FAILED reason=owner_mismatch player={name}");
                 return;
@@ -148,13 +202,42 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Customization
         }
 
         [ServerRpc]
+        private void RequestUnequipServerRpc(CosmeticSlot slot, ServerRpcParams rpcParams = default)
+        {
+            if (rpcParams.Receive.SenderClientId != OwnerClientId || !serverProfileLoaded)
+            {
+                Debug.LogError($"PHS_COSMETIC_UNEQUIP_FAILED reason=owner_or_profile_invalid player={name}");
+                return;
+            }
+
+            if (slot == CosmeticSlot.Head)
+            {
+                equippedHeadId.Value = default;
+            }
+            else if (slot == CosmeticSlot.Back)
+            {
+                equippedBackId.Value = default;
+            }
+            else
+            {
+                Debug.LogError($"PHS_COSMETIC_UNEQUIP_FAILED reason=slot_invalid slot={slot} player={name}");
+            }
+        }
+
+        [ServerRpc]
         private void RequestSetBodyColorServerRpc(Color32 color, ServerRpcParams rpcParams = default)
         {
-            if (rpcParams.Receive.SenderClientId != OwnerClientId)
+            if (rpcParams.Receive.SenderClientId != OwnerClientId || !serverProfileLoaded)
             {
                 Debug.LogError($"PHS_COSMETIC_COLOR_FAILED reason=owner_mismatch player={name}");
                 return;
             }
+            if (!catalog.IsBodyColorAllowed(color))
+            {
+                Debug.LogError($"PHS_COSMETIC_COLOR_FAILED reason=color_not_allowed color={color} player={name}");
+                return;
+            }
+
             bodyColor.Value = color;
         }
 
@@ -172,9 +255,33 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Customization
             return false;
         }
 
-        private void HandleAppearanceChanged(FixedString64Bytes _, FixedString64Bytes __) => ApplyAppearance();
-        private void HandleColorChanged(Color32 _, Color32 __) => ApplyBodyColor();
-        private void HandleOwnedItemsChanged(NetworkListEvent<FixedString64Bytes> _) { if (IsOwner) SaveProfile(); }
+        private void HandleAppearanceChanged(FixedString64Bytes _, FixedString64Bytes __)
+        {
+            ApplyAppearance();
+            SaveOwnerProfileIfReady();
+            StateChanged?.Invoke();
+        }
+
+        private void HandleColorChanged(Color32 _, Color32 __)
+        {
+            ApplyBodyColor();
+            SaveOwnerProfileIfReady();
+            StateChanged?.Invoke();
+        }
+
+        private void HandleOwnedItemsChanged(NetworkListEvent<FixedString64Bytes> _)
+        {
+            SaveOwnerProfileIfReady();
+            StateChanged?.Invoke();
+        }
+
+        private void SaveOwnerProfileIfReady()
+        {
+            if (IsOwner && ownerProfileReady)
+            {
+                SaveProfile();
+            }
+        }
 
         private void ApplyAppearance()
         {

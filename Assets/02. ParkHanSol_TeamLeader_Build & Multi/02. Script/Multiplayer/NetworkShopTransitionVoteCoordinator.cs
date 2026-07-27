@@ -174,7 +174,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
             transitionMode.Value = requestedTransitionMode;
             shopExitVote.Value = isShopExit;
             eligiblePlayerCount.Value = eligibleClientIds.Count;
-            requiredAgreeCount.Value = eligibleClientIds.Count / 2 + 1;
+            requiredAgreeCount.Value = eligibleClientIds.Count;
             agreeCount.Value = 0;
             voteDeadline = Time.unscaledTime + voteDurationSeconds;
             voteActive.Value = true;
@@ -348,9 +348,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
             agreeingClientIds.RemoveWhere(clientId => !eligibleClientIds.Contains(clientId));
             decliningClientIds.RemoveWhere(clientId => !eligibleClientIds.Contains(clientId));
             eligiblePlayerCount.Value = eligibleClientIds.Count;
-            requiredAgreeCount.Value = eligibleClientIds.Count == 0
-                ? 0
-                : eligibleClientIds.Count / 2 + 1;
+            requiredAgreeCount.Value = eligibleClientIds.Count;
             agreeCount.Value = agreeingClientIds.Count;
 
             if (eligibleClientIds.Count == 0)
