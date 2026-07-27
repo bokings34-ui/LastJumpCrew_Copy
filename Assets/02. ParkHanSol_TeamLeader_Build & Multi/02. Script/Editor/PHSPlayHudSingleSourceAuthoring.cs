@@ -33,6 +33,7 @@ namespace LastJumpCrew.ParkHanSol.Editor
             var root = PrefabUtility.LoadPrefabContents(HudPath);
             try
             {
+                root.transform.localScale = Vector3.one;
                 var controller = root.GetComponentInChildren<PHSHudFeedbackController>(true)
                     ?? throw new InvalidOperationException(
                         "PHS_HUD_SSO_AUTHOR_FAILED reason=feedback_controller_missing");
@@ -69,6 +70,72 @@ namespace LastJumpCrew.ParkHanSol.Editor
             Debug.Log(
                 "PHS_HUD_SSO_AUTHOR_OK gauges=2 economySafe=true " +
                 "englishFontUnified=true networkVariant=true");
+        }
+
+        [MenuItem("Tools/ParkHanSol/BEAVER/Author Vitals Gauge Readability")]
+        public static void AuthorVitalsGaugeReadability()
+        {
+            var root = PrefabUtility.LoadPrefabContents(HudPath);
+            try
+            {
+                root.transform.localScale = Vector3.one;
+                var gauges = ConfigureVitalsGauges(root);
+                var controller = root.GetComponentInChildren<PHSHudFeedbackController>(true)
+                    ?? throw new InvalidOperationException(
+                        "PHS_HUD_GAUGE_AUTHOR_FAILED reason=feedback_controller_missing");
+                var controllerData = new SerializedObject(controller);
+                SetReference(controllerData, "warpGaugeMotion", gauges.warp);
+                SetReference(controllerData, "shipHpGaugeMotion", gauges.ship);
+                controllerData.ApplyModifiedPropertiesWithoutUndo();
+                PrefabUtility.SaveAsPrefabAsset(root, HudPath);
+            }
+            finally
+            {
+                PrefabUtility.UnloadPrefabContents(root);
+            }
+
+            AssetDatabase.SaveAssets();
+            MigrateNetworkHudToCanonicalVariant();
+            ValidateVitalsGaugeOrThrow();
+            Debug.Log(
+                "PHS_HUD_GAUGE_AUTHOR_PASS bars=2 height=30 value_text=2 " +
+                "ticks=6 change_trails=2 network_variant=true");
+        }
+
+        private static void ValidateVitalsGaugeOrThrow()
+        {
+            var prefab = AssetDatabase.LoadAssetAtPath<GameObject>(HudPath)
+                ?? throw new InvalidOperationException(
+                    "PHS_HUD_GAUGE_VALIDATION_FAILED reason=prefab_missing");
+            var errors = new List<string>();
+            Require(prefab.transform.localScale == Vector3.one,
+                $"hud_root_scale_invalid actual={prefab.transform.localScale}", errors);
+            foreach (var name in new[] { "Ship HP Bar", "Warp Gauge Bar" })
+            {
+                var bar = Find(prefab.transform, name) as RectTransform;
+                Require(bar != null, $"bar_missing name={name}", errors);
+                if (bar == null) continue;
+                Require(Approximately(bar.sizeDelta, new Vector2(300f, 30f)),
+                    $"bar_size_invalid name={name} actual={bar.sizeDelta}", errors);
+                Require(Find(bar, "Change Trail")?.GetComponent<Image>() != null,
+                    $"change_trail_missing name={name}", errors);
+                Require(Find(bar, "Gauge Value Text")?.GetComponent<TMP_Text>() != null,
+                    $"value_text_missing name={name}", errors);
+                Require(CountGaugeTicks(bar) == 3,
+                    $"tick_count_invalid name={name} actual={CountGaugeTicks(bar)}", errors);
+                var motion = bar.GetComponent<ParkHanSolHudGaugeMotion>();
+                var data = motion == null ? null : new SerializedObject(motion);
+                Require(data?.FindProperty("changeImage")?.objectReferenceValue != null,
+                    $"change_reference_missing name={name}", errors);
+                Require(data?.FindProperty("valueText")?.objectReferenceValue != null,
+                    $"value_reference_missing name={name}", errors);
+            }
+
+            if (errors.Count > 0)
+            {
+                throw new InvalidOperationException(
+                    "PHS_HUD_GAUGE_VALIDATION_FAILED\n- " + string.Join("\n- ", errors));
+            }
         }
 
         [MenuItem("Tools/ParkHanSol/BEAVER/Migrate Network HUD To Canonical Variant")]
@@ -157,7 +224,11 @@ namespace LastJumpCrew.ParkHanSol.Editor
             {
                 var data = new SerializedObject(gauge);
                 var fill = data.FindProperty("fillImage")?.objectReferenceValue as Image;
+                var change = data.FindProperty("changeImage")?.objectReferenceValue as Image;
+                var valueText = data.FindProperty("valueText")?.objectReferenceValue as TMP_Text;
                 Require(fill != null, $"gauge_fill_missing name={gauge.name}", errors);
+                Require(change != null, $"gauge_change_trail_missing name={gauge.name}", errors);
+                Require(valueText != null, $"gauge_value_text_missing name={gauge.name}", errors);
                 if (fill != null)
                 {
                     Require(fill.type == Image.Type.Filled,
@@ -171,21 +242,25 @@ namespace LastJumpCrew.ParkHanSol.Editor
             Require(shipHpGauge != null, "ship_hp_gauge_missing", errors);
             if (warpGauge != null)
             {
-                Require(Approximately(warpGauge.sizeDelta, new Vector2(300f, 18f)),
+                Require(Approximately(warpGauge.sizeDelta, new Vector2(300f, 30f)),
                     $"warp_gauge_size_invalid actual={warpGauge.sizeDelta}", errors);
                 var fill = Find(warpGauge, "Fill")?.GetComponent<Image>();
                 Require(fill != null && Approximately(
                         fill.color,
-                        new Color(1f, 0.31f, 0.08f, 1f)),
+                        new Color(1f, 0.36f, 0.06f, 1f)),
                     "warp_gauge_fill_not_orange", errors);
+                Require(CountGaugeTicks(warpGauge) == 3,
+                    $"warp_gauge_tick_count actual={CountGaugeTicks(warpGauge)}", errors);
             }
 
             if (shipHpGauge != null)
             {
-                Require(Approximately(shipHpGauge.sizeDelta, new Vector2(300f, 18f)),
+                Require(Approximately(shipHpGauge.sizeDelta, new Vector2(300f, 30f)),
                     $"ship_hp_gauge_size_invalid actual={shipHpGauge.sizeDelta}", errors);
                 Require(shipHpGauge.anchorMin == shipHpGauge.anchorMax,
                     "ship_hp_gauge_stretch_anchor_present", errors);
+                Require(CountGaugeTicks(shipHpGauge) == 3,
+                    $"ship_hp_gauge_tick_count actual={CountGaugeTicks(shipHpGauge)}", errors);
             }
 
             var economy = Find(prefab.transform, "Economy Cluster") as RectTransform;
@@ -466,8 +541,18 @@ namespace LastJumpCrew.ParkHanSol.Editor
             var warpBar = Find(root.transform, "Warp Gauge Bar") as RectTransform
                 ?? throw new InvalidOperationException(
                     "PHS_HUD_SSO_AUTHOR_FAILED reason=warp_gauge_bar_missing");
-            ConfigureGaugeBar(shipBar, shipRoot);
-            ConfigureGaugeBar(warpBar, warpRoot);
+            ConfigureGaugeBar(
+                shipBar,
+                shipRoot,
+                "SHIP HP  100/100",
+                new Color(1f, 0.18f, 0.16f, 1f),
+                new Color(0.16f, 0.9f, 0.42f, 1f));
+            ConfigureGaugeBar(
+                warpBar,
+                warpRoot,
+                "WARP  0%",
+                new Color(0.35f, 0.08f, 0.04f, 1f),
+                new Color(1f, 0.36f, 0.06f, 1f));
 
             EnsureVitalsIcon(shipRoot, "Ship Health Icon", ShipHealthIconPath);
             EnsureVitalsIcon(warpRoot, "Warp Gauge Icon", WarpGaugeIconPath);
@@ -501,15 +586,124 @@ namespace LastJumpCrew.ParkHanSol.Editor
 
         private static void ConfigureGaugeBar(
             RectTransform bar,
-            RectTransform parent)
+            RectTransform parent,
+            string defaultValue,
+            Color emptyColor,
+            Color fullColor)
         {
             bar.SetParent(parent, false);
             bar.anchorMin = new Vector2(0f, 0.5f);
             bar.anchorMax = new Vector2(0f, 0.5f);
             bar.pivot = new Vector2(0f, 0.5f);
             bar.anchoredPosition = new Vector2(80f, 0f);
-            bar.sizeDelta = new Vector2(300f, 18f);
+            bar.sizeDelta = new Vector2(300f, 30f);
             bar.localScale = Vector3.one;
+
+            var background = bar.GetComponent<Image>() ?? bar.gameObject.AddComponent<Image>();
+            background.color = new Color(0.015f, 0.025f, 0.04f, 0.96f);
+            background.raycastTarget = false;
+            var outline = bar.GetComponent<Outline>() ?? bar.gameObject.AddComponent<Outline>();
+            outline.effectColor = new Color(0.75f, 0.88f, 1f, 0.72f);
+            outline.effectDistance = new Vector2(2f, -2f);
+            outline.useGraphicAlpha = false;
+
+            var fill = Find(bar, "Fill")?.GetComponent<Image>()
+                ?? throw new InvalidOperationException(
+                    $"PHS_HUD_SSO_AUTHOR_FAILED reason=gauge_fill_missing bar={bar.name}");
+            ConfigureFilledImage(fill, 3f, fullColor);
+
+            var trailTransform = Find(bar, "Change Trail");
+            var trailObject = trailTransform == null
+                ? new GameObject("Change Trail", typeof(RectTransform), typeof(Image))
+                : trailTransform.gameObject;
+            var trailRect = trailObject.GetComponent<RectTransform>();
+            trailRect.SetParent(bar, false);
+            var trail = trailObject.GetComponent<Image>();
+            ConfigureFilledImage(trail, 3f, Color.clear);
+            trailRect.SetSiblingIndex(0);
+            fill.rectTransform.SetSiblingIndex(1);
+
+            for (var index = 1; index <= 3; index++)
+            {
+                EnsureGaugeTick(bar, index, index / 4f);
+            }
+
+            var valueTransform = Find(bar, "Gauge Value Text");
+            var valueObject = valueTransform == null
+                ? new GameObject(
+                    "Gauge Value Text",
+                    typeof(RectTransform),
+                    typeof(CanvasRenderer),
+                    typeof(TextMeshProUGUI))
+                : valueTransform.gameObject;
+            var valueText = valueObject.GetComponent<TextMeshProUGUI>();
+            valueText.rectTransform.SetParent(bar, false);
+            valueText.rectTransform.anchorMin = Vector2.zero;
+            valueText.rectTransform.anchorMax = Vector2.one;
+            valueText.rectTransform.offsetMin = new Vector2(8f, 0f);
+            valueText.rectTransform.offsetMax = new Vector2(-8f, 0f);
+            valueText.rectTransform.localScale = Vector3.one;
+            valueText.text = defaultValue;
+            valueText.font = AssetDatabase.LoadAssetAtPath<TMP_FontAsset>(CanonicalEnglishFontPath);
+            valueText.fontSize = 19f;
+            valueText.fontStyle = FontStyles.Bold;
+            valueText.alignment = TextAlignmentOptions.Center;
+            valueText.color = Color.white;
+            valueText.raycastTarget = false;
+
+            var motion = bar.GetComponent<ParkHanSolHudGaugeMotion>()
+                ?? throw new InvalidOperationException(
+                    $"PHS_HUD_SSO_AUTHOR_FAILED reason=gauge_motion_missing bar={bar.name}");
+            var data = new SerializedObject(motion);
+            SetReference(data, "gaugeRoot", bar);
+            SetReference(data, "fillImage", fill);
+            SetReference(data, "changeImage", trail);
+            SetReference(data, "valueText", valueText);
+            data.FindProperty("emptyValueColor").colorValue = emptyColor;
+            data.FindProperty("fullValueColor").colorValue = fullColor;
+            data.ApplyModifiedPropertiesWithoutUndo();
+        }
+
+        private static void ConfigureFilledImage(Image image, float inset, Color color)
+        {
+            var rect = image.rectTransform;
+            rect.anchorMin = Vector2.zero;
+            rect.anchorMax = Vector2.one;
+            rect.offsetMin = new Vector2(inset, inset);
+            rect.offsetMax = new Vector2(-inset, -inset);
+            rect.localScale = Vector3.one;
+            image.type = Image.Type.Filled;
+            image.fillMethod = Image.FillMethod.Horizontal;
+            image.fillOrigin = (int)Image.OriginHorizontal.Left;
+            image.fillAmount = 1f;
+            image.color = color;
+            image.raycastTarget = false;
+        }
+
+        private static void EnsureGaugeTick(RectTransform bar, int index, float normalizedX)
+        {
+            var name = $"Gauge Tick {index}";
+            var tickTransform = Find(bar, name);
+            var tickObject = tickTransform == null
+                ? new GameObject(name, typeof(RectTransform), typeof(Image))
+                : tickTransform.gameObject;
+            var tickRect = tickObject.GetComponent<RectTransform>();
+            tickRect.SetParent(bar, false);
+            tickRect.anchorMin = new Vector2(normalizedX, 0f);
+            tickRect.anchorMax = new Vector2(normalizedX, 1f);
+            tickRect.pivot = new Vector2(0.5f, 0.5f);
+            tickRect.anchoredPosition = Vector2.zero;
+            tickRect.sizeDelta = new Vector2(2f, -6f);
+            tickRect.localScale = Vector3.one;
+            var image = tickObject.GetComponent<Image>();
+            image.color = new Color(1f, 1f, 1f, 0.34f);
+            image.raycastTarget = false;
+        }
+
+        private static int CountGaugeTicks(RectTransform bar)
+        {
+            return bar.Cast<Transform>().Count(child =>
+                child.name.StartsWith("Gauge Tick ", StringComparison.Ordinal));
         }
 
         private static void EnsureVitalsIcon(

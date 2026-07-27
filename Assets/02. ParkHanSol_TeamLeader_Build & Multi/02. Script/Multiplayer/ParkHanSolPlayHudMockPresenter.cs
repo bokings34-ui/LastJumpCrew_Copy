@@ -74,6 +74,17 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
             SetText(staminaText, $"ST {stamina}<size=24>/{maxStamina}</size>");
         }
 
+        public void SetHealth(int health, int maxHealth)
+        {
+            if (hudFeedbackController != null)
+            {
+                hudFeedbackController.SetHealth(health, maxHealth);
+                return;
+            }
+
+            SetText(healthText, $"+{health}/{Mathf.Max(1, maxHealth)}");
+        }
+
         public void SetThrusterFuel(int currentFuel, int maxFuel)
         {
             if (hudFeedbackController != null)

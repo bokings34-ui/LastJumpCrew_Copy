@@ -3,6 +3,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
     public interface IHudFeedback
     {
         void SetVitals(int health, int maxHealth, int stamina, int maxStamina);
+        void SetHealth(int health, int maxHealth);
         void SetThrusterFuel(int currentFuel, int maxFuel);
         void SetEconomy(int money, int bank);
         void SetWarpGauge(float normalizedValue);

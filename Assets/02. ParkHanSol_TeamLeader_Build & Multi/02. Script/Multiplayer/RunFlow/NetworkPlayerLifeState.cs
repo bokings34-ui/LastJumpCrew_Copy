@@ -1,3 +1,4 @@
+using System;
 using LastJumpCrew.Common;
 using Unity.Netcode;
 using UnityEngine;
@@ -57,6 +58,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
             && synchronizedRespawnSeconds.Value >= 0f;
         public float DeadZoneWarningRemainingSeconds => synchronizedDeadZoneSeconds.Value;
         public float RespawnRemainingSeconds => synchronizedRespawnSeconds.Value;
+        public event Action<int, int> HealthChanged;
 
         private void Awake()
         {
@@ -69,6 +71,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
         public override void OnNetworkSpawn()
         {
             synchronizedHealth.OnValueChanged += HandleHealthChanged;
+            synchronizedMaximumHealth.OnValueChanged += HandleMaximumHealthChanged;
             synchronizedAlive.OnValueChanged += HandleAliveChanged;
             synchronizedWarpRevivePending.OnValueChanged += HandleWarpRevivePendingChanged;
             synchronizedDeadZoneSeconds.OnValueChanged += HandleWarningChanged;
@@ -82,11 +85,13 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
             ApplyAlivePresentation(synchronizedAlive.Value);
             ApplyWarningPresentation(synchronizedDeadZoneSeconds.Value);
             ApplyRespawnPresentation();
+            NotifyOwnerHealthChanged();
         }
 
         public override void OnNetworkDespawn()
         {
             synchronizedHealth.OnValueChanged -= HandleHealthChanged;
+            synchronizedMaximumHealth.OnValueChanged -= HandleMaximumHealthChanged;
             synchronizedAlive.OnValueChanged -= HandleAliveChanged;
             synchronizedWarpRevivePending.OnValueChanged -= HandleWarpRevivePendingChanged;
             synchronizedDeadZoneSeconds.OnValueChanged -= HandleWarningChanged;
@@ -326,10 +331,12 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
 
         private void HandleHealthChanged(int previousValue, int currentValue)
         {
-            if (IsServer || !IsOwner)
+            if (!IsOwner)
             {
                 return;
             }
+
+            NotifyOwnerHealthChanged();
 
             var networkManager = NetworkManager.Singleton;
             if (networkManager == null)
@@ -347,6 +354,22 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
                 $"ownerClient={OwnerClientId} " +
                 $"previous={previousValue} current={currentValue}",
                 this);
+        }
+
+        private void HandleMaximumHealthChanged(int previousValue, int currentValue)
+        {
+            if (IsOwner)
+            {
+                NotifyOwnerHealthChanged();
+            }
+        }
+
+        private void NotifyOwnerHealthChanged()
+        {
+            if (IsOwner)
+            {
+                HealthChanged?.Invoke(CurrentHealth, MaximumHealth);
+            }
         }
 
         private void HandleAliveChanged(bool previousValue, bool currentValue)
