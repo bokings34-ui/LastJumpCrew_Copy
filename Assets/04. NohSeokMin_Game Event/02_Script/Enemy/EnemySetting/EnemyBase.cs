@@ -76,6 +76,14 @@ namespace SM
         {
             _cachedTarget = null;
 
+            if (_statusEffectController != null
+                && _statusEffectController.CanReceiveStatusEffect(
+                    StatusEffectType.ElectricShok))
+            {
+                _statusEffectController.RemoveStatusEffect(
+                    StatusEffectType.ElectricShok);
+            }
+
             if (_knockbackRoutine != null) 
             { 
                 StopCoroutine(_knockbackRoutine); 

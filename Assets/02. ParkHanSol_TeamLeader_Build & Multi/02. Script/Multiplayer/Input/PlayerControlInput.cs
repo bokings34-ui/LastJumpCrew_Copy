@@ -1,5 +1,5 @@
-using System;
 using Unity.Netcode;
+using System.Linq;
 using UnityEngine;
 using UnityEngine.InputSystem;
 
@@ -7,7 +7,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Input
 {
     public sealed class PlayerControlInput : NetworkBehaviour, IPlayerControlInput
     {
-        public const string BindingOverridesPreferenceKey = "PHS_InputBindingOverrides_v1";
+        public const string BindingOverridesPreferenceKey = NetworkPlayerOptionsStore.BindingOverridesPreferenceKey;
 
         [SerializeField] private PlayerInput playerInput;
         [SerializeField] private string playerActionMapName = "Player";
@@ -64,7 +64,36 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Input
             }
 
             playerInput.ActivateInput();
+            PreferKeyboardAndMouseScheme();
             playerInput.SwitchCurrentActionMap(playerActionMapName);
+            Debug.Log(
+                $"PHS_PLAYER_INPUT_STATE ownerClientId={OwnerClientId} " +
+                $"active={playerInput.inputIsActive} map={playerInput.currentActionMap?.name ?? "none"} " +
+                $"scheme={playerInput.currentControlScheme ?? "none"} " +
+                $"devices={string.Join(",", playerInput.user.pairedDevices.Select(device => device.displayName))}",
+                this);
+        }
+
+        private void PreferKeyboardAndMouseScheme()
+        {
+            var keyboard = Keyboard.current;
+            var mouse = Mouse.current;
+            if (keyboard == null || mouse == null)
+            {
+                Debug.LogWarning(
+                    $"PHS_PLAYER_INPUT_SCHEME_FALLBACK ownerClientId={OwnerClientId} " +
+                    $"keyboard={keyboard != null} mouse={mouse != null}",
+                    this);
+                return;
+            }
+
+            playerInput.SwitchCurrentControlScheme("Keyboard&Mouse", keyboard, mouse);
+            if (playerInput.currentControlScheme != "Keyboard&Mouse")
+            {
+                Debug.LogWarning(
+                    $"PHS_PLAYER_INPUT_SCHEME_FAILED ownerClientId={OwnerClientId} scheme=Keyboard&Mouse",
+                    this);
+            }
         }
 
         public override void OnNetworkDespawn()
@@ -148,30 +177,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Input
 
         private void LoadBindingOverrides()
         {
-            if (!PlayerPrefs.HasKey(BindingOverridesPreferenceKey))
-            {
-                return;
-            }
-
-            var json = PlayerPrefs.GetString(BindingOverridesPreferenceKey, string.Empty);
-            if (string.IsNullOrWhiteSpace(json))
-            {
-                Debug.LogError(
-                    $"PHS_PLAYER_INPUT_OVERRIDE_FAILED reason=saved_json_empty key={BindingOverridesPreferenceKey}",
-                    this);
-                return;
-            }
-
-            try
-            {
-                playerInput.actions.LoadBindingOverridesFromJson(json);
-            }
-            catch (Exception exception)
-            {
-                Debug.LogError(
-                    $"PHS_PLAYER_INPUT_OVERRIDE_FAILED reason=invalid_json exception={exception.GetType().Name} message={exception.Message}",
-                    this);
-            }
+            NetworkPlayerOptionsStore.Shared.LoadBindingOverrides(playerInput.actions);
         }
     }
 }

@@ -102,6 +102,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.ShipAccidents
                 }
 
                 lineBuffer.Add(new PHSShipAccidentHudLine(
+                    snapshot.AccidentId,
                     definition.DisplayName,
                     definition.TargetModule.ToString(),
                     snapshot.RepairProgress,
@@ -114,14 +115,21 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.ShipAccidents
 
     public readonly struct PHSShipAccidentHudLine
     {
-        public PHSShipAccidentHudLine(string displayName, string moduleName, int repairProgress, int requiredRepairProgress)
+        public PHSShipAccidentHudLine(
+            PHSShipAccidentId accidentId,
+            string displayName,
+            string moduleName,
+            int repairProgress,
+            int requiredRepairProgress)
         {
+            AccidentId = accidentId;
             DisplayName = displayName ?? string.Empty;
             ModuleName = moduleName ?? string.Empty;
             RepairProgress = repairProgress;
             RequiredRepairProgress = requiredRepairProgress;
         }
 
+        public PHSShipAccidentId AccidentId { get; }
         public string DisplayName { get; }
         public string ModuleName { get; }
         public int RepairProgress { get; }

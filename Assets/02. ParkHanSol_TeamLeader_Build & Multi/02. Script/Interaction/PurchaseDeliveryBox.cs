@@ -207,6 +207,24 @@ namespace LastJumpCrew.ParkHanSol.Interaction
 
         private bool TryApplyDelivery(UtilityItemPrefabData itemPrefabData)
         {
+            var networkManager = NetworkManager.Singleton;
+            if (networkManager != null && networkManager.IsListening && !IsServer)
+            {
+                foreach (var slot in deliverySlots)
+                {
+                    if (slot != null && slot.IsNetworkManaged)
+                    {
+                        // The ToolBox NetworkList owns client slot presentation.
+                        return true;
+                    }
+                }
+
+                Debug.LogError(
+                    $"PHS_PURCHASE_DELIVERY_SYNC_FAILED reason=network_tool_box_missing box={name} item={itemPrefabData.ItemId}",
+                    this);
+                return false;
+            }
+
             foreach (var slot in deliverySlots)
             {
                 if (slot != null && slot.TryReceiveDelivery(itemPrefabData))

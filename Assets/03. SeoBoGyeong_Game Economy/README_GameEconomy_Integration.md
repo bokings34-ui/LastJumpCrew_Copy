@@ -133,8 +133,8 @@
    GameLoopState
      게임 루프 런타임 상태(데이터) + 규칙 상수.
      주요 멤버: Phase, ClearedZoneCount,
-               상수 SHOP_INTERVAL(3) / TOTAL_ZONES(9) /
-               STAGE_TIME_LIMIT(180)
+               상수 SHOP_INTERVAL(4) / TOTAL_ZONES(9) /
+               STAGE_TIME_LIMIT(300)
 
    GameLoopController
      상태 전이 규칙(순수 클래스, SRP). 권위측에서만 호출.

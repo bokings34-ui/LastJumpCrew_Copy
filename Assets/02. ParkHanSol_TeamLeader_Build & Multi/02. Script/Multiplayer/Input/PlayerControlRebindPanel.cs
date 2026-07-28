@@ -31,6 +31,12 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Input
 
         private InputActionRebindingExtensions.RebindingOperation activeRebind;
         private bool setupValid;
+        private int lastCancelFrame = -1;
+        private readonly INetworkPlayerOptionsStore optionsStore =
+            NetworkPlayerOptionsStore.Shared;
+
+        public bool IsRebinding => activeRebind != null;
+        public bool ConsumedCancelThisFrame => lastCancelFrame == Time.frameCount;
 
         private void Awake()
         {
@@ -124,6 +130,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Input
             var entry = bindingEntries[entryIndex];
             var action = inputActions.FindAction(entry.ActionName, true);
             var wasEnabled = action.enabled;
+            var previousOverridePath = action.bindings[entry.BindingIndex].overridePath;
             action.Disable();
             entry.BindingText.text = "PRESS A KEY";
 
@@ -131,11 +138,24 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Input
                 .WithCancelingThrough("<Keyboard>/escape")
                 .OnCancel(operation =>
                 {
-                    FinishRebind(operation, action, wasEnabled, false);
+                    lastCancelFrame = Time.frameCount;
+                    FinishRebind(
+                        operation,
+                        action,
+                        entry,
+                        wasEnabled,
+                        previousOverridePath,
+                        false);
                 })
                 .OnComplete(operation =>
                 {
-                    FinishRebind(operation, action, wasEnabled, true);
+                    FinishRebind(
+                        operation,
+                        action,
+                        entry,
+                        wasEnabled,
+                        previousOverridePath,
+                        true);
                 });
             activeRebind.Start();
         }
@@ -143,7 +163,9 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Input
         private void FinishRebind(
             InputActionRebindingExtensions.RebindingOperation operation,
             InputAction action,
+            BindingEntry entry,
             bool wasEnabled,
+            string previousOverridePath,
             bool save)
         {
             operation.Dispose();
@@ -155,7 +177,18 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Input
 
             if (save)
             {
-                SaveBindingOverrides();
+                if (HasBindingConflict(action, entry.BindingIndex))
+                {
+                    RestoreBindingOverride(action, entry.BindingIndex, previousOverridePath);
+                    entry.BindingText.text = "KEY IN USE";
+                    Debug.LogError(
+                        $"PHS_CONTROL_REBIND_REJECTED reason=duplicate_binding " +
+                        $"action={entry.ActionName} bindingIndex={entry.BindingIndex}",
+                        this);
+                    return;
+                }
+
+                optionsStore.SaveBindingOverrides(inputActions);
                 ReloadActivePlayerInputs();
             }
 
@@ -165,9 +198,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Input
         private void ResetBindings()
         {
             CancelActiveRebind();
-            inputActions.RemoveAllBindingOverrides();
-            PlayerPrefs.DeleteKey(PlayerControlInput.BindingOverridesPreferenceKey);
-            PlayerPrefs.Save();
+            optionsStore.ResetBindingOverrides(inputActions);
             ReloadActivePlayerInputs();
             RefreshBindingTexts();
             Debug.Log("PHS_CONTROL_BINDINGS_RESET");
@@ -175,56 +206,19 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Input
 
         private void SetMouseSensitivity(float value)
         {
-            NetworkPlayerController.SaveMouseSensitivity(value);
-            PlayerPrefs.Save();
+            optionsStore.SetMouseSensitivity(value);
             RefreshMouseSensitivity();
         }
 
         private void LoadSavedBindingOverrides()
         {
-            if (!PlayerPrefs.HasKey(PlayerControlInput.BindingOverridesPreferenceKey))
-            {
-                return;
-            }
-
-            var json = PlayerPrefs.GetString(
-                PlayerControlInput.BindingOverridesPreferenceKey,
-                string.Empty);
-            if (string.IsNullOrWhiteSpace(json))
-            {
-                Debug.LogError(
-                    $"PHS_CONTROL_REBIND_LOAD_FAILED reason=saved_json_empty " +
-                    $"key={PlayerControlInput.BindingOverridesPreferenceKey}",
-                    this);
-                return;
-            }
-
-            try
-            {
-                inputActions.LoadBindingOverridesFromJson(json);
-            }
-            catch (Exception exception)
-            {
-                Debug.LogError(
-                    $"PHS_CONTROL_REBIND_LOAD_FAILED reason=invalid_json " +
-                    $"exception={exception.GetType().Name} message={exception.Message}",
-                    this);
-            }
-        }
-
-        private void SaveBindingOverrides()
-        {
-            PlayerPrefs.SetString(
-                PlayerControlInput.BindingOverridesPreferenceKey,
-                inputActions.SaveBindingOverridesAsJson());
-            PlayerPrefs.Save();
-            Debug.Log("PHS_CONTROL_BINDING_SAVED");
+            optionsStore.LoadBindingOverrides(inputActions);
         }
 
         private void RefreshControls()
         {
             mouseSensitivitySlider.SetValueWithoutNotify(
-                NetworkPlayerController.GetSavedMouseSensitivity());
+                optionsStore.GetMouseSensitivity(NetworkPlayerController.DefaultMouseSensitivity));
             RefreshMouseSensitivity();
             RefreshBindingTexts();
         }
@@ -232,7 +226,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Input
         private void RefreshMouseSensitivity()
         {
             mouseSensitivityValueText.text =
-                NetworkPlayerController.GetSavedMouseSensitivity().ToString("0.00");
+                optionsStore.GetMouseSensitivity(NetworkPlayerController.DefaultMouseSensitivity).ToString("0.00");
         }
 
         private void RefreshBindingTexts()
@@ -253,6 +247,69 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Input
 
             activeRebind.Cancel();
             activeRebind = null;
+        }
+
+        private bool HasBindingConflict(InputAction targetAction, int targetBindingIndex)
+        {
+            var targetPath = targetAction.bindings[targetBindingIndex].effectivePath;
+            if (string.IsNullOrWhiteSpace(targetPath))
+            {
+                Debug.LogError(
+                    $"PHS_CONTROL_REBIND_REJECTED reason=effective_path_empty " +
+                    $"action={targetAction.name} bindingIndex={targetBindingIndex}",
+                    this);
+                return true;
+            }
+
+            var actionMap = targetAction.actionMap;
+            if (actionMap == null)
+            {
+                Debug.LogError(
+                    $"PHS_CONTROL_REBIND_REJECTED reason=action_map_missing action={targetAction.name}",
+                    this);
+                return true;
+            }
+
+            foreach (var action in actionMap.actions)
+            {
+                for (var bindingIndex = 0; bindingIndex < action.bindings.Count; bindingIndex++)
+                {
+                    if (action == targetAction && bindingIndex == targetBindingIndex)
+                    {
+                        continue;
+                    }
+
+                    var binding = action.bindings[bindingIndex];
+                    if (binding.isComposite || string.IsNullOrWhiteSpace(binding.effectivePath))
+                    {
+                        continue;
+                    }
+
+                    if (string.Equals(
+                            binding.effectivePath,
+                            targetPath,
+                            StringComparison.OrdinalIgnoreCase))
+                    {
+                        return true;
+                    }
+                }
+            }
+
+            return false;
+        }
+
+        private static void RestoreBindingOverride(
+            InputAction action,
+            int bindingIndex,
+            string previousOverridePath)
+        {
+            if (string.IsNullOrEmpty(previousOverridePath))
+            {
+                action.RemoveBindingOverride(bindingIndex);
+                return;
+            }
+
+            action.ApplyBindingOverride(bindingIndex, previousOverridePath);
         }
 
         private static void ReloadActivePlayerInputs()

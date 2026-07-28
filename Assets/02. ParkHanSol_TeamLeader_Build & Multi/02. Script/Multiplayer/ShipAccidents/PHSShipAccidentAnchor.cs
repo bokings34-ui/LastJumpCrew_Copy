@@ -1,7 +1,9 @@
 using System;
 using System.Collections;
 using LastJumpCrew.Common;
+using LastJumpCrew.ParkHanSol.Items;
 using UnityEngine;
+using PHSItemHolder = LastJumpCrew.ParkHanSol.Interaction.IItemHolder;
 
 namespace LastJumpCrew.ParkHanSol.Multiplayer.ShipAccidents
 {
@@ -75,7 +77,16 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.ShipAccidents
                 && itemHolder != null
                 && itemHolder.HasItem
                 && itemHolder.CurrentItem != null
-                && itemHolder.CurrentItem.ItemId == activeDefinition.RequiredItemId;
+                && itemHolder is PHSItemHolder phsItemHolder
+                && phsItemHolder.CurrentItemPrefabData != null
+                && phsItemHolder.CurrentItemPrefabData.ItemId
+                    == itemHolder.CurrentItem.ItemId
+                && UtilityItemRepairActionResolver.TryResolve(
+                    activeDefinition.Id,
+                    out var actionKind)
+                && phsItemHolder.CurrentItemPrefabData.TryGetActionProfile(
+                    actionKind,
+                    out _);
         }
 
         public void Interact(IItemHolder itemHolder)
@@ -90,11 +101,6 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.ShipAccidents
                 Debug.LogWarning(
                     $"PHS_SHIP_ACCIDENT_UTILITY_REPAIR_REJECTED reason=attack_contract anchor={anchorId}",
                     this);
-                return false;
-            }
-
-            if (hit.ItemId != RequiredItemId)
-            {
                 return false;
             }
 

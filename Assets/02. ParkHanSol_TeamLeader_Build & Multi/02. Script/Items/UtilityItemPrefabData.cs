@@ -103,6 +103,7 @@ namespace LastJumpCrew.ParkHanSol.Items
         [SerializeField, Min(1)] private int maxDurability = 100;
 
         [Header("Event Influence")]
+        [SerializeField] private PHSUtilityFamilyActionKind utilityFamily;
         [SerializeField]
         private List<UtilityItemActionProfile> actionProfiles = new();
 
@@ -131,6 +132,7 @@ namespace LastJumpCrew.ParkHanSol.Items
         public int Price => price;
         public bool HasDurability => hasDurability;
         public int MaxDurability => maxDurability;
+        public PHSUtilityFamilyActionKind UtilityFamily => utilityFamily;
         public IReadOnlyList<UtilityItemActionProfile> ActionProfiles =>
             actionProfiles;
         public GameObject HeldPrefab => heldPrefab;
