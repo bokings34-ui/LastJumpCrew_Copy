@@ -231,7 +231,8 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Events
             eventHudView.Apply(new PHSNetworkEventHudViewModel(
                 alertText,
                 activeSnapshots.Count,
-                roomViewModels));
+                roomViewModels,
+                activeSnapshots.Select(snapshot => snapshot.EventId).Distinct().ToArray()));
         }
 
         private void BuildRoomViewModels()

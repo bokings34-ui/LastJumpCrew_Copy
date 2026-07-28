@@ -139,15 +139,22 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.ShipAccidents
             failureApplied = active;
             for (var index = 0; index < controlledLights.Length; index++)
             {
-                controlledLights[index].intensity = active
-                    ? normalIntensities[index] * failureIntensityMultiplier
-                    : normalIntensities[index];
+                var controlledLight = controlledLights[index];
+                if (controlledLight != null)
+                {
+                    controlledLight.intensity = active
+                        ? normalIntensities[index] * failureIntensityMultiplier
+                        : normalIntensities[index];
+                }
             }
 
             RenderSettings.ambientIntensity = active
                 ? normalAmbientIntensity * failureAmbientIntensityMultiplier
                 : normalAmbientIntensity;
-            emergencyLightingRoot.SetActive(active);
+            if (emergencyLightingRoot != null)
+            {
+                emergencyLightingRoot.SetActive(active);
+            }
         }
     }
 }

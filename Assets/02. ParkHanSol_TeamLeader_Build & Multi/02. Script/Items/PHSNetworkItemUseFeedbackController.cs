@@ -106,6 +106,51 @@ namespace LastJumpCrew.ParkHanSol.Items
                 targetPositions);
         }
 
+        public void PublishConfirmedTargetImpactServer(
+            UtilityItemActionKind actionKind,
+            Vector3 targetPosition)
+        {
+            PublishServerFeedback(
+                ResolveFeedbackKind(actionKind),
+                PHSItemUseFeedbackShape.Sphere,
+                targetPosition,
+                Vector3.up,
+                0.28f,
+                0f,
+                new[] { targetPosition });
+        }
+
+        public void ShowOwnerLocalTelegraph(
+            PHSItemUseFeedbackKind kind,
+            PHSItemUseFeedbackShape shape,
+            Vector3 origin,
+            Vector3 direction,
+            float radius,
+            float distance)
+        {
+            if ((IsSpawned && !IsOwner)
+                || !Enum.IsDefined(typeof(PHSItemUseFeedbackKind), kind)
+                || !Enum.IsDefined(typeof(PHSItemUseFeedbackShape), shape)
+                || radius <= 0f
+                || radius > maximumFeedbackDistance
+                || distance < 0f
+                || distance > maximumFeedbackDistance
+                || Vector3.Distance(transform.position, origin)
+                    > maximumFeedbackDistance)
+            {
+                return;
+            }
+
+            ShowFeedbackLocal(
+                kind,
+                shape,
+                origin,
+                direction,
+                radius,
+                distance,
+                Array.Empty<Vector3>());
+        }
+
         public void RequestOwnerFeedback(
             PHSItemUseFeedbackShape shape,
             Vector3 origin,
@@ -307,6 +352,27 @@ namespace LastJumpCrew.ParkHanSol.Items
                 PHSItemUseFeedbackKind.FireExtinguisher => extinguisherTargetColor,
                 PHSItemUseFeedbackKind.Battery => batteryTargetColor,
                 _ => genericTargetColor
+            };
+        }
+
+        private static PHSItemUseFeedbackKind ResolveFeedbackKind(
+            UtilityItemActionKind actionKind)
+        {
+            return actionKind switch
+            {
+                UtilityItemActionKind.FireSuppression =>
+                    PHSItemUseFeedbackKind.FireExtinguisher,
+                UtilityItemActionKind.PowerRestore or
+                UtilityItemActionKind.BatteryDischarge =>
+                    PHSItemUseFeedbackKind.Battery,
+                UtilityItemActionKind.DeviceRepair or
+                UtilityItemActionKind.HullBreachRepair or
+                UtilityItemActionKind.SteamLeakRepair or
+                UtilityItemActionKind.OxygenLeakRepair or
+                UtilityItemActionKind.OxygenGeneratorRepair or
+                UtilityItemActionKind.GravityGeneratorRepair =>
+                    PHSItemUseFeedbackKind.Wrench,
+                _ => PHSItemUseFeedbackKind.Generic
             };
         }
 

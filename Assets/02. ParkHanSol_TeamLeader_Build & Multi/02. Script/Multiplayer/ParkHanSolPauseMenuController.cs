@@ -1,11 +1,10 @@
 using DG.Tweening;
 using TMPro;
-using Unity.Netcode;
 using UnityEngine;
 using UnityEngine.InputSystem;
-using UnityEngine.SceneManagement;
 using UnityEngine.UI;
 using LastJumpCrew.ParkHanSol.Multiplayer.Events.MiniGames.Runtime;
+using LastJumpCrew.ParkHanSol.Multiplayer.Input;
 
 namespace LastJumpCrew.ParkHanSol.Multiplayer
 {
@@ -21,6 +20,8 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
         [SerializeField] private TMP_Text mouseSensitivityValueText;
         [SerializeField] private Slider fieldOfViewSlider;
         [SerializeField] private TMP_Text fieldOfViewValueText;
+        [Header("Shared Options")]
+        [SerializeField] private NetworkSharedOptionsPanelController sharedOptionsPanel;
         [Header("Pause Presentation")]
         [SerializeField] private Image dimBackgroundImage;
         [SerializeField] private CanvasGroup menuCanvasGroup;
@@ -30,6 +31,8 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
         [SerializeField] private string lobbySceneName = "ParkHanSol_LobbyScene";
 
         private bool isOpen;
+        private readonly INetworkSessionExitService sessionExitService =
+            new NetworkSessionExitService();
         private Vector2 menuCardShownPosition;
         private Sequence openSequence;
 
@@ -41,6 +44,10 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
             Bind(optionsButton, OpenOptions);
             Bind(optionsBackButton, CloseOptions);
             Bind(exitGameButton, ExitToLobby);
+            if (sharedOptionsPanel != null)
+            {
+                sharedOptionsPanel.Closed += HandleSharedOptionsClosed;
+            }
             if (mouseSensitivitySlider != null)
             {
                 mouseSensitivitySlider.minValue = NetworkPlayerController.MinimumMouseSensitivity;
@@ -65,6 +72,10 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
             Unbind(optionsButton, OpenOptions);
             Unbind(optionsBackButton, CloseOptions);
             Unbind(exitGameButton, ExitToLobby);
+            if (sharedOptionsPanel != null)
+            {
+                sharedOptionsPanel.Closed -= HandleSharedOptionsClosed;
+            }
             if (mouseSensitivitySlider != null)
             {
                 mouseSensitivitySlider.onValueChanged.RemoveListener(SetMouseSensitivity);
@@ -84,6 +95,17 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
 
         private void Update()
         {
+            if (sharedOptionsPanel == null && NetworkOwnerUiRoot.HasActiveLocalPresentation)
+            {
+                return;
+            }
+
+            if (NetworkRunResultPanelController.IsLocalResultVisible)
+            {
+                CloseForRunResult();
+                return;
+            }
+
             if (Keyboard.current == null || !Keyboard.current.escapeKey.wasPressedThisFrame)
             {
                 return;
@@ -94,13 +116,21 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
                 return;
             }
 
+            if (sharedOptionsPanel != null
+                && (sharedOptionsPanel.IsRebinding
+                    || sharedOptionsPanel.ConsumedCancelThisFrame))
+            {
+                return;
+            }
+
             if (!isOpen)
             {
                 OpenMenu();
                 return;
             }
 
-            if (optionsPanel != null && optionsPanel.activeSelf)
+            if ((sharedOptionsPanel != null && sharedOptionsPanel.IsOpen)
+                || (optionsPanel != null && optionsPanel.activeSelf))
             {
                 CloseOptions();
                 return;
@@ -111,6 +141,12 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
 
         public void OpenMenu()
         {
+            if (NetworkRunResultPanelController.IsLocalResultVisible)
+            {
+                CloseForRunResult();
+                return;
+            }
+
             isOpen = true;
             SetPlayerInputBlocked(true);
             Cursor.lockState = CursorLockMode.None;
@@ -123,6 +159,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
         {
             isOpen = false;
             SetPanels(false, false);
+            sharedOptionsPanel?.CloseWithoutNotification();
             SetPlayerInputBlocked(false);
             PlayerPrefs.Save();
             var voteActive = NetworkShopTransitionVoteCoordinator.Instance != null
@@ -135,6 +172,13 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
         {
             if (!isOpen)
             {
+                return;
+            }
+
+            if (sharedOptionsPanel != null)
+            {
+                SetPanels(false, false);
+                sharedOptionsPanel.Open();
                 return;
             }
 
@@ -155,7 +199,34 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
 
         public void CloseOptions()
         {
+            if (sharedOptionsPanel != null && sharedOptionsPanel.IsOpen)
+            {
+                sharedOptionsPanel.CloseWithoutNotification();
+            }
+
             SetPanels(true, false);
+        }
+
+        private void HandleSharedOptionsClosed()
+        {
+            if (isOpen)
+            {
+                SetPanels(true, false);
+            }
+        }
+
+        private void CloseForRunResult()
+        {
+            if (isOpen)
+            {
+                isOpen = false;
+                SetPanels(false, false);
+                sharedOptionsPanel?.CloseWithoutNotification();
+                SetPlayerInputBlocked(false);
+            }
+
+            Cursor.lockState = CursorLockMode.None;
+            Cursor.visible = true;
         }
 
         public void SetMouseSensitivity(float value)
@@ -216,53 +287,11 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
             }
 
             SetExitButtonInteractable(false);
-            if (!await LeaveLocalSessionAsync())
+            if (!await sessionExitService.LeaveToLobbyAsync(lobbySceneName))
             {
                 SetExitButtonInteractable(true);
                 return;
             }
-
-            if (!Application.CanStreamedLevelBeLoaded(lobbySceneName))
-            {
-                Debug.LogError($"PHS_PAUSE_EXIT_FAILED reason=lobby_scene_not_in_build scene={lobbySceneName}");
-                SetExitButtonInteractable(true);
-                return;
-            }
-
-            SceneManager.LoadScene(lobbySceneName, LoadSceneMode.Single);
-        }
-
-        private async System.Threading.Tasks.Task<bool> LeaveLocalSessionAsync()
-        {
-            var networkManager = NetworkManager.Singleton;
-            var roomService = networkManager == null
-                ? null
-                : networkManager.GetComponent<MultiplayerRoomService>();
-            if (roomService != null && roomService.IsActive)
-            {
-                if (!await roomService.LeaveRoomAsync())
-                {
-                    Debug.LogError("PHS_PAUSE_EXIT_FAILED reason=room_leave_failed");
-                    return false;
-                }
-            }
-
-            if (ProximityVoiceChatSession.ActiveSession != null)
-            {
-                await ProximityVoiceChatSession.ActiveSession.LeaveAsync();
-            }
-
-            if (networkManager != null && networkManager.IsListening)
-            {
-                networkManager.Shutdown();
-            }
-
-            if (networkManager != null)
-            {
-                Destroy(networkManager.gameObject);
-            }
-
-            return true;
         }
 
         private void PlayOpenAnimation()

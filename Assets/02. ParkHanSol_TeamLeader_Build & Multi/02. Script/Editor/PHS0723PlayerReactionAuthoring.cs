@@ -8,12 +8,18 @@ namespace LastJumpCrew.ParkHanSol.EditorTools
 {
     public static class PHS0723PlayerReactionAuthoring
     {
-        private const string PlayerPrefabPath =
-            "Assets/02. ParkHanSol_TeamLeader_Build & Multi/" +
-            "03. Prefab/PlayerPrefab/PHS_CuteWhiteGhost_Player.prefab";
+        private const string Root =
+            "Assets/02. ParkHanSol_TeamLeader_Build & Multi";
+        private static readonly string[] PlayerPrefabPaths =
+        {
+            Root + "/03. Prefab/PlayerPrefab/PHS_CuteWhiteGhost_Player.prefab",
+            Root + "/03. Prefab/Tutorial/PHS_NetworkTutorialPlayer.prefab"
+        };
         private const string ElectricShockPrefabPath =
             "Assets/MasterMagicFX/ParticlesVer3/Lightnings/" +
             "LightningRing/Prefabs/Par_LightningRing.prefab";
+        private const string ElectricShockAudioPath =
+            Root + "/06. Audio/NetworkGenerated/PHS_Item_Battery_Shock.wav";
         private const string ElectricShockRootName =
             "PHS_ElectricShockEffectRoot";
 
@@ -37,7 +43,35 @@ namespace LastJumpCrew.ParkHanSol.EditorTools
                     "reason=electric_shock_collider_present");
             }
 
-            var root = PrefabUtility.LoadPrefabContents(PlayerPrefabPath);
+            var electricShockAudio = AssetDatabase.LoadAssetAtPath<AudioClip>(
+                ElectricShockAudioPath);
+            if (electricShockAudio == null)
+            {
+                throw new InvalidOperationException(
+                    "PHS_PLAYER_REACTION_AUTHORING_FAILED " +
+                    "reason=electric_shock_audio_missing");
+            }
+
+            foreach (var playerPrefabPath in PlayerPrefabPaths)
+            {
+                ConfigurePlayer(
+                    playerPrefabPath,
+                    electricShockPrefab,
+                    electricShockAudio);
+            }
+
+            AssetDatabase.SaveAssets();
+            Debug.Log(
+                $"PHS_PLAYER_REACTION_AUTHORING_OK prefabs={PlayerPrefabPaths.Length} " +
+                "statusReceiver=true knockbackReceiver=true shockAudio3D=true");
+        }
+
+        private static void ConfigurePlayer(
+            string playerPrefabPath,
+            GameObject electricShockPrefab,
+            AudioClip electricShockAudio)
+        {
+            var root = PrefabUtility.LoadPrefabContents(playerPrefabPath);
             try
             {
                 var knockbackReceiver =
@@ -79,6 +113,35 @@ namespace LastJumpCrew.ParkHanSol.EditorTools
                 effectRoot.localScale = Vector3.one * 0.35f;
                 effectRoot.gameObject.SetActive(false);
 
+                var audioSources = effectRoot
+                    .GetComponentsInChildren<AudioSource>(true);
+                if (audioSources.Length > 1)
+                {
+                    throw new InvalidOperationException(
+                        "PHS_PLAYER_REACTION_AUTHORING_FAILED " +
+                        $"reason=electric_shock_audio_duplicate path={playerPrefabPath}");
+                }
+
+                var audioSource = audioSources.Length == 1
+                    ? audioSources[0]
+                    : effectRoot.gameObject.AddComponent<AudioSource>();
+                if (audioSource.gameObject != effectRoot.gameObject)
+                {
+                    throw new InvalidOperationException(
+                        "PHS_PLAYER_REACTION_AUTHORING_FAILED " +
+                        $"reason=electric_shock_audio_owner_invalid path={playerPrefabPath}");
+                }
+                audioSource.enabled = true;
+                audioSource.playOnAwake = false;
+                audioSource.loop = false;
+                audioSource.clip = electricShockAudio;
+                audioSource.volume = 0.65f;
+                audioSource.spatialBlend = 1f;
+                audioSource.dopplerLevel = 0f;
+                audioSource.rolloffMode = AudioRolloffMode.Logarithmic;
+                audioSource.minDistance = 1f;
+                audioSource.maxDistance = 15f;
+
                 var serializedStatus = new SerializedObject(statusController);
                 serializedStatus.FindProperty("electricShockEffectRoot")
                     .objectReferenceValue = effectRoot.gameObject;
@@ -86,9 +149,10 @@ namespace LastJumpCrew.ParkHanSol.EditorTools
 
                 EditorUtility.SetDirty(statusController);
                 EditorUtility.SetDirty(effectRoot.gameObject);
+                EditorUtility.SetDirty(audioSource);
                 var saved = PrefabUtility.SaveAsPrefabAsset(
                     root,
-                    PlayerPrefabPath,
+                    playerPrefabPath,
                     out var success);
                 if (!success || saved == null)
                 {
@@ -97,11 +161,6 @@ namespace LastJumpCrew.ParkHanSol.EditorTools
                         "reason=player_prefab_save_failed");
                 }
 
-                AssetDatabase.SaveAssets();
-                Debug.Log(
-                    $"PHS_PLAYER_REACTION_AUTHORING_OK " +
-                    $"prefab={PlayerPrefabPath} " +
-                    $"statusReceiver=true knockbackReceiver=true");
             }
             finally
             {

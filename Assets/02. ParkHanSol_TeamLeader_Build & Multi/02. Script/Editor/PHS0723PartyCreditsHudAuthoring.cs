@@ -15,9 +15,9 @@ namespace LastJumpCrew.ParkHanSol.Editor
         private const string PlayHudPrefabPath =
             "Assets/02. ParkHanSol_TeamLeader_Build & Multi/03. Prefab/UI/ParkHanSol_PlayHudUI.prefab";
         private const string MapScenePath =
-            "Assets/01. MainGame/01. MainScene/Beta/PHS_Map_ver1.unity";
+            "Assets/02. ParkHanSol_TeamLeader_Build & Multi/01. Scene/BEAVER_2026/PHS_Map_ver1.unity";
         private const string ShopScenePath =
-            "Assets/01. MainGame/01. MainScene/Beta/PHS_ExteriorShopScene.unity";
+            "Assets/02. ParkHanSol_TeamLeader_Build & Multi/01. Scene/BEAVER_2026/PHS_ExteriorShopScene.unity";
         private const string BinderObjectName = "PHS_PartyCreditsHudBinder";
         private static readonly Dictionary<string, string> WalletPathsByScene = new(StringComparer.Ordinal);
 
