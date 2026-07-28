@@ -1,15 +1,8 @@
 fileFormatVersion: 2
-guid: 045f80492d763454d9cd56beb5e7369b
+guid: 05e1d053034c070439b275842a19f8fc
 NativeFormatImporter:
   externalObjects: {}
-  mainObjectFileID: 2100000
+  mainObjectFileID: 0
   userData: 
   assetBundleName: 
   assetBundleVariant: 
-AssetOrigin:
-  serializedVersion: 1
-  productId: 171146
-  packageName: 100 Special Skills Effects Pack
-  packageVersion: 26.2
-  assetPath: Assets/SpecialSkillsEffectsPack/AllEffects/EffectsSet_2(ScriptBased)/Materials/Effect_45_Materials/Effect_45_Particle.mat
-  uploadId: 865912
