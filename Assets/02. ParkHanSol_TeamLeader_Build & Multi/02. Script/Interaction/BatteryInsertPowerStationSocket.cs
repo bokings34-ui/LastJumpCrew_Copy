@@ -20,7 +20,7 @@ namespace LastJumpCrew.ParkHanSol.Interaction
     {
         [Header("Battery")]
         [SerializeField] private string requiredItemId = "battery_pack";
-        [SerializeField] private string interactionPrompt = "Insert Battery";
+        [SerializeField] private string interactionPrompt = "배터리 장착";
         [SerializeField] private GameObject installedBatteryVisual;
         [SerializeField] private Transform feedbackPoint;
 

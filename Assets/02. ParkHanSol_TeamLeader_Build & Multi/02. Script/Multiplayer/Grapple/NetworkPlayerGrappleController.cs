@@ -189,6 +189,24 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
             StopGrapple();
         }
 
+        public bool CancelForTeleport()
+        {
+            if (IsSpawned && !IsServer)
+            {
+                Debug.LogError($"PHS_GRAPPLE_TELEPORT_CANCEL_FAILED reason=server_required player={name}", this);
+                return false;
+            }
+
+            var wasActive = IsGrappleActiveInternal();
+            StopGrapple();
+            if (wasActive)
+            {
+                Debug.Log($"PHS_GRAPPLE_TELEPORT_CANCELLED player={name}", this);
+            }
+
+            return true;
+        }
+
         private void OnDisable()
         {
             lastLaunchTime = float.NegativeInfinity;

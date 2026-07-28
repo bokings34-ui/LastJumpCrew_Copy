@@ -29,7 +29,7 @@ namespace LastJumpCrew.ParkHanSol.Items
         // 현재는 아이템 루트 transform을 그대로 잡는 지점으로 쓴다.
         // 추후 손잡이 위치가 따로 필요하면 GripPoint 같은 child를 만들고 여기 반환값을 바꾸면 된다.
         public Transform HoldTransform => transform;
-        public string InteractionPrompt => "Pick Up";
+        public string InteractionPrompt => "아이템 줍기";
 
         // holder 참조만 기준으로 든 상태를 판단한다.
         // 물리 상태나 parent 여부로 판단하면 보관함/프리뷰/네트워크 상황에서 꼬일 수 있어 단순 상태값으로 둔다.

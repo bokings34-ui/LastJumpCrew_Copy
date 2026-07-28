@@ -242,6 +242,16 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
             synchronizedDeadZoneSeconds.Value = -1f;
         }
 
+        public void KillForContainmentBreach()
+        {
+            if (!RequireServer(nameof(KillForContainmentBreach)))
+            {
+                return;
+            }
+
+            Kill("interior_containment_breach", false);
+        }
+
         public void KillForWarp()
         {
             if (!RequireServer(nameof(KillForWarp)))
@@ -303,8 +313,15 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
                 return false;
             }
 
-            playerController.ResetMovementForRespawn();
-            TeleportTo(respawnPoint.position, respawnPoint.rotation);
+            if (!playerController.TryTeleportForRespawn(respawnPoint.position, respawnPoint.rotation))
+            {
+                synchronizedRespawnSeconds.Value = -1f;
+                Debug.LogError(
+                    $"PHS_PLAYER_REVIVE_FAILED reason=teleport_failed player={name} scene={activeScene.name}",
+                    this);
+                return false;
+            }
+
             synchronizedHealth.Value = synchronizedMaximumHealth.Value;
             synchronizedWarpRevivePending.Value = false;
             synchronizedRespawnSeconds.Value = -1f;
@@ -312,21 +329,6 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
             synchronizedAlive.Value = true;
             Debug.Log($"PHS_PLAYER_REVIVED reason={reason} player={name} clientId={OwnerClientId}", this);
             return true;
-        }
-
-        private void TeleportTo(Vector3 position, Quaternion rotation)
-        {
-            var wasEnabled = characterController != null && characterController.enabled;
-            if (characterController != null)
-            {
-                characterController.enabled = false;
-            }
-
-            transform.SetPositionAndRotation(position, rotation);
-            if (characterController != null)
-            {
-                characterController.enabled = wasEnabled;
-            }
         }
 
         private void HandleHealthChanged(int previousValue, int currentValue)

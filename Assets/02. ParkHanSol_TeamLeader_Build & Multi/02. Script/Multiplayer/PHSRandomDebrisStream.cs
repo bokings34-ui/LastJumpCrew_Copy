@@ -1,6 +1,7 @@
 using System.Collections.Generic;
 using LastJumpCrew.ParkHanSol.Items;
 using Unity.Netcode;
+using Unity.Netcode.Components;
 using UnityEngine;
 using UnityEngine.SceneManagement;
 
@@ -23,10 +24,13 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
         [SerializeField, Min(0.01f)] private float minimumSpeed = 0.8f;
         [SerializeField, Min(0.01f)] private float maximumSpeed = 2.8f;
         [SerializeField, Min(0f)] private float maximumAngularSpeed = 75f;
+        [SerializeField, Min(0f)] private float maximumFlowAcceleration = 0.35f;
 
         private float[] speeds;
         private Vector3[] angularVelocities;
         private Vector3[] flowDirections;
+        private Rigidbody[] debrisRigidbodies;
+        private NetworkTransform[] debrisNetworkTransforms;
         private GameObject[] debrisSources;
         private readonly List<Transform> activeDebris = new();
         private readonly List<Transform> runtimeGeneratedDebris = new();
@@ -87,7 +91,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
             UnbindNetworkManager();
         }
 
-        private void Update()
+        private void FixedUpdate()
         {
             if (usesNetworkDebrisSources)
             {
@@ -115,6 +119,12 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
                 {
                     debris = CreateDebris(index);
                     activeDebris[index] = debris;
+                    if (!TryCacheDebrisPhysics(index, debris))
+                    {
+                        enabled = false;
+                        return;
+                    }
+
                     ResetDebris(index, false);
                     if (usesNetworkDebrisSources)
                     {
@@ -128,13 +138,22 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
                     continue;
                 }
 
-                debris.position += flowDirections[index] * (speeds[index] * Time.deltaTime);
-                debris.Rotate(angularVelocities[index] * Time.deltaTime, Space.Self);
+                var rigidbody = debrisRigidbodies[index];
+                var flowDirection = flowDirections[index];
+                var currentFlowSpeed = Vector3.Dot(rigidbody.linearVelocity, flowDirection);
+                var targetFlowAcceleration = (speeds[index] - currentFlowSpeed) / Time.fixedDeltaTime;
+                var clampedFlowAcceleration = Mathf.Clamp(
+                    targetFlowAcceleration,
+                    -maximumFlowAcceleration,
+                    maximumFlowAcceleration);
+                rigidbody.AddForce(
+                    flowDirection * clampedFlowAcceleration,
+                    ForceMode.Acceleration);
 
                 var movingRight = flowDirections[index].x > 0f;
                 var oppositeRecycleWorldX = spawnCenter.x + (spawnCenter.x - recycleWorldX);
-                if ((!movingRight && debris.position.x <= recycleWorldX)
-                    || (movingRight && debris.position.x >= oppositeRecycleWorldX))
+                if ((!movingRight && rigidbody.position.x <= recycleWorldX)
+                    || (movingRight && rigidbody.position.x >= oppositeRecycleWorldX))
                 {
                     ResetDebris(index, false);
                 }
@@ -160,8 +179,16 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
             speeds = new float[activeDebris.Count];
             angularVelocities = new Vector3[activeDebris.Count];
             flowDirections = new Vector3[activeDebris.Count];
+            debrisRigidbodies = new Rigidbody[activeDebris.Count];
+            debrisNetworkTransforms = new NetworkTransform[activeDebris.Count];
             for (var index = 0; index < activeDebris.Count; index++)
             {
+                if (!TryCacheDebrisPhysics(index, activeDebris[index]))
+                {
+                    enabled = false;
+                    return;
+                }
+
                 ResetDebris(index, distributeAcrossPathOnAwake);
             }
 
@@ -216,6 +243,24 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
 
                 var debrisSource = droppedPrefab != null ? droppedPrefab : sceneSeed.gameObject;
                 debrisSources[index] = debrisSource;
+                if (debrisSource.GetComponent<Rigidbody>() == null)
+                {
+                    Debug.LogError(
+                        $"PHS_DEBRIS_STREAM_SETUP_FAILED reason=source_rigidbody_missing " +
+                        $"stream={name} seed_index={index} source={debrisSource.name}",
+                        this);
+                    return false;
+                }
+
+                if (debrisSource.GetComponent<NetworkTransform>() == null)
+                {
+                    Debug.LogError(
+                        $"PHS_DEBRIS_STREAM_SETUP_FAILED reason=source_network_transform_missing " +
+                        $"stream={name} seed_index={index} source={debrisSource.name}",
+                        this);
+                    return false;
+                }
+
                 if (debrisSource.GetComponent<NetworkObject>() != null)
                 {
                     networkSourceCount++;
@@ -232,6 +277,40 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
             }
 
             usesNetworkDebrisSources = networkSourceCount == debrisSources.Length;
+            return true;
+        }
+
+        private bool TryCacheDebrisPhysics(int index, Transform debris)
+        {
+            if (debris == null)
+            {
+                Debug.LogError(
+                    $"PHS_DEBRIS_STREAM_RUNTIME_FAILED reason=debris_missing " +
+                    $"stream={name} debris_index={index}",
+                    this);
+                return false;
+            }
+
+            if (!debris.TryGetComponent(out Rigidbody rigidbody))
+            {
+                Debug.LogError(
+                    $"PHS_DEBRIS_STREAM_RUNTIME_FAILED reason=rigidbody_missing " +
+                    $"stream={name} debris_index={index} debris={debris.name}",
+                    debris);
+                return false;
+            }
+
+            if (!debris.TryGetComponent(out NetworkTransform networkTransform))
+            {
+                Debug.LogError(
+                    $"PHS_DEBRIS_STREAM_RUNTIME_FAILED reason=network_transform_missing " +
+                    $"stream={name} debris_index={index} debris={debris.name}",
+                    debris);
+                return false;
+            }
+
+            debrisRigidbodies[index] = rigidbody;
+            debrisNetworkTransforms[index] = networkTransform;
             return true;
         }
 
@@ -346,6 +425,8 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
         private void ResetDebris(int index, bool distributeAcrossPath)
         {
             var debris = activeDebris[index];
+            var rigidbody = debrisRigidbodies[index];
+            var networkTransform = debrisNetworkTransforms[index];
             GetSpawnArea(out var laneCenter, out var laneExtents);
             var movingRight = Random.value < oppositeFlowChance;
             var targetRecycleWorldX = movingRight
@@ -357,14 +438,29 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
                     Mathf.Max(targetRecycleWorldX, laneCenter.x + laneExtents.x))
                 : laneCenter.x + Random.Range(-laneExtents.x, laneExtents.x);
 
-            debris.position = new Vector3(
+            var spawnPosition = new Vector3(
                 spawnX,
                 laneCenter.y + Random.Range(-laneExtents.y, laneExtents.y),
                 laneCenter.z + Random.Range(-laneExtents.z, laneExtents.z));
-            debris.rotation = Random.rotation;
+            var spawnRotation = Random.rotation;
             speeds[index] = Random.Range(minimumSpeed, maximumSpeed);
             flowDirections[index] = movingRight ? Vector3.right : Vector3.left;
             angularVelocities[index] = Random.insideUnitSphere * maximumAngularSpeed;
+
+            rigidbody.linearVelocity = Vector3.zero;
+            rigidbody.angularVelocity = Vector3.zero;
+            rigidbody.position = spawnPosition;
+            rigidbody.rotation = spawnRotation;
+
+            var networkObject = debris.GetComponent<NetworkObject>();
+            if (networkObject != null && networkObject.IsSpawned)
+            {
+                networkTransform.Teleport(spawnPosition, spawnRotation, debris.localScale);
+            }
+
+            rigidbody.linearVelocity = flowDirections[index] * speeds[index];
+            rigidbody.angularVelocity = angularVelocities[index] * Mathf.Deg2Rad;
+            rigidbody.WakeUp();
         }
 
         private void GetSpawnArea(out Vector3 center, out Vector3 extents)

@@ -39,7 +39,7 @@ namespace LastJumpCrew.ParkHanSol.Editor
                     ?? throw new InvalidOperationException(
                         "PHS_SHIP_MAP_AUTHOR_FAILED reason=binder_missing");
                 var binderData = new SerializedObject(binder);
-                binderData.FindProperty("enableLegacyShipMapInput").boolValue = true;
+                binderData.FindProperty("enableLegacyShipMapInput").boolValue = false;
                 binderData.FindProperty("shipMapInputMode").enumValueIndex = 0;
                 binderData.ApplyModifiedPropertiesWithoutUndo();
 
@@ -80,8 +80,8 @@ namespace LastJumpCrew.ParkHanSol.Editor
             Require(view != null, "view_missing");
 
             var binderData = new SerializedObject(binder);
-            Require(binderData.FindProperty("enableLegacyShipMapInput").boolValue,
-                "tab_input_disabled");
+            Require(!binderData.FindProperty("enableLegacyShipMapInput").boolValue,
+                "legacy_tab_input_enabled");
             Require(binderData.FindProperty("shipMapInputMode").enumValueIndex == 0,
                 "tab_mode_not_hold");
             var viewData = new SerializedObject(view);
