@@ -1,14 +1,7 @@
 fileFormatVersion: 2
-guid: 8f912873894cde4489885a2c7bab088f
+guid: 1c8b71084a94e134a932d2097bd34805
 PrefabImporter:
   externalObjects: {}
   userData: 
   assetBundleName: 
   assetBundleVariant: 
-AssetOrigin:
-  serializedVersion: 1
-  productId: 318141
-  packageName: Master MagicFX 3
-  packageVersion: 1.0
-  assetPath: Assets/MasterMagicFX/ParticlesVer3/Lightnings/LightningLaser/Prefabs/Par_Laser_CyanLaser.prefab
-  uploadId: 751285
