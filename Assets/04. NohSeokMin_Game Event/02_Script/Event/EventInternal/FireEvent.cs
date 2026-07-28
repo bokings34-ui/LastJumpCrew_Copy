@@ -11,8 +11,8 @@ namespace SM
         public int FireLevel { get { return _activeEffects.Count; } }
 
         private readonly List<FireEffectInstance> _activeEffects = new List<FireEffectInstance>();
-        private readonly Dictionary<Transform, FireEffectInstance> _occupiedPoints = new Dictionary<Transform, FireEffectInstance>();
-        private readonly Dictionary<FireEffectInstance, Transform> _effectToPoint = new Dictionary<FireEffectInstance, Transform>();
+        private readonly Dictionary<ShipSpawnPoint, FireEffectInstance> _occupiedPoints = new Dictionary<ShipSpawnPoint, FireEffectInstance>();
+        private readonly Dictionary<FireEffectInstance, ShipSpawnPoint> _effectToPoint = new Dictionary<FireEffectInstance, ShipSpawnPoint>();
         private readonly Dictionary<FireEffectInstance, uint> _effectInstanceIds = new Dictionary<FireEffectInstance, uint>();
         private IEventEffectRuntimeBridge _effectRuntimeBridge;
         private IEventRepairRuntimeBridge _repairRuntimeBridge;
@@ -48,20 +48,16 @@ namespace SM
             }
         }
 
-        private Transform PickNextSpawnPoint()
+        // 첫 발화: 전체 중 랜덤 (점유 안 된 것만)
+        // 이후: 이미 불붙은 지점들의 "비어있는 이웃"만 후보 (확산)
+        private ShipSpawnPoint PickNextSpawnPoint()
         {
-            var spawnPoints = Context?.Room?.FireSpawnPoints;
-            if (spawnPoints == null || spawnPoints.Count == 0) return null;
-
-            var free = new List<Transform>();
-            foreach (var point in spawnPoints)
+            if (_occupiedPoints.Count == 0)
             {
-                if (!_occupiedPoints.ContainsKey(point))
-                    free.Add(point);
+                return ShipSpawnPointConfig.Instance.GetRandomFreePoint();
             }
 
-            if (free.Count == 0) return null;
-            return free[Random.Range(0, free.Count)];
+            return ShipSpawnPointConfig.Instance.GetRandomFreeNeighbor(_occupiedPoints.Keys);
         }
 
         private void SpawnNextFire()
@@ -69,7 +65,7 @@ namespace SM
             var point = PickNextSpawnPoint();
             if (point == null) return;
 
-            var effect = FireEffectPool.Instance.Get(point.position, FireData.damagePerSecond, FireData.maxRepairProgress);
+            var effect = FireEffectPool.Instance.Get(point.transform.position, FireData.damagePerSecond, FireData.maxRepairProgress);
 
             var effectInstanceId = AllocateEffectInstanceId();
             if (_effectRuntimeBridge != null && effectInstanceId == 0U)
@@ -81,6 +77,7 @@ namespace SM
 
             effect.OnRemove += HandleRemoveFire;
 
+            point.Occupy(EventId.Fire);
             _occupiedPoints[point] = effect;
             _effectToPoint[effect] = point;
             _activeEffects.Add(effect);
@@ -90,6 +87,7 @@ namespace SM
                 if (!effect.BindRepairTarget(InstanceId, effectInstanceId, _repairRuntimeBridge))
                 {
                     effect.OnRemove -= HandleRemoveFire;
+                    point.Release();
                     _occupiedPoints.Remove(point);
                     _effectToPoint.Remove(effect);
                     _activeEffects.Remove(effect);
@@ -103,7 +101,7 @@ namespace SM
                     InstanceId,
                     effectInstanceId,
                     EventEffectKind.Fire,
-                    point.position,
+                    point.transform.position,
                     0);
             }
         }
@@ -116,6 +114,7 @@ namespace SM
 
             if (_effectToPoint.TryGetValue(effect, out var point))
             {
+                point.Release();
                 _occupiedPoints.Remove(point);
                 _effectToPoint.Remove(effect);
             }
@@ -152,6 +151,11 @@ namespace SM
                 effect.UnbindRepairTarget();
                 PublishEffectRemoved(effect);
                 FireEffectPool.Instance.Return(effect);
+            }
+
+            foreach (var point in _occupiedPoints.Keys)
+            {
+                point.Release();
             }
 
             _activeEffects.Clear();
