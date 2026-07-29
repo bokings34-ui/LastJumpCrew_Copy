@@ -197,9 +197,8 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Tutorial
                 }
 
                 var objectiveReason = string.Empty;
-                if (!rooms[index].HasObjectiveSources
-                    || rooms[index].RequiredStepCount < 2
-                    || !rooms[index].TryValidateObjectiveSources(
+                if (rooms[index].RequiredStepCount < 1
+                    || !rooms[index].TryValidateProgressContract(
                         out objectiveReason))
                 {
                     Debug.LogError(

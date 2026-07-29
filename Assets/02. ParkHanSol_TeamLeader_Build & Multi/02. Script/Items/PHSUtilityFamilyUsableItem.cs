@@ -37,12 +37,24 @@ namespace LastJumpCrew.ParkHanSol.Items
 
             var controller = holderComponent.GetComponent<
                 PHSNetworkUtilityFamilyActionController>();
-            return controller != null
-                && controller.CanRequestAction(
+            var presentation = holderComponent.GetComponent<
+                PHSNetworkItemUseActionController>();
+            if (controller == null || presentation == null)
+            {
+                return false;
+            }
+
+            if (controller.IsSpawned)
+            {
+                return controller.CanRequestAction(
                     FamilyKind,
-                    phsHolder.CurrentItemPrefabData)
-                && holderComponent.GetComponent<
-                    PHSNetworkItemUseActionController>() != null;
+                    phsHolder.CurrentItemPrefabData);
+            }
+
+            var offlinePolicy = holderComponent.GetComponent<
+                PHSNetworkTutorialOfflineItemUsePolicy>();
+            return offlinePolicy != null
+                && offlinePolicy.CanUseOfflineItem(FamilyKind);
         }
 
         public void Use(

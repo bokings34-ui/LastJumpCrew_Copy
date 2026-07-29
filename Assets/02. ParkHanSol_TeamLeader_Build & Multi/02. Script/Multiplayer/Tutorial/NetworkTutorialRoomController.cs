@@ -267,9 +267,14 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Tutorial
             OpenDoor();
         }
 
-        public bool TryValidateObjectiveSources(out string reason)
+        public bool TryValidateProgressContract(out string reason)
         {
             ResolveObjectiveSources();
+            if (!TryValidateInstructionContract(out reason))
+            {
+                return false;
+            }
+
             if (!HasObjectiveSources)
             {
                 reason = null;
@@ -287,11 +292,6 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Tutorial
                 || objectiveMarkerRoots.Any(marker => marker == null))
             {
                 reason = "objective_marker_contract_invalid";
-                return false;
-            }
-
-            if (!TryValidateInstructionContract(out reason))
-            {
                 return false;
             }
 
