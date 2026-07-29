@@ -1,15 +1,8 @@
 fileFormatVersion: 2
-guid: 3b49c4ee7527fe84a9d271b9a703e911
+guid: a612bf1854070bb45a53b02a0d4b90c3
 NativeFormatImporter:
   externalObjects: {}
   mainObjectFileID: 0
   userData: 
   assetBundleName: 
   assetBundleVariant: 
-AssetOrigin:
-  serializedVersion: 1
-  productId: 171146
-  packageName: 100 Special Skills Effects Pack
-  packageVersion: 26.2
-  assetPath: Assets/SpecialSkillsEffectsPack/AllEffects/EffectsSet_2(ScriptBased)/Materials/Effect_46_Materials/Effect_46_Body.mat
-  uploadId: 865912
