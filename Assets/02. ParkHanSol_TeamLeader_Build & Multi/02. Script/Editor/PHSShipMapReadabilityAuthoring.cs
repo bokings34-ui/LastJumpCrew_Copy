@@ -13,9 +13,7 @@ namespace LastJumpCrew.ParkHanSol.Editor
         private const string HudPath =
             "Assets/02. ParkHanSol_TeamLeader_Build & Multi/03. Prefab/UI/" +
             "ParkHanSol_PlayHudUI.prefab";
-        private const string FontPath =
-            "Assets/99. DownloadAssets/TextMesh Pro/Resources/Fonts & Materials/" +
-            "LiberationSans SDF.asset";
+        private const string FontPath = PHSUIFontPaths.SuiteSemiBold;
 
         private static readonly Dictionary<string, (Vector2 position, Vector2 size)> RoomLayout =
             new(StringComparer.Ordinal)
@@ -53,6 +51,7 @@ namespace LastJumpCrew.ParkHanSol.Editor
                 EnsureConnector(shipMap.transform, "Starboard Connector", new Vector2(195f, 20f), new Vector2(90f, 32f));
                 EnsureConnector(shipMap.transform, "Cockpit Connector", new Vector2(0f, 118f), new Vector2(34f, 68f));
                 EnsureLegend(shipMap.transform);
+                PHSUIFontAssetAuthoring.ApplyTypography(root);
                 PrefabUtility.SaveAsPrefabAsset(root, HudPath);
             }
             finally
@@ -186,7 +185,7 @@ namespace LastJumpCrew.ParkHanSol.Editor
             label.font = AssetDatabase.LoadAssetAtPath<TMP_FontAsset>(FontPath);
             label.text = "HOLD TAB  |  SHIP SYSTEM MAP  |  BRIGHT MARKERS = ACTIVE INCIDENT";
             label.fontSize = 24f;
-            label.fontStyle = FontStyles.Bold;
+            label.fontStyle = FontStyles.Normal;
             label.alignment = TextAlignmentOptions.Center;
             label.color = new Color(0.7f, 0.92f, 1f, 1f);
             label.raycastTarget = false;

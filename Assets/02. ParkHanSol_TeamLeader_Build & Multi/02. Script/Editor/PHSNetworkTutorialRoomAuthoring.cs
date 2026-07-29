@@ -1,5 +1,6 @@
 using System;
 using System.Linq;
+using LastJumpCrew.Common;
 using LastJumpCrew.ParkHanSol.Interaction;
 using LastJumpCrew.ParkHanSol.Items;
 using LastJumpCrew.ParkHanSol.Multiplayer;
@@ -10,6 +11,7 @@ using UnityEditor.SceneManagement;
 using UnityEngine;
 using UnityEngine.SceneManagement;
 using UnityEngine.UI;
+using UnityEngine.Video;
 
 namespace LastJumpCrew.ParkHanSol.Editor
 {
@@ -31,13 +33,31 @@ namespace LastJumpCrew.ParkHanSol.Editor
             "Assets/02. ParkHanSol_TeamLeader_Build & Multi/03. Prefab/Props/Prefabs/Items/ParkHanSol_FireExtinguisher.prefab";
         private const string InteractionStationPrefabPath =
             "Assets/02. ParkHanSol_TeamLeader_Build & Multi/03. Prefab/Tutorial/PHS_NetworkTutorialInteractionStation.prefab";
+        private const string TeamTutorialMapPrefabPath =
+            "Assets/05. TakHyunJae_Map & MiniGame/03. Prefab/Tutorial_Map.prefab";
+        private const string GrappleAnchorPrefabPath =
+            "Assets/05. TakHyunJae_Map & MiniGame/06. MyAsset/Creepy_Cat/3D Scifi Kit Vol 3/Prefabs/Props/Update 1.00-First build/Things/P_Light_Ring_01.prefab";
+        private const string FloorObjectivePadPrefabPath =
+            "Assets/02. ParkHanSol_TeamLeader_Build & Multi/03. Prefab/Customization/Visuals/PHS_back_circle.prefab";
+        private const string FloorObjectivePadMaterialPath =
+            "Assets/02. ParkHanSol_TeamLeader_Build & Multi/04. Data/Integration/PHS_WarpSafeZone.mat";
+        private const string DebrisCargoPrefabPath =
+            "Assets/02. ParkHanSol_TeamLeader_Build & Multi/03. Prefab/Props/Prefabs/Debris/PHS_Debris_FuturisticCargo.prefab";
+        private const string DebrisCameraPrefabPath =
+            "Assets/02. ParkHanSol_TeamLeader_Build & Multi/03. Prefab/Props/Prefabs/Debris/PHS_Debris_SatelliteCamera.prefab";
+        private const string BriefingRenderTexturePath =
+            "Assets/02. ParkHanSol_TeamLeader_Build & Multi/01. Scene/BEAVER_2026/Tutorial/PHS_TutorialBriefing.renderTexture";
         private const string InstructionFolder =
             "Assets/02. ParkHanSol_TeamLeader_Build & Multi/04. Data/UI/TutorialInstructions/";
-        private const string TutorialFontPath =
-            "Assets/TextMesh Pro/Resources/Fonts & Materials/LiberationSans SDF.asset";
+        private const string TutorialFontPath = PHSUIFontPaths.SuitRegular;
+        private const string ObjectiveBodyFontPath = PHSUIFontPaths.SuitMedium;
+        private const string ObjectiveNumberFontPath =
+            PHSUIFontPaths.SuitSemiBold;
         private const int EnvironmentLastSegmentIndex = 15;
         private const float EnvironmentModuleSize = 3.6f;
         private const float TutorialEndCapZ = 54.27f;
+        private static readonly Vector3 TeamMapAlignedPosition =
+            new(22.84495f, -8.76f, 26.95981f);
 
         private static readonly RoomSpec[] Specs =
         {
@@ -51,20 +71,30 @@ namespace LastJumpCrew.ParkHanSol.Editor
                     TutorialActionKind.Jump
                 },
                 4.5f,
-                9f,
-                "CLEAR BOTH BARRIERS MARKED 1 AND 2",
-                "PHS_Tutorial_Jump.png"),
-            new(
-                "02_Thruster",
+                new Vector3(-2.75f, -0.53f, 6.51f),
+                "이동과 점프",
                 new[]
                 {
-                    TutorialActionKind.Thruster,
-                    TutorialActionKind.Thruster
+                    "[WASD]로 1번 체크포인트까지 이동하세요.",
+                    "[SPACE]로 점프해 2번 체크포인트를 통과하세요."
+                },
+                "PHS_Tutorial_Jump.png"),
+            new(
+                "02_InteriorMovement",
+                new[]
+                {
+                    TutorialActionKind.Move,
+                    TutorialActionKind.Move
                 },
                 13.5f,
-                18f,
-                "THRUST THROUGH CYAN POINTS 1 AND 2",
-                "PHS_Tutorial_Thruster.png"),
+                null,
+                "함선 내부 이동",
+                new[]
+                {
+                    "마우스로 방향을 확인하고 [WASD]로 1번 체크포인트까지 이동하세요.",
+                    "함선 내부 중력을 받으며 [WASD]로 2번 체크포인트까지 이동하세요."
+                },
+                "PHS_Tutorial_Jump.png"),
             new(
                 "03_Grapple",
                 new[]
@@ -73,8 +103,13 @@ namespace LastJumpCrew.ParkHanSol.Editor
                     TutorialActionKind.Grapple
                 },
                 22.5f,
-                27f,
-                "HOLD Q: GRAPPLE ANCHORS 1 AND 2",
+                new Vector3(11.25f, -0.53f, -1.49f),
+                "그래플 이동",
+                new[]
+                {
+                    "1번 고정점을 보고 [Q]를 눌러 줄을 연결한 채 유지하세요.",
+                    "[Q]를 놓아 줄을 해제한 뒤 2번 고정점에 다시 연결하세요."
+                },
                 "PHS_Tutorial_Grapple.png"),
             new(
                 "04_ItemTransfer",
@@ -86,8 +121,13 @@ namespace LastJumpCrew.ParkHanSol.Editor
                     TutorialActionKind.Drop
                 },
                 31.5f,
-                36f,
-                "PLACE WRENCH IN 1 / BATTERY IN 2",
+                new Vector3(-16.75f, -0.53f, 6.51f),
+                "아이템 운반",
+                new[]
+                {
+                    "[F]로 렌치를 주운 뒤 1번 구역에서 [RMB]를 눌러서 내리세요. 던져 넣어도 인정됩니다.",
+                    "1번 구역 옆의 배터리를 [F]로 주운 뒤 2번 구역에서 [RMB]를 눌러서 내리세요. 던져 넣어도 인정됩니다."
+                },
                 "PHS_Tutorial_PickupDrop.png"),
             new(
                 "05_ToolUse",
@@ -99,20 +139,76 @@ namespace LastJumpCrew.ParkHanSol.Editor
                     TutorialActionKind.Use
                 },
                 40.5f,
-                45f,
-                "USE WRENCH 1 / EXTINGUISHER 2",
+                new Vector3(-36.75f, -0.53f, 6.51f),
+                "도구 사용",
+                new[]
+                {
+                    "[F]로 렌치를 주우면 손의 도구가 자동 교체됩니다. [LMB]로 사용하세요.",
+                    "[F]로 소화기를 주우면 손의 도구가 자동 교체됩니다. [LMB]로 사용하세요."
+                },
                 "PHS_Tutorial_Swap.png"),
             new(
-                "06_IncidentResponse",
+                "06_TrainingTerminals",
                 new[]
                 {
                     TutorialActionKind.Interaction,
                     TutorialActionKind.Interaction
                 },
                 49.5f,
-                54f,
-                "REPAIR INCIDENT TERMINALS 1 AND 2",
+                new Vector3(-56.75f, -0.53f, 6.51f),
+                "연습 단말기",
+                new[]
+                {
+                    "1번 연습 단말기를 보고 [F]로 작동하세요.",
+                    "2번 연습 단말기를 보고 [F]로 작동하세요."
+                },
+                "PHS_Tutorial_Interact.png"),
+            new(
+                "07_ExteriorDebris",
+                new[]
+                {
+                    TutorialActionKind.Thruster,
+                    TutorialActionKind.Drop,
+                    TutorialActionKind.Drop
+                },
+                170f,
+                null,
+                "외부 무중력과 데브리 회수",
+                new[]
+                {
+                    "마우스로 방향을 확인하고 [WASD]로 이동하며 [SHIFT]로 위로, [CTRL]로 아래로 움직여 외부 체크포인트에 도착하세요.",
+                    "[F]로 화물 데브리를 주운 뒤 회수 패드에서 [RMB]를 눌러서 내리세요. 던져 넣어도 인정됩니다.",
+                    "[F]로 카메라 데브리를 주운 뒤 회수 패드에서 [RMB]를 눌러서 내리세요. 던져 넣어도 인정됩니다."
+                },
+                "PHS_Tutorial_Thruster.png"),
+            new(
+                "08_BoardShip",
+                new[]
+                {
+                    TutorialActionKind.Thruster,
+                    TutorialActionKind.Interaction
+                },
+                220f,
+                null,
+                "외부 함선 이동과 타기",
+                new[]
+                {
+                    "마우스로 방향을 확인하고 [WASD], [SHIFT], [CTRL]로 외부 함선 앞 지점까지 이동하세요.",
+                    "함선 문 앞에서 [F]를 눌러 함선 안으로 이동하세요."
+                },
                 "PHS_Tutorial_Interact.png")
+        };
+
+        private static readonly string[][] ObjectiveMarkerCaptions =
+        {
+            new[] { "이동 지점", "점프 지점" },
+            new[] { "내부 이동 1", "내부 이동 2" },
+            new[] { "후크 고정점", "후크 고정점" },
+            new[] { "렌치 줍기", "배터리 줍기" },
+            new[] { "렌치 [LMB]", "소화기 [LMB]" },
+            new[] { "단말기 [F]", "단말기 [F]" },
+            new[] { "외부 진입", "화물 회수", "카메라 회수" },
+            new[] { "함선 앞", "함선 문 [F]" }
         };
 
         [MenuItem("Tools/ParkHanSol/BEAVER/Author Network Tutorial Rooms")]
@@ -121,9 +217,14 @@ namespace LastJumpCrew.ParkHanSol.Editor
             RequireAssets();
             ImportInstructionSprites();
             var previousActive = SceneManager.GetActiveScene();
-            var scene = EditorSceneManager.OpenScene(
-                ScenePath,
-                OpenSceneMode.Additive);
+            var scene = SceneManager.GetSceneByPath(ScenePath);
+            var sceneWasLoaded = scene.IsValid() && scene.isLoaded;
+            if (!sceneWasLoaded)
+            {
+                scene = EditorSceneManager.OpenScene(
+                    ScenePath,
+                    OpenSceneMode.Additive);
+            }
             SceneManager.SetActiveScene(scene);
             try
             {
@@ -135,30 +236,56 @@ namespace LastJumpCrew.ParkHanSol.Editor
 
                 var sequenceRoot = new GameObject(SequenceRootName);
                 SceneManager.MoveGameObjectToScene(sequenceRoot, scene);
+                var teamMap = InstantiateTeamMap(scene, sequenceRoot.transform);
+                DisableLegacyEnvironment(scene);
+                var player = FindComponent<NetworkPlayerController>(scene);
+                player.transform.SetPositionAndRotation(
+                    Vector3.zero,
+                    Quaternion.identity);
+                EditorUtility.SetDirty(player.transform);
+                var briefingPresenter = CreateBriefingPresenter(
+                    scene,
+                    sequenceRoot.transform,
+                    player);
                 var rooms = new NetworkTutorialRoomController[Specs.Length];
+                var usedDoors = new System.Collections.Generic.HashSet<
+                    DoorDoubleSlide>();
                 for (var index = 0; index < Specs.Length; index++)
                 {
                     rooms[index] = CreateRoom(
                         scene,
                         sequenceRoot.transform,
+                        teamMap.transform,
+                        usedDoors,
+                        briefingPresenter,
                         Specs[index],
                         index);
                 }
 
-                CreateInteriorShell(scene, sequenceRoot.transform);
                 RemoveLegacyPracticeItems(scene);
                 CreatePracticeItems(scene, sequenceRoot.transform);
-                RepositionPracticeVolumes(scene, sequenceRoot.transform);
+                RepositionPracticeVolumes(
+                    scene,
+                    sequenceRoot.transform,
+                    teamMap.transform);
+                var exterior = ConfigureGravityAndDebris(
+                    scene,
+                    sequenceRoot.transform,
+                    teamMap.transform,
+                    player);
                 var interactionStations = CreateInteractionStations(
                     scene,
-                    sequenceRoot.transform);
+                    sequenceRoot.transform,
+                    exterior.BoardingPosition);
                 CreateAndWireRoomObjectives(
                     scene,
                     sequenceRoot.transform,
                     rooms,
-                    interactionStations);
+                    interactionStations,
+                    exterior);
                 WireDirector(scene, rooms, interactionStations);
                 BindTutorialHud(scene);
+                ConfigureTutorialOnlyHud(scene);
                 if (!EditorSceneManager.SaveScene(scene))
                 {
                     throw Failure("scene_save_failed");
@@ -175,13 +302,282 @@ namespace LastJumpCrew.ParkHanSol.Editor
                     SceneManager.SetActiveScene(previousActive);
                 }
 
-                EditorSceneManager.CloseScene(scene, true);
+                if (!sceneWasLoaded)
+                {
+                    EditorSceneManager.CloseScene(scene, true);
+                }
             }
+        }
+
+        private static GameObject InstantiateTeamMap(
+            Scene scene,
+            Transform parent)
+        {
+            var map = InstantiatePrefab(
+                TeamTutorialMapPrefabPath,
+                scene,
+                parent);
+            map.name = "PHS_TeamTutorialMap";
+            map.transform.position = TeamMapAlignedPosition;
+            map.transform.rotation = Quaternion.identity;
+            map.transform.localScale = Vector3.one;
+            return map;
+        }
+
+        private static void DisableLegacyEnvironment(Scene scene)
+        {
+            foreach (var name in new[]
+                     {
+                         "PHS_NetworkTutorialEnvironment",
+                         "PHS_TutorialInteriorShell"
+                     })
+            {
+                var legacy = FindNamedOptional(scene, name);
+                if (legacy == null)
+                {
+                    continue;
+                }
+
+                legacy.SetActive(false);
+                EditorUtility.SetDirty(legacy);
+            }
+        }
+
+        private static NetworkTutorialBriefingPresenter
+            CreateBriefingPresenter(
+                Scene scene,
+                Transform parent,
+                NetworkPlayerController player)
+        {
+            var root = new GameObject(
+                "PHS_TutorialBriefing",
+                typeof(RectTransform),
+                typeof(Canvas),
+                typeof(CanvasScaler),
+                typeof(GraphicRaycaster),
+                typeof(NetworkTutorialBriefingPresenter));
+            SceneManager.MoveGameObjectToScene(root, scene);
+            root.transform.SetParent(parent, false);
+            var canvas = root.GetComponent<Canvas>();
+            canvas.renderMode = RenderMode.ScreenSpaceOverlay;
+            canvas.sortingOrder = 500;
+            var canvasRect = root.GetComponent<RectTransform>();
+            canvasRect.anchorMin = Vector2.zero;
+            canvasRect.anchorMax = Vector2.one;
+            canvasRect.offsetMin = Vector2.zero;
+            canvasRect.offsetMax = Vector2.zero;
+
+            var popup = CreateRect(
+                "Popup",
+                root.transform,
+                Vector2.zero,
+                Vector2.one);
+            var canvasGroup = popup.AddComponent<CanvasGroup>();
+            var dimmer = popup.AddComponent<Image>();
+            dimmer.color = new Color(0f, 0.01f, 0.025f, 0.82f);
+            var card = CreateUiImage(
+                "Card",
+                popup.transform,
+                new Vector2(0.18f, 0.12f),
+                new Vector2(0.82f, 0.88f));
+            card.color = new Color(0.015f, 0.05f, 0.09f, 0.99f);
+
+            var title = CreateUiText(
+                "Title",
+                card.transform,
+                new Vector2(0.06f, 0.82f),
+                new Vector2(0.94f, 0.95f),
+                38f);
+            ApplyTutorialFont(title, ObjectiveNumberFontPath);
+            var body = CreateUiText(
+                "Body",
+                card.transform,
+                new Vector2(0.08f, 0.24f),
+                new Vector2(0.92f, 0.8f),
+                25f);
+            ApplyTutorialFont(body, ObjectiveBodyFontPath);
+            body.alignment = TextAlignmentOptions.TopLeft;
+
+            var videoRoot = CreateRect(
+                "VideoRoot",
+                card.transform,
+                new Vector2(0.08f, 0.24f),
+                new Vector2(0.92f, 0.78f));
+            var videoImage = videoRoot.AddComponent<RawImage>();
+            videoImage.color = Color.white;
+            var videoPlayer = videoRoot.AddComponent<VideoPlayer>();
+            videoPlayer.playOnAwake = false;
+            videoPlayer.isLooping = true;
+            videoPlayer.renderMode = VideoRenderMode.RenderTexture;
+            videoRoot.SetActive(false);
+
+            var previous = CreateBriefingButton(
+                "Previous",
+                card.transform,
+                new Vector2(0.06f, 0.06f),
+                new Vector2(0.22f, 0.17f),
+                "<",
+                out _);
+            var indicator = CreateUiText(
+                "PageIndicator",
+                card.transform,
+                new Vector2(0.36f, 0.06f),
+                new Vector2(0.64f, 0.17f),
+                24f);
+            ApplyTutorialFont(indicator, ObjectiveBodyFontPath);
+            var next = CreateBriefingButton(
+                "Next",
+                card.transform,
+                new Vector2(0.78f, 0.06f),
+                new Vector2(0.94f, 0.17f),
+                ">",
+                out var nextLabel);
+
+            var renderTexture = AssetDatabase.LoadAssetAtPath<RenderTexture>(
+                BriefingRenderTexturePath);
+            if (renderTexture == null)
+            {
+                renderTexture = new RenderTexture(960, 540, 0)
+                {
+                    name = "PHS_TutorialBriefing"
+                };
+                AssetDatabase.CreateAsset(
+                    renderTexture,
+                    BriefingRenderTexturePath);
+            }
+
+            var presenter = root.GetComponent<
+                NetworkTutorialBriefingPresenter>();
+            var serialized = new SerializedObject(presenter);
+            serialized.FindProperty("popupRoot").objectReferenceValue = popup;
+            serialized.FindProperty("canvasGroup").objectReferenceValue =
+                canvasGroup;
+            serialized.FindProperty("titleText").objectReferenceValue = title;
+            serialized.FindProperty("bodyText").objectReferenceValue = body;
+            serialized.FindProperty("pageIndicatorText").objectReferenceValue =
+                indicator;
+            serialized.FindProperty("previousButton").objectReferenceValue =
+                previous;
+            serialized.FindProperty("nextButton").objectReferenceValue = next;
+            serialized.FindProperty("nextButtonLabel").objectReferenceValue =
+                nextLabel;
+            serialized.FindProperty("videoRoot").objectReferenceValue =
+                videoRoot;
+            serialized.FindProperty("videoImage").objectReferenceValue =
+                videoImage;
+            serialized.FindProperty("videoPlayer").objectReferenceValue =
+                videoPlayer;
+            serialized.FindProperty("videoTexture").objectReferenceValue =
+                renderTexture;
+            serialized.FindProperty("playerController").objectReferenceValue =
+                player;
+            serialized.ApplyModifiedPropertiesWithoutUndo();
+            return presenter;
+        }
+
+        private static Button CreateBriefingButton(
+            string name,
+            Transform parent,
+            Vector2 anchorMin,
+            Vector2 anchorMax,
+            string label,
+            out TMP_Text labelText)
+        {
+            var root = CreateRect(name, parent, anchorMin, anchorMax);
+            var image = root.AddComponent<Image>();
+            image.color = new Color(0.03f, 0.35f, 0.48f, 1f);
+            var button = root.AddComponent<Button>();
+            button.targetGraphic = image;
+            labelText = CreateUiText(
+                "Label",
+                root.transform,
+                Vector2.zero,
+                Vector2.one,
+                30f);
+            ApplyTutorialFont(labelText, ObjectiveNumberFontPath);
+            labelText.text = label;
+            return button;
+        }
+
+        private static void ConfigureBriefingPages(
+            SerializedProperty pages,
+            RoomSpec spec)
+        {
+            var overview = spec.Id switch
+            {
+                "01_MoveJump" =>
+                    "마우스로 시야를 돌리고 [WASD]로 이동합니다.\n\n" +
+                    "바닥 틈에서는 [SPACE]로 점프합니다. 이동과 점프 목표는 지정된 순서대로 완료합니다.\n\n" +
+                    "화면의 < > 버튼 또는 키보드 좌우 방향키로 앞뒤 설명을 다시 확인할 수 있습니다.",
+                "02_InteriorMovement" =>
+                    "이 구역은 함선 내부입니다. 플레이어와 놓인 물건 모두 내부 중력을 받습니다.\n\n" +
+                    "마우스로 이동 방향을 확인하고 [WASD]로 두 체크포인트를 차례로 통과합니다.\n\n" +
+                    "화면의 < > 버튼 또는 키보드 좌우 방향키로 앞뒤 설명을 다시 확인할 수 있습니다.",
+                "03_Grapple" =>
+                    "고정점을 화면 중앙에 두고 [Q]를 누르면 줄이 연결됩니다. [Q]를 누른 동안 연결이 유지됩니다.\n\n" +
+                    "[Q]를 놓으면 줄이 해제됩니다. 첫 고정점 해제 후 다음 고정점에 다시 연결합니다.\n\n" +
+                    "화면의 < > 버튼 또는 키보드 좌우 방향키로 앞뒤 설명을 다시 확인할 수 있습니다.",
+                "04_ItemTransfer" =>
+                    "물건을 보고 [F]를 누르면 줍습니다. 이미 든 물건이 있으면 자동으로 교체됩니다.\n\n" +
+                    "[RMB]를 눌러서 내리세요. 길게 누른 뒤 놓으면 던지며, 패드 안에 던져도 인정됩니다.\n\n" +
+                    "화면의 < > 버튼 또는 키보드 좌우 방향키로 앞뒤 설명을 다시 확인할 수 있습니다.",
+                "05_ToolUse" =>
+                    "도구를 보고 [F]를 누르면 줍습니다. 이미 든 도구가 있으면 자동으로 교체됩니다.\n\n" +
+                    "도구를 든 상태에서 [LMB]를 눌러 사용합니다. 렌치와 소화기를 순서대로 시험합니다.\n\n" +
+                    "화면의 < > 버튼 또는 키보드 좌우 방향키로 앞뒤 설명을 다시 확인할 수 있습니다.",
+                "06_TrainingTerminals" =>
+                    "이 방에는 조작을 익히는 연습 단말기 두 대가 있습니다.\n\n" +
+                    "각 단말기를 화면 중앙에 두고 [F]를 눌러 순서대로 작동합니다.\n\n" +
+                    "화면의 < > 버튼 또는 키보드 좌우 방향키로 앞뒤 설명을 다시 확인할 수 있습니다.",
+                "07_ExteriorDebris" =>
+                    "외부 구역에서는 무중력 이동을 사용합니다. 마우스와 [WASD]로 방향을 잡고 [SHIFT]로 위로, [CTRL]로 아래로 움직입니다.\n\n" +
+                    "데브리는 [F]로 줍습니다. [RMB]를 눌러서 내리거나 길게 누른 뒤 놓아 던집니다. 패드 안에 던져도 인정됩니다.\n\n" +
+                    "화면의 < > 버튼 또는 키보드 좌우 방향키로 앞뒤 설명을 다시 확인할 수 있습니다.",
+                "08_BoardShip" =>
+                    "외부 함선 앞까지 무중력 이동을 이어 갑니다. 마우스, [WASD], [SHIFT], [CTRL]을 사용합니다.\n\n" +
+                    "함선 문 앞 안내가 활성화되면 문을 확인하고 [F]를 눌러 함선 안으로 이동합니다.\n\n" +
+                    "화면의 < > 버튼 또는 키보드 좌우 방향키로 앞뒤 설명을 다시 확인할 수 있습니다.",
+                _ => throw Failure($"briefing_text_missing room={spec.Id}")
+            };
+            overview = overview.Replace(
+                "키보드 좌우 방향키",
+                "[A] [D] 또는 키보드 좌우 방향키");
+            pages.arraySize = spec.ObjectiveInstructions.Length + 1;
+            SetBriefingPage(
+                pages.GetArrayElementAtIndex(0),
+                spec.RoomTitle,
+                overview);
+            for (var index = 0;
+                 index < spec.ObjectiveInstructions.Length;
+                 index++)
+            {
+                SetBriefingPage(
+                    pages.GetArrayElementAtIndex(index + 1),
+                    $"{spec.RoomTitle} {index + 1}",
+                    spec.ObjectiveInstructions[index] + "\n\n" +
+                    "화면의 같은 번호 표식을 확인하세요. 앞 목표가 끝나야 다음 목표가 활성화됩니다.\n\n" +
+                    "조작을 놓쳤다면 < > 버튼, [A] [D] 또는 키보드 좌우 방향키로 다시 확인하세요.");
+            }
+        }
+
+        private static void SetBriefingPage(
+            SerializedProperty page,
+            string title,
+            string body)
+        {
+            page.FindPropertyRelative("pageKind").enumValueIndex =
+                (int)TutorialBriefingPageKind.Text;
+            page.FindPropertyRelative("title").stringValue = title;
+            page.FindPropertyRelative("body").stringValue = body;
+            page.FindPropertyRelative("videoClip").objectReferenceValue = null;
         }
 
         private static NetworkTutorialRoomController CreateRoom(
             Scene scene,
             Transform sequenceRoot,
+            Transform teamMap,
+            System.Collections.Generic.HashSet<DoorDoubleSlide> usedDoors,
+            NetworkTutorialBriefingPresenter briefingPresenter,
             RoomSpec spec,
             int index)
         {
@@ -199,13 +595,19 @@ namespace LastJumpCrew.ParkHanSol.Editor
                 spec,
                 out var instructionImage,
                 out var instructionText,
-                out var progressSlider);
+                out var progressSlider,
+                out var targetIndicatorText);
             var gate = CreateGate(
                 scene,
                 roomObject.transform,
-                spec.GateZ,
+                teamMap,
+                usedDoors,
+                spec.GateAnchor,
                 index,
                 out var doorVisual,
+                out var doorSecondaryVisual,
+                out var doorOpenLocalPosition,
+                out var doorSecondaryOpenLocalPosition,
                 out var blocker);
 
             var serialized = new SerializedObject(room);
@@ -228,6 +630,18 @@ namespace LastJumpCrew.ParkHanSol.Editor
                 roomObject;
             serialized.FindProperty("manageRoomRootActiveState").boolValue =
                 false;
+            serialized.FindProperty("roomTitle").stringValue = spec.RoomTitle;
+            var instructionProperty = serialized.FindProperty(
+                "objectiveInstructions");
+            instructionProperty.arraySize = spec.ObjectiveInstructions.Length;
+            for (var instructionIndex = 0;
+                 instructionIndex < spec.ObjectiveInstructions.Length;
+                 instructionIndex++)
+            {
+                instructionProperty.GetArrayElementAtIndex(instructionIndex)
+                    .stringValue = spec.ObjectiveInstructions[instructionIndex];
+            }
+
             serialized.FindProperty("instructionRoot").objectReferenceValue =
                 poster;
             serialized.FindProperty("instructionImage").objectReferenceValue =
@@ -236,27 +650,50 @@ namespace LastJumpCrew.ParkHanSol.Editor
                 instructionImage.sprite;
             serialized.FindProperty("instructionText").objectReferenceValue =
                 instructionText;
-            serialized.FindProperty("instruction").stringValue =
-                spec.Instruction;
             serialized.FindProperty("instructionProgressSlider")
                 .objectReferenceValue = progressSlider;
+            serialized.FindProperty("targetIndicatorText")
+                .objectReferenceValue = targetIndicatorText;
+            var player = FindComponent<NetworkPlayerController>(scene);
+            var playerSerialized = new SerializedObject(player);
+            var guidanceCamera = playerSerialized.FindProperty("playerCamera")
+                .objectReferenceValue as Camera;
+            if (guidanceCamera == null)
+            {
+                throw Failure("tutorial_guidance_camera_missing");
+            }
+
+            serialized.FindProperty("guidanceCamera").objectReferenceValue =
+                guidanceCamera;
             serialized.FindProperty("objectiveGuidanceRoot")
                 .objectReferenceValue = guidanceRoot;
+            serialized.FindProperty("briefingPresenter").objectReferenceValue =
+                briefingPresenter;
+            ConfigureBriefingPages(
+                serialized.FindProperty("briefingPages"),
+                spec);
             serialized.FindProperty("doorTransform").objectReferenceValue =
                 doorVisual;
+            serialized.FindProperty("doorSecondaryTransform")
+                .objectReferenceValue = doorSecondaryVisual;
             serialized.FindProperty("doorCollider").objectReferenceValue =
                 blocker;
             serialized.FindProperty("doorOpenLocalPosition").vector3Value =
-                index == Specs.Length - 1
-                    ? new Vector3(0f, 5.8f, 54.27f)
-                    : new Vector3(0f, 5.8f, 0f);
+                doorOpenLocalPosition;
+            serialized.FindProperty("doorSecondaryOpenLocalPosition")
+                .vector3Value = doorSecondaryOpenLocalPosition;
             serialized.FindProperty("doorOpenLocalEulerAngles").vector3Value =
-                new Vector3(0f, 180f, 0f);
+                doorVisual == null
+                    ? Vector3.zero
+                    : doorVisual.localEulerAngles;
             serialized.FindProperty("doorOpenDuration").floatValue = 0.65f;
             serialized.ApplyModifiedPropertiesWithoutUndo();
 
             poster.name = $"InstructionPoster_{spec.Id}";
-            gate.name = $"ExitGate_{spec.Id}";
+            if (gate != null)
+            {
+                gate.name = $"ExitGate_{spec.Id}";
+            }
             return room;
         }
 
@@ -266,7 +703,8 @@ namespace LastJumpCrew.ParkHanSol.Editor
             RoomSpec spec,
             out Image instructionImage,
             out TMP_Text instructionText,
-            out Slider progressSlider)
+            out Slider progressSlider,
+            out TMP_Text targetIndicatorText)
         {
             var canvasObject = new GameObject(
                 "InstructionPoster",
@@ -288,14 +726,14 @@ namespace LastJumpCrew.ParkHanSol.Editor
             var background = CreateUiImage(
                 "PosterBackground",
                 canvasObject.transform,
-                new Vector2(0.25f, 0.035f),
-                new Vector2(0.75f, 0.285f));
+                new Vector2(0.18f, 0.03f),
+                new Vector2(0.82f, 0.36f));
             background.color = new Color(0.015f, 0.04f, 0.085f, 0.98f);
             instructionImage = CreateUiImage(
                 "ActionImage",
                 background.transform,
-                new Vector2(0.025f, 0.18f),
-                new Vector2(0.34f, 0.94f));
+                new Vector2(0.02f, 0.17f),
+                new Vector2(0.28f, 0.94f));
             instructionImage.sprite = AssetDatabase.LoadAssetAtPath<Sprite>(
                 InstructionFolder + spec.SpriteFile);
             instructionImage.preserveAspect = true;
@@ -304,83 +742,142 @@ namespace LastJumpCrew.ParkHanSol.Editor
             instructionText = CreateUiText(
                 "InstructionText",
                 background.transform,
-                new Vector2(0.36f, 0.18f),
+                new Vector2(0.30f, 0.17f),
                 new Vector2(0.975f, 0.94f),
-                26f);
+                22f);
+            ApplyTutorialFont(instructionText, ObjectiveBodyFontPath);
+            instructionText.alignment = TextAlignmentOptions.TopLeft;
+            instructionText.enableAutoSizing = true;
+            instructionText.fontSizeMin = 18f;
+            instructionText.fontSizeMax = 22f;
             instructionText.text =
-                spec.Instruction + "  0/2";
+                $"{spec.RoomTitle}\n{spec.ObjectiveInstructions[0]}\n" +
+                $"완료  0/{spec.ObjectiveInstructions.Length}";
             progressSlider = CreateProgressSlider(background.transform);
+
+            var targetBackground = CreateUiImage(
+                "TargetIndicatorBackground",
+                canvasObject.transform,
+                new Vector2(0.39f, 0.89f),
+                new Vector2(0.61f, 0.965f));
+            targetBackground.color = new Color(0.005f, 0.02f, 0.045f, 0.94f);
+            targetIndicatorText = CreateUiText(
+                "TargetIndicatorText",
+                targetBackground.transform,
+                Vector2.zero,
+                Vector2.one,
+                24f);
+            ApplyTutorialFont(targetIndicatorText, ObjectiveNumberFontPath);
+            targetIndicatorText.color = new Color(0.05f, 0.9f, 1f, 1f);
+            targetIndicatorText.raycastTarget = false;
+            targetBackground.gameObject.SetActive(false);
             return canvasObject;
         }
 
         private static GameObject CreateGate(
             Scene scene,
             Transform parent,
-            float gateZ,
+            Transform teamMap,
+            System.Collections.Generic.HashSet<DoorDoubleSlide> usedDoors,
+            Vector3? gateAnchor,
             int index,
             out Transform doorVisual,
+            out Transform doorSecondaryVisual,
+            out Vector3 doorOpenLocalPosition,
+            out Vector3 doorSecondaryOpenLocalPosition,
             out Collider blocker)
         {
+            if (!gateAnchor.HasValue)
+            {
+                doorVisual = null;
+                doorSecondaryVisual = null;
+                doorOpenLocalPosition = Vector3.zero;
+                doorSecondaryOpenLocalPosition = Vector3.zero;
+                blocker = null;
+                return null;
+            }
+
             var gate = new GameObject($"Gate_{index + 1:00}");
             SceneManager.MoveGameObjectToScene(gate, scene);
             gate.transform.SetParent(parent, false);
-            gate.transform.position = new Vector3(
-                0f,
-                0f,
-                index == Specs.Length - 1 ? gateZ + 0.27f : gateZ);
 
-            if (index == Specs.Length - 1)
+            var anchor = gateAnchor.Value;
+            var door = teamMap.GetComponentsInChildren<DoorDoubleSlide>(true)
+                .Where(candidate => !usedDoors.Contains(candidate))
+                .OrderBy(candidate =>
+                    (candidate.transform.position - anchor).sqrMagnitude)
+                .FirstOrDefault();
+            if (door == null
+                || Vector3.Distance(door.transform.position, anchor) > 8f)
             {
-                var exitDoor = FindNamed(
-                    scene,
-                    "PHS_NetworkTutorialExitDoor");
-                exitDoor.transform.rotation = Quaternion.Euler(
-                    0f,
-                    180f,
-                    0f);
-                doorVisual = exitDoor.transform;
-                var exitBlocker = gate.AddComponent<BoxCollider>();
-                exitBlocker.center = new Vector3(0f, 2f, 0f);
-                exitBlocker.size = new Vector3(6f, 4.4f, 0.55f);
-                blocker = exitBlocker;
-                return gate;
+                throw Failure(
+                    $"team_map_door_missing room={Specs[index].Id} anchor={anchor}");
             }
 
-            var door = InstantiatePrefab(DoorPrefabPath, scene, gate.transform);
-            door.name = "DoorVisual";
-            door.transform.localPosition = Vector3.zero;
-            door.transform.localRotation = Quaternion.Euler(0f, 180f, 0f);
-            door.transform.localScale = Vector3.one * 0.9f;
-            doorVisual = door.transform;
-
-            CreateDoubleSidedWall(
-                scene,
-                gate.transform,
-                "GateWall_L",
-                -4.5f,
-                0f,
-                new Vector3(0.9f, 0.9f, 0.9f));
-            CreateDoubleSidedWall(
-                scene,
-                gate.transform,
-                "GateWall_R",
-                4.5f,
-                0f,
-                new Vector3(0.9f, 0.9f, 0.9f));
-            for (var x = -1; x <= 1; x++)
+            usedDoors.Add(door);
+            door.enabled = false;
+            doorVisual = door.doorL;
+            doorSecondaryVisual = door.doorR;
+            if (doorVisual == null || doorSecondaryVisual == null)
             {
-                CreateDoubleSidedWall(
-                    scene,
-                    gate.transform,
-                    $"GateWall_Upper_{x + 1}",
-                    x * 4f,
-                    3.6f,
-                    new Vector3(1.1f, 0.9f, 0.9f));
+                throw Failure(
+                    $"team_map_door_leaf_missing room={Specs[index].Id}");
+            }
+
+            var openDirection = door.directionType switch
+            {
+                DoorDoubleSlide.Direction.X => Vector3.right,
+                DoorDoubleSlide.Direction.Y => Vector3.up,
+                DoorDoubleSlide.Direction.Z => Vector3.back,
+                _ => throw Failure(
+                    $"team_map_door_direction_invalid room={Specs[index].Id}")
+            };
+            doorOpenLocalPosition = doorVisual.localPosition
+                                    + openDirection * door.openDistance;
+            doorSecondaryOpenLocalPosition =
+                doorSecondaryVisual.localPosition
+                - openDirection * door.openDistance;
+            gate.transform.position = door.transform.position;
+            gate.transform.rotation = door.transform.rotation;
+            var renderers = door.GetComponentsInChildren<Renderer>(true);
+            if (renderers.Length == 0)
+            {
+                throw Failure(
+                    $"team_map_door_renderer_missing room={Specs[index].Id}");
+            }
+
+            var bounds = renderers[0].bounds;
+            for (var rendererIndex = 1;
+                 rendererIndex < renderers.Length;
+                 rendererIndex++)
+            {
+                bounds.Encapsulate(renderers[rendererIndex].bounds);
             }
 
             var box = gate.AddComponent<BoxCollider>();
-            box.center = new Vector3(0f, 2f, 0f);
-            box.size = new Vector3(6f, 4.4f, 0.55f);
+            box.isTrigger = false;
+            box.center = gate.transform.InverseTransformPoint(bounds.center);
+            var localSize = gate.transform.InverseTransformVector(bounds.size);
+            box.size = new Vector3(
+                Mathf.Abs(localSize.x),
+                Mathf.Abs(localSize.y),
+                Mathf.Abs(localSize.z));
+            var blockerSize = box.size;
+            if (blockerSize.x <= blockerSize.y
+                && blockerSize.x <= blockerSize.z)
+            {
+                blockerSize.x = 0.6f;
+            }
+            else if (blockerSize.y <= blockerSize.z)
+            {
+                blockerSize.y = 0.6f;
+            }
+            else
+            {
+                blockerSize.z = 0.6f;
+            }
+
+            box.size = blockerSize;
             blocker = box;
             return gate;
         }
@@ -562,10 +1059,10 @@ namespace LastJumpCrew.ParkHanSol.Editor
             var root = new GameObject("PHS_TutorialPracticeItems");
             SceneManager.MoveGameObjectToScene(root, scene);
             root.transform.SetParent(parent, false);
-            CreateItemPair(scene, root.transform, 30.6f, "Transfer");
-            CreateToolPair(scene, root.transform, 39.6f);
-            CreateDropZone(scene, root.transform, -1.35f, 33.3f, "A");
-            CreateDropZone(scene, root.transform, 1.35f, 33.3f, "B");
+            CreateItemPair(scene, root.transform, -3.5f, "Transfer");
+            CreateToolPair(scene, root.transform, 3.5f);
+            CreateDropZone(scene, root.transform, 7.8f, -1.5f, "A");
+            CreateDropZone(scene, root.transform, 10.5f, 0.5f, "B");
         }
 
         private static void RemoveLegacyPracticeItems(Scene scene)
@@ -602,10 +1099,10 @@ namespace LastJumpCrew.ParkHanSol.Editor
         {
             var wrench = InstantiatePrefab(WrenchPrefabPath, scene, parent);
             wrench.name = $"PHS_TutorialWrench_{suffix}";
-            wrench.transform.position = new Vector3(-1.35f, 1.25f, z);
+            wrench.transform.position = new Vector3(7.8f, 1.25f, z);
             var battery = InstantiatePrefab(BatteryPrefabPath, scene, parent);
             battery.name = $"PHS_TutorialBattery_{suffix}";
-            battery.transform.position = new Vector3(1.35f, 1.25f, z);
+            battery.transform.position = new Vector3(10.5f, 1.25f, z + 2f);
         }
 
         private static void CreateToolPair(
@@ -615,13 +1112,13 @@ namespace LastJumpCrew.ParkHanSol.Editor
         {
             var wrench = InstantiatePrefab(WrenchPrefabPath, scene, parent);
             wrench.name = "PHS_TutorialWrench_ToolUse";
-            wrench.transform.position = new Vector3(-1.35f, 1.25f, z);
+            wrench.transform.position = new Vector3(-24.5f, 1.25f, z);
             var extinguisher = InstantiatePrefab(
                 FireExtinguisherPrefabPath,
                 scene,
                 parent);
             extinguisher.name = "PHS_TutorialExtinguisher_ToolUse";
-            extinguisher.transform.position = new Vector3(1.35f, 1.25f, z);
+            extinguisher.transform.position = new Vector3(-21.8f, 1.25f, z);
         }
 
         private static void CreateDropZone(
@@ -640,42 +1137,284 @@ namespace LastJumpCrew.ParkHanSol.Editor
 
         private static void RepositionPracticeVolumes(
             Scene scene,
-            Transform parent)
+            Transform parent,
+            Transform teamMap)
         {
-            var zeroGravity = FindComponent<NetworkPlayerGravityArea>(scene);
-            zeroGravity.transform.position = new Vector3(0f, 3f, 13.5f);
-            var zeroGravityCollider = zeroGravity.GetComponent<BoxCollider>();
-            if (zeroGravityCollider == null)
+            foreach (var targetName in new[]
+                     {
+                         "PHS_NetworkTutorialGrappleTarget",
+                         "PHS_NetworkTutorialGrappleTarget_A",
+                         "PHS_NetworkTutorialGrappleTarget_B"
+                     })
             {
-                throw Failure("zero_gravity_collider_missing");
+                var oldTarget = FindNamedOptional(scene, targetName);
+                if (oldTarget != null)
+                {
+                    UnityEngine.Object.DestroyImmediate(oldTarget);
+                }
             }
 
-            zeroGravityCollider.size = new Vector3(10f, 6f, 6.75f);
-            var grappleTarget = FindNamedOptional(
-                    scene,
-                    "PHS_NetworkTutorialGrappleTarget")
-                ?? FindNamed(
-                    scene,
-                    "PHS_NetworkTutorialGrappleTarget_A");
-            foreach (var oldObjective in grappleTarget.GetComponents<
-                         NetworkTutorialGrappleAnchorObjective>())
-            {
-                UnityEngine.Object.DestroyImmediate(oldObjective);
-            }
-
+            var grappleTarget = InstantiatePrefab(
+                GrappleAnchorPrefabPath,
+                scene,
+                parent);
             grappleTarget.name = "PHS_NetworkTutorialGrappleTarget_A";
-            grappleTarget.transform.position = new Vector3(-2.2f, 3f, 22.5f);
-            grappleTarget.transform.rotation = Quaternion.Euler(
-                0f,
-                180f,
-                0f);
-            var secondTarget = UnityEngine.Object.Instantiate(grappleTarget);
+            grappleTarget.transform.position = new Vector3(-1.6f, 2.8f, 29f);
+            grappleTarget.transform.rotation = Quaternion.Euler(90f, 0f, 0f);
+            grappleTarget.transform.localScale = Vector3.one * 0.35f;
+            var secondTarget = InstantiatePrefab(
+                GrappleAnchorPrefabPath,
+                scene,
+                parent);
             secondTarget.name = "PHS_NetworkTutorialGrappleTarget_B";
-            secondTarget.transform.SetParent(parent, true);
-            secondTarget.transform.position = new Vector3(2.2f, 3.8f, 24f);
+            secondTarget.transform.position = new Vector3(1.8f, 3.4f, 34f);
+            secondTarget.transform.rotation = Quaternion.Euler(90f, 0f, 0f);
+            secondTarget.transform.localScale = Vector3.one * 0.35f;
+            if (grappleTarget.GetComponentsInChildren<Collider>(true)
+                    .All(collider => collider.isTrigger)
+                || secondTarget.GetComponentsInChildren<Collider>(true)
+                    .All(collider => collider.isTrigger))
+            {
+                throw Failure("grapple_anchor_nontrigger_collider_missing");
+            }
 
-            CreateJumpBarrier(scene, parent, 3.3f, "A");
-            CreateJumpBarrier(scene, parent, 6.6f, "B");
+            var legacyGravity = scene.GetRootGameObjects()
+                .SelectMany(root => root.GetComponentsInChildren<
+                    NetworkPlayerGravityArea>(true))
+                .Where(area => !area.transform.IsChildOf(teamMap))
+                .ToArray();
+            foreach (var area in legacyGravity)
+            {
+                area.gameObject.SetActive(false);
+            }
+        }
+
+        private static ExteriorLayout ConfigureGravityAndDebris(
+            Scene scene,
+            Transform parent,
+            Transform teamMap,
+            NetworkPlayerController player)
+        {
+            var interior = FindNamedUnder(teamMap, "P_Space_Base_01");
+            var exteriorShip = FindNamedUnder(
+                teamMap,
+                "Spaceship_SpaceCrew_Outside");
+            var boardingDoor = FindNamedUnder(
+                exteriorShip.transform,
+                "SpaceShip_Door_Left");
+            var interiorBounds = CalculateRendererBounds(
+                interior.transform,
+                "interior_bounds_missing");
+
+            var boardingPosition = boardingDoor.transform.position;
+            var towardInterior = interiorBounds.center - boardingPosition;
+            towardInterior.y = 0f;
+            if (towardInterior.sqrMagnitude < 1f)
+            {
+                throw Failure("exterior_ship_door_direction_invalid");
+            }
+
+            towardInterior.Normalize();
+            var approachPosition = boardingPosition + towardInterior * 12f;
+            var collectionCenter = boardingPosition + towardInterior * 28f;
+            var checkpointPosition = boardingPosition + towardInterior * 42f;
+            var padA = collectionCenter + Vector3.left * 2f;
+            var padB = collectionCenter + Vector3.right * 2f;
+
+            var interiorMin = interiorBounds.min;
+            var interiorMax = interiorBounds.max;
+            var exteriorRunsAlongZ = Mathf.Abs(towardInterior.z) >=
+                                     Mathf.Abs(towardInterior.x);
+            if (exteriorRunsAlongZ)
+            {
+                if (boardingPosition.z >= interiorBounds.center.z)
+                {
+                    interiorMax.z = Mathf.Min(interiorMax.z, checkpointPosition.z);
+                }
+                else
+                {
+                    interiorMin.z = Mathf.Max(interiorMin.z, checkpointPosition.z);
+                }
+            }
+            else if (boardingPosition.x >= interiorBounds.center.x)
+            {
+                interiorMax.x = Mathf.Min(interiorMax.x, checkpointPosition.x);
+            }
+            else
+            {
+                interiorMin.x = Mathf.Max(interiorMin.x, checkpointPosition.x);
+            }
+
+            interiorBounds.SetMinMax(interiorMin, interiorMax);
+            if (interiorBounds.size.x <= 0f || interiorBounds.size.z <= 0f)
+            {
+                throw Failure("interior_gravity_bounds_invalid_after_airlock_split");
+            }
+
+            ConfigureGravityVolume(
+                scene,
+                parent,
+                "PHS_TutorialInteriorGravity",
+                interiorBounds,
+                GravityMode.ShipGravity,
+                NetworkPlayerGravityMode.ShipGravity,
+                10);
+            var exteriorBounds = new Bounds(checkpointPosition, Vector3.zero);
+            exteriorBounds.Encapsulate(boardingPosition);
+            exteriorBounds.Encapsulate(checkpointPosition);
+            exteriorBounds.Encapsulate(collectionCenter);
+            exteriorBounds.Encapsulate(approachPosition);
+            exteriorBounds.Encapsulate(padA);
+            exteriorBounds.Encapsulate(padB);
+            exteriorBounds.Expand(
+                exteriorRunsAlongZ
+                    ? new Vector3(16f, 16f, 0f)
+                    : new Vector3(0f, 16f, 16f));
+            ConfigureGravityVolume(
+                scene,
+                parent,
+                "PHS_TutorialExteriorZeroGravity",
+                exteriorBounds,
+                GravityMode.Spacewalk,
+                NetworkPlayerGravityMode.Spacewalk,
+                20);
+
+            if (player.GetComponent<PlayerGravityReceiver>() == null)
+            {
+                player.gameObject.AddComponent<PlayerGravityReceiver>();
+            }
+
+            CreateRecoveryPad(scene, parent, padA, "Cargo");
+            CreateRecoveryPad(scene, parent, padB, "Camera");
+            CreateDebrisStream(scene, parent, collectionCenter);
+            return new ExteriorLayout(
+                checkpointPosition,
+                padA,
+                padB,
+                approachPosition,
+                boardingPosition);
+        }
+
+        private static void ConfigureGravityVolume(
+            Scene scene,
+            Transform parent,
+            string name,
+            Bounds bounds,
+            GravityMode itemMode,
+            NetworkPlayerGravityMode playerMode,
+            int priority)
+        {
+            var itemRoot = new GameObject(name + "_Items");
+            SceneManager.MoveGameObjectToScene(itemRoot, scene);
+            itemRoot.transform.SetParent(parent, false);
+            itemRoot.transform.position = bounds.center;
+            var itemCollider = itemRoot.AddComponent<BoxCollider>();
+            itemCollider.size = bounds.size;
+            itemCollider.isTrigger = true;
+            var itemZone = itemRoot.AddComponent<GravityZone>();
+            var itemSerialized = new SerializedObject(itemZone);
+            itemSerialized.FindProperty("gravityMode").enumValueIndex =
+                (int)itemMode;
+            itemSerialized.FindProperty("priority").intValue = priority;
+            itemSerialized.ApplyModifiedPropertiesWithoutUndo();
+
+            var playerRoot = new GameObject(name + "_Player");
+            SceneManager.MoveGameObjectToScene(playerRoot, scene);
+            playerRoot.transform.SetParent(parent, false);
+            playerRoot.transform.position = bounds.center;
+            var playerCollider = playerRoot.AddComponent<BoxCollider>();
+            playerCollider.size = bounds.size;
+            playerCollider.isTrigger = true;
+            var playerArea = playerRoot.AddComponent<
+                NetworkPlayerGravityArea>();
+            var playerSerialized = new SerializedObject(playerArea);
+            playerSerialized.FindProperty("gravityMode").enumValueIndex =
+                (int)playerMode;
+            playerSerialized.FindProperty("priority").intValue = priority;
+            playerSerialized.ApplyModifiedPropertiesWithoutUndo();
+        }
+
+        private static void CreateRecoveryPad(
+            Scene scene,
+            Transform parent,
+            Vector3 position,
+            string suffix)
+        {
+            var pad = InstantiatePrefab(WallPrefabPath, scene, parent);
+            pad.name = $"PHS_TutorialDebrisRecoveryPad_{suffix}";
+            pad.transform.position = position;
+            pad.transform.rotation = Quaternion.Euler(-90f, 0f, 0f);
+            pad.transform.localScale = new Vector3(0.6f, 0.6f, 0.1f);
+        }
+
+        private static void CreateDebrisStream(
+            Scene scene,
+            Transform parent,
+            Vector3 center)
+        {
+            var root = new GameObject("PHS_TutorialDebrisStream");
+            SceneManager.MoveGameObjectToScene(root, scene);
+            root.transform.SetParent(parent, false);
+            var cargo = InstantiatePrefab(DebrisCargoPrefabPath, scene, root.transform);
+            cargo.name = "PHS_TutorialDebris_Cargo";
+            var camera = InstantiatePrefab(DebrisCameraPrefabPath, scene, root.transform);
+            camera.name = "PHS_TutorialDebris_Camera";
+            cargo.transform.position = center + new Vector3(-8f, 2f, -3f);
+            camera.transform.position = center + new Vector3(8f, -1f, 3f);
+
+            var stream = root.AddComponent<PHSRandomDebrisStream>();
+            var serialized = new SerializedObject(stream);
+            serialized.FindProperty("allowOfflineLocalSimulation").boolValue =
+                true;
+            var roots = serialized.FindProperty("debrisRoots");
+            roots.arraySize = 2;
+            roots.GetArrayElementAtIndex(0).objectReferenceValue = cargo.transform;
+            roots.GetArrayElementAtIndex(1).objectReferenceValue = camera.transform;
+            serialized.FindProperty("minimumDebrisCount").intValue = 3;
+            serialized.FindProperty("maximumDebrisCount").intValue = 4;
+            serialized.FindProperty("densityMultiplier").floatValue = 1f;
+            serialized.FindProperty("spawnCenter").vector3Value = center;
+            serialized.FindProperty("spawnExtents").vector3Value =
+                new Vector3(12f, 6f, 10f);
+            serialized.FindProperty("recycleWorldX").floatValue = center.x - 24f;
+            serialized.FindProperty("minimumSpeed").floatValue = 0.5f;
+            serialized.FindProperty("maximumSpeed").floatValue = 1.2f;
+            serialized.ApplyModifiedPropertiesWithoutUndo();
+        }
+
+        private static GameObject FindNamedUnder(Transform root, string name)
+        {
+            var matches = root.GetComponentsInChildren<Transform>(true)
+                .Where(candidate => candidate.name == name)
+                .ToArray();
+            if (matches.Length != 1)
+            {
+                throw Failure(
+                    $"team_map_object_count name={name} count={matches.Length}");
+            }
+
+            return matches[0].gameObject;
+        }
+
+        private static Bounds CalculateRendererBounds(
+            Transform root,
+            string failureReason)
+        {
+            var renderers = root.GetComponentsInChildren<Renderer>(true)
+                .Where(renderer => renderer.enabled)
+                .ToArray();
+            if (renderers.Length == 0)
+            {
+                throw Failure(failureReason);
+            }
+
+            var bounds = renderers[0].bounds;
+            for (var index = 1; index < renderers.Length; index++)
+            {
+                bounds.Encapsulate(renderers[index].bounds);
+            }
+
+            return bounds;
         }
 
         private static void CreateJumpBarrier(
@@ -695,9 +1434,10 @@ namespace LastJumpCrew.ParkHanSol.Editor
             Scene scene,
             Transform parent,
             NetworkTutorialRoomController[] rooms,
-            NetworkTutorialInteractionStation[] interactionStations)
+            NetworkTutorialInteractionStation[] interactionStations,
+            ExteriorLayout exterior)
         {
-            if (rooms.Length != 6 || interactionStations.Length != 2)
+            if (rooms.Length != 8 || interactionStations.Length != 3)
             {
                 throw Failure("objective_contract_count_invalid");
             }
@@ -711,7 +1451,7 @@ namespace LastJumpCrew.ParkHanSol.Editor
                 throw Failure("objective_player_component_missing");
             }
 
-            var roomObjectives = new MonoBehaviour[6][];
+            var roomObjectives = new MonoBehaviour[rooms.Length][];
             roomObjectives[0] = new MonoBehaviour[]
             {
                 CreateCheckpointObjective(
@@ -719,7 +1459,7 @@ namespace LastJumpCrew.ParkHanSol.Editor
                     parent,
                     player,
                     "move_jump_checkpoint_a",
-                    new Vector3(0f, 1.25f, 4.2f),
+                    new Vector3(0f, 1.25f, 2f),
                     new Vector3(5.5f, 2.5f, 0.7f),
                     false),
                 CreateCheckpointObjective(
@@ -727,9 +1467,10 @@ namespace LastJumpCrew.ParkHanSol.Editor
                     parent,
                     player,
                     "move_jump_checkpoint_b",
-                    new Vector3(0f, 1.25f, 7.5f),
+                    new Vector3(0f, 1.25f, 4.2f),
                     new Vector3(5.5f, 2.5f, 0.7f),
-                    false)
+                    false,
+                    true)
             };
 
             roomObjectives[1] = new MonoBehaviour[]
@@ -739,17 +1480,17 @@ namespace LastJumpCrew.ParkHanSol.Editor
                     parent,
                     player,
                     "thruster_checkpoint_a",
-                    new Vector3(-2f, 2.8f, 12.45f),
+                    new Vector3(0.25f, 1.25f, 17f),
                     new Vector3(2.1f, 2.1f, 1f),
-                    true),
+                    false),
                 CreateCheckpointObjective(
                     scene,
                     parent,
                     player,
                     "thruster_checkpoint_b",
-                    new Vector3(2f, 3.8f, 15.3f),
+                    new Vector3(0.25f, 1.25f, 25f),
                     new Vector3(2.1f, 2.1f, 1f),
-                    true)
+                    false)
             };
 
             roomObjectives[2] = new MonoBehaviour[]
@@ -771,14 +1512,46 @@ namespace LastJumpCrew.ParkHanSol.Editor
                     parent,
                     "item_drop_wrench",
                     "wrench",
-                    new Vector3(-1.35f, 0.65f, 33.3f)),
+                    new Vector3(7.8f, 0.65f, -1.5f)),
                 CreateDropZoneObjective(
                     scene,
                     parent,
                     "item_drop_battery",
                     "battery_pack",
-                    new Vector3(1.35f, 0.65f, 33.3f))
+                    new Vector3(10.5f, 0.65f, 0.5f))
             };
+            var transferItems = new[]
+            {
+                FindNamed(scene, "PHS_TutorialWrench_Transfer"),
+                FindNamed(scene, "PHS_TutorialBattery_Transfer")
+            };
+            foreach (var transferItem in transferItems)
+            {
+                var itemCollider = transferItem.GetComponentInChildren<
+                    Collider>(true);
+                if (itemCollider == null)
+                {
+                    throw Failure(
+                        $"practice_item_collider_missing item={transferItem.name}");
+                }
+
+                foreach (var objective in roomObjectives[3])
+                {
+                    var zoneCollider = objective.GetComponent<Collider>();
+                    var itemBounds = itemCollider.bounds;
+                    var zoneBounds = zoneCollider.bounds;
+                    var separation = Vector3.Distance(
+                        itemBounds.ClosestPoint(zoneBounds.center),
+                        zoneBounds.ClosestPoint(itemBounds.center));
+                    if (itemBounds.Intersects(zoneBounds) || separation < 0.25f)
+                    {
+                        throw Failure(
+                            "practice_item_drop_zone_separation_invalid " +
+                            $"item={transferItem.name} zone={objective.name} " +
+                            $"separation={separation:F2}");
+                    }
+                }
+            }
 
             roomObjectives[4] = new MonoBehaviour[]
             {
@@ -799,16 +1572,55 @@ namespace LastJumpCrew.ParkHanSol.Editor
                 interactionStations[0],
                 interactionStations[1]
             };
+            roomObjectives[6] = new MonoBehaviour[]
+            {
+                CreateCheckpointObjective(
+                    scene,
+                    parent,
+                    player,
+                    "exterior_zero_g_checkpoint",
+                    exterior.CheckpointPosition,
+                    new Vector3(5f, 5f, 5f),
+                    true),
+                CreateDropZoneObjective(
+                    scene,
+                    parent,
+                    "debris_recovery_cargo",
+                    "debris_futuristic_cargo",
+                    exterior.PadAPosition),
+                CreateDropZoneObjective(
+                    scene,
+                    parent,
+                    "debris_recovery_camera",
+                    "debris_satellite_camera",
+                    exterior.PadBPosition)
+            };
+            roomObjectives[7] = new MonoBehaviour[]
+            {
+                CreateCheckpointObjective(
+                    scene,
+                    parent,
+                    player,
+                    "boarding_approach_checkpoint",
+                    exterior.ApproachPosition,
+                    new Vector3(5f, 5f, 5f),
+                    true),
+                interactionStations[2]
+            };
 
             ConfigureInteractionObjective(
                 interactionStations[0],
-                "incident_terminal_fire");
+                "training_terminal_a");
             ConfigureInteractionObjective(
                 interactionStations[1],
-                "incident_terminal_power");
+                "training_terminal_b");
+            ConfigureInteractionObjective(
+                interactionStations[2],
+                "boarding_interact");
             var roomMarkers = CreateObjectiveGuidance(
                 scene,
-                rooms);
+                rooms,
+                roomObjectives);
 
             for (var roomIndex = 0;
                  roomIndex < rooms.Length;
@@ -852,7 +1664,8 @@ namespace LastJumpCrew.ParkHanSol.Editor
                 string objectiveId,
                 Vector3 position,
                 Vector3 size,
-                bool requireZeroGravity)
+                bool requireZeroGravity,
+                bool requireJump = false)
         {
             var root = new GameObject($"PHS_TutorialObjective_{objectiveId}");
             SceneManager.MoveGameObjectToScene(root, scene);
@@ -869,61 +1682,29 @@ namespace LastJumpCrew.ParkHanSol.Editor
                 player;
             serialized.FindProperty("requireZeroGravity").boolValue =
                 requireZeroGravity;
+            serialized.FindProperty("requireJump").boolValue = requireJump;
             serialized.ApplyModifiedPropertiesWithoutUndo();
             return objective;
         }
 
         private static GameObject[][] CreateObjectiveGuidance(
             Scene scene,
-            NetworkTutorialRoomController[] rooms)
+            NetworkTutorialRoomController[] rooms,
+            MonoBehaviour[][] roomObjectives)
         {
-            var captions = new[]
-            {
-                new[] { "JUMP", "JUMP" },
-                new[] { "THRUST", "THRUST" },
-                new[] { "GRAPPLE", "GRAPPLE" },
-                new[] { "WRENCH ZONE", "BATTERY ZONE" },
-                new[] { "USE WRENCH", "USE EXTINGUISHER" },
-                new[] { "REPAIR", "REPAIR" }
-            };
-            var markerPositions = new[]
-            {
-                new[]
-                {
-                    new Vector3(-1.5f, 2.2f, 4.2f),
-                    new Vector3(0.7f, 2.2f, 7.5f)
-                },
-                new[]
-                {
-                    new Vector3(-2f, 3.5f, 12.45f),
-                    new Vector3(2f, 4.5f, 15.3f)
-                },
-                new[]
-                {
-                    new Vector3(-2.2f, 4f, 22.5f),
-                    new Vector3(2.2f, 4.8f, 24f)
-                },
-                new[]
-                {
-                    new Vector3(-1.35f, 2f, 33.3f),
-                    new Vector3(1.35f, 2f, 33.3f)
-                },
-                new[]
-                {
-                    new Vector3(-1.35f, 2.4f, 39.6f),
-                    new Vector3(1.35f, 2.4f, 39.6f)
-                },
-                new[]
-                {
-                    new Vector3(-2.1f, 2.4f, 49.5f),
-                    new Vector3(2.1f, 2.4f, 49.5f)
-                }
-            };
             var roomMarkers = new GameObject[rooms.Length][];
             for (var roomIndex = 0;
                  roomIndex < rooms.Length;
                  roomIndex++)
             {
+                if (roomIndex >= ObjectiveMarkerCaptions.Length
+                    || ObjectiveMarkerCaptions[roomIndex].Length
+                    != roomObjectives[roomIndex].Length)
+                {
+                    throw Failure(
+                        $"objective_marker_caption_count_invalid room={roomIndex + 1}");
+                }
+
                 var parent = rooms[roomIndex].transform.Find(
                     "ObjectiveGuidance");
                 if (parent == null)
@@ -932,26 +1713,175 @@ namespace LastJumpCrew.ParkHanSol.Editor
                         $"guidance_root_missing room={rooms[roomIndex].RoomId}");
                 }
 
-                roomMarkers[roomIndex] = new[]
+                var objectives = roomObjectives[roomIndex];
+                roomMarkers[roomIndex] = new GameObject[objectives.Length];
+                for (var objectiveIndex = 0;
+                     objectiveIndex < objectives.Length;
+                     objectiveIndex++)
                 {
-                    CreateObjectiveMarker(
+                    var accent = objectiveIndex % 2 == 0
+                        ? new Color(0.05f, 0.9f, 1f, 1f)
+                        : new Color(1f, 0.65f, 0.08f, 1f);
+                    var number = (objectiveIndex + 1).ToString();
+                    if (roomIndex == 0)
+                    {
+                        Physics.SyncTransforms();
+                        var objectivePosition =
+                            objectives[objectiveIndex].transform.position;
+                        if (!Physics.Raycast(
+                                new Vector3(
+                                    objectivePosition.x,
+                                    objectivePosition.y + 1f,
+                                    objectivePosition.z),
+                                Vector3.down,
+                                out var floorHit,
+                                6f,
+                                Physics.DefaultRaycastLayers,
+                                QueryTriggerInteraction.Ignore))
+                        {
+                            throw Failure(
+                                $"objective_floor_missing index={objectiveIndex + 1}");
+                        }
+
+                        var group = new GameObject(
+                            $"FloorObjectiveGroup_{number}");
+                        SceneManager.MoveGameObjectToScene(group, scene);
+                        group.transform.SetParent(parent, false);
+                        group.transform.position = floorHit.point;
+                        var pad = InstantiatePrefab(
+                            FloorObjectivePadPrefabPath,
+                            scene,
+                            group.transform);
+                        pad.name = $"FloorObjectivePad_{number}";
+                        pad.transform.position = floorHit.point
+                                                 + Vector3.up * 0.025f;
+                        pad.transform.rotation = Quaternion.identity;
+                        pad.transform.localScale =
+                            new Vector3(2.2f, 0.025f, 2.2f);
+                        var padRenderer = pad.GetComponentInChildren<Renderer>(true);
+                        var padMaterial = AssetDatabase.LoadAssetAtPath<Material>(
+                            FloorObjectivePadMaterialPath);
+                        if (padRenderer == null || padMaterial == null)
+                        {
+                            throw Failure("objective_floor_visual_missing");
+                        }
+
+                        padRenderer.sharedMaterial = padMaterial;
+                        padRenderer.shadowCastingMode =
+                            UnityEngine.Rendering.ShadowCastingMode.Off;
+                        padRenderer.receiveShadows = false;
+                        CreateFloorObjectiveMarker(
+                            scene,
+                            group.transform,
+                            number,
+                            ObjectiveMarkerCaptions[roomIndex][objectiveIndex],
+                            accent,
+                            floorHit.point + Vector3.up * 0.035f);
+                        roomMarkers[roomIndex][objectiveIndex] = group;
+                        continue;
+                    }
+
+                    if (roomIndex == 3)
+                    {
+                        var item = FindNamed(
+                            scene,
+                            objectiveIndex == 0
+                                ? "PHS_TutorialWrench_Transfer"
+                                : "PHS_TutorialBattery_Transfer");
+                        var group = new GameObject(
+                            $"ObjectiveMarkerGroup_{number}");
+                        SceneManager.MoveGameObjectToScene(group, scene);
+                        group.transform.SetParent(parent, false);
+                        group.transform.position = item.transform.position;
+                        CreateObjectiveMarker(
+                            scene,
+                            group.transform,
+                            number,
+                            ObjectiveMarkerCaptions[roomIndex][objectiveIndex],
+                            accent,
+                            item.transform.position + Vector3.up * 1.35f);
+                        CreateObjectiveMarker(
+                            scene,
+                            group.transform,
+                            number,
+                            $"{number}번 놓는 곳",
+                            accent,
+                            objectives[objectiveIndex].transform.position
+                            + Vector3.up * 1.65f);
+                        roomMarkers[roomIndex][objectiveIndex] = group;
+                        continue;
+                    }
+
+                    var position = objectives[objectiveIndex].transform.position
+                        + Vector3.up * 2f;
+                    if (roomIndex == 2)
+                    {
+                        position = objectives[objectiveIndex].transform.position;
+                    }
+
+                    if (roomIndex == 4)
+                    {
+                        position = objectiveIndex == 0
+                            ? new Vector3(-24.5f, 2.4f, 3.5f)
+                            : new Vector3(-21.8f, 2.4f, 3.5f);
+                    }
+
+                    var marker = CreateObjectiveMarker(
                         scene,
                         parent,
-                        "1",
-                        captions[roomIndex][0],
-                        new Color(0.05f, 0.9f, 1f, 1f),
-                        markerPositions[roomIndex][0]),
-                    CreateObjectiveMarker(
-                        scene,
-                        parent,
-                        "2",
-                        captions[roomIndex][1],
-                        new Color(1f, 0.65f, 0.08f, 1f),
-                        markerPositions[roomIndex][1])
-                };
+                        number,
+                        ObjectiveMarkerCaptions[roomIndex][objectiveIndex],
+                        accent,
+                        position);
+                    if (roomIndex == 2)
+                    {
+                        var markerRect = marker.GetComponent<RectTransform>();
+                        markerRect.sizeDelta = new Vector2(250f, 110f);
+                        markerRect.localScale = Vector3.one * 0.004f;
+                    }
+
+                    roomMarkers[roomIndex][objectiveIndex] = marker;
+                }
             }
 
             return roomMarkers;
+        }
+
+        private static GameObject CreateFloorObjectiveMarker(
+            Scene scene,
+            Transform parent,
+            string number,
+            string caption,
+            Color accent,
+            Vector3 worldPosition)
+        {
+            var marker = new GameObject(
+                $"FloorObjectiveMarker_{number}",
+                typeof(RectTransform),
+                typeof(Canvas));
+            SceneManager.MoveGameObjectToScene(marker, scene);
+            marker.transform.SetParent(parent, false);
+            marker.transform.position = worldPosition;
+            marker.transform.rotation = Quaternion.Euler(-90f, 0f, 0f);
+            var canvas = marker.GetComponent<Canvas>();
+            canvas.renderMode = RenderMode.WorldSpace;
+            canvas.overrideSorting = true;
+            canvas.sortingOrder = 211;
+            var rect = marker.GetComponent<RectTransform>();
+            rect.sizeDelta = new Vector2(300f, 110f);
+            rect.localScale = Vector3.one * 0.004f;
+
+            var label = CreateUiText(
+                "FloorLabel",
+                marker.transform,
+                Vector2.zero,
+                Vector2.one,
+                48f);
+            label.text = $"{number}  {caption}";
+            label.color = accent;
+            label.raycastTarget = false;
+            ApplyTutorialFont(label, ObjectiveNumberFontPath);
+            return marker;
         }
 
         private static GameObject CreateObjectiveMarker(
@@ -1011,6 +1941,7 @@ namespace LastJumpCrew.ParkHanSol.Editor
             numberText.text = number;
             numberText.color = accent;
             numberText.raycastTarget = false;
+            ApplyTutorialFont(numberText, ObjectiveNumberFontPath);
 
             var captionText = CreateUiText(
                 "Caption",
@@ -1023,6 +1954,7 @@ namespace LastJumpCrew.ParkHanSol.Editor
             captionText.fontSizeMin = 22f;
             captionText.fontSizeMax = 32f;
             captionText.raycastTarget = false;
+            ApplyTutorialFont(captionText, ObjectiveBodyFontPath);
 
             var pointer = CreateUiText(
                 "TargetPointer",
@@ -1067,7 +1999,7 @@ namespace LastJumpCrew.ParkHanSol.Editor
             root.transform.SetParent(parent, false);
             root.transform.position = position;
             var collider = root.AddComponent<BoxCollider>();
-            collider.size = new Vector3(2.2f, 1.3f, 2.2f);
+            collider.size = new Vector3(2.2f, 1.8f, 3.2f);
             collider.isTrigger = true;
             var objective = root.AddComponent<
                 NetworkTutorialItemDropZoneObjective>();
@@ -1148,35 +2080,46 @@ namespace LastJumpCrew.ParkHanSol.Editor
                 stationSerialized.FindProperty("tutorialDirector")
                     .objectReferenceValue = director;
                 stationSerialized.FindProperty("interactionPrompt")
-                    .stringValue = "Repair Incident";
+                    .stringValue = station.name == "PHS_TutorialBoardingStation"
+                        ? "[F] 함선 타기"
+                        : "[F] 연습 단말기 작동";
                 stationSerialized.FindProperty("singleUse").boolValue = true;
                 stationSerialized.ApplyModifiedPropertiesWithoutUndo();
             }
         }
 
         private static NetworkTutorialInteractionStation[]
-            CreateInteractionStations(Scene scene, Transform parent)
+            CreateInteractionStations(
+                Scene scene,
+                Transform parent,
+                Vector3 boardingPosition)
         {
-            var firstObject = FindNamedOptional(
-                    scene,
-                    "PHS_NetworkTutorialInteractionStation")
-                ?? FindNamed(
-                    scene,
-                    "PHS_TutorialIncidentTerminal_A");
-            firstObject.name = "PHS_TutorialIncidentTerminal_A";
-            firstObject.transform.position = new Vector3(-2.1f, 0f, 49.5f);
+            var firstObject = InstantiatePrefab(
+                InteractionStationPrefabPath,
+                scene,
+                parent);
+            firstObject.name = "PHS_TutorialTrainingTerminal_A";
+            firstObject.transform.position = new Vector3(-49f, 0f, 0f);
 
             var secondObject = InstantiatePrefab(
                 InteractionStationPrefabPath,
                 scene,
                 parent);
-            secondObject.name = "PHS_TutorialIncidentTerminal_B";
-            secondObject.transform.position = new Vector3(2.1f, 0f, 49.5f);
+            secondObject.name = "PHS_TutorialTrainingTerminal_B";
+            secondObject.transform.position = new Vector3(-45f, 0f, 0f);
+
+            var boardingObject = InstantiatePrefab(
+                InteractionStationPrefabPath,
+                scene,
+                parent);
+            boardingObject.name = "PHS_TutorialBoardingStation";
+            boardingObject.transform.position = boardingPosition;
 
             return new[]
             {
                 firstObject.GetComponent<NetworkTutorialInteractionStation>(),
-                secondObject.GetComponent<NetworkTutorialInteractionStation>()
+                secondObject.GetComponent<NetworkTutorialInteractionStation>(),
+                boardingObject.GetComponent<NetworkTutorialInteractionStation>()
             };
         }
 
@@ -1193,6 +2136,17 @@ namespace LastJumpCrew.ParkHanSol.Editor
                 player.GetComponent<TempPlayerInteractionScanner>(),
                 "playHudPresenter",
                 presenter);
+        }
+
+        private static void ConfigureTutorialOnlyHud(Scene scene)
+        {
+            var legacyInstruction = FindNamed(scene, "Instruction");
+            legacyInstruction.SetActive(false);
+            EditorUtility.SetDirty(legacyInstruction);
+
+            var timeRoot = FindNamed(scene, "Time Root");
+            timeRoot.SetActive(false);
+            EditorUtility.SetDirty(timeRoot);
         }
 
         private static Slider CreateProgressSlider(Transform parent)
@@ -1252,10 +2206,26 @@ namespace LastJumpCrew.ParkHanSol.Editor
             }
 
             text.fontSize = fontSize;
-            text.fontStyle = FontStyles.Bold;
+            text.fontStyle = FontStyles.Normal;
             text.alignment = TextAlignmentOptions.Center;
             text.color = Color.white;
+            PHSUIFontPaths.ApplyResolved(text);
             return text;
+        }
+
+        private static void ApplyTutorialFont(TMP_Text text, string fontPath)
+        {
+            var font = AssetDatabase.LoadAssetAtPath<TMP_FontAsset>(fontPath);
+            if (font == null)
+            {
+                throw Failure($"tutorial_font_missing path={fontPath}");
+            }
+
+            text.font = font;
+            text.fontSharedMaterial = font.material;
+            text.fontStyle = FontStyles.Normal;
+            text.fontWeight = FontWeight.Regular;
+            EditorUtility.SetDirty(text);
         }
 
         private static GameObject CreateRect(
@@ -1364,6 +2334,16 @@ namespace LastJumpCrew.ParkHanSol.Editor
         {
             foreach (var spec in Specs)
             {
+                if (string.IsNullOrWhiteSpace(spec.RoomTitle)
+                    || spec.ObjectiveInstructions == null
+                    || spec.ObjectiveInstructions.Length == 0
+                    || spec.ObjectiveInstructions.Any(
+                        string.IsNullOrWhiteSpace))
+                {
+                    throw Failure(
+                        $"instruction_contract_invalid room={spec.Id}");
+                }
+
                 var path = InstructionFolder + spec.SpriteFile;
                 var importer = AssetImporter.GetAtPath(path) as TextureImporter;
                 if (importer == null)
@@ -1397,7 +2377,13 @@ namespace LastJumpCrew.ParkHanSol.Editor
                          WrenchPrefabPath,
                          BatteryPrefabPath,
                          FireExtinguisherPrefabPath,
-                         InteractionStationPrefabPath
+                         InteractionStationPrefabPath,
+                         TeamTutorialMapPrefabPath,
+                         GrappleAnchorPrefabPath,
+                         FloorObjectivePadPrefabPath,
+                         FloorObjectivePadMaterialPath,
+                         DebrisCargoPrefabPath,
+                         DebrisCameraPrefabPath
                      })
             {
                 if (AssetDatabase.LoadMainAssetAtPath(path) == null)
@@ -1428,24 +2414,50 @@ namespace LastJumpCrew.ParkHanSol.Editor
                 string id,
                 TutorialActionKind[] actions,
                 float centerZ,
-                float gateZ,
-                string instruction,
+                Vector3? gateAnchor,
+                string roomTitle,
+                string[] objectiveInstructions,
                 string spriteFile)
             {
                 Id = id;
                 Actions = actions;
                 CenterZ = centerZ;
-                GateZ = gateZ;
-                Instruction = instruction;
+                GateAnchor = gateAnchor;
+                RoomTitle = roomTitle;
+                ObjectiveInstructions = objectiveInstructions;
                 SpriteFile = spriteFile;
             }
 
             public string Id { get; }
             public TutorialActionKind[] Actions { get; }
             public float CenterZ { get; }
-            public float GateZ { get; }
-            public string Instruction { get; }
+            public Vector3? GateAnchor { get; }
+            public string RoomTitle { get; }
+            public string[] ObjectiveInstructions { get; }
             public string SpriteFile { get; }
+        }
+
+        private readonly struct ExteriorLayout
+        {
+            public ExteriorLayout(
+                Vector3 checkpointPosition,
+                Vector3 padAPosition,
+                Vector3 padBPosition,
+                Vector3 approachPosition,
+                Vector3 boardingPosition)
+            {
+                CheckpointPosition = checkpointPosition;
+                PadAPosition = padAPosition;
+                PadBPosition = padBPosition;
+                ApproachPosition = approachPosition;
+                BoardingPosition = boardingPosition;
+            }
+
+            public Vector3 CheckpointPosition { get; }
+            public Vector3 PadAPosition { get; }
+            public Vector3 PadBPosition { get; }
+            public Vector3 ApproachPosition { get; }
+            public Vector3 BoardingPosition { get; }
         }
     }
 }

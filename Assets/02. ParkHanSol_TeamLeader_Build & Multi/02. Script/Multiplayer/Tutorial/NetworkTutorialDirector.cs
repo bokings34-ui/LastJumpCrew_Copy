@@ -11,7 +11,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Tutorial
     public sealed class NetworkTutorialDirector : MonoBehaviour
     {
         private const int DefaultRequiredSuccessCount = 2;
-        private const int ConfiguredRoomCount = 6;
+        private const int ConfiguredRoomCount = 8;
 
         private static readonly TutorialActionKind[] LegacyActionOrder =
         {
@@ -110,10 +110,10 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Tutorial
             currentSuccessCount = 0;
             completionPanel.SetActive(false);
             returnToLobbyButton.onClick.AddListener(ReturnToLobby);
-            SetRoomSequenceState();
-            RefreshCurrentInstruction();
             Cursor.lockState = CursorLockMode.Locked;
             Cursor.visible = false;
+            SetRoomSequenceState();
+            RefreshCurrentInstruction();
         }
 
         private void OnDestroy()
@@ -335,6 +335,10 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Tutorial
             {
                 rooms[currentRoomIndex].CompleteRoom();
                 rooms[currentRoomIndex].SetCurrent(false, currentSuccessCount);
+                if (currentRoomIndex < rooms.Length - 1)
+                {
+                    PlayAudioCue(NetworkAudioCue.MissionSuccess);
+                }
             }
 
             currentRoomIndex++;

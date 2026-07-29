@@ -20,10 +20,8 @@ namespace LastJumpCrew.ParkHanSol.Editor
             "Assets/02. ParkHanSol_TeamLeader_Build & Multi/03. Prefab/UI/PHS_NetworkPlayHudUI.prefab";
         private const string NetworkHudGuid =
             "07d62e5473408144e8beaf1dc528b2bc";
-        private const string CanonicalEnglishFontPath =
-            "Assets/99. DownloadAssets/TextMesh Pro/Resources/Fonts & Materials/LiberationSans SDF.asset";
-        private const string CanonicalLocalizedFontPath =
-            "Assets/02. ParkHanSol_TeamLeader_Build & Multi/_ThirdParty/Fonts/Maplestory Light SDF.asset";
+        private const string CanonicalEnglishFontPath = PHSUIFontPaths.SuitRegular;
+        private const string CanonicalLocalizedFontPath = PHSUIFontPaths.SuitRegular;
         private const string ShipHealthIconPath =
             "Assets/02. ParkHanSol_TeamLeader_Build & Multi/04. Data/UI/VitalsIcons/PHS_Hud_ShipHealth.png";
         private const string WarpGaugeIconPath =
@@ -59,6 +57,7 @@ namespace LastJumpCrew.ParkHanSol.Editor
                 EnsureShopProductPanel(root);
                 NormalizeEnglishFonts(root);
                 ConfigureLocalizedHudTypography(root);
+                PHSUIFontAssetAuthoring.ApplyTypography(root);
                 PrefabUtility.SaveAsPrefabAsset(root, HudPath);
             }
             finally
@@ -90,6 +89,7 @@ namespace LastJumpCrew.ParkHanSol.Editor
                 SetReference(controllerData, "warpGaugeMotion", gauges.warp);
                 SetReference(controllerData, "shipHpGaugeMotion", gauges.ship);
                 controllerData.ApplyModifiedPropertiesWithoutUndo();
+                PHSUIFontAssetAuthoring.ApplyTypography(root);
                 PrefabUtility.SaveAsPrefabAsset(root, HudPath);
             }
             finally
@@ -168,6 +168,7 @@ namespace LastJumpCrew.ParkHanSol.Editor
                 }
 
                 variantRoot.name = "PHS_NetworkPlayHudUI";
+                PHSUIFontAssetAuthoring.ApplyTypography(variantRoot);
                 var saved = PrefabUtility.SaveAsPrefabAsset(
                     variantRoot,
                     NetworkHudPath);
@@ -352,19 +353,6 @@ namespace LastJumpCrew.ParkHanSol.Editor
                 }
             }
 
-            var canonicalFont = AssetDatabase.LoadAssetAtPath<TMP_FontAsset>(CanonicalEnglishFontPath);
-            Require(canonicalFont != null, "canonical_english_font_missing", errors);
-            if (canonicalFont != null)
-            {
-                foreach (var text in prefab.GetComponentsInChildren<TextMeshProUGUI>(true)
-                             .Where(text => !ContainsHangul(text.text)
-                                 && !UsesLocalizedHudTypography(text)))
-                {
-                    Require(text.font == canonicalFont,
-                        $"english_font_mismatch text={GetPath(text.transform)}", errors);
-                }
-            }
-
             var localizedFont = AssetDatabase.LoadAssetAtPath<TMP_FontAsset>(
                 CanonicalLocalizedFontPath);
             Require(localizedFont != null, "canonical_localized_font_missing", errors);
@@ -375,16 +363,17 @@ namespace LastJumpCrew.ParkHanSol.Editor
                 localizedTexts.Length == 4,
                 $"localized_hud_text_count_invalid actual={localizedTexts.Length}",
                 errors);
-            if (localizedFont != null)
+            foreach (var text in prefab.GetComponentsInChildren<TextMeshProUGUI>(true))
             {
-                foreach (var text in localizedTexts)
-                {
-                    Require(
-                        text.font == localizedFont
-                            && text.fontStyle == FontStyles.Normal,
-                        $"localized_hud_typography_invalid text={GetPath(text.transform)}",
-                        errors);
-                }
+                var expectedFont = PHSUIFontPaths.Load(
+                    PHSUIFontPaths.ResolveRole(text));
+                Require(
+                    text.font == expectedFont
+                        && text.fontStyle == FontStyles.Normal
+                        && text.fontWeight == FontWeight.Regular
+                        && text.fontSharedMaterial == expectedFont.material,
+                    $"hud_typography_invalid text={GetPath(text.transform)}",
+                    errors);
             }
 
             foreach (var transform in prefab.GetComponentsInChildren<Transform>(true))
@@ -690,7 +679,7 @@ namespace LastJumpCrew.ParkHanSol.Editor
             valueText.text = defaultValue;
             valueText.font = AssetDatabase.LoadAssetAtPath<TMP_FontAsset>(CanonicalEnglishFontPath);
             valueText.fontSize = 19f;
-            valueText.fontStyle = FontStyles.Bold;
+            valueText.fontStyle = FontStyles.Normal;
             valueText.alignment = TextAlignmentOptions.Center;
             valueText.color = Color.white;
             valueText.raycastTarget = false;
@@ -999,19 +988,19 @@ namespace LastJumpCrew.ParkHanSol.Editor
                 "Product Name",
                 new Vector2(0f, 34f),
                 30f,
-                FontStyles.Bold);
+                FontStyles.Normal);
             var priceText = EnsureShopText(
                 panelRect,
                 "Price",
                 Vector2.zero,
                 36f,
-                FontStyles.Bold);
+                FontStyles.Normal);
             var pickupText = EnsureShopText(
                 panelRect,
                 "Pickup Prompt",
                 new Vector2(0f, -34f),
                 22f,
-                FontStyles.Bold);
+                FontStyles.Normal);
 
             var presenters = root.GetComponentsInChildren<
                 ShopLocalProductHudPresenter>(true);

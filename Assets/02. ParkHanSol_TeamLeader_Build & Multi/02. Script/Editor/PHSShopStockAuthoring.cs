@@ -131,7 +131,7 @@ namespace LastJumpCrew.ParkHanSol.Editor
                     label.gameObject.name = "ItemPriceTag";
                     label.text = string.Empty;
                     label.fontSize = 0.42f;
-                    label.fontStyle = FontStyles.Bold;
+                    PHSUIFontPaths.Apply(label, PHSUIFontRole.Control);
                     label.color = new Color(0.12f, 1f, 0.32f, 1f);
                     label.alignment = TextAlignmentOptions.Center;
                     label.enableWordWrapping = false;
@@ -197,13 +197,13 @@ namespace LastJumpCrew.ParkHanSol.Editor
                 priceText.rectTransform.anchoredPosition = Vector2.zero;
                 priceText.rectTransform.sizeDelta = new Vector2(240f, 54f);
                 priceText.fontSize = 36f;
-                priceText.fontStyle = FontStyles.Bold;
+                PHSUIFontPaths.Apply(priceText, PHSUIFontRole.Control);
                 priceText.alignment = TextAlignmentOptions.Center;
                 promptText.gameObject.SetActive(false);
                 promptText.rectTransform.anchoredPosition = Vector2.zero;
                 promptText.rectTransform.sizeDelta = new Vector2(170f, 32f);
                 promptText.fontSize = 18f;
-                promptText.fontStyle = FontStyles.Bold;
+                PHSUIFontPaths.Apply(promptText, PHSUIFontRole.Control);
                 promptText.alignment = TextAlignmentOptions.Center;
                 EditorUtility.SetDirty(presenter);
                 EditorUtility.SetDirty(panel);
@@ -237,7 +237,7 @@ namespace LastJumpCrew.ParkHanSol.Editor
                 var priceRect = priceText.rectTransform;
                 priceRect.localScale = Vector3.one;
                 priceText.fontSize = 1.15f;
-                priceText.fontStyle = FontStyles.Bold;
+                PHSUIFontPaths.Apply(priceText, PHSUIFontRole.Control);
                 priceText.alignment = TextAlignmentOptions.Center;
                 priceText.raycastTarget = false;
 
@@ -251,7 +251,7 @@ namespace LastJumpCrew.ParkHanSol.Editor
                 unavailableRect.localRotation = Quaternion.identity;
                 unavailableRect.localScale = Vector3.one;
                 unavailableText.fontSize = 0.55f;
-                unavailableText.fontStyle = FontStyles.Bold;
+                PHSUIFontPaths.Apply(unavailableText, PHSUIFontRole.Emphasis);
                 unavailableText.alignment = TextAlignmentOptions.Center;
                 unavailableText.raycastTarget = false;
                 EditorUtility.SetDirty(priceText);

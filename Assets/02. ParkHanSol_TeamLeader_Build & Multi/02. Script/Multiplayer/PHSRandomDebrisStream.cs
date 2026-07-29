@@ -21,6 +21,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
         [SerializeField] private float recycleWorldX = -365f;
         [SerializeField, Range(0f, 1f)] private float oppositeFlowChance = 0.45f;
         [SerializeField] private bool distributeAcrossPathOnAwake;
+        [SerializeField] private bool allowOfflineLocalSimulation;
         [SerializeField, Min(0.01f)] private float minimumSpeed = 0.8f;
         [SerializeField, Min(0.01f)] private float maximumSpeed = 2.8f;
         [SerializeField, Min(0f)] private float maximumAngularSpeed = 75f;
@@ -41,6 +42,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
         private bool simulationRequested;
         private bool usesNetworkDebrisSources;
         private bool networkSceneReady;
+        private bool offlineLocalSimulationActive;
 
         public void SetSimulationEnabled(bool simulationEnabled)
         {
@@ -50,7 +52,10 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
             if (simulationEnabled && usesNetworkDebrisSources)
             {
                 TryBindNetworkManager();
-                TryInitializeNetworkSimulation();
+                if (!TryStartOfflineLocalSimulation("simulation_enabled"))
+                {
+                    TryInitializeNetworkSimulation();
+                }
             }
             else if (simulationEnabled && !simulationInitialized)
             {
@@ -79,11 +84,33 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
             if (usesNetworkDebrisSources)
             {
                 TryBindNetworkManager();
+                if (allowOfflineLocalSimulation && !IsNetworkListening())
+                {
+                    simulationRequested = true;
+                    TryStartOfflineLocalSimulation("awake");
+                }
+
                 return;
             }
 
             simulationRequested = true;
             InitializeSimulation();
+        }
+
+        private void OnEnable()
+        {
+            if (!simulationRequested || !usesNetworkDebrisSources)
+            {
+                return;
+            }
+
+            TryBindNetworkManager();
+            TryStartOfflineLocalSimulation("component_enabled");
+        }
+
+        private void OnDisable()
+        {
+            StopOfflineLocalSimulation("component_disabled");
         }
 
         private void OnDestroy()
@@ -97,18 +124,35 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
             {
                 TryBindNetworkManager();
 
-                if (boundNetworkManager == null
-                    || !boundNetworkManager.IsListening
-                    || !boundNetworkManager.IsServer
-                    || !networkSceneReady)
+                if (offlineLocalSimulationActive)
+                {
+                    if (IsNetworkListening())
+                    {
+                        StopOfflineLocalSimulation("network_started");
+                        Debug.LogError(
+                            $"PHS_DEBRIS_STREAM_OFFLINE_FAILED reason=network_started_after_offline " +
+                            $"stream={name}",
+                            this);
+
+                        enabled = false;
+                        return;
+                    }
+                }
+                else if (boundNetworkManager == null
+                         || !boundNetworkManager.IsListening
+                         || !boundNetworkManager.IsServer
+                         || !networkSceneReady)
                 {
                     return;
                 }
 
-                TryInitializeNetworkSimulation();
-                if (!simulationInitialized)
+                if (!offlineLocalSimulationActive)
                 {
-                    return;
+                    TryInitializeNetworkSimulation();
+                    if (!simulationInitialized)
+                    {
+                        return;
+                    }
                 }
             }
 
@@ -194,7 +238,8 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
 
             simulationInitialized = true;
             Debug.Log(
-                $"PHS_DEBRIS_STREAM_READY stream={name} mode={(usesNetworkDebrisSources ? "network" : "local")} " +
+                $"PHS_DEBRIS_STREAM_READY stream={name} " +
+                $"mode={(offlineLocalSimulationActive ? "offline_local" : usesNetworkDebrisSources ? "network" : "local")} " +
                 $"total={activeDebris.Count} generated={runtimeGeneratedDebris.Count}",
                 this);
         }
@@ -420,6 +465,85 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
                 $"PHS_DEBRIS_STREAM_SCENE_READY stream={name} scene={sceneName} mode={loadSceneMode}",
                 this);
             TryInitializeNetworkSimulation();
+        }
+
+        private bool TryStartOfflineLocalSimulation(string cause)
+        {
+            if (!ShouldUseOfflineLocalSimulation(
+                    allowOfflineLocalSimulation,
+                    simulationRequested,
+                    usesNetworkDebrisSources,
+                    IsNetworkListening()))
+            {
+                return false;
+            }
+
+            if (!offlineLocalSimulationActive)
+            {
+                offlineLocalSimulationActive = true;
+                InitializeSimulation();
+                if (!simulationInitialized)
+                {
+                    offlineLocalSimulationActive = false;
+                    return false;
+                }
+
+                Debug.Log(
+                    $"PHS_DEBRIS_STREAM_OFFLINE_STARTED stream={name} cause={cause} " +
+                    $"total={activeDebris.Count}",
+                    this);
+            }
+
+            return true;
+        }
+
+        private void StopOfflineLocalSimulation(string cause)
+        {
+            if (!offlineLocalSimulationActive)
+            {
+                return;
+            }
+
+            offlineLocalSimulationActive = false;
+            Debug.Log(
+                $"PHS_DEBRIS_STREAM_OFFLINE_STOPPED stream={name} cause={cause}",
+                this);
+        }
+
+        private bool IsNetworkListening()
+        {
+            return boundNetworkManager != null && boundNetworkManager.IsListening;
+        }
+
+        private static bool ShouldUseOfflineLocalSimulation(
+            bool allowOffline,
+            bool simulationEnabled,
+            bool usesNetworkSources,
+            bool networkListening)
+        {
+            return allowOffline
+                && simulationEnabled
+                && usesNetworkSources
+                && !networkListening;
+        }
+
+        [ContextMenu("Validate Offline Local Simulation Contract")]
+        private void ValidateOfflineLocalSimulationContract()
+        {
+            var valid = ShouldUseOfflineLocalSimulation(true, true, true, false)
+                && !ShouldUseOfflineLocalSimulation(false, true, true, false)
+                && !ShouldUseOfflineLocalSimulation(true, false, true, false)
+                && !ShouldUseOfflineLocalSimulation(true, true, false, false)
+                && !ShouldUseOfflineLocalSimulation(true, true, true, true);
+            if (!valid)
+            {
+                Debug.LogError(
+                    "PHS_DEBRIS_STREAM_OFFLINE_CONTRACT_FAILED",
+                    this);
+                return;
+            }
+
+            Debug.Log("PHS_DEBRIS_STREAM_OFFLINE_CONTRACT_OK", this);
         }
 
         private void ResetDebris(int index, bool distributeAcrossPath)

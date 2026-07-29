@@ -322,7 +322,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
                 heldItemDurabilityText,
                 itemPrefabData.HasDurability
                     ? $"DUR {currentDurability}/{itemPrefabData.MaxDurability}"
-                    : "DUR ∞");
+                    : "DUR MAX");
         }
 
         private void RebuildSpeakingPlayerViews(IReadOnlyList<string> playerNames)
