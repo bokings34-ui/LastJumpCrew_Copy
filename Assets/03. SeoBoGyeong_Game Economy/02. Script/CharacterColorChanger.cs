@@ -1,33 +1,37 @@
 using UnityEngine;
 
-public class CharacterColorChanger : MonoBehaviour
+namespace LastJumpCrew.SeoBoGyeong
 {
-    [SerializeField] private SkinnedMeshRenderer target;
-    [SerializeField] private Color baseColor = Color.white;
-
-    private Material[] mats;
-
-    private void Start()
+    public class CharacterColorChanger : MonoBehaviour
     {
-        mats = target.materials;
+        [SerializeField] private SkinnedMeshRenderer target;
+        [SerializeField] private Color baseColor = Color.white;
 
-    }
+        private Material[] mats;
 
-    [ContextMenu("Change Color")]
-    private void ChangeColor()
-    {
-        for (int i = 0; i < mats.Length; i++)
+        private void Start()
         {
-            mats[i].color = baseColor;
+            mats = target.materials;
+
         }
-    }
 
-    public void SetColor(Color color)
-    {
-        foreach (Material mat in mats)
+        [ContextMenu("Change Color")]
+        private void ChangeColor()
         {
-            mat.color = color;
+            for (int i = 0; i < mats.Length; i++)
+            {
+                mats[i].color = baseColor;
+            }
+        }
+
+        public void SetColor(Color color)
+        {
+            foreach (Material mat in mats)
+            {
+                mat.color = color;
+            }
         }
     }
 }
+
 
