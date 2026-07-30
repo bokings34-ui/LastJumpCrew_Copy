@@ -79,38 +79,41 @@ namespace SM
             _effect = _effectPool.Get(
                 _spawnPoint.transform.position,
                 LeakData,
-                true);
+                false); // 로컬 테스트를 위해 true -> false 로 수정
             if (_effect == null)
             {
                 reason = "effect_pool_returned_null";
                 return false;
             }
 
-            _effectInstanceId =
-                _effectRuntimeBridge.AllocateEffectInstanceId(InstanceId);
-            if (_effectInstanceId == 0U)
+            // 네트워크 브릿지가 있으면(=팀원이 서버 연동 붙인 경우) ID 발급/등록/방송 진행
+            // 없으면(로컬 단독) 그냥 건너뛰고 정상 진행 - Fire/EnemySpawn과 동일한 패턴
+            if (_effectRuntimeBridge != null)
             {
-                reason = "effect_id_missing";
-                return false;
-            }
+                _effectInstanceId = _effectRuntimeBridge.AllocateEffectInstanceId(InstanceId);
+                if (_effectInstanceId == 0U)
+                {
+                    reason = "effect_id_missing";
+                    return false;
+                }
 
-            if (!_effect.BindRepairTarget(
+                if (_repairRuntimeBridge != null &&
+                    !_effect.BindRepairTarget(InstanceId, _effectInstanceId, _repairRuntimeBridge))
+                {
+                    reason = "repair_target_registration";
+                    return false;
+                }
+
+                _effectSpawnPublishAttempted = true;
+                _effectRuntimeBridge.PublishEffectSpawned(
                     InstanceId,
                     _effectInstanceId,
-                    _repairRuntimeBridge))
-            {
-                reason = "repair_target_registration";
-                return false;
+                    EventEffectKind.OxygenLeak,
+                    _spawnPoint.transform.position,
+                    0);
             }
 
             _effect.OnSealed += HandleSealed;
-            _effectSpawnPublishAttempted = true;
-            _effectRuntimeBridge.PublishEffectSpawned(
-                InstanceId,
-                _effectInstanceId,
-                EventEffectKind.OxygenLeak,
-                _spawnPoint.transform.position,
-                0);
             reason = null;
             return true;
         }
@@ -170,26 +173,10 @@ namespace SM
                 return false;
             }
 
+            // 네트워크 브릿지는 있으면 사용, 없으면 로컬 단독으로 완결 진행
             var runtimeBridge = Context?.RuntimeBridge;
-            if (runtimeBridge == null || !runtimeBridge.IsAuthoritative)
-            {
-                reason = "authoritative_bridge_required";
-                return false;
-            }
-
             _effectRuntimeBridge = runtimeBridge as IEventEffectRuntimeBridge;
-            if (_effectRuntimeBridge == null)
-            {
-                reason = "effect_runtime_bridge_required";
-                return false;
-            }
-
             _repairRuntimeBridge = runtimeBridge as IEventRepairRuntimeBridge;
-            if (_repairRuntimeBridge == null)
-            {
-                reason = "repair_runtime_bridge_required";
-                return false;
-            }
 
             if (!OxygenLeakEffectPool.HasInstance
                 || OxygenLeakEffectPool.Peek() == null)

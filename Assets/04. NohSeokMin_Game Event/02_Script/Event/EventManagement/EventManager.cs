@@ -15,11 +15,6 @@ namespace SM
 
         private void Update()
         {
-            //foreach (var evt in _activeEvents.Values)
-            //{
-            //    evt.OnTick(Time.deltaTime);
-            //}
-
             _eventsToTickCache.Clear();
 
             foreach (var evt in _activeEvents.Values)

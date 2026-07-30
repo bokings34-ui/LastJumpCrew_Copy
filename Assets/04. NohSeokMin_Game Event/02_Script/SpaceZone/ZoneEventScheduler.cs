@@ -1,35 +1,29 @@
 using System;
+using System.Collections.Generic;
 using UnityEngine;
 
 namespace SM
 {
-    public class ZoneEventScheduler : MonoSingleton<ZoneEventScheduler>
+    public class ZoneEventScheduler : MonoSingleton<ZoneEventScheduler>, IEventSpawner
     {
         public event Action OnNebulaTriggered;
 
+        [Header("Zone별 이벤트 매핑 데이터")]
         [SerializeField] private ZoneBehaviorConfigSO behaviorConfig;
 
-        private ZoneBehaviorEntry _currentEntry;
-        private ZoneType _currentZone;
+        [Header("발생 주기 (고정, 초)")]
+        [SerializeField] private float spawnInterval = 30f;
+
         private bool _isRunning;
         private float _timer;
-        private float _currentInterval;
+        private ZoneType _currentZone;
+        private bool _hasZone;
 
         public void SetCurrentZone(ZoneType zone)
         {
-            _currentEntry = behaviorConfig.GetEntry(zone);
-
-            if (_currentEntry == null)
-            {
-                Debug.Log($"<color=lime>[ZoneEventScheduler]</color> {zone}에 대한 설정이 없음.");
-                return;
-            }
-
             _currentZone = zone;
-            _timer = 0f;
-            RollNextInterval();
-
-            Debug.Log($"<color=lime>[ZoneEventScheduler]</color> 현재 존 : {zone}");
+            _hasZone = true;
+            Debug.Log($"<color=cyan>[ZoneEventScheduler]</color> 현재 Zone: {zone}");
         }
 
         public void StartScheduler()
@@ -43,51 +37,74 @@ namespace SM
             _isRunning = false;
         }
 
+        public void ForceClearAll()
+        {
+            _isRunning = false;
+            _timer = 0f;
+            Debug.Log("<color=cyan>[ZoneEventScheduler]</color> 정지 및 초기화.");
+        }
+
         private void Update()
         {
-            if (!_isRunning || _currentEntry == null) return;
+            if (!_isRunning || !_hasZone) return;
 
             _timer += Time.deltaTime;
-
-            if (_timer >= _currentInterval)
+            if (_timer >= spawnInterval)
             {
                 _timer = 0f;
-                RollNextInterval();
-                ExecuteZoneEvent();
+                TryTriggerZoneEvent();
             }
         }
 
-        private void RollNextInterval()
-        {
-            _currentInterval = UnityEngine.Random.Range(_currentEntry.intervalMin, _currentEntry.intervalMax);
-        }
-
-        private void ExecuteZoneEvent()
+        private void TryTriggerZoneEvent()
         {
             if (_currentZone == ZoneType.NebulaZone)
             {
                 OnNebulaTriggered?.Invoke();
-                Debug.Log("<color=lime>[ZoneEventScheduler]</color> 성운지대 : 미니맵 끄기 신호 발행.");
+                Debug.Log("<color=magenta>[ZoneEventScheduler]</color> 성운지대 - 미니맵 토글 신호 발행.");
                 return;
             }
 
-            TriggerExternalWarning(_currentEntry.eventId);
+            var candidates = behaviorConfig.GetEventIds(_currentZone);
+            if (candidates == null || candidates.Count == 0)
+            {
+                Debug.LogWarning($"<color=cyan>[ZoneEventScheduler]</color> {_currentZone}에 대한 이벤트 매핑이 없습니다.");
+                return;
+            }
+
+            var pool = new List<EventId>();
+            foreach (var id in candidates)
+            {
+                if (!EventManager.Instance.IsActive(id))
+                    pool.Add(id);
+            }
+
+            if (pool.Count == 0)
+            {
+                Debug.Log($"<color=cyan>[ZoneEventScheduler]</color> {_currentZone}의 발생 가능한 이벤트가 모두 진행 중, 이번 주기 건너뜀.");
+                return;
+            }
+
+            var eventId = pool[UnityEngine.Random.Range(0, pool.Count)];
+            TrySpawnEvent(eventId, null);
         }
 
-        private void TriggerExternalWarning(EventId eventId)
+        public void TrySpawnEvent(EventId eventId, IRoom room)
         {
-            if (EventManager.Instance.IsActive(eventId))
+            var targetRoom = room ?? RoomRegistry.Instance.GetRandomRoom();
+            if (targetRoom == null)
             {
-                Debug.Log($"<color=lime>[ZoneEventScheduler]</color> {eventId} 이미 진행 중, 이번 주기 건너뜀.");
+                Debug.Log("<color=cyan>[ZoneEventScheduler]</color> 등록된 Room이 없어 발생시킬 수 없습니다.");
                 return;
             }
 
-            var room = RoomRegistry.Instance.GetRandomRoom();
-            if (room == null) return;
+            EventManager.Instance.SpawnEvent(eventId, targetRoom);
+            Debug.Log($"<color=cyan>[ZoneEventScheduler]</color> {eventId} 경고 발생! (Zone: {_currentZone})");
+        }
 
-            EventManager.Instance.SpawnEvent(eventId, room);
-
-            Debug.Log($"<color=lime>[ZoneEventScheduler]</color> {eventId} 경고 발생!");
+        void IEventSpawner.SpawnEvent(EventId id, IRoom targetRoom, Action<EventBase, bool> onFinished)
+        {
+            TrySpawnEvent(id, targetRoom);
         }
     }
 }

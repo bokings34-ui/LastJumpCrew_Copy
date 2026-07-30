@@ -8,12 +8,8 @@ namespace SM
     {
         public ZoneType zone;
 
-        [Tooltip("NebulaZone은 사용 안 함 (미니맵 신호만 발행)")]
-        public EventId eventId;
-
-        [Header("사고 발생 시도 주기 (초)")]
-        public float intervalMin = 40f;
-        public float intervalMax = 70f;
+        [Tooltip("이 Zone에서 발생 가능한 외부 경고 이벤트들 (NebulaZone은 비워두고 미니맵 신호만 사용)")]
+        public List<EventId> eventIds = new List<EventId>();
     }
 
     [CreateAssetMenu(fileName = "ZoneBehaviorConfig", menuName = "SM/ZoneBehaviorConfig")]
@@ -21,11 +17,11 @@ namespace SM
     {
         [SerializeField] private List<ZoneBehaviorEntry> entries = new List<ZoneBehaviorEntry>();
 
-        public ZoneBehaviorEntry GetEntry(ZoneType zone)
+        public List<EventId> GetEventIds(ZoneType zone)
         {
             foreach (var entry in entries)
             {
-                if (entry.zone == zone) return entry;
+                if (entry.zone == zone) return entry.eventIds;
             }
             return null;
         }

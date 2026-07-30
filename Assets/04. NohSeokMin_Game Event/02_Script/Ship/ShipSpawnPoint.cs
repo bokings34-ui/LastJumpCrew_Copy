@@ -7,28 +7,26 @@ namespace SM
     {
         [SerializeField] private List<ShipSpawnPoint> neighbors = new List<ShipSpawnPoint>();
 
-        public IReadOnlyList<ShipSpawnPoint> Neighbors { get { return neighbors; } }
+        public IReadOnlyList<ShipSpawnPoint> Neighbors => neighbors;
 
-        public EventId? OccupiedBy { get; private set; }
-
-        public bool IsFree { get { return OccupiedBy == null; } }
+        private EventId? _occupiedBy;
+        public bool IsFree => _occupiedBy == null;
+        public EventId? OccupiedBy => _occupiedBy;
 
         public void Occupy(EventId eventId)
         {
-            OccupiedBy = eventId;
+            _occupiedBy = eventId;
         }
 
         public void Release()
         {
-            OccupiedBy = null;
+            _occupiedBy = null;
         }
 
         public void AddNeighbor(ShipSpawnPoint point)
         {
             if (point != this && !neighbors.Contains(point))
-            {
                 neighbors.Add(point);
-            }
         }
 
         public void ClearNeighbors()
