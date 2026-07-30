@@ -7,7 +7,9 @@ using LastJumpCrew.ParkHanSol.Multiplayer;
 using LastJumpCrew.ParkHanSol.Multiplayer.Events.MiniGames;
 using LastJumpCrew.ParkHanSol.Multiplayer.Events.MiniGames.Runtime;
 using LastJumpCrew.ParkHanSol.Multiplayer.Tutorial;
+using LastJumpCrew.ParkHanSol.Shop;
 using TMPro;
+using Unity.Netcode;
 using UnityEditor;
 using UnityEditor.SceneManagement;
 using UnityEngine;
@@ -63,6 +65,10 @@ namespace LastJumpCrew.ParkHanSol.Editor
             "Assets/02. ParkHanSol_TeamLeader_Build & Multi/03. Prefab/Props/Prefabs/Debris/PHS_Debris_FuturisticCargo.prefab";
         private const string DebrisCameraPrefabPath =
             "Assets/02. ParkHanSol_TeamLeader_Build & Multi/03. Prefab/Props/Prefabs/Debris/PHS_Debris_SatelliteCamera.prefab";
+        private const string DebrisSellStationPrefabPath =
+            "Assets/02. ParkHanSol_TeamLeader_Build & Multi/03. Prefab/Props/Prefabs/ShopCheckoutCounter/PHS_DebrisSellStation.prefab";
+        private const string GameCorePrefabPath =
+            "Assets/03. SeoBoGyeong_Game Economy/03. Prefab/GameCore.prefab";
         private const string TutorialSkyboxMaterialPath =
             "Assets/02. ParkHanSol_TeamLeader_Build & Multi/03. Environment/Tutorial/PHS_NetworkTutorialSpaceSkybox.mat";
         private const string BriefingRenderTexturePath =
@@ -79,15 +85,11 @@ namespace LastJumpCrew.ParkHanSol.Editor
         private static readonly Vector3 TeamMapAlignedPosition =
             new(22.84495f, -8.76f, 26.95981f);
         private static readonly Vector3 TutorialStartPosition =
-            new(0f, 0f, 50f);
+            new(0f, -0.846f, 50f);
         private static readonly Quaternion TutorialStartRotation =
             Quaternion.Euler(0f, 180f, 0f);
         private static readonly Vector3 ExteriorEntryPosition =
-            new(-53.75f, -0.45f, 8.15f);
-        private static readonly Vector3 TutorialShipLocalPosition =
-            new(-316.5f, -2.699989f, 92.6f);
-        private static readonly Quaternion TutorialShipLocalRotation =
-            Quaternion.Euler(0f, 90f, 0f);
+            new(-53.75f, -0.253f, 8.15f);
         private static readonly Vector3 ToolUseExitDoorAnchor =
             new(-22.75f, -0.53f, 0.51f);
 
@@ -259,9 +261,6 @@ namespace LastJumpCrew.ParkHanSol.Editor
             {
                 var oldRoot = FindNamedRoot(scene, SequenceRootName);
                 var practiceItemsLocalPosition = Vector3.zero;
-                var shipLocalPosition = TutorialShipLocalPosition;
-                var shipLocalRotation = TutorialShipLocalRotation;
-                var shipLocalScale = Vector3.one;
                 if (oldRoot != null)
                 {
                     var oldPracticeItems = oldRoot.transform.Find(
@@ -272,30 +271,23 @@ namespace LastJumpCrew.ParkHanSol.Editor
                             oldPracticeItems.localPosition;
                     }
 
-                    var oldTeamMap = oldRoot.transform.Find(
-                        "PHS_TeamTutorialMap");
-                    var oldShip = oldTeamMap != null
-                        ? oldTeamMap.Find("Spaceship_SpaceCrew_Outside")
-                        : null;
-                    if (oldShip != null)
-                    {
-                        shipLocalPosition = oldShip.localPosition;
-                        shipLocalRotation = oldShip.localRotation;
-                        shipLocalScale = oldShip.localScale;
-                    }
-
                     UnityEngine.Object.DestroyImmediate(oldRoot);
+                }
+
+                var oldGameCore = FindNamedRoot(scene, "PHS_TutorialGameCore");
+                if (oldGameCore != null)
+                {
+                    UnityEngine.Object.DestroyImmediate(oldGameCore);
                 }
 
                 var sequenceRoot = new GameObject(SequenceRootName);
                 SceneManager.MoveGameObjectToScene(sequenceRoot, scene);
+                CreateTutorialGameCore(scene);
                 EnsureGameplaySceneContext(scene);
                 var teamMap = InstantiateTeamMap(
                     scene,
-                    sequenceRoot.transform,
-                    shipLocalPosition,
-                    shipLocalRotation,
-                    shipLocalScale);
+                    sequenceRoot.transform);
+                ConfigureTutorialShipCollider(teamMap.transform);
                 DisableLegacyEnvironment(scene);
                 var player = FindComponent<NetworkPlayerController>(scene);
                 player.transform.SetPositionAndRotation(
@@ -335,10 +327,17 @@ namespace LastJumpCrew.ParkHanSol.Editor
                     sequenceRoot.transform,
                     teamMap.transform,
                     player);
+                CreatePlayAreaBoundary(
+                    scene,
+                    sequenceRoot.transform,
+                    exterior.PlayAreaBounds,
+                    ExteriorEntryPosition,
+                    exterior.BoardingPosition);
                 var interactionStations = CreateInteractionStations(
                     scene,
                     sequenceRoot.transform,
-                    exterior.BoardingPosition);
+                    exterior.BoardingPosition,
+                    exterior.BoardingParent);
                 WireDirector(scene, rooms);
                 CreateAndWireRoomObjectives(
                     scene,
@@ -434,10 +433,7 @@ namespace LastJumpCrew.ParkHanSol.Editor
 
         private static GameObject InstantiateTeamMap(
             Scene scene,
-            Transform parent,
-            Vector3 shipLocalPosition,
-            Quaternion shipLocalRotation,
-            Vector3 shipLocalScale)
+            Transform parent)
         {
             var map = InstantiatePrefab(
                 TeamTutorialMapPrefabPath,
@@ -447,14 +443,25 @@ namespace LastJumpCrew.ParkHanSol.Editor
             map.transform.position = TeamMapAlignedPosition;
             map.transform.rotation = Quaternion.identity;
             map.transform.localScale = Vector3.one;
-            var ship = FindNamedUnder(
-                map.transform,
-                "Spaceship_SpaceCrew_Outside").transform;
-            ship.SetLocalPositionAndRotation(
-                shipLocalPosition,
-                shipLocalRotation);
-            ship.localScale = shipLocalScale;
+            PrefabUtility.UnpackPrefabInstance(
+                map,
+                PrefabUnpackMode.Completely,
+                InteractionMode.AutomatedAction);
             return map;
+        }
+
+        private static void ConfigureTutorialShipCollider(Transform teamMap)
+        {
+            var shipBody = FindNamedUnder(teamMap, "Cruiser_Body_02");
+            var shipCollider = shipBody.GetComponent<MeshCollider>();
+            if (shipCollider == null ||
+                shipBody.GetComponentInParent<Rigidbody>() != null)
+            {
+                throw Failure("tutorial_ship_collider_contract_invalid");
+            }
+
+            shipCollider.convex = false;
+            EditorUtility.SetDirty(shipCollider);
         }
 
         private static void DisableLegacyEnvironment(Scene scene)
@@ -664,7 +671,7 @@ namespace LastJumpCrew.ParkHanSol.Editor
                     "화면의 < > 버튼 또는 키보드 좌우 방향키로 앞뒤 설명을 다시 확인할 수 있습니다.",
                 "07_ExteriorDebris" =>
                     "외부 구역에서는 무중력 이동을 사용합니다. 마우스와 [WASD]로 방향을 잡고 [SHIFT]로 위로, [CTRL]로 아래로 움직입니다.\n\n" +
-                    "데브리는 [F]로 줍습니다. [RMB]를 눌러서 내리거나 길게 누른 뒤 놓아 던집니다. 패드 안에 던져도 인정됩니다.\n\n" +
+                    "데브리는 [F]로 줍습니다. [RMB]를 눌러서 내리거나 길게 누른 뒤 놓아 던집니다. 수거 유닛에 넣은 데브리는 크레딧이 됩니다.\n\n" +
                     "화면의 < > 버튼 또는 키보드 좌우 방향키로 앞뒤 설명을 다시 확인할 수 있습니다.",
                 "08_BoardShip" =>
                     "앞의 함선까지 방금 익힌 무중력 이동을 이어 갑니다.\n\n" +
@@ -1366,19 +1373,6 @@ namespace LastJumpCrew.ParkHanSol.Editor
                 GravityMode.ShipGravity,
                 NetworkPlayerGravityMode.ShipGravity,
                 30);
-            var exteriorBounds = CalculateRendererBounds(
-                teamMap,
-                "tutorial_world_bounds_missing");
-            exteriorBounds.Expand(40f);
-            ConfigureGravityVolume(
-                scene,
-                parent,
-                "PHS_TutorialExteriorZeroGravity",
-                exteriorBounds,
-                GravityMode.Spacewalk,
-                NetworkPlayerGravityMode.Spacewalk,
-                20);
-
             if (player.GetComponent<PlayerGravityReceiver>() == null)
             {
                 player.gameObject.AddComponent<PlayerGravityReceiver>();
@@ -1388,6 +1382,15 @@ namespace LastJumpCrew.ParkHanSol.Editor
                 teamMap,
                 "SpaceShip_Door_Left").transform;
             var boardingPosition = shipDoor.position + Vector3.back * 7.5f;
+            var recoveryPlatform = FindNamedUnder(
+                teamMap,
+                "P_PlateForm_Bay_02 (2)").transform;
+            var boardingPlatform = FindNamedUnder(
+                teamMap,
+                "P_PlateForm_Bay_02 (4)").transform;
+            boardingPosition.y = FindFloorTopY(
+                boardingPlatform,
+                boardingPosition);
             var checkpointPosition = Vector3.Lerp(
                 ExteriorEntryPosition,
                 boardingPosition,
@@ -1397,32 +1400,78 @@ namespace LastJumpCrew.ParkHanSol.Editor
                 ExteriorEntryPosition,
                 boardingPosition,
                 0.55f);
-            recoveryCenter.y = 4.8f;
-            var cargoPadPosition = recoveryCenter + Vector3.left * 1.6f;
-            var cameraPadPosition = recoveryCenter + Vector3.right * 1.6f;
+            recoveryCenter.y = FindFloorTopY(
+                recoveryPlatform,
+                recoveryCenter) + 0.03f;
             var approachPosition = Vector3.Lerp(
                 ExteriorEntryPosition,
                 boardingPosition,
                 0.82f);
             var collectionCenter = recoveryCenter +
-                new Vector3(0f, 2.45f, -2f);
-            CreateRecoveryPad(
+                new Vector3(0f, 2.45f, -7f);
+            var playAreaBounds = new Bounds(
+                ExteriorEntryPosition,
+                Vector3.zero);
+            playAreaBounds.Encapsulate(boardingPosition);
+            playAreaBounds.Encapsulate(TutorialStartPosition);
+            playAreaBounds.Expand(80f);
+            ConfigureGravityVolume(
                 scene,
                 parent,
-                cargoPadPosition,
-                "Cargo");
-            CreateRecoveryPad(
+                "PHS_TutorialExteriorZeroGravity",
+                playAreaBounds,
+                GravityMode.Spacewalk,
+                NetworkPlayerGravityMode.Spacewalk,
+                20);
+            var recoveryTrigger = CreateRecoveryStation(
                 scene,
-                parent,
-                cameraPadPosition,
-                "Camera");
+                recoveryPlatform,
+                recoveryCenter,
+                CreateTutorialEconomyWallet(scene, parent));
             CreateDebrisStream(scene, parent, collectionCenter);
             return new ExteriorLayout(
                 checkpointPosition,
-                cargoPadPosition,
-                cameraPadPosition,
+                recoveryCenter,
+                recoveryCenter,
                 approachPosition,
-                boardingPosition);
+                boardingPosition,
+                playAreaBounds,
+                boardingPlatform,
+                recoveryTrigger);
+        }
+
+        private static void CreatePlayAreaBoundary(
+            Scene scene,
+            Transform parent,
+            Bounds bounds,
+            Vector3 returnPosition,
+            Vector3 lookAtPosition)
+        {
+            var root = new GameObject("PHS_TutorialPlayAreaBoundary");
+            SceneManager.MoveGameObjectToScene(root, scene);
+            root.transform.SetParent(parent, false);
+            root.transform.position = bounds.center;
+
+            var collider = root.AddComponent<BoxCollider>();
+            collider.size = bounds.size;
+            collider.isTrigger = true;
+            root.AddComponent<NetworkObject>();
+
+            var returnPoint = new GameObject("ReturnPoint").transform;
+            returnPoint.SetParent(root.transform, true);
+            returnPoint.position = returnPosition;
+            returnPoint.rotation = Quaternion.LookRotation(
+                lookAtPosition - returnPosition,
+                Vector3.up);
+
+            var boundary = root.AddComponent<
+                NetworkTutorialPlayAreaBoundary>();
+            var serialized = new SerializedObject(boundary);
+            serialized.FindProperty("playArea").objectReferenceValue = collider;
+            serialized.FindProperty("returnPoint").objectReferenceValue =
+                returnPoint;
+            serialized.FindProperty("warningSeconds").floatValue = 5f;
+            serialized.ApplyModifiedPropertiesWithoutUndo();
         }
 
         private static void ConfigureGravityVolume(
@@ -1464,17 +1513,76 @@ namespace LastJumpCrew.ParkHanSol.Editor
             playerSerialized.ApplyModifiedPropertiesWithoutUndo();
         }
 
-        private static void CreateRecoveryPad(
+        private static void CreateTutorialGameCore(Scene scene)
+        {
+            var gameCore = PrefabUtility.InstantiatePrefab(
+                AssetDatabase.LoadAssetAtPath<GameObject>(GameCorePrefabPath),
+                scene) as GameObject;
+            if (gameCore == null)
+            {
+                throw Failure("tutorial_game_core_instantiate_failed");
+            }
+
+            gameCore.name = "PHS_TutorialGameCore";
+        }
+
+        private static ShopEconomyWalletAdapter CreateTutorialEconomyWallet(
+            Scene scene,
+            Transform parent)
+        {
+            var root = new GameObject("PHS_TutorialDebrisEconomyWallet");
+            SceneManager.MoveGameObjectToScene(root, scene);
+            root.transform.SetParent(parent, false);
+            root.AddComponent<NetworkObject>();
+            return root.AddComponent<ShopEconomyWalletAdapter>();
+        }
+
+        private static GameObject CreateRecoveryStation(
             Scene scene,
             Transform parent,
             Vector3 position,
-            string suffix)
+            ShopEconomyWalletAdapter wallet)
         {
-            var pad = InstantiatePrefab(WallPrefabPath, scene, parent);
-            pad.name = $"PHS_TutorialDebrisRecoveryPad_{suffix}";
-            pad.transform.position = position;
-            pad.transform.rotation = Quaternion.Euler(-90f, 0f, 0f);
-            pad.transform.localScale = new Vector3(0.6f, 0.6f, 0.1f);
+            var station = InstantiatePrefab(
+                DebrisSellStationPrefabPath,
+                scene,
+                parent);
+            station.name = "PHS_TutorialDebrisRecoveryStation";
+            station.transform.SetPositionAndRotation(
+                position,
+                Quaternion.Euler(-90.764f, 0f, 0f));
+            var sellZone = station.GetComponentInChildren<DebrisSellZone>(true);
+            if (sellZone == null)
+            {
+                throw Failure("tutorial_debris_sell_station_setup_missing");
+            }
+
+            SetReference(sellZone, "shopWalletSource", wallet);
+            return sellZone.gameObject;
+        }
+
+        private static float FindFloorTopY(
+            Transform platform,
+            Vector3 worldPosition)
+        {
+            Physics.SyncTransforms();
+            var hits = Physics.RaycastAll(
+                    new Vector3(worldPosition.x, worldPosition.y + 100f,
+                        worldPosition.z),
+                    Vector3.down,
+                    200f,
+                    Physics.DefaultRaycastLayers,
+                    QueryTriggerInteraction.Ignore)
+                .Where(hit => hit.transform.IsChildOf(platform))
+                .OrderByDescending(hit => hit.point.y)
+                .ToArray();
+            if (hits.Length == 0)
+            {
+                throw Failure(
+                    $"platform_floor_hit_missing platform={platform.name} position={worldPosition}");
+            }
+
+            return hits[0].point.y;
         }
 
         private static void CreateDebrisStream(
@@ -1691,17 +1799,13 @@ namespace LastJumpCrew.ParkHanSol.Editor
                     new Vector3(5f, 5f, 5f),
                     true),
                 CreateDropZoneObjective(
-                    scene,
-                    parent,
+                    exterior.RecoveryTrigger,
                     "debris_recovery_cargo",
-                    "debris_futuristic_cargo",
-                    exterior.PadAPosition),
+                    "debris_futuristic_cargo"),
                 CreateDropZoneObjective(
-                    scene,
-                    parent,
+                    exterior.RecoveryTrigger,
                     "debris_recovery_camera",
-                    "debris_satellite_camera",
-                    exterior.PadBPosition)
+                    "debris_satellite_camera")
             };
             roomObjectives[7] = new MonoBehaviour[]
             {
@@ -1728,7 +1832,14 @@ namespace LastJumpCrew.ParkHanSol.Editor
                 rooms[5],
                 FindNamed(scene, "PHS_TutorialExtinguisher_ToolUse")
                     .transform.position,
-                interactionStations.TrainingA.transform.position);
+                interactionStations.TrainingA.transform.position,
+                "PHS_ToolUseExitDirection");
+            CreateToolUseExitGuidance(
+                scene,
+                rooms[6],
+                interactionStations.TrainingB.transform.position,
+                Specs[5].GateAnchor.Value,
+                "PHS_MiniGameExitDirection");
 
             for (var roomIndex = 0;
                  roomIndex < rooms.Length;
@@ -1933,6 +2044,12 @@ namespace LastJumpCrew.ParkHanSol.Editor
                         position = objectives[objectiveIndex].transform.position;
                     }
 
+                    if (roomIndex == 6 && objectiveIndex > 0)
+                    {
+                        position += Vector3.right *
+                            (objectiveIndex == 1 ? -1.25f : 1.25f);
+                    }
+
                     if (roomIndex == 4)
                     {
                         var item = FindNamed(
@@ -1969,7 +2086,8 @@ namespace LastJumpCrew.ParkHanSol.Editor
             Scene scene,
             NetworkTutorialRoomController nextRoom,
             Vector3 toolPosition,
-            Vector3 destinationPosition)
+            Vector3 destinationPosition,
+            string rootName)
         {
             var guidanceParent = nextRoom.transform.Find("ObjectiveGuidance");
             if (guidanceParent == null)
@@ -1988,7 +2106,7 @@ namespace LastJumpCrew.ParkHanSol.Editor
                 destinationPosition.x + 1.4f,
                 floorHeight,
                 destinationPosition.z);
-            var root = new GameObject("PHS_ToolUseExitDirection");
+            var root = new GameObject(rootName);
             SceneManager.MoveGameObjectToScene(root, scene);
             root.transform.SetParent(guidanceParent, false);
             root.transform.SetPositionAndRotation(
@@ -2233,20 +2351,16 @@ namespace LastJumpCrew.ParkHanSol.Editor
 
         private static NetworkTutorialItemDropZoneObjective
             CreateDropZoneObjective(
-                Scene scene,
-                Transform parent,
+                GameObject trigger,
                 string objectiveId,
-                string expectedItemId,
-                Vector3 position)
+                string expectedItemId)
         {
-            var root = new GameObject($"PHS_TutorialObjective_{objectiveId}");
-            SceneManager.MoveGameObjectToScene(root, scene);
-            root.transform.SetParent(parent, false);
-            root.transform.position = position;
-            var collider = root.AddComponent<BoxCollider>();
-            collider.size = new Vector3(2.2f, 1.8f, 3.2f);
-            collider.isTrigger = true;
-            var objective = root.AddComponent<
+            if (trigger.GetComponent<Collider>() == null)
+            {
+                throw Failure("tutorial_debris_sell_trigger_collider_missing");
+            }
+
+            var objective = trigger.AddComponent<
                 NetworkTutorialItemDropZoneObjective>();
             var serialized = new SerializedObject(objective);
             serialized.FindProperty("objectiveId").stringValue = objectiveId;
@@ -2350,7 +2464,8 @@ namespace LastJumpCrew.ParkHanSol.Editor
         private static TutorialStations CreateInteractionStations(
                 Scene scene,
                 Transform parent,
-                Vector3 boardingPosition)
+                Vector3 boardingPosition,
+                Transform boardingParent)
         {
             var runtimeObject = InstantiatePrefab(
                 MiniGameRuntimePrefabPath,
@@ -2403,10 +2518,21 @@ namespace LastJumpCrew.ParkHanSol.Editor
             var boardingObject = InstantiatePrefab(
                 InteractionStationPrefabPath,
                 scene,
-                parent);
+                boardingParent);
             boardingObject.name = "PHS_TutorialBoardingStation";
-            boardingObject.transform.position = boardingPosition;
+            boardingObject.transform.SetPositionAndRotation(
+                boardingPosition,
+                Quaternion.Euler(270f, 270f, 0f));
             boardingObject.transform.localScale = Vector3.one;
+            var boardingCollider = boardingObject.GetComponent<BoxCollider>();
+            if (boardingCollider == null)
+            {
+                throw Failure("tutorial_boarding_station_collider_missing");
+            }
+
+            boardingCollider.center = new Vector3(0f, 0f, 0.5f);
+            boardingCollider.size = new Vector3(1.2f, 1.2f, 1.4f);
+            boardingCollider.isTrigger = true;
             var boardingStation = boardingObject.GetComponent<
                 NetworkTutorialInteractionStation>();
             if (boardingStation == null)
@@ -2440,7 +2566,9 @@ namespace LastJumpCrew.ParkHanSol.Editor
             var root = new GameObject(name);
             SceneManager.MoveGameObjectToScene(root, scene);
             root.transform.SetParent(parent, false);
-            root.transform.SetPositionAndRotation(position, Quaternion.identity);
+            root.transform.SetPositionAndRotation(
+                position,
+                Quaternion.Euler(0f, 180f, 0f));
             root.transform.localScale = Vector3.one;
 
             var collider = root.AddComponent<BoxCollider>();
@@ -2745,10 +2873,12 @@ namespace LastJumpCrew.ParkHanSol.Editor
                          GrappleAnchorPrefabPath,
                          FloorObjectivePadPrefabPath,
                          FloorObjectivePadMaterialPath,
-                         ObjectiveLightPillarPrefabPath,
-                         DebrisCargoPrefabPath,
-                         DebrisCameraPrefabPath,
-                         TutorialSkyboxMaterialPath
+                          ObjectiveLightPillarPrefabPath,
+                          DebrisCargoPrefabPath,
+                          DebrisCameraPrefabPath,
+                          DebrisSellStationPrefabPath,
+                          GameCorePrefabPath,
+                          TutorialSkyboxMaterialPath
                      })
             {
                 if (AssetDatabase.LoadMainAssetAtPath(path) == null)
@@ -2816,13 +2946,19 @@ namespace LastJumpCrew.ParkHanSol.Editor
                 Vector3 padAPosition,
                 Vector3 padBPosition,
                 Vector3 approachPosition,
-                Vector3 boardingPosition)
+                Vector3 boardingPosition,
+                Bounds playAreaBounds,
+                Transform boardingParent,
+                GameObject recoveryTrigger)
             {
                 CheckpointPosition = checkpointPosition;
                 PadAPosition = padAPosition;
                 PadBPosition = padBPosition;
                 ApproachPosition = approachPosition;
                 BoardingPosition = boardingPosition;
+                PlayAreaBounds = playAreaBounds;
+                BoardingParent = boardingParent;
+                RecoveryTrigger = recoveryTrigger;
             }
 
             public Vector3 CheckpointPosition { get; }
@@ -2830,6 +2966,9 @@ namespace LastJumpCrew.ParkHanSol.Editor
             public Vector3 PadBPosition { get; }
             public Vector3 ApproachPosition { get; }
             public Vector3 BoardingPosition { get; }
+            public Bounds PlayAreaBounds { get; }
+            public Transform BoardingParent { get; }
+            public GameObject RecoveryTrigger { get; }
         }
 
         private readonly struct TutorialStations

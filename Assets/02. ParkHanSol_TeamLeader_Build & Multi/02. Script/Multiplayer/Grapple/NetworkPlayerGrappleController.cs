@@ -106,6 +106,13 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
                 return;
             }
 
+            // Release must be observed even while a tutorial popup blocks gameplay input.
+            if (playerControlInput != null
+                && playerControlInput.GrappleReleasedThisFrame)
+            {
+                RequestStopGrapple();
+            }
+
             if (playerController.CanAcceptLocalInput)
             {
                 HandleLocalInput();
@@ -230,12 +237,6 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
             if (playerControlInput.GrapplePressedThisFrame)
             {
                 HandleHookPressed();
-            }
-
-            // Grapple input is hold-to-use. Release must always detach the server-owned grapple state.
-            if (playerControlInput.GrappleReleasedThisFrame)
-            {
-                RequestStopGrapple();
             }
 
         }

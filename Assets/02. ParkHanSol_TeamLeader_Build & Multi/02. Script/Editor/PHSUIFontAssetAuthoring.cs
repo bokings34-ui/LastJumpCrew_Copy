@@ -150,6 +150,36 @@ namespace LastJumpCrew.ParkHanSol.Editor
             ValidateGeneratedAssets(CollectProjectUiGlyphs());
         }
 
+        [MenuItem("Tools/ParkHanSol/BEAVER/Fonts/Add Missing UI Glyphs")]
+        public static void AddMissingUiGlyphs()
+        {
+            var glyphs = CollectProjectUiGlyphs();
+            foreach (var path in GeneratedFontAssetPaths)
+            {
+                var font = AssetDatabase.LoadAssetAtPath<TMP_FontAsset>(path)
+                    ?? throw new InvalidOperationException(
+                        $"PHS_UI_FONT_GLYPH_ADD_FAILED reason=font_missing path={path}");
+                font.atlasPopulationMode = AtlasPopulationMode.Dynamic;
+                font.TryAddCharacters(glyphs, out var missingCharacters);
+                font.atlasPopulationMode = AtlasPopulationMode.Static;
+                if (missingCharacters.Length > 0)
+                {
+                    throw new InvalidOperationException(
+                        "PHS_UI_FONT_GLYPH_ADD_FAILED " +
+                        $"reason=source_glyphs_missing path={path} " +
+                        $"count={missingCharacters.Length} chars={missingCharacters}");
+                }
+
+                EditorUtility.SetDirty(font);
+            }
+
+            AssetDatabase.SaveAssets();
+            ValidateGeneratedAssets(glyphs);
+            Debug.Log(
+                $"PHS_UI_FONT_GLYPH_ADD_OK fonts={GeneratedFontAssetPaths.Length} " +
+                $"requiredGlyphs={glyphs.Length}");
+        }
+
         [MenuItem("Tools/ParkHanSol/BEAVER/Fonts/Apply Unified UI Fonts")]
         public static void ApplyUnifiedUiFonts()
         {

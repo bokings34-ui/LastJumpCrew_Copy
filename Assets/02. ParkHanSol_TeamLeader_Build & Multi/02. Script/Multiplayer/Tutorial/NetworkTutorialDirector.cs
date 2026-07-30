@@ -336,7 +336,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Tutorial
                 rooms[currentRoomIndex].SetCurrent(false, currentSuccessCount);
                 if (currentRoomIndex < rooms.Length - 1)
                 {
-                    PlayAudioCue(NetworkAudioCue.MissionSuccess);
+                    PlayAudioCue(NetworkAudioCue.TutorialComplete);
                 }
             }
 
