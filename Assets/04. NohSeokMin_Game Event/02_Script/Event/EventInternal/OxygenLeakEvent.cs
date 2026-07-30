@@ -11,7 +11,7 @@ namespace SM
         private OxygenLeakEffectPool _effectPool;
         private IEventEffectRuntimeBridge _effectRuntimeBridge;
         private IEventRepairRuntimeBridge _repairRuntimeBridge;
-        private IOxygenLeakZone _zone;
+        private ShipSpawnPoint _spawnPoint;
         private uint _effectInstanceId;
         private bool _effectSpawnPublishAttempted;
 
@@ -22,7 +22,7 @@ namespace SM
             _effectPool = null;
             _effectRuntimeBridge = null;
             _repairRuntimeBridge = null;
-            _zone = null;
+            _spawnPoint = null;
             _effectInstanceId = 0U;
             _effectSpawnPublishAttempted = false;
 
@@ -60,19 +60,30 @@ namespace SM
             CleanupFailedStart();
             Debug.LogError(
                 $"PHS_OXYGEN_EVENT_FAILED reason={startReason} " +
-                $"event={InstanceId} room={Context.Room?.RoomId}");
+                $"event={InstanceId}");
             OnFail();
         }
 
         private bool TryStart(out string reason)
         {
-            if (!TryAcquireRoomZone(out reason))
+            var config = ShipSpawnPointConfig.Peek();
+            if (config == null)
             {
+                reason = "spawn_point_config_missing";
                 return false;
             }
 
+            _spawnPoint = config.GetRandomFreePoint();
+            if (_spawnPoint == null)
+            {
+                reason = "spawn_point_unavailable";
+                return false;
+            }
+
+            _spawnPoint.Occupy(EventId.OxygenLeak);
+
             _effect = _effectPool.Get(
-                _zone.RepairPosition,
+                _spawnPoint.transform.position,
                 LeakData,
                 true);
             if (_effect == null)
@@ -104,7 +115,7 @@ namespace SM
                 InstanceId,
                 _effectInstanceId,
                 EventEffectKind.OxygenLeak,
-                _zone.RepairPosition,
+                _spawnPoint.transform.position,
                 0);
             reason = null;
             return true;
@@ -121,7 +132,7 @@ namespace SM
             PublishEffectRemoved();
             _effectPool.Return(effect);
             _effect = null;
-            ReleaseZone();
+            ReleaseSpawnPoint();
             OnResolve();
         }
 
@@ -153,7 +164,7 @@ namespace SM
                 _effect = null;
             }
 
-            ReleaseZone();
+            ReleaseSpawnPoint();
             base.ForceTerminate();
         }
 
@@ -241,23 +252,7 @@ namespace SM
                 _effectInstanceId = 0U;
             }
 
-            if (_zone == null)
-            {
-                return;
-            }
-
-            try
-            {
-                _zone.Deactivate();
-            }
-            catch (System.Exception exception)
-            {
-                LogCleanupFailure("oxygen_zone", exception);
-            }
-            finally
-            {
-                _zone = null;
-            }
+            ReleaseSpawnPoint();
         }
 
         private void LogCleanupFailure(
@@ -271,56 +266,10 @@ namespace SM
                 $"{exception.Message}");
         }
 
-        private bool TryAcquireRoomZone(out string reason)
+        private void ReleaseSpawnPoint()
         {
-            _zone = null;
-            if (Context?.Room is not Component roomComponent)
-            {
-                reason = "room_component_missing";
-                return false;
-            }
-
-            var behaviours = roomComponent.GetComponents<MonoBehaviour>();
-            IOxygenLeakZoneProvider provider = null;
-            foreach (var behaviour in behaviours)
-            {
-                if (behaviour is not IOxygenLeakZoneProvider candidate)
-                {
-                    continue;
-                }
-
-                if (provider != null)
-                {
-                    reason = "zone_provider_duplicate";
-                    return false;
-                }
-
-                provider = candidate;
-            }
-
-            if (provider == null)
-            {
-                reason = "zone_provider_missing";
-                return false;
-            }
-
-            if (!provider.TryAcquireZone(out _zone, out reason)
-                || _zone == null)
-            {
-                reason = string.IsNullOrWhiteSpace(reason)
-                    ? "zone_acquire_failed"
-                    : $"zone_acquire_failed:{reason}";
-                return false;
-            }
-
-            reason = null;
-            return true;
-        }
-
-        private void ReleaseZone()
-        {
-            _zone?.Deactivate();
-            _zone = null;
+            _spawnPoint?.Release();
+            _spawnPoint = null;
         }
 
         private void PublishEffectRemoved()

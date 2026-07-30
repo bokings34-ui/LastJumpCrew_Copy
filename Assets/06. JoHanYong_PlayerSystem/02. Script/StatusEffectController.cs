@@ -253,6 +253,10 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
         private void OnDisable()
         {
             StopElectricShockRoutine();
+            if (IsSpawned && IsServer && electricShockActive.Value)
+            {
+                electricShockActive.Value = false;
+            }
             ApplyElectricShockPresentation(false);
         }
     }
