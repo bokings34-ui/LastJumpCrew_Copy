@@ -38,7 +38,7 @@ AnimationClip:
       m_PreInfinity: 2
       m_PostInfinity: 2
       m_RotationOrder: 4
-    path: Turret_SetDial/Turret_Dial
+    path: Turret_Set_Dial/Turret_Dial
   m_PositionCurves: []
   m_ScaleCurves: []
   m_FloatCurves: []
@@ -51,7 +51,7 @@ AnimationClip:
   m_ClipBindingConstant:
     genericBindings:
     - serializedVersion: 2
-      path: 1374263624
+      path: 4273331603
       attribute: 4
       script: {fileID: 0}
       typeID: 4
@@ -99,7 +99,7 @@ AnimationClip:
       m_PostInfinity: 2
       m_RotationOrder: 4
     attribute: localEulerAnglesRaw.x
-    path: Turret_SetDial/Turret_Dial
+    path: Turret_Set_Dial/Turret_Dial
     classID: 4
     script: {fileID: 0}
     flags: 0
@@ -129,7 +129,7 @@ AnimationClip:
       m_PostInfinity: 2
       m_RotationOrder: 4
     attribute: localEulerAnglesRaw.y
-    path: Turret_SetDial/Turret_Dial
+    path: Turret_Set_Dial/Turret_Dial
     classID: 4
     script: {fileID: 0}
     flags: 0
@@ -150,7 +150,7 @@ AnimationClip:
       m_PostInfinity: 2
       m_RotationOrder: 4
     attribute: localEulerAnglesRaw.z
-    path: Turret_SetDial/Turret_Dial
+    path: Turret_Set_Dial/Turret_Dial
     classID: 4
     script: {fileID: 0}
     flags: 0
@@ -162,8 +162,8 @@ AnimationClip:
       m_PreInfinity: 2
       m_PostInfinity: 2
       m_RotationOrder: 4
-    attribute: m_LocalEulerAngles.x
-    path: Turret_SetDial/Turret_Dial
+    attribute: m_LocalEulerAngles.z
+    path: Turret_Set_Dial/Turret_Dial
     classID: 4
     script: {fileID: 0}
     flags: 0
@@ -175,7 +175,7 @@ AnimationClip:
       m_PostInfinity: 2
       m_RotationOrder: 4
     attribute: m_LocalEulerAngles.y
-    path: Turret_SetDial/Turret_Dial
+    path: Turret_Set_Dial/Turret_Dial
     classID: 4
     script: {fileID: 0}
     flags: 0
@@ -186,8 +186,8 @@ AnimationClip:
       m_PreInfinity: 2
       m_PostInfinity: 2
       m_RotationOrder: 4
-    attribute: m_LocalEulerAngles.z
-    path: Turret_SetDial/Turret_Dial
+    attribute: m_LocalEulerAngles.x
+    path: Turret_Set_Dial/Turret_Dial
     classID: 4
     script: {fileID: 0}
     flags: 0
