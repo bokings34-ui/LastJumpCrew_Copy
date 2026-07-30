@@ -106,6 +106,13 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
                 return;
             }
 
+            // Release must be observed even while a tutorial popup blocks gameplay input.
+            if (playerControlInput != null
+                && playerControlInput.GrappleReleasedThisFrame)
+            {
+                RequestStopGrapple();
+            }
+
             if (playerController.CanAcceptLocalInput)
             {
                 HandleLocalInput();
@@ -189,6 +196,24 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
             StopGrapple();
         }
 
+        public bool CancelForTeleport()
+        {
+            if (IsSpawned && !IsServer)
+            {
+                Debug.LogError($"PHS_GRAPPLE_TELEPORT_CANCEL_FAILED reason=server_required player={name}", this);
+                return false;
+            }
+
+            var wasActive = IsGrappleActiveInternal();
+            StopGrapple();
+            if (wasActive)
+            {
+                Debug.Log($"PHS_GRAPPLE_TELEPORT_CANCELLED player={name}", this);
+            }
+
+            return true;
+        }
+
         private void OnDisable()
         {
             lastLaunchTime = float.NegativeInfinity;
@@ -212,12 +237,6 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
             if (playerControlInput.GrapplePressedThisFrame)
             {
                 HandleHookPressed();
-            }
-
-            // Grapple input is hold-to-use. Release must always detach the server-owned grapple state.
-            if (playerControlInput.GrappleReleasedThisFrame)
-            {
-                RequestStopGrapple();
             }
 
         }

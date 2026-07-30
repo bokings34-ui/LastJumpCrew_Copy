@@ -20,8 +20,9 @@ namespace LastJumpCrew.ParkHanSol.Interaction
     {
         [Header("Battery")]
         [SerializeField] private string requiredItemId = "battery_pack";
-        [SerializeField] private string interactionPrompt = "Insert Battery";
+        [SerializeField] private string interactionPrompt = "배터리 장착";
         [SerializeField] private GameObject installedBatteryVisual;
+        [SerializeField] private Transform feedbackPoint;
 
         // Kept for existing prefab serialization. Network installation always consumes the held battery.
         [SerializeField] private bool destroyInsertedBattery = true;
@@ -48,6 +49,12 @@ namespace LastJumpCrew.ParkHanSol.Interaction
             if (installedBatteryVisual == null)
             {
                 Debug.LogError($"PHS_BATTERY_SOCKET_SETUP_FAILED reason=installedBatteryVisual_missing target={name}", this);
+                return;
+            }
+
+            if (feedbackPoint == null)
+            {
+                Debug.LogError($"PHS_BATTERY_SOCKET_SETUP_FAILED reason=feedbackPoint_missing target={name}", this);
                 return;
             }
 
@@ -357,7 +364,7 @@ namespace LastJumpCrew.ParkHanSol.Interaction
                 client.PlayerObject.GetComponent<PHSNetworkItemUseFeedbackController>();
             feedback?.PublishConfirmedTargetImpactServer(
                 UtilityItemActionKind.PowerRestore,
-                transform.position);
+                feedbackPoint.position);
             client.PlayerObject
                 .GetComponent<PHSNetworkItemInteractionAudioRelay>()
                 ?.TryBroadcastConfirmedServer(

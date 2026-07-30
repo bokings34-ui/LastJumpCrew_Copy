@@ -36,7 +36,7 @@ namespace LastJumpCrew.ParkHanSol.Editor
             ValidateOrThrow();
             Debug.Log(
                 "PHS_SHOP_STOCK_AUTHORING_OK stock=server_dropped_prefab " +
-                "hud=owner_local refs=explicit");
+                "price=world_object_tag refs=explicit");
         }
 
         [MenuItem("Tools/ParkHanSol/BEAVER/Validate Server Shop Stock And Local HUD")]
@@ -62,7 +62,7 @@ namespace LastJumpCrew.ParkHanSol.Editor
 
             Debug.Log(
                 "PHS_SHOP_STOCK_VALIDATION_OK stock=server_dropped_prefab " +
-                "hud=owner_local refs=explicit");
+                "price=world_object_tag refs=explicit");
         }
 
         private static void ConfigureShopScene()
@@ -72,7 +72,18 @@ namespace LastJumpCrew.ParkHanSol.Editor
                 var displayController = FindExactlyOneInScene<
                     ShopRandomDisplayController>(scene, "display_controller");
                 var controllerData = new SerializedObject(displayController);
-                var slots = ReadSlots(controllerData);
+                var slots = FindAllInScene<ShopDisplaySlot>(scene)
+                    .OrderBy(slot => GetHierarchyPath(slot.transform), StringComparer.Ordinal)
+                    .ToArray();
+                if (slots.Length != 12)
+                {
+                    throw new InvalidOperationException(
+                        $"PHS_SHOP_STOCK_AUTHORING_FAILED reason=scene_display_slot_count_invalid actual={slots.Length}");
+                }
+
+                SetArray(controllerData, "displaySlots", slots);
+                controllerData.ApplyModifiedPropertiesWithoutUndo();
+                EditorUtility.SetDirty(displayController);
                 var purchaseService = controllerData
                     .FindProperty("purchaseServiceSource")?.objectReferenceValue as MonoBehaviour
                     ?? throw new InvalidOperationException(
@@ -120,7 +131,7 @@ namespace LastJumpCrew.ParkHanSol.Editor
                     label.gameObject.name = "ItemPriceTag";
                     label.text = string.Empty;
                     label.fontSize = 0.42f;
-                    label.fontStyle = FontStyles.Bold;
+                    PHSUIFontPaths.Apply(label, PHSUIFontRole.Control);
                     label.color = new Color(0.12f, 1f, 0.32f, 1f);
                     label.alignment = TextAlignmentOptions.Center;
                     label.enableWordWrapping = false;
@@ -173,22 +184,26 @@ namespace LastJumpCrew.ParkHanSol.Editor
                 if (priceText != null)
                 {
                     priceText.text = string.Empty;
-                    priceText.gameObject.SetActive(true);
+                    priceText.gameObject.SetActive(false);
                 }
 
+                presenter.enabled = false;
+                panel.alpha = 0f;
+                panel.interactable = false;
+                panel.blocksRaycasts = false;
                 var panelRect = panel.GetComponent<RectTransform>();
                 panelRect.sizeDelta = new Vector2(260f, 64f);
                 panelRect.anchoredPosition = new Vector2(0f, -128f);
                 priceText.rectTransform.anchoredPosition = Vector2.zero;
                 priceText.rectTransform.sizeDelta = new Vector2(240f, 54f);
                 priceText.fontSize = 36f;
-                priceText.fontStyle = FontStyles.Bold;
+                PHSUIFontPaths.Apply(priceText, PHSUIFontRole.Control);
                 priceText.alignment = TextAlignmentOptions.Center;
                 promptText.gameObject.SetActive(false);
                 promptText.rectTransform.anchoredPosition = Vector2.zero;
                 promptText.rectTransform.sizeDelta = new Vector2(170f, 32f);
                 promptText.fontSize = 18f;
-                promptText.fontStyle = FontStyles.Bold;
+                PHSUIFontPaths.Apply(promptText, PHSUIFontRole.Control);
                 promptText.alignment = TextAlignmentOptions.Center;
                 EditorUtility.SetDirty(presenter);
                 EditorUtility.SetDirty(panel);
@@ -222,7 +237,7 @@ namespace LastJumpCrew.ParkHanSol.Editor
                 var priceRect = priceText.rectTransform;
                 priceRect.localScale = Vector3.one;
                 priceText.fontSize = 1.15f;
-                priceText.fontStyle = FontStyles.Bold;
+                PHSUIFontPaths.Apply(priceText, PHSUIFontRole.Control);
                 priceText.alignment = TextAlignmentOptions.Center;
                 priceText.raycastTarget = false;
 
@@ -236,7 +251,7 @@ namespace LastJumpCrew.ParkHanSol.Editor
                 unavailableRect.localRotation = Quaternion.identity;
                 unavailableRect.localScale = Vector3.one;
                 unavailableText.fontSize = 0.55f;
-                unavailableText.fontStyle = FontStyles.Bold;
+                PHSUIFontPaths.Apply(unavailableText, PHSUIFontRole.Emphasis);
                 unavailableText.alignment = TextAlignmentOptions.Center;
                 unavailableText.raycastTarget = false;
                 EditorUtility.SetDirty(priceText);
@@ -298,9 +313,12 @@ namespace LastJumpCrew.ParkHanSol.Editor
                 "shop_hud_product_name_should_be_hidden",
                 errors);
             Require(
-                priceText != null && priceText.gameObject.activeSelf
-                    && Mathf.Approximately(priceText.fontSize, 36f),
-                "shop_hud_proximity_price_style_invalid",
+                !presenters[0].enabled,
+                "shop_hud_proximity_presenter_should_be_disabled",
+                errors);
+            Require(
+                priceText != null,
+                "shop_hud_proximity_price_reference_missing",
                 errors);
             Require(
                 promptText != null && !promptText.gameObject.activeSelf,
@@ -308,10 +326,11 @@ namespace LastJumpCrew.ParkHanSol.Editor
                 errors);
             if (panel != null)
             {
-                var size = panel.GetComponent<RectTransform>().sizeDelta;
                 Require(
-                    size == new Vector2(260f, 64f),
-                    $"shop_hud_price_panel_size_invalid size={size}",
+                    Mathf.Approximately(panel.alpha, 0f)
+                        && !panel.interactable
+                        && !panel.blocksRaycasts,
+                    "shop_hud_proximity_panel_should_be_hidden",
                     errors);
             }
         }
@@ -514,6 +533,17 @@ namespace LastJumpCrew.ParkHanSol.Editor
                 ?? throw new InvalidOperationException(
                     $"PHS_SHOP_STOCK_AUTHORING_FAILED reason=property_missing property={propertyName}");
             property.objectReferenceValue = value;
+        }
+
+        private static string GetHierarchyPath(Transform target)
+        {
+            var names = new Stack<string>();
+            for (var current = target; current != null; current = current.parent)
+            {
+                names.Push(current.name);
+            }
+
+            return string.Join("/", names);
         }
 
         private static T RequireSingle<T>(GameObject root, string role)

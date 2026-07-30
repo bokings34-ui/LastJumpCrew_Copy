@@ -1,7 +1,14 @@
 fileFormatVersion: 2
-guid: 038ae7c567eedd74ea415bb88352fc1e
+guid: 60438eed95982284ca5aeb569d5e97f2
 PrefabImporter:
   externalObjects: {}
   userData: 
   assetBundleName: 
   assetBundleVariant: 
+AssetOrigin:
+  serializedVersion: 1
+  productId: 318141
+  packageName: Master MagicFX 3
+  packageVersion: 1.0
+  assetPath: Assets/MasterMagicFX/ParticlesVer3/Examples/Prefabs/LightningContinous.prefab
+  uploadId: 751285

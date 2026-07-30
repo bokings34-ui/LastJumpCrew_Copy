@@ -66,10 +66,18 @@ namespace LastJumpCrew.ParkHanSol.Shop
 
         private void RefreshLabels(ShopProductData product)
         {
-            if (productLabel != null)
+            if (productLabel == null)
             {
-                productLabel.text = string.Empty;
+                Debug.LogError(
+                    $"PHS_SHOP_PRICE_TAG_FAILED reason=product_label_missing slot={name}",
+                    this);
+                enabled = false;
+                return;
             }
+
+            productLabel.text = product == null
+                ? string.Empty
+                : $"${product.PurchasePrice}";
 
             if (productNameText != null)
             {
@@ -77,9 +85,10 @@ namespace LastJumpCrew.ParkHanSol.Shop
                 productNameText.gameObject.SetActive(false);
             }
 
-            if (priceText != null)
+            if (priceText != null && priceText != productLabel)
             {
                 priceText.text = string.Empty;
+                priceText.gameObject.SetActive(false);
             }
 
             RefreshLabelVisibility();
@@ -87,15 +96,13 @@ namespace LastJumpCrew.ParkHanSol.Shop
 
         private void RefreshLabelVisibility()
         {
-            if (productLabel != null)
+            if (productLabel == null)
             {
-                productLabel.gameObject.SetActive(false);
+                return;
             }
 
-            if (priceText != null && priceText != productLabel)
-            {
-                priceText.gameObject.SetActive(false);
-            }
+            productLabel.gameObject.SetActive(
+                CurrentProduct != null && IsInStock);
         }
     }
 }

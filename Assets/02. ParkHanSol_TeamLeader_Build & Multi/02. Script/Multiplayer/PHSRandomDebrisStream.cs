@@ -1,6 +1,7 @@
 using System.Collections.Generic;
 using LastJumpCrew.ParkHanSol.Items;
 using Unity.Netcode;
+using Unity.Netcode.Components;
 using UnityEngine;
 using UnityEngine.SceneManagement;
 
@@ -18,13 +19,19 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
         [SerializeField] private Vector3 passageLaneExtents = new(3f, 1f, 1f);
         [SerializeField, Range(0f, 1f)] private float passageLaneSpawnChance = 1f;
         [SerializeField] private float recycleWorldX = -365f;
+        [SerializeField, Range(0f, 1f)] private float oppositeFlowChance = 0.45f;
         [SerializeField] private bool distributeAcrossPathOnAwake;
+        [SerializeField] private bool allowOfflineLocalSimulation;
         [SerializeField, Min(0.01f)] private float minimumSpeed = 0.8f;
         [SerializeField, Min(0.01f)] private float maximumSpeed = 2.8f;
         [SerializeField, Min(0f)] private float maximumAngularSpeed = 75f;
+        [SerializeField, Min(0f)] private float maximumFlowAcceleration = 0.35f;
 
         private float[] speeds;
         private Vector3[] angularVelocities;
+        private Vector3[] flowDirections;
+        private Rigidbody[] debrisRigidbodies;
+        private NetworkTransform[] debrisNetworkTransforms;
         private GameObject[] debrisSources;
         private readonly List<Transform> activeDebris = new();
         private readonly List<Transform> runtimeGeneratedDebris = new();
@@ -35,6 +42,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
         private bool simulationRequested;
         private bool usesNetworkDebrisSources;
         private bool networkSceneReady;
+        private bool offlineLocalSimulationActive;
 
         public void SetSimulationEnabled(bool simulationEnabled)
         {
@@ -44,7 +52,10 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
             if (simulationEnabled && usesNetworkDebrisSources)
             {
                 TryBindNetworkManager();
-                TryInitializeNetworkSimulation();
+                if (!TryStartOfflineLocalSimulation("simulation_enabled"))
+                {
+                    TryInitializeNetworkSimulation();
+                }
             }
             else if (simulationEnabled && !simulationInitialized)
             {
@@ -73,6 +84,12 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
             if (usesNetworkDebrisSources)
             {
                 TryBindNetworkManager();
+                if (allowOfflineLocalSimulation && !IsNetworkListening())
+                {
+                    simulationRequested = true;
+                    TryStartOfflineLocalSimulation("awake");
+                }
+
                 return;
             }
 
@@ -80,29 +97,62 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
             InitializeSimulation();
         }
 
+        private void OnEnable()
+        {
+            if (!simulationRequested || !usesNetworkDebrisSources)
+            {
+                return;
+            }
+
+            TryBindNetworkManager();
+            TryStartOfflineLocalSimulation("component_enabled");
+        }
+
+        private void OnDisable()
+        {
+            StopOfflineLocalSimulation("component_disabled");
+        }
+
         private void OnDestroy()
         {
             UnbindNetworkManager();
         }
 
-        private void Update()
+        private void FixedUpdate()
         {
             if (usesNetworkDebrisSources)
             {
                 TryBindNetworkManager();
 
-                if (boundNetworkManager == null
-                    || !boundNetworkManager.IsListening
-                    || !boundNetworkManager.IsServer
-                    || !networkSceneReady)
+                if (offlineLocalSimulationActive)
+                {
+                    if (IsNetworkListening())
+                    {
+                        StopOfflineLocalSimulation("network_started");
+                        Debug.LogError(
+                            $"PHS_DEBRIS_STREAM_OFFLINE_FAILED reason=network_started_after_offline " +
+                            $"stream={name}",
+                            this);
+
+                        enabled = false;
+                        return;
+                    }
+                }
+                else if (boundNetworkManager == null
+                         || !boundNetworkManager.IsListening
+                         || !boundNetworkManager.IsServer
+                         || !networkSceneReady)
                 {
                     return;
                 }
 
-                TryInitializeNetworkSimulation();
-                if (!simulationInitialized)
+                if (!offlineLocalSimulationActive)
                 {
-                    return;
+                    TryInitializeNetworkSimulation();
+                    if (!simulationInitialized)
+                    {
+                        return;
+                    }
                 }
             }
 
@@ -113,6 +163,12 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
                 {
                     debris = CreateDebris(index);
                     activeDebris[index] = debris;
+                    if (!TryCacheDebrisPhysics(index, debris))
+                    {
+                        enabled = false;
+                        return;
+                    }
+
                     ResetDebris(index, false);
                     if (usesNetworkDebrisSources)
                     {
@@ -126,10 +182,22 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
                     continue;
                 }
 
-                debris.position += Vector3.left * (speeds[index] * Time.deltaTime);
-                debris.Rotate(angularVelocities[index] * Time.deltaTime, Space.Self);
+                var rigidbody = debrisRigidbodies[index];
+                var flowDirection = flowDirections[index];
+                var currentFlowSpeed = Vector3.Dot(rigidbody.linearVelocity, flowDirection);
+                var targetFlowAcceleration = (speeds[index] - currentFlowSpeed) / Time.fixedDeltaTime;
+                var clampedFlowAcceleration = Mathf.Clamp(
+                    targetFlowAcceleration,
+                    -maximumFlowAcceleration,
+                    maximumFlowAcceleration);
+                rigidbody.AddForce(
+                    flowDirection * clampedFlowAcceleration,
+                    ForceMode.Acceleration);
 
-                if (debris.position.x <= recycleWorldX)
+                var movingRight = flowDirections[index].x > 0f;
+                var oppositeRecycleWorldX = spawnCenter.x + (spawnCenter.x - recycleWorldX);
+                if ((!movingRight && rigidbody.position.x <= recycleWorldX)
+                    || (movingRight && rigidbody.position.x >= oppositeRecycleWorldX))
                 {
                     ResetDebris(index, false);
                 }
@@ -154,14 +222,24 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
 
             speeds = new float[activeDebris.Count];
             angularVelocities = new Vector3[activeDebris.Count];
+            flowDirections = new Vector3[activeDebris.Count];
+            debrisRigidbodies = new Rigidbody[activeDebris.Count];
+            debrisNetworkTransforms = new NetworkTransform[activeDebris.Count];
             for (var index = 0; index < activeDebris.Count; index++)
             {
+                if (!TryCacheDebrisPhysics(index, activeDebris[index]))
+                {
+                    enabled = false;
+                    return;
+                }
+
                 ResetDebris(index, distributeAcrossPathOnAwake);
             }
 
             simulationInitialized = true;
             Debug.Log(
-                $"PHS_DEBRIS_STREAM_READY stream={name} mode={(usesNetworkDebrisSources ? "network" : "local")} " +
+                $"PHS_DEBRIS_STREAM_READY stream={name} " +
+                $"mode={(offlineLocalSimulationActive ? "offline_local" : usesNetworkDebrisSources ? "network" : "local")} " +
                 $"total={activeDebris.Count} generated={runtimeGeneratedDebris.Count}",
                 this);
         }
@@ -210,6 +288,24 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
 
                 var debrisSource = droppedPrefab != null ? droppedPrefab : sceneSeed.gameObject;
                 debrisSources[index] = debrisSource;
+                if (debrisSource.GetComponent<Rigidbody>() == null)
+                {
+                    Debug.LogError(
+                        $"PHS_DEBRIS_STREAM_SETUP_FAILED reason=source_rigidbody_missing " +
+                        $"stream={name} seed_index={index} source={debrisSource.name}",
+                        this);
+                    return false;
+                }
+
+                if (debrisSource.GetComponent<NetworkTransform>() == null)
+                {
+                    Debug.LogError(
+                        $"PHS_DEBRIS_STREAM_SETUP_FAILED reason=source_network_transform_missing " +
+                        $"stream={name} seed_index={index} source={debrisSource.name}",
+                        this);
+                    return false;
+                }
+
                 if (debrisSource.GetComponent<NetworkObject>() != null)
                 {
                     networkSourceCount++;
@@ -226,6 +322,40 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
             }
 
             usesNetworkDebrisSources = networkSourceCount == debrisSources.Length;
+            return true;
+        }
+
+        private bool TryCacheDebrisPhysics(int index, Transform debris)
+        {
+            if (debris == null)
+            {
+                Debug.LogError(
+                    $"PHS_DEBRIS_STREAM_RUNTIME_FAILED reason=debris_missing " +
+                    $"stream={name} debris_index={index}",
+                    this);
+                return false;
+            }
+
+            if (!debris.TryGetComponent(out Rigidbody rigidbody))
+            {
+                Debug.LogError(
+                    $"PHS_DEBRIS_STREAM_RUNTIME_FAILED reason=rigidbody_missing " +
+                    $"stream={name} debris_index={index} debris={debris.name}",
+                    debris);
+                return false;
+            }
+
+            if (!debris.TryGetComponent(out NetworkTransform networkTransform))
+            {
+                Debug.LogError(
+                    $"PHS_DEBRIS_STREAM_RUNTIME_FAILED reason=network_transform_missing " +
+                    $"stream={name} debris_index={index} debris={debris.name}",
+                    debris);
+                return false;
+            }
+
+            debrisRigidbodies[index] = rigidbody;
+            debrisNetworkTransforms[index] = networkTransform;
             return true;
         }
 
@@ -337,23 +467,124 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
             TryInitializeNetworkSimulation();
         }
 
+        private bool TryStartOfflineLocalSimulation(string cause)
+        {
+            if (!ShouldUseOfflineLocalSimulation(
+                    allowOfflineLocalSimulation,
+                    simulationRequested,
+                    usesNetworkDebrisSources,
+                    IsNetworkListening()))
+            {
+                return false;
+            }
+
+            if (!offlineLocalSimulationActive)
+            {
+                offlineLocalSimulationActive = true;
+                InitializeSimulation();
+                if (!simulationInitialized)
+                {
+                    offlineLocalSimulationActive = false;
+                    return false;
+                }
+
+                Debug.Log(
+                    $"PHS_DEBRIS_STREAM_OFFLINE_STARTED stream={name} cause={cause} " +
+                    $"total={activeDebris.Count}",
+                    this);
+            }
+
+            return true;
+        }
+
+        private void StopOfflineLocalSimulation(string cause)
+        {
+            if (!offlineLocalSimulationActive)
+            {
+                return;
+            }
+
+            offlineLocalSimulationActive = false;
+            Debug.Log(
+                $"PHS_DEBRIS_STREAM_OFFLINE_STOPPED stream={name} cause={cause}",
+                this);
+        }
+
+        private bool IsNetworkListening()
+        {
+            return boundNetworkManager != null && boundNetworkManager.IsListening;
+        }
+
+        private static bool ShouldUseOfflineLocalSimulation(
+            bool allowOffline,
+            bool simulationEnabled,
+            bool usesNetworkSources,
+            bool networkListening)
+        {
+            return allowOffline
+                && simulationEnabled
+                && usesNetworkSources
+                && !networkListening;
+        }
+
+        [ContextMenu("Validate Offline Local Simulation Contract")]
+        private void ValidateOfflineLocalSimulationContract()
+        {
+            var valid = ShouldUseOfflineLocalSimulation(true, true, true, false)
+                && !ShouldUseOfflineLocalSimulation(false, true, true, false)
+                && !ShouldUseOfflineLocalSimulation(true, false, true, false)
+                && !ShouldUseOfflineLocalSimulation(true, true, false, false)
+                && !ShouldUseOfflineLocalSimulation(true, true, true, true);
+            if (!valid)
+            {
+                Debug.LogError(
+                    "PHS_DEBRIS_STREAM_OFFLINE_CONTRACT_FAILED",
+                    this);
+                return;
+            }
+
+            Debug.Log("PHS_DEBRIS_STREAM_OFFLINE_CONTRACT_OK", this);
+        }
+
         private void ResetDebris(int index, bool distributeAcrossPath)
         {
             var debris = activeDebris[index];
+            var rigidbody = debrisRigidbodies[index];
+            var networkTransform = debrisNetworkTransforms[index];
             GetSpawnArea(out var laneCenter, out var laneExtents);
+            var movingRight = Random.value < oppositeFlowChance;
+            var targetRecycleWorldX = movingRight
+                ? spawnCenter.x + (spawnCenter.x - recycleWorldX)
+                : recycleWorldX;
             var spawnX = distributeAcrossPath
                 ? Random.Range(
-                    Mathf.Min(recycleWorldX, laneCenter.x + laneExtents.x),
-                    Mathf.Max(recycleWorldX, laneCenter.x + laneExtents.x))
+                    Mathf.Min(targetRecycleWorldX, laneCenter.x + laneExtents.x),
+                    Mathf.Max(targetRecycleWorldX, laneCenter.x + laneExtents.x))
                 : laneCenter.x + Random.Range(-laneExtents.x, laneExtents.x);
 
-            debris.position = new Vector3(
+            var spawnPosition = new Vector3(
                 spawnX,
                 laneCenter.y + Random.Range(-laneExtents.y, laneExtents.y),
                 laneCenter.z + Random.Range(-laneExtents.z, laneExtents.z));
-            debris.rotation = Random.rotation;
+            var spawnRotation = Random.rotation;
             speeds[index] = Random.Range(minimumSpeed, maximumSpeed);
+            flowDirections[index] = movingRight ? Vector3.right : Vector3.left;
             angularVelocities[index] = Random.insideUnitSphere * maximumAngularSpeed;
+
+            rigidbody.linearVelocity = Vector3.zero;
+            rigidbody.angularVelocity = Vector3.zero;
+            rigidbody.position = spawnPosition;
+            rigidbody.rotation = spawnRotation;
+
+            var networkObject = debris.GetComponent<NetworkObject>();
+            if (networkObject != null && networkObject.IsSpawned)
+            {
+                networkTransform.Teleport(spawnPosition, spawnRotation, debris.localScale);
+            }
+
+            rigidbody.linearVelocity = flowDirections[index] * speeds[index];
+            rigidbody.angularVelocity = angularVelocities[index] * Mathf.Deg2Rad;
+            rigidbody.WakeUp();
         }
 
         private void GetSpawnArea(out Vector3 center, out Vector3 extents)

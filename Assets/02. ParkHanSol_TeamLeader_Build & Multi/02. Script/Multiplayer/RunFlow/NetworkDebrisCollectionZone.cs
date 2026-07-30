@@ -63,7 +63,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
 
             playersInside.Remove(player.OwnerClientId);
             playersInsideSafeVolume.Remove(player.OwnerClientId);
-            lifeState.CancelDeadZoneWarning();
+            lifeState.BeginDeadZoneWarning(deadZoneWarningSeconds);
             var coordinator = NetworkRunFlowCoordinator.Instance;
             if (coordinator == null)
             {
