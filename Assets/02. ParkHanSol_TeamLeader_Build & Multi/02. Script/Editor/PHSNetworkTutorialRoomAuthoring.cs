@@ -75,6 +75,8 @@ namespace LastJumpCrew.ParkHanSol.Editor
             "Assets/02. ParkHanSol_TeamLeader_Build & Multi/01. Scene/BEAVER_2026/Tutorial/PHS_TutorialBriefing.renderTexture";
         private const string InstructionFolder =
             "Assets/02. ParkHanSol_TeamLeader_Build & Multi/04. Data/UI/TutorialInstructions/";
+        private const string TutorialKeycapSpritePath =
+            "Assets/02. ParkHanSol_TeamLeader_Build & Multi/03. Prefab/UI/Art/Tutorial/PHS_Tutorial_Keycap_Orange.png";
         private const string TutorialFontPath = PHSUIFontPaths.SuitRegular;
         private const string ObjectiveBodyFontPath = PHSUIFontPaths.SuitMedium;
         private const string ObjectiveNumberFontPath =
@@ -106,8 +108,8 @@ namespace LastJumpCrew.ParkHanSol.Editor
                 "이동과 점프",
                 new[]
                 {
-                    "[WASD]로 1번 체크포인트까지 이동하세요.",
-                    "[SPACE]로 점프해 2번 체크포인트를 통과하세요."
+                    "[WASD]  1번 지점으로 이동",
+                    "[SPACE]  2번 지점 점프"
                 },
                 "PHS_Tutorial_Move.png"),
             new(
@@ -122,8 +124,8 @@ namespace LastJumpCrew.ParkHanSol.Editor
                 "함선 내부 이동",
                 new[]
                 {
-                    "마우스로 방향을 확인하고 [WASD]로 1번 체크포인트까지 이동하세요.",
-                    "함선 내부 중력을 받으며 [WASD]로 2번 체크포인트까지 이동하세요."
+                    "[WASD]  1번 지점으로 이동",
+                    "[WASD]  2번 지점으로 이동"
                 },
                 "PHS_Tutorial_Jump.png"),
             new(
@@ -138,8 +140,8 @@ namespace LastJumpCrew.ParkHanSol.Editor
                 "그래플 이동",
                 new[]
                 {
-                    "1번 고정점을 보고 [Q]를 눌러 줄을 연결한 채 유지하세요.",
-                    "[Q]를 놓아 줄을 해제한 뒤 2번 고정점에 다시 연결하세요."
+                    "[Q] 누른 채 1번 고정점 연결",
+                    "[Q] 놓고 2번 고정점 연결"
                 },
                 "PHS_Tutorial_Grapple.png"),
             new(
@@ -156,8 +158,8 @@ namespace LastJumpCrew.ParkHanSol.Editor
                 "아이템 운반",
                 new[]
                 {
-                    "[F]로 렌치를 주운 뒤 원하는 위치에서 [RMB]를 짧게 눌러 내려놓으세요.",
-                    "[F]로 배터리를 주운 뒤 원하는 위치에서 [RMB]를 짧게 눌러 내려놓으세요."
+                    "[F] 렌치 줍기 · [RMB] 내려놓기",
+                    "[F] 배터리 줍기 · [RMB] 내려놓기"
                 },
                 "PHS_Tutorial_PickupDrop.png"),
             new(
@@ -174,8 +176,8 @@ namespace LastJumpCrew.ParkHanSol.Editor
                 "도구 사용",
                 new[]
                 {
-                    "[F]로 렌치를 주우면 손의 도구가 자동 교체됩니다. [LMB]로 사용하세요.",
-                    "[F]로 소화기를 주우면 손의 도구가 자동 교체됩니다. [LMB]로 사용하세요."
+                    "[F] 렌치 줍기 · [LMB] 사용",
+                    "[F] 소화기 교체 · [LMB] 사용"
                 },
                 "PHS_Tutorial_Swap.png"),
             new(
@@ -190,8 +192,8 @@ namespace LastJumpCrew.ParkHanSol.Editor
                 "연습 단말기",
                 new[]
                 {
-                    "1번 연습 단말기를 보고 [F]로 작동하세요.",
-                    "2번 연습 단말기를 보고 [F]로 작동하세요."
+                    "[F]  1번 단말기 작동",
+                    "[F]  2번 단말기 작동"
                 },
                 "PHS_Tutorial_Interact.png"),
             new(
@@ -207,9 +209,9 @@ namespace LastJumpCrew.ParkHanSol.Editor
                 "외부 무중력과 데브리 회수",
                 new[]
                 {
-                    "마우스로 방향을 확인하고 [WASD]로 이동하며 [SHIFT]로 위로, [CTRL]로 아래로 움직여 외부 체크포인트에 도착하세요.",
-                    "[F]로 화물 데브리를 주운 뒤 회수 패드에서 [RMB]를 눌러서 내리세요. 던져 넣어도 인정됩니다.",
-                    "[F]로 카메라 데브리를 주운 뒤 회수 패드에서 [RMB]를 눌러서 내리세요. 던져 넣어도 인정됩니다."
+                    "[WASD] 이동  ·  [SHIFT] 위  ·  [CTRL] 아래",
+                    "[F] 화물 줍기  ·  [RMB] 패드에 놓기",
+                    "[F] 카메라 줍기  ·  [RMB] 패드에 놓기"
                 },
                 "PHS_Tutorial_Thruster.png"),
             new(
@@ -224,8 +226,8 @@ namespace LastJumpCrew.ParkHanSol.Editor
                 "외부 함선 이동과 타기",
                 new[]
                 {
-                    "마우스로 방향을 확인하고 [WASD], [SHIFT], [CTRL]로 외부 함선 앞 지점까지 이동하세요.",
-                    "함선 문 앞에서 [F]를 눌러 함선 안으로 이동하세요."
+                    "[WASD] 함선 이동  ·  [SHIFT] 위  ·  [CTRL] 아래",
+                    "[F]  함선 탑승"
                 },
                 "PHS_Tutorial_Interact.png")
         };
@@ -501,6 +503,7 @@ namespace LastJumpCrew.ParkHanSol.Editor
             var canvas = root.GetComponent<Canvas>();
             canvas.renderMode = RenderMode.ScreenSpaceOverlay;
             canvas.sortingOrder = 500;
+            ConfigureCanvasScaler(root.GetComponent<CanvasScaler>());
             var canvasRect = root.GetComponent<RectTransform>();
             canvasRect.anchorMin = Vector2.zero;
             canvasRect.anchorMax = Vector2.one;
@@ -514,13 +517,23 @@ namespace LastJumpCrew.ParkHanSol.Editor
                 Vector2.one);
             var canvasGroup = popup.AddComponent<CanvasGroup>();
             var dimmer = popup.AddComponent<Image>();
-            dimmer.color = new Color(0f, 0.01f, 0.025f, 0.82f);
+            dimmer.color = new Color(0f, 0f, 0f, 0.84f);
             var card = CreateUiImage(
                 "Card",
                 popup.transform,
-                new Vector2(0.18f, 0.12f),
-                new Vector2(0.82f, 0.88f));
-            card.color = new Color(0.015f, 0.05f, 0.09f, 0.99f);
+                new Vector2(0.21f, 0.15f),
+                new Vector2(0.79f, 0.85f));
+            card.color = new Color(0.004f, 0.005f, 0.006f, 0.985f);
+            var cardOutline = card.gameObject.AddComponent<Outline>();
+            cardOutline.effectColor = Color.black;
+            cardOutline.effectDistance = new Vector2(3f, -3f);
+            cardOutline.useGraphicAlpha = false;
+            var accent = CreateUiImage(
+                "Accent",
+                card.transform,
+                new Vector2(0.06f, 0.94f),
+                new Vector2(0.22f, 0.955f));
+            accent.color = new Color(1f, 0.36f, 0.12f, 1f);
 
             var title = CreateUiText(
                 "Title",
@@ -529,6 +542,10 @@ namespace LastJumpCrew.ParkHanSol.Editor
                 new Vector2(0.94f, 0.95f),
                 38f);
             ApplyTutorialFont(title, ObjectiveNumberFontPath);
+            title.alignment = TextAlignmentOptions.MidlineLeft;
+            title.color = new Color(1f, 0.36f, 0.12f, 1f);
+            title.fontStyle = FontStyles.Bold;
+            title.fontWeight = FontWeight.Bold;
             var body = CreateUiText(
                 "Body",
                 card.transform,
@@ -537,14 +554,25 @@ namespace LastJumpCrew.ParkHanSol.Editor
                 25f);
             ApplyTutorialFont(body, ObjectiveBodyFontPath);
             body.alignment = TextAlignmentOptions.TopLeft;
+            body.color = new Color(1f, 0.78f, 0.18f, 1f);
+            body.fontStyle = FontStyles.Normal;
+            body.fontWeight = FontWeight.Regular;
 
             var videoRoot = CreateRect(
                 "VideoRoot",
                 card.transform,
                 new Vector2(0.08f, 0.24f),
                 new Vector2(0.92f, 0.78f));
-            var videoImage = videoRoot.AddComponent<RawImage>();
+            var videoImageObject = CreateRect(
+                "VideoImage",
+                videoRoot.transform,
+                Vector2.zero,
+                Vector2.one);
+            var videoImage = videoImageObject.AddComponent<RawImage>();
             videoImage.color = Color.white;
+            var videoAspect = videoImageObject.AddComponent<AspectRatioFitter>();
+            videoAspect.aspectMode = AspectRatioFitter.AspectMode.FitInParent;
+            videoAspect.aspectRatio = 16f / 9f;
             var videoPlayer = videoRoot.AddComponent<VideoPlayer>();
             videoPlayer.playOnAwake = false;
             videoPlayer.isLooping = true;
@@ -565,6 +593,7 @@ namespace LastJumpCrew.ParkHanSol.Editor
                 new Vector2(0.64f, 0.17f),
                 24f);
             ApplyTutorialFont(indicator, ObjectiveBodyFontPath);
+            indicator.color = new Color(0.7f, 0.75f, 0.8f, 1f);
             var next = CreateBriefingButton(
                 "Next",
                 card.transform,
@@ -625,7 +654,11 @@ namespace LastJumpCrew.ParkHanSol.Editor
         {
             var root = CreateRect(name, parent, anchorMin, anchorMax);
             var image = root.AddComponent<Image>();
-            image.color = new Color(0.03f, 0.35f, 0.48f, 1f);
+            image.color = new Color(1f, 0.36f, 0.12f, 1f);
+            var outline = root.AddComponent<Outline>();
+            outline.effectColor = Color.black;
+            outline.effectDistance = new Vector2(3f, -3f);
+            outline.useGraphicAlpha = false;
             var button = root.AddComponent<Button>();
             button.targetGraphic = image;
             labelText = CreateUiText(
@@ -635,6 +668,9 @@ namespace LastJumpCrew.ParkHanSol.Editor
                 Vector2.one,
                 30f);
             ApplyTutorialFont(labelText, ObjectiveNumberFontPath);
+            labelText.color = new Color(0.015f, 0.02f, 0.03f, 1f);
+            labelText.fontStyle = FontStyles.Bold;
+            labelText.fontWeight = FontWeight.Bold;
             labelText.text = label;
             return button;
         }
@@ -688,6 +724,13 @@ namespace LastJumpCrew.ParkHanSol.Editor
             overview = overview.Replace(
                 "\n\n화면의 < > 버튼 또는 키보드 좌우 방향키로 앞뒤 설명을 다시 확인할 수 있습니다.",
                 string.Empty);
+            var firstParagraphEnd = overview.IndexOf(
+                "\n\n",
+                StringComparison.Ordinal);
+            overview = firstParagraphEnd < 0
+                ? $"<b>{overview}</b>"
+                : $"<b>{overview.Substring(0, firstParagraphEnd)}</b>" +
+                  overview.Substring(firstParagraphEnd);
             pages.arraySize = 1;
             SetBriefingPage(
                 pages.GetArrayElementAtIndex(0),
@@ -730,6 +773,9 @@ namespace LastJumpCrew.ParkHanSol.Editor
                 spec,
                 out var instructionImage,
                 out var instructionText,
+                out var instructionKeyBadges,
+                out var instructionKeyTexts,
+                out var instructionCommandTexts,
                 out var progressSlider,
                 out var targetIndicatorText);
             var gate = CreateGate(
@@ -785,6 +831,15 @@ namespace LastJumpCrew.ParkHanSol.Editor
                 instructionImage.sprite;
             serialized.FindProperty("instructionText").objectReferenceValue =
                 instructionText;
+            SetObjectReferenceArray(
+                serialized.FindProperty("instructionKeyBadges"),
+                instructionKeyBadges);
+            SetObjectReferenceArray(
+                serialized.FindProperty("instructionKeyTexts"),
+                instructionKeyTexts);
+            SetObjectReferenceArray(
+                serialized.FindProperty("instructionCommandTexts"),
+                instructionCommandTexts);
             serialized.FindProperty("instructionProgressSlider")
                 .objectReferenceValue = progressSlider;
             serialized.FindProperty("targetIndicatorText")
@@ -838,6 +893,9 @@ namespace LastJumpCrew.ParkHanSol.Editor
             RoomSpec spec,
             out Image instructionImage,
             out TMP_Text instructionText,
+            out Image[] instructionKeyBadges,
+            out TMP_Text[] instructionKeyTexts,
+            out TMP_Text[] instructionCommandTexts,
             out Slider progressSlider,
             out TMP_Text targetIndicatorText)
         {
@@ -852,6 +910,7 @@ namespace LastJumpCrew.ParkHanSol.Editor
             var canvas = canvasObject.GetComponent<Canvas>();
             canvas.renderMode = RenderMode.ScreenSpaceOverlay;
             canvas.sortingOrder = 200;
+            ConfigureCanvasScaler(canvasObject.GetComponent<CanvasScaler>());
             var canvasRect = canvasObject.GetComponent<RectTransform>();
             canvasRect.anchorMin = Vector2.zero;
             canvasRect.anchorMax = Vector2.one;
@@ -861,9 +920,14 @@ namespace LastJumpCrew.ParkHanSol.Editor
             var background = CreateUiImage(
                 "PosterBackground",
                 canvasObject.transform,
-                new Vector2(0.18f, 0.03f),
-                new Vector2(0.82f, 0.36f));
-            background.color = new Color(0.015f, 0.04f, 0.085f, 0.98f);
+                new Vector2(0.10f, 0.15f),
+                new Vector2(0.90f, 0.25f));
+            background.color = new Color(0.004f, 0.005f, 0.006f, 0.90f);
+            var backgroundOutline =
+                background.gameObject.AddComponent<Outline>();
+            backgroundOutline.effectColor = Color.black;
+            backgroundOutline.effectDistance = new Vector2(3f, -3f);
+            backgroundOutline.useGraphicAlpha = false;
             instructionImage = CreateUiImage(
                 "ActionImage",
                 background.transform,
@@ -873,29 +937,150 @@ namespace LastJumpCrew.ParkHanSol.Editor
                 InstructionFolder + spec.SpriteFile);
             instructionImage.preserveAspect = true;
             instructionImage.color = Color.white;
+            instructionImage.gameObject.SetActive(false);
+
+            var commandRow = CreateRect(
+                "CommandRow",
+                background.transform,
+                new Vector2(0f, 0.30f),
+                Vector2.one);
+            const int commandSlotCount = 3;
+            const int keySlotsPerCommand = 4;
+            instructionKeyBadges = new Image[
+                commandSlotCount * keySlotsPerCommand];
+            instructionKeyTexts = new TMP_Text[
+                commandSlotCount * keySlotsPerCommand];
+            instructionCommandTexts = new TMP_Text[commandSlotCount];
+            var rowLayout = commandRow.AddComponent<HorizontalLayoutGroup>();
+            rowLayout.childAlignment = TextAnchor.MiddleCenter;
+            rowLayout.spacing = 24f;
+            rowLayout.childControlWidth = true;
+            rowLayout.childControlHeight = true;
+            rowLayout.childForceExpandWidth = false;
+            rowLayout.childForceExpandHeight = false;
+            var keyBadgeSprite = AssetDatabase.LoadAssetAtPath<Sprite>(
+                TutorialKeycapSpritePath);
+            if (keyBadgeSprite == null)
+            {
+                throw Failure("tutorial_key_badge_sprite_missing");
+            }
+
+            var lobbyOrange = new Color(1f, 0.36f, 0.12f, 1f);
+            for (var slot = 0; slot < commandSlotCount; slot++)
+            {
+                var segment = CreateRect(
+                    $"CommandSegment_{slot + 1}",
+                    commandRow.transform,
+                    Vector2.zero,
+                    Vector2.one);
+                var segmentLayout = segment.AddComponent<LayoutElement>();
+                segmentLayout.preferredWidth = 300f;
+                segmentLayout.preferredHeight = 76f;
+                var segmentGroup =
+                    segment.AddComponent<HorizontalLayoutGroup>();
+                segmentGroup.childAlignment = TextAnchor.MiddleCenter;
+                segmentGroup.spacing = 6f;
+                segmentGroup.childControlWidth = true;
+                segmentGroup.childControlHeight = true;
+                segmentGroup.childForceExpandWidth = false;
+                segmentGroup.childForceExpandHeight = false;
+
+                for (var keySlot = 0;
+                     keySlot < keySlotsPerCommand;
+                     keySlot++)
+                {
+                    var badge = CreateUiImage(
+                        $"KeyBadge_{keySlot + 1}",
+                        segment.transform,
+                        Vector2.zero,
+                        Vector2.one);
+                    badge.sprite = keyBadgeSprite;
+                    badge.preserveAspect = true;
+                    badge.color = Color.white;
+                    badge.raycastTarget = false;
+                    var badgeLayout =
+                        badge.gameObject.AddComponent<LayoutElement>();
+                    badgeLayout.preferredWidth = 64f;
+                    badgeLayout.preferredHeight = 64f;
+
+                    var keyText = CreateUiText(
+                        "KeyText",
+                        badge.transform,
+                        Vector2.zero,
+                        Vector2.one,
+                        20f);
+                    ApplyTutorialFont(keyText, ObjectiveNumberFontPath);
+                    keyText.enableAutoSizing = true;
+                    keyText.fontSizeMin = 8f;
+                    keyText.fontSizeMax = 18f;
+                    keyText.margin = new Vector4(8f, 4f, 8f, 4f);
+                    keyText.textWrappingMode = TextWrappingModes.NoWrap;
+                    keyText.fontStyle = FontStyles.Bold;
+                    keyText.fontWeight = FontWeight.Bold;
+                    keyText.color =
+                        new Color(0.01f, 0.015f, 0.02f, 0.76f);
+                    keyText.raycastTarget = false;
+
+                    var keyIndex = slot * keySlotsPerCommand + keySlot;
+                    instructionKeyBadges[keyIndex] = badge;
+                    instructionKeyTexts[keyIndex] = keyText;
+                }
+
+                var commandText = CreateUiText(
+                    "CommandText",
+                    segment.transform,
+                    Vector2.zero,
+                    Vector2.one,
+                    30f);
+                ApplyTutorialFont(commandText, ObjectiveBodyFontPath);
+                commandText.alignment = TextAlignmentOptions.MidlineLeft;
+                commandText.enableAutoSizing = true;
+                commandText.fontSizeMin = 14f;
+                commandText.fontSizeMax = 30f;
+                commandText.textWrappingMode = TextWrappingModes.NoWrap;
+                commandText.fontStyle = FontStyles.Bold;
+                commandText.fontWeight = FontWeight.Bold;
+                commandText.color = new Color(1f, 0.78f, 0.18f, 1f);
+                commandText.raycastTarget = false;
+                AddTextOutline(commandText);
+                var commandLayout =
+                    commandText.gameObject.AddComponent<LayoutElement>();
+                commandLayout.preferredWidth = 180f;
+                commandLayout.preferredHeight = 72f;
+
+                instructionCommandTexts[slot] = commandText;
+                segment.SetActive(false);
+            }
 
             instructionText = CreateUiText(
                 "InstructionText",
                 background.transform,
-                new Vector2(0.30f, 0.17f),
-                new Vector2(0.975f, 0.94f),
-                22f);
+                Vector2.zero,
+                new Vector2(1f, 0.28f),
+                20f);
             ApplyTutorialFont(instructionText, ObjectiveBodyFontPath);
-            instructionText.alignment = TextAlignmentOptions.TopLeft;
+            instructionText.alignment = TextAlignmentOptions.Center;
             instructionText.enableAutoSizing = true;
-            instructionText.fontSizeMin = 18f;
-            instructionText.fontSizeMax = 22f;
+            instructionText.fontSizeMin = 16f;
+            instructionText.fontSizeMax = 20f;
+            instructionText.color = lobbyOrange;
+            AddTextOutline(instructionText);
             instructionText.text =
-                $"{spec.RoomTitle}\n{spec.ObjectiveInstructions[0]}\n" +
-                $"완료  0/{spec.ObjectiveInstructions.Length}";
+                $"{spec.RoomTitle}  0/{spec.ObjectiveInstructions.Length}";
             progressSlider = CreateProgressSlider(background.transform);
+            progressSlider.gameObject.SetActive(false);
 
             var targetBackground = CreateUiImage(
                 "TargetIndicatorBackground",
                 canvasObject.transform,
-                new Vector2(0.39f, 0.89f),
-                new Vector2(0.61f, 0.965f));
-            targetBackground.color = new Color(0.005f, 0.02f, 0.045f, 0.94f);
+                new Vector2(0.405f, 0.90f),
+                new Vector2(0.595f, 0.96f));
+            targetBackground.color = new Color(1f, 0.36f, 0.12f, 0.96f);
+            var targetOutline =
+                targetBackground.gameObject.AddComponent<Outline>();
+            targetOutline.effectColor = Color.black;
+            targetOutline.effectDistance = new Vector2(3f, -3f);
+            targetOutline.useGraphicAlpha = false;
             targetIndicatorText = CreateUiText(
                 "TargetIndicatorText",
                 targetBackground.transform,
@@ -903,10 +1088,38 @@ namespace LastJumpCrew.ParkHanSol.Editor
                 Vector2.one,
                 24f);
             ApplyTutorialFont(targetIndicatorText, ObjectiveNumberFontPath);
-            targetIndicatorText.color = new Color(0.05f, 0.9f, 1f, 1f);
+            targetIndicatorText.enableAutoSizing = true;
+            targetIndicatorText.fontSizeMin = 16f;
+            targetIndicatorText.fontSizeMax = 24f;
+            targetIndicatorText.textWrappingMode = TextWrappingModes.NoWrap;
+            targetIndicatorText.fontStyle = FontStyles.Bold;
+            targetIndicatorText.fontWeight = FontWeight.Bold;
+            targetIndicatorText.color = Color.black;
             targetIndicatorText.raycastTarget = false;
             targetBackground.gameObject.SetActive(false);
+            canvasObject.SetActive(false);
             return canvasObject;
+        }
+
+        private static void ConfigureCanvasScaler(CanvasScaler scaler)
+        {
+            scaler.uiScaleMode = CanvasScaler.ScaleMode.ScaleWithScreenSize;
+            scaler.referenceResolution = new Vector2(1920f, 1080f);
+            scaler.screenMatchMode =
+                CanvasScaler.ScreenMatchMode.MatchWidthOrHeight;
+            scaler.matchWidthOrHeight = 0.5f;
+        }
+
+        private static void SetObjectReferenceArray(
+            SerializedProperty property,
+            UnityEngine.Object[] values)
+        {
+            property.arraySize = values.Length;
+            for (var index = 0; index < values.Length; index++)
+            {
+                property.GetArrayElementAtIndex(index).objectReferenceValue =
+                    values[index];
+            }
         }
 
         private static GameObject CreateGate(
@@ -1944,8 +2157,8 @@ namespace LastJumpCrew.ParkHanSol.Editor
                      objectiveIndex++)
                 {
                     var accent = objectiveIndex % 2 == 0
-                        ? new Color(0.05f, 0.9f, 1f, 1f)
-                        : new Color(1f, 0.65f, 0.08f, 1f);
+                        ? new Color(1f, 0.78f, 0.18f, 1f)
+                        : new Color(1f, 0.36f, 0.12f, 1f);
                     var number = (objectiveIndex + 1).ToString();
                     if (roomIndex == 0 || roomIndex == 1)
                     {
@@ -2169,8 +2382,8 @@ namespace LastJumpCrew.ParkHanSol.Editor
             line.sharedMaterial = material;
             line.startWidth = width;
             line.endWidth = width;
-            line.startColor = new Color(0.05f, 0.9f, 1f, 0.9f);
-            line.endColor = new Color(0.05f, 0.9f, 1f, 0.45f);
+            line.startColor = new Color(1f, 0.78f, 0.18f, 0.92f);
+            line.endColor = new Color(1f, 0.36f, 0.12f, 0.5f);
             line.numCapVertices = 4;
             line.numCornerVertices = 3;
             line.shadowCastingMode =
@@ -2184,6 +2397,7 @@ namespace LastJumpCrew.ParkHanSol.Editor
                 DirectionLineMaterialPath);
             if (material != null)
             {
+                ConfigureDirectionLineMaterial(material);
                 return material;
             }
 
@@ -2198,16 +2412,22 @@ namespace LastJumpCrew.ParkHanSol.Editor
             {
                 name = "PHS_TutorialDirectionLine"
             };
-            var color = new Color(0.05f, 0.9f, 1f, 0.92f);
-            material.color = color;
-            if (material.HasProperty("_BaseColor"))
-            {
-                material.SetColor("_BaseColor", color);
-            }
+            ConfigureDirectionLineMaterial(material);
 
             AssetDatabase.CreateAsset(material, DirectionLineMaterialPath);
             AssetDatabase.SaveAssetIfDirty(material);
             return material;
+        }
+
+        private static void ConfigureDirectionLineMaterial(Material material)
+        {
+            material.color = Color.white;
+            if (material.HasProperty("_BaseColor"))
+            {
+                material.SetColor("_BaseColor", Color.white);
+            }
+
+            EditorUtility.SetDirty(material);
         }
 
         private static GameObject CreateFloorObjectiveMarker(
@@ -2234,14 +2454,22 @@ namespace LastJumpCrew.ParkHanSol.Editor
             rect.sizeDelta = new Vector2(300f, 110f);
             rect.localScale = Vector3.one * 0.004f;
 
+            var background = CreateUiImage(
+                "FloorBackground",
+                marker.transform,
+                Vector2.zero,
+                Vector2.one);
+            background.color = new Color(1f, 0.36f, 0.12f, 0.96f);
+            background.raycastTarget = false;
+
             var label = CreateUiText(
                 "FloorLabel",
-                marker.transform,
+                background.transform,
                 Vector2.zero,
                 Vector2.one,
                 48f);
             label.text = $"{number}  {caption}";
-            label.color = accent;
+            label.color = Color.black;
             label.raycastTarget = false;
             ApplyTutorialFont(label, ObjectiveNumberFontPath);
             return marker;
@@ -2268,15 +2496,15 @@ namespace LastJumpCrew.ParkHanSol.Editor
             canvas.overrideSorting = true;
             canvas.sortingOrder = 210;
             var markerRect = marker.GetComponent<RectTransform>();
-            markerRect.sizeDelta = new Vector2(360f, 150f);
-            markerRect.localScale = Vector3.one * 0.0048f;
+            markerRect.sizeDelta = new Vector2(330f, 125f);
+            markerRect.localScale = Vector3.one * 0.0037f;
 
             var background = CreateUiImage(
                 "MarkerBackground",
                 marker.transform,
                 new Vector2(0f, 0.25f),
                 Vector2.one);
-            background.color = new Color(0.005f, 0.02f, 0.045f, 0.98f);
+            background.color = new Color(1f, 0.36f, 0.12f, 0.96f);
             background.raycastTarget = false;
 
             var accentBar = CreateUiImage(
@@ -2284,7 +2512,7 @@ namespace LastJumpCrew.ParkHanSol.Editor
                 background.transform,
                 Vector2.zero,
                 new Vector2(0.055f, 1f));
-            accentBar.color = accent;
+            accentBar.color = Color.black;
             accentBar.raycastTarget = false;
 
             var topBar = CreateUiImage(
@@ -2292,7 +2520,7 @@ namespace LastJumpCrew.ParkHanSol.Editor
                 background.transform,
                 new Vector2(0f, 0.92f),
                 Vector2.one);
-            topBar.color = accent;
+            topBar.color = Color.black;
             topBar.raycastTarget = false;
 
             var numberText = CreateUiText(
@@ -2302,7 +2530,7 @@ namespace LastJumpCrew.ParkHanSol.Editor
                 new Vector2(0.34f, 0.9f),
                 54f);
             numberText.text = number;
-            numberText.color = accent;
+            numberText.color = Color.black;
             numberText.raycastTarget = false;
             ApplyTutorialFont(numberText, ObjectiveNumberFontPath);
 
@@ -2316,6 +2544,7 @@ namespace LastJumpCrew.ParkHanSol.Editor
             captionText.enableAutoSizing = true;
             captionText.fontSizeMin = 22f;
             captionText.fontSizeMax = 32f;
+            captionText.color = Color.black;
             captionText.raycastTarget = false;
             ApplyTutorialFont(captionText, ObjectiveBodyFontPath);
 
@@ -2328,7 +2557,25 @@ namespace LastJumpCrew.ParkHanSol.Editor
             pointer.text = "V";
             pointer.color = accent;
             pointer.raycastTarget = false;
+            ApplyTutorialFont(pointer, ObjectiveBodyFontPath);
+            AddTextOutline(pointer);
             return marker;
+        }
+
+        private static void AddTextOutline(TMP_Text text)
+        {
+            if (text == null)
+            {
+                throw Failure("tutorial_outline_text_missing");
+            }
+
+            var outline = text.GetComponent<Outline>()
+                ?? text.gameObject.AddComponent<Outline>();
+            outline.effectColor = Color.black;
+            outline.effectDistance = new Vector2(2f, -2f);
+            outline.useGraphicAlpha = false;
+            EditorUtility.SetDirty(text);
+            EditorUtility.SetDirty(outline);
         }
 
         private static NetworkTutorialGrappleAnchorObjective
@@ -2616,9 +2863,309 @@ namespace LastJumpCrew.ParkHanSol.Editor
             legacyInstruction.SetActive(false);
             EditorUtility.SetDirty(legacyInstruction);
 
+            var missionStatus = FindNamed(scene, "Mission Status Cluster");
+            missionStatus.SetActive(true);
+            EditorUtility.SetDirty(missionStatus);
+
             var timeRoot = FindNamed(scene, "Time Root");
             timeRoot.SetActive(false);
             EditorUtility.SetDirty(timeRoot);
+
+            var warpBar = FindNamed(scene, "Warp Gauge Bar")
+                .GetComponent<RectTransform>();
+            warpBar.sizeDelta = new Vector2(300f, 22f);
+            warpBar.anchoredPosition = new Vector2(80f, 0f);
+            EditorUtility.SetDirty(warpBar);
+            AddTextOutline(
+                FindNamed(scene, "Ship HP Root").transform
+                    .Find("Ship HP Bar/Gauge Value Text")
+                    .GetComponent<TMP_Text>());
+            AddTextOutline(
+                FindNamed(scene, "Warp Gauge Root").transform
+                    .Find("Warp Gauge Bar/Gauge Value Text")
+                    .GetComponent<TMP_Text>());
+
+            var vitals = FindNamed(scene, "Vitals Cluster");
+            var vitalsBackground = vitals.GetComponent<Image>();
+            if (vitalsBackground != null)
+            {
+                UnityEngine.Object.DestroyImmediate(vitalsBackground);
+            }
+
+            ConfigureVitalsRow(FindNamed(scene, "Health Row"), 210f, 0f);
+            ConfigureVitalsRow(FindNamed(scene, "Boost Row"), 185f, -66f);
+            ConfigureVitalsRow(
+                FindNamed(scene, "Economy Cluster"),
+                120f,
+                -112f);
+
+            var healthText = FindNamed(scene, "Health Text")
+                .GetComponent<TMP_Text>();
+            healthText.text = "+100";
+            healthText.fontSize = 56f;
+            healthText.fontStyle = FontStyles.Bold;
+            healthText.fontWeight = FontWeight.Bold;
+            AddTextOutline(healthText);
+
+            var staminaText = FindNamed(scene, "Stamina Text")
+                .GetComponent<TMP_Text>();
+            staminaText.text = "40<size=20> BOOST</size>";
+            staminaText.fontSize = 36f;
+            staminaText.fontStyle = FontStyles.Bold;
+            staminaText.fontWeight = FontWeight.Bold;
+            AddTextOutline(staminaText);
+
+            var bankText = FindNamed(scene, "Bank Text")
+                .GetComponent<TMP_Text>();
+            var bankRect = bankText.rectTransform;
+            bankRect.anchorMin = Vector2.zero;
+            bankRect.anchorMax = Vector2.one;
+            bankRect.offsetMin = new Vector2(8f, 0f);
+            bankRect.offsetMax = new Vector2(-8f, 0f);
+            bankText.fontSize = 30f;
+            bankText.fontStyle = FontStyles.Bold;
+            bankText.fontWeight = FontWeight.Bold;
+            AddTextOutline(bankText);
+            ConfigureTutorialOverlayPalette(scene);
+        }
+
+        private static void ConfigureVitalsRow(
+            GameObject row,
+            float width,
+            float y)
+        {
+            var plateSprite = AssetDatabase.GetBuiltinExtraResource<Sprite>(
+                "UI/Skin/UISprite.psd");
+            if (plateSprite == null)
+            {
+                throw Failure("tutorial_vitals_plate_sprite_missing");
+            }
+
+            var rect = row.GetComponent<RectTransform>();
+            rect.anchorMin = Vector2.up;
+            rect.anchorMax = Vector2.up;
+            rect.pivot = Vector2.up;
+            rect.sizeDelta = new Vector2(width, rect.sizeDelta.y);
+            rect.anchoredPosition = new Vector2(0f, y);
+            var plate = row.GetComponent<Image>()
+                ?? row.AddComponent<Image>();
+            plate.sprite = plateSprite;
+            plate.type = Image.Type.Sliced;
+            plate.color = new Color(0.08f, 0.09f, 0.1f, 0.58f);
+            plate.raycastTarget = false;
+            var outline = row.GetComponent<Outline>()
+                ?? row.AddComponent<Outline>();
+            outline.effectColor = Color.black;
+            outline.effectDistance = new Vector2(3f, -3f);
+            outline.useGraphicAlpha = false;
+            EditorUtility.SetDirty(rect);
+            EditorUtility.SetDirty(plate);
+            EditorUtility.SetDirty(outline);
+        }
+
+        private static void ConfigureTutorialOverlayPalette(Scene scene)
+        {
+            var black = new Color(0.004f, 0.005f, 0.006f, 0.94f);
+            var charcoal = new Color(0.08f, 0.09f, 0.1f, 0.94f);
+            var orange = new Color(1f, 0.36f, 0.12f, 1f);
+            var yellow = new Color(1f, 0.78f, 0.18f, 1f);
+
+            var interaction = FindNamed(scene, "Interaction Prompt")
+                .transform;
+            ConfigureOutlinedImage(
+                FindNamedUnder(interaction, "Interaction Panel")
+                    .GetComponent<Image>(),
+                black);
+            ConfigureOutlinedImage(
+                FindNamedUnder(interaction, "Input Badge")
+                    .GetComponent<Image>(),
+                orange);
+            ConfigurePaletteText(
+                FindNamedUnder(interaction, "Input Text")
+                    .GetComponent<TMP_Text>(),
+                Color.black);
+            ConfigurePaletteText(
+                FindNamedUnder(interaction, "Prompt Text")
+                    .GetComponent<TMP_Text>(),
+                yellow);
+
+            var pauseMenu = FindNamed(scene, "Pause Menu").transform;
+            var pauseController =
+                FindComponent<ParkHanSolPauseMenuController>(scene);
+            pauseController.enabled = true;
+            EditorUtility.SetDirty(pauseController);
+            var pauseCard = FindNamedUnder(pauseMenu, "Pause Card")
+                .transform;
+            var pauseCardImage = pauseCard.GetComponent<Image>()
+                ?? pauseCard.gameObject.AddComponent<Image>();
+            pauseCardImage.raycastTarget = false;
+            ConfigureOutlinedImage(pauseCardImage, black);
+            ConfigureOutlinedImage(
+                FindNamedUnder(pauseCard, "Pause Selection Block")
+                    .GetComponent<Image>(),
+                charcoal);
+            ConfigurePaletteText(
+                FindNamedUnder(pauseCard, "Title").GetComponent<TMP_Text>(),
+                orange);
+            ConfigurePaletteText(
+                FindNamedUnder(pauseCard, "Hint").GetComponent<TMP_Text>(),
+                yellow);
+            foreach (var buttonName in new[]
+                     {
+                         "Resume Button",
+                         "Options Button",
+                         "Exit Game Button"
+                     })
+            {
+                var button = FindNamedUnder(pauseCard, buttonName).transform;
+                ConfigureOutlinedImage(button.GetComponent<Image>(), orange);
+                ConfigureButtonPalette(
+                    button.GetComponent<Button>(),
+                    charcoal);
+                ConfigurePaletteText(
+                    FindNamedUnder(button, "Label").GetComponent<TMP_Text>(),
+                    Color.black);
+            }
+
+            ConfigureAlertPalette(
+                FindNamed(scene, "Gravity Warning").transform,
+                "Gravity Warning Panel",
+                "Gravity Warning Text",
+                black,
+                orange,
+                yellow);
+            ConfigureAlertPalette(
+                FindNamed(scene, "Respawn Status").transform,
+                "Respawn Status Panel",
+                "Respawn Status Text",
+                black,
+                orange,
+                yellow);
+
+            var tutorialUi = FindNamed(scene, "PHS_NetworkTutorialUI")
+                .transform;
+            var completionPanel = FindNamedUnder(
+                tutorialUi,
+                "Completion Panel").transform;
+            ConfigureOutlinedImage(
+                completionPanel.GetComponent<Image>(),
+                black);
+            ConfigurePaletteText(
+                FindNamedUnder(completionPanel, "Completion Title")
+                    .GetComponent<TMP_Text>(),
+                yellow);
+            var returnButton = FindNamedUnder(
+                completionPanel,
+                "Return To Lobby").transform;
+            ConfigureOutlinedImage(returnButton.GetComponent<Image>(), orange);
+            ConfigureButtonPalette(
+                returnButton.GetComponent<Button>(),
+                charcoal);
+            ConfigurePaletteText(
+                FindNamedUnder(returnButton, "Label")
+                    .GetComponent<TMP_Text>(),
+                Color.black);
+
+            ConfigureMiniGamePalette(scene, orange, yellow);
+        }
+
+        private static void ConfigureMiniGamePalette(
+            Scene scene,
+            Color orange,
+            Color yellow)
+        {
+            var runtime = FindNamed(scene, "PHS_TutorialMiniGameRuntime")
+                .transform;
+            foreach (var text in runtime.GetComponentsInChildren<TMP_Text>(true))
+            {
+                if (text.name == "StatusText"
+                    || text.name == "Timer"
+                    || text.name == "TimerText"
+                    || text.name == "Score Text")
+                {
+                    ConfigurePaletteText(text, yellow);
+                }
+            }
+
+            var keypad = FindNamedUnder(runtime, "DoorKeypadGame").transform;
+            foreach (var button in keypad.GetComponentsInChildren<Button>(true))
+            {
+                ConfigureOutlinedImage(button.GetComponent<Image>(), orange);
+                ConfigureButtonPalette(
+                    button,
+                    new Color(0.08f, 0.09f, 0.1f, 0.94f));
+                ConfigurePaletteText(
+                    button.GetComponentInChildren<TMP_Text>(true),
+                    Color.black);
+            }
+        }
+
+        private static void ConfigureAlertPalette(
+            Transform root,
+            string panelName,
+            string textName,
+            Color background,
+            Color accent,
+            Color textColor)
+        {
+            ConfigureOutlinedImage(
+                FindNamedUnder(root, panelName).GetComponent<Image>(),
+                background);
+            FindNamedUnder(root, "Gravity Accent Glow")
+                .GetComponent<Image>().color = accent;
+            ConfigurePaletteText(
+                FindNamedUnder(root, textName).GetComponent<TMP_Text>(),
+                textColor);
+        }
+
+        private static void ConfigureOutlinedImage(Image image, Color color)
+        {
+            if (image == null)
+            {
+                throw Failure("tutorial_palette_image_missing");
+            }
+
+            image.color = color;
+            var outline = image.GetComponent<Outline>()
+                ?? image.gameObject.AddComponent<Outline>();
+            outline.effectColor = Color.black;
+            outline.effectDistance = new Vector2(3f, -3f);
+            outline.useGraphicAlpha = false;
+            EditorUtility.SetDirty(image);
+            EditorUtility.SetDirty(outline);
+        }
+
+        private static void ConfigurePaletteText(TMP_Text text, Color color)
+        {
+            if (text == null)
+            {
+                throw Failure("tutorial_palette_text_missing");
+            }
+
+            text.color = color;
+            text.fontStyle = FontStyles.Bold;
+            text.fontWeight = FontWeight.Bold;
+            EditorUtility.SetDirty(text);
+        }
+
+        private static void ConfigureButtonPalette(
+            Button button,
+            Color disabled)
+        {
+            if (button == null)
+            {
+                throw Failure("tutorial_palette_button_missing");
+            }
+
+            var colors = button.colors;
+            colors.normalColor = Color.white;
+            colors.highlightedColor = new Color(1f, 1f, 0.82f, 1f);
+            colors.selectedColor = Color.white;
+            colors.pressedColor = new Color(0.78f, 0.78f, 0.78f, 1f);
+            colors.disabledColor = disabled;
+            colors.colorMultiplier = 1f;
+            button.colors = colors;
+            EditorUtility.SetDirty(button);
         }
 
         private static void ConfigureTutorialSkybox()
@@ -2645,7 +3192,7 @@ namespace LastJumpCrew.ParkHanSol.Editor
                 new Vector2(0.08f, 0.04f),
                 new Vector2(0.92f, 0.11f));
             var background = root.AddComponent<Image>();
-            background.color = new Color(0.08f, 0.13f, 0.2f, 1f);
+            background.color = new Color(0.004f, 0.005f, 0.006f, 0.94f);
             var fillArea = CreateRect(
                 "FillArea",
                 root.transform,
@@ -2656,7 +3203,7 @@ namespace LastJumpCrew.ParkHanSol.Editor
                 fillArea.transform,
                 Vector2.zero,
                 Vector2.one);
-            fill.color = new Color(0.1f, 0.9f, 1f, 1f);
+            fill.color = new Color(1f, 0.36f, 0.12f, 1f);
             var slider = root.AddComponent<Slider>();
             slider.fillRect = fill.rectTransform;
             slider.targetGraphic = background;
@@ -2853,6 +3400,32 @@ namespace LastJumpCrew.ParkHanSol.Editor
                 importer.mipmapEnabled = false;
                 importer.SaveAndReimport();
             }
+
+            var keycapImporter = AssetImporter.GetAtPath(
+                TutorialKeycapSpritePath) as TextureImporter;
+            if (keycapImporter == null)
+            {
+                AssetDatabase.ImportAsset(
+                    TutorialKeycapSpritePath,
+                    ImportAssetOptions.ForceSynchronousImport);
+                keycapImporter = AssetImporter.GetAtPath(
+                    TutorialKeycapSpritePath) as TextureImporter;
+            }
+
+            if (keycapImporter == null)
+            {
+                throw Failure(
+                    $"texture_importer_missing path={TutorialKeycapSpritePath}");
+            }
+
+            keycapImporter.textureType = TextureImporterType.Sprite;
+            keycapImporter.spriteImportMode = SpriteImportMode.Single;
+            keycapImporter.alphaIsTransparency = true;
+            keycapImporter.mipmapEnabled = false;
+            keycapImporter.maxTextureSize = 256;
+            keycapImporter.textureCompression =
+                TextureImporterCompression.Uncompressed;
+            keycapImporter.SaveAndReimport();
         }
 
         private static void RequireAssets()
@@ -2878,7 +3451,8 @@ namespace LastJumpCrew.ParkHanSol.Editor
                           DebrisCameraPrefabPath,
                           DebrisSellStationPrefabPath,
                           GameCorePrefabPath,
-                          TutorialSkyboxMaterialPath
+                          TutorialSkyboxMaterialPath,
+                          TutorialKeycapSpritePath
                      })
             {
                 if (AssetDatabase.LoadMainAssetAtPath(path) == null)
@@ -2922,7 +3496,7 @@ namespace LastJumpCrew.ParkHanSol.Editor
                 ObjectiveInstructions = id == "01_MoveJump"
                     ? new[]
                     {
-                        "앞에 보이는 체크포인트까지 [WASD]로 이동하세요."
+                        "[WASD]  체크포인트로 이동"
                     }
                     : objectiveInstructions;
                 SpriteFile = id == "01_MoveJump"

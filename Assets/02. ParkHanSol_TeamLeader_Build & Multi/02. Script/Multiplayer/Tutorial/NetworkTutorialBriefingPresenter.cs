@@ -361,13 +361,26 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Tutorial
             bodyText.text = page.Body;
             pageIndicatorText.text =
                 $"{currentPageIndex + 1} / {currentPages.Length}";
+            var hasMultiplePages = currentPages.Length > 1;
+            previousButton.gameObject.SetActive(hasMultiplePages);
+            pageIndicatorText.gameObject.SetActive(hasMultiplePages);
             previousButton.interactable = currentPageIndex > 0;
+            var nextRect = nextButton.GetComponent<RectTransform>();
+            nextRect.anchorMin = hasMultiplePages
+                ? new Vector2(0.78f, 0.06f)
+                : new Vector2(0.30f, 0.07f);
+            nextRect.anchorMax = hasMultiplePages
+                ? new Vector2(0.94f, 0.17f)
+                : new Vector2(0.70f, 0.15f);
+            nextRect.offsetMin = Vector2.zero;
+            nextRect.offsetMax = Vector2.zero;
             nextButtonLabel.text = currentPageIndex == currentPages.Length - 1
                 ? "시작"
                 : ">";
 
             StopVideo();
             var showVideo = page.PageKind == TutorialBriefingPageKind.Video;
+            bodyText.gameObject.SetActive(!showVideo);
             videoRoot.SetActive(showVideo);
             if (!showVideo)
             {
@@ -376,6 +389,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Tutorial
             }
 
             videoImage.texture = videoTexture;
+            videoImage.enabled = false;
             videoPlayer.targetTexture = videoTexture;
             videoPlayer.clip = page.VideoClip;
             videoPlayer.Prepare();
@@ -413,11 +427,13 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Tutorial
                 return;
             }
 
+            videoImage.enabled = true;
             preparedPlayer.Play();
         }
 
         private void HandleVideoError(VideoPlayer failedPlayer, string message)
         {
+            videoImage.enabled = false;
             Debug.LogError(
                 "PHS_NETWORK_TUTORIAL_BRIEFING_VIDEO_FAILED " +
                 $"presenter={name} clip={failedPlayer.clip?.name ?? "none"} " +
@@ -434,6 +450,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Tutorial
 
             videoPlayer.Stop();
             videoPlayer.clip = null;
+            videoImage.enabled = false;
         }
 
         private void SetPopupVisible(bool visible)

@@ -75,6 +75,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
                 currentTarget.SetFocused(true, focusedTextColor, textColorDuration, immediate);
             }
 
+            Canvas.ForceUpdateCanvases();
             visualTarget.GetWorldCorners(visualTargetWorldCorners);
             var min = indicatorParent.InverseTransformPoint(visualTargetWorldCorners[0]);
             var max = min;

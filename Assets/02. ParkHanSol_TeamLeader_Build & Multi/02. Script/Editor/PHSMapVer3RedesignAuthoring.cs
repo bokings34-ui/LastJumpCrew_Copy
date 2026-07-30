@@ -56,12 +56,12 @@ namespace LastJumpCrew.ParkHanSol.Editor
         private static void AuthorGravityLayout(Scene scene)
         {
             ConfigureGravityArea(scene, "PHS_Exterior_ZeroGravityArea", new Vector3(2f, 12f, 55f), new Vector3(112f, 30f, 130f), 0, false);
-            ConfigureGravityArea(scene, "PHS_Gravity_CommandRoom", new Vector3(0f, 3f, 7.5f), new Vector3(18f, 6f, 15f), 100, true);
-            ConfigureGravityArea(scene, "PHS_Gravity_Bridge", new Vector3(0f, 3f, 22.5f), new Vector3(18f, 6f, 15f), 100, true);
-            ConfigureGravityArea(scene, "PHS_Gravity_MainHall", new Vector3(0f, 3f, 55f), new Vector3(44f, 6f, 50f), 100, true);
-            ConfigureGravityArea(scene, "PHS_Gravity_AftCorridor", new Vector3(0f, 3f, 95f), new Vector3(20f, 6f, 30f), 100, true);
-            ConfigureGravityArea(scene, "PHS_Gravity_EntryWing A", new Vector3(-30f, 3f, 55f), new Vector3(14f, 6f, 26f), 100, true);
-            ConfigureGravityArea(scene, "PHS_Gravity_EntryWing B", new Vector3(34f, 3f, 55f), new Vector3(14f, 6f, 36f), 100, true);
+            ConfigureGravityArea(scene, "PHS_Gravity_CommandRoom", new Vector3(0f, 3f, 7.5f), new Vector3(18f, 11f, 15f), 100, true);
+            ConfigureGravityArea(scene, "PHS_Gravity_Bridge", new Vector3(0f, 3f, 22.5f), new Vector3(18f, 11f, 15f), 100, true);
+            ConfigureGravityArea(scene, "PHS_Gravity_MainHall", new Vector3(0f, 3f, 55f), new Vector3(44f, 11f, 50f), 100, true);
+            ConfigureGravityArea(scene, "PHS_Gravity_AftCorridor", new Vector3(0f, 3f, 95f), new Vector3(20f, 11f, 30f), 100, true);
+            ConfigureGravityArea(scene, "PHS_Gravity_EntryWing A", new Vector3(-30f, 3f, 55f), new Vector3(14f, 11f, 26f), 100, true);
+            ConfigureGravityArea(scene, "PHS_Gravity_EntryWing B", new Vector3(34f, 3f, 55f), new Vector3(14f, 11f, 36f), 100, true);
 
             var gravityRoot = Find(scene, "PHS_Map_Runtime/GravityZones");
             var serviceArea = FindDirectChild(gravityRoot, "PHS_ServiceGravityArea");
@@ -72,7 +72,7 @@ namespace LastJumpCrew.ParkHanSol.Editor
                 serviceArea.name = "PHS_ServiceGravityArea";
             }
 
-            ConfigureGravityArea(serviceArea, new Vector3(-30f, 3f, 55f), new Vector3(12f, 6f, 18f), 1000, false);
+            ConfigureGravityArea(serviceArea, new Vector3(-30f, 3f, 55f), new Vector3(12f, 11f, 18f), 1000, false);
         }
 
         private static void ConfigureGravityArea(
@@ -102,7 +102,7 @@ namespace LastJumpCrew.ParkHanSol.Editor
             area.rotation = Quaternion.identity;
             var collider = area.GetComponent<BoxCollider>();
             Require(collider != null, $"gravity_collider_missing:{area.name}");
-            collider.center = Vector3.zero;
+            collider.center = priority > 0 ? new Vector3(0f, -2.5f, 0f) : Vector3.zero;
             collider.size = size;
             collider.isTrigger = true;
 
@@ -117,10 +117,10 @@ namespace LastJumpCrew.ParkHanSol.Editor
             var spawnRoot = Find(scene, "PHS_Map_Runtime/Spawn Points");
             var positions = new[]
             {
-                new Vector3(-3f, 1f, 7.5f),
-                new Vector3(-1f, 1f, 7.5f),
-                new Vector3(1f, 1f, 7.5f),
-                new Vector3(3f, 1f, 7.5f)
+                new Vector3(-2f, 1f, 2f),
+                new Vector3(0f, 1f, 2f),
+                new Vector3(2f, 1f, 2f),
+                new Vector3(-2f, 1f, 0f)
             };
 
             for (var index = 0; index < positions.Length; index++)

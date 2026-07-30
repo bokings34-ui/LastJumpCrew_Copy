@@ -12,6 +12,8 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Tutorial
     [DisallowMultipleComponent]
     public sealed class NetworkTutorialRoomController : MonoBehaviour
     {
+        private const int KeySlotsPerCommand = 4;
+
         [Header("Room Contract")]
         [SerializeField] private string roomId = "tutorial_room";
         [SerializeField] private TutorialActionKind requiredAction;
@@ -31,6 +33,12 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Tutorial
         [SerializeField] private Image instructionImage;
         [SerializeField] private Sprite instructionSprite;
         [SerializeField] private TMP_Text instructionText;
+        [SerializeField] private Image[] instructionKeyBadges =
+            Array.Empty<Image>();
+        [SerializeField] private TMP_Text[] instructionKeyTexts =
+            Array.Empty<TMP_Text>();
+        [SerializeField] private TMP_Text[] instructionCommandTexts =
+            Array.Empty<TMP_Text>();
         [SerializeField] private Slider instructionProgressSlider;
         [SerializeField] private TMP_Text targetIndicatorText;
         [SerializeField] private Camera guidanceCamera;
@@ -328,6 +336,21 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Tutorial
                 return false;
             }
 
+            if (instructionKeyBadges == null
+                || instructionKeyTexts == null
+                || instructionCommandTexts == null
+                || instructionCommandTexts.Length == 0
+                || instructionKeyBadges.Length != instructionKeyTexts.Length
+                || instructionKeyBadges.Length
+                    != instructionCommandTexts.Length * KeySlotsPerCommand
+                || instructionKeyBadges.Any(item => item == null)
+                || instructionKeyTexts.Any(item => item == null)
+                || instructionCommandTexts.Any(item => item == null))
+            {
+                reason = "instruction_command_ui_invalid";
+                return false;
+            }
+
             if (objectiveInstructions == null
                 || objectiveInstructions.Length != RequiredStepCount)
             {
@@ -601,8 +624,10 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Tutorial
             {
                 if (clampedCount >= RequiredStepCount)
                 {
+                    SetInstructionCommandRootsActive(false);
                     instructionText.text =
-                        $"{roomTitle}\n완료  {RequiredStepCount}/{RequiredStepCount}";
+                        $"완료  ·  <size=18>{roomTitle}  " +
+                        $"{RequiredStepCount}/{RequiredStepCount}</size>";
                 }
                 else
                 {
@@ -618,10 +643,21 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Tutorial
                         return;
                     }
 
+                    if (!TryConfigureInstructionCommands(
+                            objectiveInstructions[instructionIndex],
+                            out var commandReason))
+                    {
+                        Debug.LogError(
+                            "PHS_NETWORK_TUTORIAL_ROOM_DISABLED " +
+                            $"room={roomId} reason={commandReason}",
+                            this);
+                        enabled = false;
+                        return;
+                    }
+
                     instructionText.text =
-                        $"{roomTitle}\n" +
-                        $"{objectiveInstructions[instructionIndex]}\n" +
-                        $"완료  {clampedCount}/{RequiredStepCount}";
+                        $"<size=18>{roomTitle}  " +
+                        $"{clampedCount}/{RequiredStepCount}</size>";
                 }
             }
 
@@ -631,6 +667,111 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Tutorial
                 instructionProgressSlider.maxValue = RequiredStepCount;
                 instructionProgressSlider.wholeNumbers = true;
                 instructionProgressSlider.value = clampedCount;
+            }
+        }
+
+        private bool TryConfigureInstructionCommands(
+            string instruction,
+            out string reason)
+        {
+            SetInstructionCommandRootsActive(false);
+            var segments = instruction.Split(
+                new[] { " · " },
+                StringSplitOptions.RemoveEmptyEntries);
+            if (segments.Length == 0
+                || segments.Length > instructionCommandTexts.Length)
+            {
+                reason = "instruction_command_count_invalid";
+                return false;
+            }
+
+            for (var index = 0; index < segments.Length; index++)
+            {
+                var segment = segments[index].Trim();
+                var closingBracket = segment.IndexOf(']');
+                if (!segment.StartsWith("[", StringComparison.Ordinal)
+                    || closingBracket <= 1
+                    || closingBracket >= segment.Length - 1)
+                {
+                    reason = $"instruction_command_format_invalid:{segment}";
+                    return false;
+                }
+
+                var key = segment.Substring(1, closingBracket - 1).Trim();
+                var command = segment.Substring(closingBracket + 1).Trim();
+                if (string.IsNullOrWhiteSpace(key)
+                    || string.IsNullOrWhiteSpace(command))
+                {
+                    reason = $"instruction_command_blank:{segment}";
+                    return false;
+                }
+
+                var keyCount = string.Equals(
+                    key,
+                    "WASD",
+                    StringComparison.OrdinalIgnoreCase)
+                    ? KeySlotsPerCommand
+                    : 1;
+                var keyLabel = key switch
+                {
+                    "LMB" => "M1",
+                    "RMB" => "M2",
+                    "SHIFT" => "SH",
+                    "CTRL" => "CT",
+                    "SPACE" => "SPC",
+                    _ => key
+                };
+                var keyOffset = index * KeySlotsPerCommand;
+                for (var keyIndex = 0;
+                     keyIndex < KeySlotsPerCommand;
+                     keyIndex++)
+                {
+                    var isVisible = keyIndex < keyCount;
+                    instructionKeyBadges[keyOffset + keyIndex].gameObject
+                        .SetActive(isVisible);
+                    if (isVisible)
+                    {
+                        instructionKeyTexts[keyOffset + keyIndex].text =
+                            keyCount == 1
+                                ? keyLabel
+                                : key[keyIndex].ToString();
+                    }
+                }
+
+                instructionCommandTexts[index].text = command;
+                instructionCommandTexts[index].textWrappingMode =
+                    TextWrappingModes.NoWrap;
+                var commandWidth = Mathf.Clamp(
+                    instructionCommandTexts[index]
+                        .GetPreferredValues(command).x + 8f,
+                    90f,
+                    segments.Length == 1 ? 280f : 220f);
+                instructionCommandTexts[index]
+                    .GetComponent<LayoutElement>().preferredWidth =
+                    commandWidth;
+                var commandRoot = instructionCommandTexts[index]
+                    .transform.parent.gameObject;
+                commandRoot.GetComponent<LayoutElement>().preferredWidth =
+                    keyCount * 70f + commandWidth + 12f;
+                commandRoot.SetActive(true);
+            }
+
+            LayoutRebuilder.ForceRebuildLayoutImmediate(
+                instructionCommandTexts[0].transform.parent.parent
+                    as RectTransform);
+
+            reason = null;
+            return true;
+        }
+
+        private void SetInstructionCommandRootsActive(bool active)
+        {
+            foreach (var commandText in instructionCommandTexts)
+            {
+                if (commandText != null)
+                {
+                    commandText.transform.parent.gameObject.SetActive(active);
+                }
             }
         }
 

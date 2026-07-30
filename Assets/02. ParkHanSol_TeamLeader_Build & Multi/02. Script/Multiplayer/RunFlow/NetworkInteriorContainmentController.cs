@@ -124,6 +124,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
                     $"PHS_INTERIOR_CONTAINMENT_EXIT_FAILED reason=entry_missing " +
                     $"clientId={player.OwnerClientId} volume={volume.name}",
                     player);
+                return;
             }
 
             var sectorState = player.GetComponent<NetworkPlayerSectorState>();

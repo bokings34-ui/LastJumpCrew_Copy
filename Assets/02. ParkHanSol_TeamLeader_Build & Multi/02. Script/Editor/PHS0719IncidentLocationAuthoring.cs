@@ -371,6 +371,7 @@ namespace LastJumpCrew.ParkHanSol.Editor
             ConfigureConsumer(
                 mapScene,
                 layout,
+                accidentCoordinator,
                 fireCoordinator);
             ConfigureRequestGateway(mapScene, runtimeRoot);
 
@@ -1224,6 +1225,7 @@ namespace LastJumpCrew.ParkHanSol.Editor
         private static void ConfigureConsumer(
             Scene mapScene,
             PHSShipIncidentLayout layout,
+            PHSNetworkShipAccidentCoordinator accidentCoordinator,
             PHSNetworkFireCoordinator fireCoordinator)
         {
             var consumers =
@@ -1239,6 +1241,10 @@ namespace LastJumpCrew.ParkHanSol.Editor
             var consumer = consumers[0];
             var serializedConsumer = new SerializedObject(consumer);
             SetObject(serializedConsumer, "incidentLayout", layout);
+            SetObject(
+                serializedConsumer,
+                "accidentCoordinator",
+                accidentCoordinator);
             SetObject(
                 serializedConsumer,
                 "fireCoordinator",
