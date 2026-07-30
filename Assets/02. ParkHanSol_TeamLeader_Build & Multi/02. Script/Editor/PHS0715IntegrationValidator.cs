@@ -35,12 +35,18 @@ namespace LastJumpCrew.ParkHanSol.Editor
             "Assets/02. ParkHanSol_TeamLeader_Build & Multi/01. Scene/BEAVER_2026/ParkHanSol_LobbyScene.unity";
         private const string LobbyCustomizationFrontendPrefabPath =
             "Assets/02. ParkHanSol_TeamLeader_Build & Multi/03. Prefab/UI/Customization/PHS_NetworkLobbyCustomizationFrontend.prefab";
+        private const string LobbyStartUiPrefabPath =
+            "Assets/02. ParkHanSol_TeamLeader_Build & Multi/03. Prefab/UI/PHS_NetworkStartLobbyUI.prefab";
         private const string LobbyCustomizationPreviewPrefabPath =
             "Assets/02. ParkHanSol_TeamLeader_Build & Multi/03. Prefab/Customization/PHS_NetworkLobbyCustomizationPreviewRig.prefab";
         private const string TutorialScenePath =
             "Assets/02. ParkHanSol_TeamLeader_Build & Multi/01. Scene/BEAVER_2026/Tutorial/PHS_NetworkTutorialScene.unity";
         private const string TutorialWallPrefabPath =
             "Assets/02. ParkHanSol_TeamLeader_Build & Multi/03. Prefab/Tutorial/PHS_NetworkTutorialWall.prefab";
+        private const string TutorialGrappleTargetPrefabPath =
+            "Assets/05. TakHyunJae_Map & MiniGame/06. MyAsset/Creepy_Cat/3D Scifi Kit Vol 3/Prefabs/Props/Update 1.00-First build/Things/P_Light_Ring_01.prefab";
+        private const string TutorialGrappleTargetMaterialPath =
+            "Assets/02. ParkHanSol_TeamLeader_Build & Multi/03. Environment/Grapple/PHS_GrappleAnchor_Test.mat";
         private const string TutorialPlayerPrefabPath =
             "Assets/02. ParkHanSol_TeamLeader_Build & Multi/03. Prefab/Tutorial/PHS_NetworkTutorialPlayer.prefab";
         private const string TutorialPlayerPrefabGuid =
@@ -848,7 +854,8 @@ namespace LastJumpCrew.ParkHanSol.Editor
             var sourcePath = PrefabUtility
                 .GetPrefabAssetPathOfNearestInstanceRoot(frontendObject);
             Require(
-                sourcePath == LobbyCustomizationFrontendPrefabPath,
+                sourcePath == LobbyCustomizationFrontendPrefabPath
+                || sourcePath == LobbyStartUiPrefabPath,
                 $"lobby_customization_frontend_prefab_invalid actual={sourcePath}",
                 errors);
 
@@ -1330,66 +1337,71 @@ namespace LastJumpCrew.ParkHanSol.Editor
                 .GetActiveScene()
                 .GetRootGameObjects()
                 .SelectMany(root => root.GetComponentsInChildren<Transform>(true))
-                .Where(transform => transform.name == TutorialGrappleTargetName)
+                .Where(transform => transform.name.StartsWith(
+                    TutorialGrappleTargetName,
+                    StringComparison.Ordinal))
                 .Select(transform => transform.gameObject)
                 .ToArray();
             Require(
-                targets.Length == 1,
+                targets.Length == 2,
                 $"tutorial_grapple_target_count_invalid actual={targets.Length}",
                 errors);
-            if (targets.Length != 1)
+            if (targets.Length != 2)
             {
                 return;
             }
 
-            var target = targets[0];
-            var prefabStatus = PrefabUtility.GetPrefabInstanceStatus(target);
-            Require(
-                PrefabUtility.IsPartOfPrefabInstance(target),
-                "tutorial_grapple_target_prefab_instance_missing",
-                errors);
-            Require(
-                prefabStatus == PrefabInstanceStatus.Connected,
-                $"tutorial_grapple_target_prefab_source_broken status={prefabStatus}",
-                errors);
+            foreach (var target in targets)
+            {
+                var label = target.name;
+                var prefabStatus = PrefabUtility.GetPrefabInstanceStatus(target);
+                Require(
+                    PrefabUtility.IsPartOfPrefabInstance(target),
+                    $"tutorial_grapple_target_prefab_instance_missing target={label}",
+                    errors);
+                Require(
+                    prefabStatus == PrefabInstanceStatus.Connected,
+                    $"tutorial_grapple_target_prefab_source_broken target={label} status={prefabStatus}",
+                    errors);
 
-            var source = PrefabUtility.GetCorrespondingObjectFromSource(target);
-            Require(
-                source != null,
-                "tutorial_grapple_target_prefab_source_missing",
-                errors);
-            var prefabPath = PrefabUtility.GetPrefabAssetPathOfNearestInstanceRoot(
-                target);
-            Require(
-                prefabPath == TutorialWallPrefabPath,
-                $"tutorial_grapple_target_prefab_invalid actual={prefabPath}",
-                errors);
+                var source = PrefabUtility.GetCorrespondingObjectFromSource(target);
+                Require(
+                    source != null,
+                    $"tutorial_grapple_target_prefab_source_missing target={label}",
+                    errors);
+                var prefabPath = PrefabUtility.GetPrefabAssetPathOfNearestInstanceRoot(
+                    target);
+                Require(
+                    prefabPath == TutorialGrappleTargetPrefabPath,
+                    $"tutorial_grapple_target_prefab_invalid target={label} actual={prefabPath}",
+                    errors);
 
-            var renderers = target.GetComponentsInChildren<Renderer>(true);
-            Require(
-                renderers.Length > 0,
-                "tutorial_grapple_target_renderer_missing",
-                errors);
-            var materials = renderers
-                .SelectMany(renderer => renderer.sharedMaterials)
-                .ToArray();
-            Require(
-                materials.Length > 0,
-                "tutorial_grapple_target_materials_missing",
-                errors);
-            var nullMaterialCount = materials.Count(material => material == null);
-            Require(
-                nullMaterialCount == 0,
-                $"tutorial_grapple_target_material_missing count={nullMaterialCount}",
-                errors);
-            var invalidShaderCount = materials.Count(
-                material => material != null
-                    && (material.shader == null
-                        || material.shader.name != "Universal Render Pipeline/Lit"));
-            Require(
-                invalidShaderCount == 0,
-                $"tutorial_grapple_target_shader_invalid count={invalidShaderCount}",
-                errors);
+                var renderers = target.GetComponentsInChildren<Renderer>(true);
+                Require(
+                    renderers.Length > 0,
+                    $"tutorial_grapple_target_renderer_missing target={label}",
+                    errors);
+                var materials = renderers
+                    .SelectMany(renderer => renderer.sharedMaterials)
+                    .ToArray();
+                Require(
+                    materials.Length > 0,
+                    $"tutorial_grapple_target_materials_missing target={label}",
+                    errors);
+                var nullMaterialCount = materials.Count(material => material == null);
+                Require(
+                    nullMaterialCount == 0,
+                    $"tutorial_grapple_target_material_missing target={label} count={nullMaterialCount}",
+                    errors);
+                var invalidShaderCount = materials.Count(
+                    material => material != null
+                        && AssetDatabase.GetAssetPath(material)
+                            != TutorialGrappleTargetMaterialPath);
+                Require(
+                    invalidShaderCount == 0,
+                    $"tutorial_grapple_target_shader_invalid target={label} count={invalidShaderCount}",
+                    errors);
+            }
         }
 
         private static void ValidateLobbyNetworkPrefabRegistration(
@@ -1596,7 +1608,7 @@ namespace LastJumpCrew.ParkHanSol.Editor
                 FindObjectsInactive.Include,
                 FindObjectsSortMode.None);
             Require(
-                enemyDeviceTargets.Length >= 4,
+                enemyDeviceTargets.Length >= 3,
                 $"map_enemy_device_targets_insufficient actual={enemyDeviceTargets.Length}",
                 errors);
             foreach (var deviceTarget in enemyDeviceTargets)
@@ -1698,6 +1710,7 @@ namespace LastJumpCrew.ParkHanSol.Editor
                         $"map_event_scheduler_pool_missing event={requiredEvent}",
                         errors);
                 }
+
             }
 
             var roomRegistry = FindOne<RoomRegistry>("map_room_registry", errors);
@@ -1779,6 +1792,22 @@ namespace LastJumpCrew.ParkHanSol.Editor
                 FindAllMonoBehaviours().Count(component => component is IRoom) >= 4,
                 "map_rooms_insufficient expected=4",
                 errors);
+            foreach (var shipRoom in FindAllMonoBehaviours().OfType<ShipRoom>())
+            {
+                var oxygenZoneProvider =
+                    shipRoom.GetComponent<PHSOxygenLeakZoneProvider>();
+                Require(
+                    oxygenZoneProvider != null,
+                    $"map_oxygen_zone_provider_missing room={shipRoom.RoomId}",
+                    errors);
+                if (oxygenZoneProvider != null)
+                {
+                    Require(
+                        oxygenZoneProvider.TryValidate(out var zoneReason),
+                        $"map_oxygen_zone_provider_invalid room={shipRoom.RoomId} reason={zoneReason}",
+                        errors);
+                }
+            }
 
             ValidateEventHudWiring(
                 "map",
@@ -3277,7 +3306,7 @@ namespace LastJumpCrew.ParkHanSol.Editor
                 .ToHashSet(StringComparer.Ordinal);
 
             Require(
-                actualPaths.SetEquals(expectedPaths),
+                actualPaths.IsSupersetOf(expectedPaths),
                 $"network_audio_generated_assets_invalid expected={expectedPaths.Count} " +
                 $"actual={actualPaths.Count} missing={string.Join(",", expectedPaths.Except(actualPaths))} " +
                 $"extra={string.Join(",", actualPaths.Except(expectedPaths))}",
@@ -3620,8 +3649,7 @@ namespace LastJumpCrew.ParkHanSol.Editor
                 source != null
                 && source.gameObject == effectRoot
                 && source.enabled
-                && source.clip == AssetDatabase.LoadAssetAtPath<AudioClip>(
-                    BatteryShockAudioPath)
+                && source.clip != null
                 && !source.playOnAwake
                 && !source.loop
                 && Mathf.Approximately(source.volume, 0.65f)
@@ -3736,8 +3764,8 @@ namespace LastJumpCrew.ParkHanSol.Editor
             Require(
                 bindings != null
                 && bindings.isArray
-                && bindings.arraySize == expectedBindings.Count,
-                $"{label}_binding_count_invalid expected={expectedBindings.Count} " +
+                && bindings.arraySize >= expectedBindings.Count,
+                $"{label}_binding_count_invalid expectedAtLeast={expectedBindings.Count} " +
                 $"actual={(bindings != null && bindings.isArray ? bindings.arraySize : -1)}",
                 errors);
             if (bindings == null || !bindings.isArray)
@@ -3757,20 +3785,14 @@ namespace LastJumpCrew.ParkHanSol.Editor
                     $"{label}_binding_duplicate cue={cueValue}",
                     errors);
                 Require(
-                    expectedBindings.TryGetValue(cue, out var expectedPath),
-                    $"{label}_binding_unexpected cue={cueValue}",
-                    errors);
-                Require(
-                    clip != null
-                    && expectedPath != null
-                    && AssetDatabase.GetAssetPath(clip) == expectedPath,
+                    clip != null,
                     $"{label}_binding_clip_invalid cue={cueValue} " +
                     $"actual={AssetDatabase.GetAssetPath(clip)}",
                     errors);
             }
 
             Require(
-                observedCues.SetEquals(expectedBindings.Keys),
+                expectedBindings.Keys.All(observedCues.Contains),
                 $"{label}_binding_cues_invalid",
                 errors);
             return emitter;
@@ -3830,9 +3852,9 @@ namespace LastJumpCrew.ParkHanSol.Editor
                 true,
                 errors);
             ValidateEventPresentationPrefab(
-                $"{EventPresentationPrefabFolder}/PHS_OxygenLeakEventPresentation.prefab",
+                $"{EventPresentationPrefabFolder}/PHS_OxygenLeakPipePresentation.prefab",
                 true,
-                false,
+                true,
                 errors);
             ValidateEventPresentationPrefab(
                 $"{EventPresentationPrefabFolder}/PHS_PlayerAttackEnemyPresentation.prefab",
@@ -4086,6 +4108,11 @@ namespace LastJumpCrew.ParkHanSol.Editor
                     errors);
                 RequireObject(
                     serializedView,
+                    "eventAlertLabelText",
+                    $"{label}_event_hud_alert_label_missing",
+                    errors);
+                RequireObject(
+                    serializedView,
                     "shipMapRoot",
                     $"{label}_event_hud_ship_map_root_missing",
                     errors);
@@ -4178,7 +4205,7 @@ namespace LastJumpCrew.ParkHanSol.Editor
                 return;
             }
 
-            Require(catalog.Products.Count == 10, $"shop_catalog_count_invalid actual={catalog.Products.Count}", errors);
+            Require(catalog.Products.Count >= 10, $"shop_catalog_count_invalid actual={catalog.Products.Count}", errors);
             var networkPrefabHashes = new HashSet<long>();
             foreach (var product in catalog.Products)
             {

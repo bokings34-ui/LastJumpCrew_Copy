@@ -375,8 +375,8 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Tutorial
             nextRect.offsetMin = Vector2.zero;
             nextRect.offsetMax = Vector2.zero;
             nextButtonLabel.text = currentPageIndex == currentPages.Length - 1
-                ? "시작"
-                : ">";
+                ? "\uC2DC\uC791"
+                : "\uB2E4\uC74C";
 
             StopVideo();
             var showVideo = page.PageKind == TutorialBriefingPageKind.Video;

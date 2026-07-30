@@ -610,7 +610,9 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Events
                 GetServerTime()));
             ApplyEffectShipImpact(eventInstanceId, effectInstanceId, effectKind);
             Debug.Log(
-                $"PHS_EVENT_EFFECT_SPAWNED event={eventInstanceId} effect={effectInstanceId} kind={effectKind} variant={variant} position={worldPosition}",
+                $"PHS_EVENT_EFFECT_SPAWNED side=server localClient={NetworkManager.LocalClientId} " +
+                $"event={eventInstanceId} effect={effectInstanceId} kind={effectKind} " +
+                $"variant={variant} effectRev=1 spawnPos={worldPosition}",
                 this);
         }
 
@@ -669,7 +671,9 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Events
             }
 
             Debug.Log(
-                $"PHS_EVENT_SHIP_IMPACT_APPLIED event={eventInstanceId} effect={effectInstanceId} kind={effectKind} shipRevision={shipSystems.Revision}",
+                $"PHS_EVENT_SHIP_IMPACT_APPLIED side=server localClient={NetworkManager.LocalClientId} " +
+                $"event={eventInstanceId} effect={effectInstanceId} kind={effectKind} " +
+                $"shipRevision={shipSystems.Revision}",
                 this);
         }
 
@@ -710,7 +714,9 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Events
                 GetServerTime());
             StartCoroutine(RemoveEffectSnapshotAfterDelay(effectInstanceId, nextRevision));
             Debug.Log(
-                $"PHS_EVENT_EFFECT_REMOVED event={eventInstanceId} effect={effectInstanceId} revision={nextRevision}",
+                $"PHS_EVENT_EFFECT_REMOVED side=server localClient={NetworkManager.LocalClientId} " +
+                $"event={eventInstanceId} effect={effectInstanceId} kind={current.Kind} " +
+                $"effectRev={nextRevision} spawnPos={current.WorldPosition}",
                 this);
         }
 
@@ -821,8 +827,8 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Events
 
             if (terminalState == EventState.Fail)
             {
-                Debug.LogError(
-                    $"PHS_EVENT_EXECUTION_FAILED source=event_finished " +
+                Debug.LogWarning(
+                    $"PHS_EVENT_GAMEPLAY_FAILED source=event_finished " +
                     $"instance={instanceId} event={eventId} room={roomId} " +
                     $"state={terminalState} success={success}",
                     this);
@@ -1319,7 +1325,9 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Events
 
             effectSnapshots.RemoveAt(index);
             Debug.Log(
-                $"PHS_EVENT_EFFECT_SNAPSHOT_REMOVED effect={effectInstanceId} revision={removedRevision}",
+                $"PHS_EVENT_EFFECT_SNAPSHOT_REMOVED side=server localClient={NetworkManager.LocalClientId} " +
+                $"event={snapshot.EventInstanceId} effect={effectInstanceId} kind={snapshot.Kind} " +
+                $"effectRev={removedRevision} spawnPos={snapshot.WorldPosition}",
                 this);
         }
 
@@ -1375,7 +1383,9 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Events
         private void HandleEffectSnapshotsChanged(
             NetworkListEvent<NetworkEventEffectSnapshot> changeEvent)
         {
-            RebuildEffectSnapshotCache(changeEvent.Type.ToString());
+            RebuildEffectSnapshotCache(
+                changeEvent.Type.ToString(),
+                changeEvent.Type != NetworkListEvent<NetworkEventEffectSnapshot>.EventType.Value);
         }
 
         private void RebuildSnapshotCache(string reason)
@@ -1395,7 +1405,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Events
                 this);
         }
 
-        private void RebuildEffectSnapshotCache(string reason)
+        private void RebuildEffectSnapshotCache(string reason, bool writeDiagnosticLog = true)
         {
             effectSnapshotCache.Clear();
             foreach (var snapshot in effectSnapshots)
@@ -1412,9 +1422,12 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Events
             }
 
             EffectSnapshotsChanged?.Invoke();
-            Debug.Log(
-                $"PHS_EVENT_EFFECT_CACHE_SYNC reason={reason} count={effectSnapshotCache.Count} server={IsServer}",
-                this);
+            if (writeDiagnosticLog)
+            {
+                Debug.Log(
+                    $"PHS_EVENT_EFFECT_CACHE_SYNC reason={reason} count={effectSnapshotCache.Count} server={IsServer}",
+                    this);
+            }
         }
 
         private void InitializeServerSequence()

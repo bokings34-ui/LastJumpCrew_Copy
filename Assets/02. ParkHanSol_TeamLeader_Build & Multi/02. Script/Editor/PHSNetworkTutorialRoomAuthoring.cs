@@ -53,6 +53,8 @@ namespace LastJumpCrew.ParkHanSol.Editor
             "Assets/05. TakHyunJae_Map & MiniGame/03. Prefab/Tutorial_Map.prefab";
         private const string GrappleAnchorPrefabPath =
             "Assets/05. TakHyunJae_Map & MiniGame/06. MyAsset/Creepy_Cat/3D Scifi Kit Vol 3/Prefabs/Props/Update 1.00-First build/Things/P_Light_Ring_01.prefab";
+        private const string GrappleAnchorMaterialPath =
+            "Assets/02. ParkHanSol_TeamLeader_Build & Multi/03. Environment/Grapple/PHS_GrappleAnchor_Test.mat";
         private const string FloorObjectivePadPrefabPath =
             "Assets/02. ParkHanSol_TeamLeader_Build & Multi/03. Prefab/Customization/Visuals/PHS_back_circle.prefab";
         private const string FloorObjectivePadMaterialPath =
@@ -521,12 +523,12 @@ namespace LastJumpCrew.ParkHanSol.Editor
             var card = CreateUiImage(
                 "Card",
                 popup.transform,
-                new Vector2(0.21f, 0.15f),
-                new Vector2(0.79f, 0.85f));
+                new Vector2(0.24f, 0.25f),
+                new Vector2(0.76f, 0.75f));
             card.color = new Color(0.004f, 0.005f, 0.006f, 0.985f);
             var cardOutline = card.gameObject.AddComponent<Outline>();
-            cardOutline.effectColor = Color.black;
-            cardOutline.effectDistance = new Vector2(3f, -3f);
+            cardOutline.effectColor = new Color(1f, 0.36f, 0.12f, 0.55f);
+            cardOutline.effectDistance = new Vector2(2f, -2f);
             cardOutline.useGraphicAlpha = false;
             var accent = CreateUiImage(
                 "Accent",
@@ -554,7 +556,7 @@ namespace LastJumpCrew.ParkHanSol.Editor
                 25f);
             ApplyTutorialFont(body, ObjectiveBodyFontPath);
             body.alignment = TextAlignmentOptions.TopLeft;
-            body.color = new Color(1f, 0.78f, 0.18f, 1f);
+            body.color = new Color(0.90f, 0.92f, 0.95f, 1f);
             body.fontStyle = FontStyles.Normal;
             body.fontWeight = FontWeight.Regular;
 
@@ -584,7 +586,7 @@ namespace LastJumpCrew.ParkHanSol.Editor
                 card.transform,
                 new Vector2(0.06f, 0.06f),
                 new Vector2(0.22f, 0.17f),
-                "<",
+                "\uC774\uC804",
                 out _);
             var indicator = CreateUiText(
                 "PageIndicator",
@@ -599,7 +601,7 @@ namespace LastJumpCrew.ParkHanSol.Editor
                 card.transform,
                 new Vector2(0.78f, 0.06f),
                 new Vector2(0.94f, 0.17f),
-                ">",
+                "\uB2E4\uC74C",
                 out var nextLabel);
 
             var renderTexture = AssetDatabase.LoadAssetAtPath<RenderTexture>(
@@ -920,13 +922,14 @@ namespace LastJumpCrew.ParkHanSol.Editor
             var background = CreateUiImage(
                 "PosterBackground",
                 canvasObject.transform,
-                new Vector2(0.10f, 0.15f),
-                new Vector2(0.90f, 0.25f));
+                new Vector2(0.10f, 0.18f),
+                new Vector2(0.90f, 0.31f));
             background.color = new Color(0.004f, 0.005f, 0.006f, 0.90f);
             var backgroundOutline =
                 background.gameObject.AddComponent<Outline>();
-            backgroundOutline.effectColor = Color.black;
-            backgroundOutline.effectDistance = new Vector2(3f, -3f);
+            backgroundOutline.effectColor =
+                new Color(1f, 0.36f, 0.12f, 0.55f);
+            backgroundOutline.effectDistance = new Vector2(2f, -2f);
             backgroundOutline.useGraphicAlpha = false;
             instructionImage = CreateUiImage(
                 "ActionImage",
@@ -1040,7 +1043,7 @@ namespace LastJumpCrew.ParkHanSol.Editor
                 commandText.textWrappingMode = TextWrappingModes.NoWrap;
                 commandText.fontStyle = FontStyles.Bold;
                 commandText.fontWeight = FontWeight.Bold;
-                commandText.color = new Color(1f, 0.78f, 0.18f, 1f);
+                commandText.color = new Color(0.90f, 0.92f, 0.95f, 1f);
                 commandText.raycastTarget = false;
                 AddTextOutline(commandText);
                 var commandLayout =
@@ -1518,6 +1521,7 @@ namespace LastJumpCrew.ParkHanSol.Editor
             grappleTarget.transform.position = new Vector3(-1.6f, 2.8f, 20f);
             grappleTarget.transform.rotation = Quaternion.Euler(90f, 0f, 0f);
             grappleTarget.transform.localScale = Vector3.one * 0.35f;
+            ApplyGrappleTargetMaterial(grappleTarget);
             var secondTarget = InstantiatePrefab(
                 GrappleAnchorPrefabPath,
                 scene,
@@ -1526,6 +1530,7 @@ namespace LastJumpCrew.ParkHanSol.Editor
             secondTarget.transform.position = new Vector3(1.8f, 3.4f, 13f);
             secondTarget.transform.rotation = Quaternion.Euler(90f, 0f, 0f);
             secondTarget.transform.localScale = Vector3.one * 0.35f;
+            ApplyGrappleTargetMaterial(secondTarget);
             if (grappleTarget.GetComponentsInChildren<Collider>(true)
                     .All(collider => collider.isTrigger)
                 || secondTarget.GetComponentsInChildren<Collider>(true)
@@ -1542,6 +1547,23 @@ namespace LastJumpCrew.ParkHanSol.Editor
             foreach (var area in legacyGravity)
             {
                 area.gameObject.SetActive(false);
+            }
+        }
+
+        private static void ApplyGrappleTargetMaterial(GameObject target)
+        {
+            var material = AssetDatabase.LoadAssetAtPath<Material>(
+                GrappleAnchorMaterialPath);
+            if (material == null)
+            {
+                throw Failure("grapple_anchor_material_missing");
+            }
+
+            foreach (var renderer in target.GetComponentsInChildren<Renderer>(true))
+            {
+                renderer.sharedMaterials = Enumerable
+                    .Repeat(material, renderer.sharedMaterials.Length)
+                    .ToArray();
             }
         }
 

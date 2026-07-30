@@ -29,11 +29,24 @@ namespace LastJumpCrew.ParkHanSol.Editor
             Require(Find(scene, "Cube")?.gameObject.activeSelf == false, "legacy_cube_active", errors);
             Require(Find(scene, "PHS_ShipAccessRetrofit/PHS_EntryWing_A")?.gameObject.activeSelf == false, "legacy_entry_a_active", errors);
             Require(Find(scene, "PHS_ShipAccessRetrofit/PHS_EntryWing_B")?.gameObject.activeSelf == false, "legacy_entry_b_active", errors);
-            Require(Find(scene, "PHS_ShipAccessRetrofit/PHS_ExteriorCollisionShell")?.gameObject.activeSelf == true, "exterior_collision_shell_inactive", errors);
+            var legacyExteriorShell = Find(
+                scene,
+                "PHS_ShipAccessRetrofit/PHS_ExteriorCollisionShell");
+            Require(
+                legacyExteriorShell == null || !legacyExteriorShell.gameObject.activeSelf,
+                "legacy_exterior_collision_shell_active",
+                errors);
+            Require(
+                Find(
+                    scene,
+                    "PHS_Map_Runtime/ExteriorDebrisSector/GameplayCluster/PHS_ExteriorCollisionShell")
+                    ?.gameObject.activeInHierarchy == true,
+                "exterior_collision_shell_inactive",
+                errors);
 
             var gravityAreas = Find(scene, "PHS_Map_Runtime/GravityZones")
                 .GetComponentsInChildren<NetworkPlayerGravityArea>(true);
-            Require(gravityAreas.Length == 8, $"gravity_area_count:{gravityAreas.Length}", errors);
+            Require(gravityAreas.Length == 7, $"interior_gravity_area_count:{gravityAreas.Length}", errors);
             var serviceArea = gravityAreas.SingleOrDefault(area => area.name == "PHS_ServiceGravityArea");
             Require(serviceArea != null, "service_gravity_missing", errors);
             if (serviceArea != null)
@@ -44,11 +57,11 @@ namespace LastJumpCrew.ParkHanSol.Editor
             }
 
             var interiorColliders = gravityAreas
-                .Where(area => area.name != "PHS_Exterior_ZeroGravityArea")
                 .Select(area => area.GetComponent<BoxCollider>())
                 .Where(collider => collider != null)
                 .ToArray();
             Require(interiorColliders.Length == 7, $"interior_gravity_count:{interiorColliders.Length}", errors);
+            ValidateInteriorContainment(scene, errors);
 
             var anchors = scene.GetRootGameObjects()
                 .SelectMany(root => root.GetComponentsInChildren<PHSShipAccidentAnchor>(true))
@@ -82,9 +95,28 @@ namespace LastJumpCrew.ParkHanSol.Editor
             }
 
             Debug.Log(
-                "PHS_MAP_VER3_REDESIGN_VALIDATION_PASS gravityAreas=8 " +
+                "PHS_MAP_VER3_REDESIGN_VALIDATION_PASS interiorGravityAreas=7 " +
                 "interiorGravity=7 accidentAnchors=12 incidentLocations=20 fireZones=4 " +
                 "batteryFeedback=slot debrisFlow=bidirectional extinguisherKnockback=5");
+        }
+
+        private static void ValidateInteriorContainment(Scene scene, ICollection<string> errors)
+        {
+            var envelope = Find(
+                scene,
+                "PHS_Map_Runtime/PHS_InteriorContainment/PHS_InteriorSafetyEnvelope");
+            var collider = envelope?.GetComponent<BoxCollider>();
+            var volume = envelope?.GetComponent<NetworkInteriorContainmentVolume>();
+            Require(collider != null && collider.isTrigger, "interior_safety_envelope_trigger_invalid", errors);
+            Require(volume != null, "interior_safety_envelope_volume_missing", errors);
+            if (collider == null)
+            {
+                return;
+            }
+
+            Require(collider.bounds.size.x >= 82f, "interior_safety_envelope_width_small", errors);
+            Require(collider.bounds.size.y >= 22f, "interior_safety_envelope_height_small", errors);
+            Require(collider.bounds.size.z >= 152f, "interior_safety_envelope_length_small", errors);
         }
 
         private static void ValidateBatteryFeedback(Scene scene, ICollection<string> errors)

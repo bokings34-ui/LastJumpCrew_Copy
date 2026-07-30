@@ -300,10 +300,23 @@ namespace LastJumpCrew.ParkHanSol.Editor
             Require(economy != null, "economy_cluster_missing", errors);
             if (economy != null)
             {
-                Require(economy.anchorMin == Vector2.one && economy.anchorMax == Vector2.one,
-                    "economy_anchor_not_top_right", errors);
-                Require(economy.anchoredPosition.x >= -120f && economy.anchoredPosition.x <= -16f,
-                    $"economy_safe_margin_invalid x={economy.anchoredPosition.x}", errors);
+                var parentRect = economy.parent as RectTransform;
+                var isTopRightRootLayout = economy.anchorMin == Vector2.one
+                    && economy.anchorMax == Vector2.one
+                    && economy.anchoredPosition.x >= -120f
+                    && economy.anchoredPosition.x <= -16f;
+                var isNestedVitalsLayout = parentRect != null
+                    && parentRect.name == "Vitals Cluster"
+                    && economy.anchorMin == new Vector2(0f, 1f)
+                    && economy.anchorMax == new Vector2(0f, 1f)
+                    && economy.anchoredPosition.x - economy.pivot.x * economy.rect.width >= 12f
+                    && economy.anchoredPosition.x
+                        + (1f - economy.pivot.x) * economy.rect.width
+                        <= parentRect.rect.width - 12f;
+                Require(
+                    isTopRightRootLayout || isNestedVitalsLayout,
+                    "economy_anchor_layout_invalid",
+                    errors);
                 Require(economy.gameObject.activeSelf,
                     "economy_cluster_inactive", errors);
                 var bankText = Find(economy, "Bank Text");
@@ -324,8 +337,8 @@ namespace LastJumpCrew.ParkHanSol.Editor
                     "accident_icon_entry_count_invalid", errors);
                 Require(eventData.FindProperty("miniGameIconEntries")?.arraySize == 3,
                     "minigame_icon_entry_count_invalid", errors);
-                Require(Find(prefab.transform, "PHS Event Alert Text") == null,
-                    "event_alert_text_still_present", errors);
+                Require(Find(prefab.transform, "PHS Event Alert Text") != null,
+                    "event_alert_text_missing", errors);
                 Require(Find(prefab.transform, "Icon Mark") == null,
                     "event_alert_mark_still_present", errors);
                 Require(Find(prefab.transform, "PHS Event Alert Icon") != null,
@@ -360,7 +373,7 @@ namespace LastJumpCrew.ParkHanSol.Editor
                 .Where(UsesLocalizedHudTypography)
                 .ToArray();
             Require(
-                localizedTexts.Length == 4,
+                localizedTexts.Length == 5,
                 $"localized_hud_text_count_invalid actual={localizedTexts.Length}",
                 errors);
             foreach (var text in prefab.GetComponentsInChildren<TextMeshProUGUI>(true))
@@ -458,12 +471,6 @@ namespace LastJumpCrew.ParkHanSol.Editor
                 ?? throw new InvalidOperationException(
                     "PHS_HUD_SSO_AUTHOR_FAILED reason=event_alert_root_missing");
 
-            var oldText = Find(alertRoot.transform, "PHS Event Alert Text");
-            if (oldText != null)
-            {
-                UnityEngine.Object.DestroyImmediate(oldText.gameObject);
-            }
-
             var alertRect = alertRoot.GetComponent<RectTransform>()
                 ?? throw new InvalidOperationException(
                     "PHS_HUD_SSO_AUTHOR_FAILED reason=event_alert_rect_missing");
@@ -471,7 +478,7 @@ namespace LastJumpCrew.ParkHanSol.Editor
             alertRect.anchorMax = Vector2.one;
             alertRect.pivot = Vector2.one;
             alertRect.anchoredPosition = new Vector2(-430f, -116f);
-            alertRect.sizeDelta = new Vector2(92f, 92f);
+            alertRect.sizeDelta = new Vector2(250f, 92f);
 
             var iconTransform = Find(alertRoot.transform, "PHS Event Alert Icon");
             var iconObject = iconTransform == null
@@ -487,10 +494,10 @@ namespace LastJumpCrew.ParkHanSol.Editor
                 iconRect.SetParent(alertRoot.transform, false);
             }
 
-            iconRect.anchorMin = new Vector2(0.5f, 0.5f);
-            iconRect.anchorMax = new Vector2(0.5f, 0.5f);
+            iconRect.anchorMin = new Vector2(1f, 0.5f);
+            iconRect.anchorMax = new Vector2(1f, 0.5f);
             iconRect.pivot = new Vector2(0.5f, 0.5f);
-            iconRect.anchoredPosition = Vector2.zero;
+            iconRect.anchoredPosition = new Vector2(-46f, 0f);
             iconRect.sizeDelta = new Vector2(46f, 46f);
             iconRect.localScale = Vector3.one;
             iconRect.localEulerAngles = new Vector3(0f, 0f, 45f);
@@ -507,7 +514,45 @@ namespace LastJumpCrew.ParkHanSol.Editor
             {
                 UnityEngine.Object.DestroyImmediate(markTransform.gameObject);
             }
+
+            var labelTransform = Find(
+                alertRoot.transform,
+                "PHS Event Alert Text");
+            var labelObject = labelTransform == null
+                ? new GameObject(
+                    "PHS Event Alert Text",
+                    typeof(RectTransform),
+                    typeof(CanvasRenderer),
+                    typeof(TextMeshProUGUI))
+                : labelTransform.gameObject;
+            var labelRect = labelObject.GetComponent<RectTransform>();
+            if (labelTransform == null)
+            {
+                labelRect.SetParent(alertRoot.transform, false);
+            }
+
+            labelRect.anchorMin = new Vector2(1f, 0.5f);
+            labelRect.anchorMax = new Vector2(1f, 0.5f);
+            labelRect.pivot = new Vector2(1f, 0.5f);
+            labelRect.anchoredPosition = new Vector2(-82f, 0f);
+            labelRect.sizeDelta = new Vector2(150f, 42f);
+            labelRect.localScale = Vector3.one;
+            var label = labelObject.GetComponent<TextMeshProUGUI>();
+            label.text = "산소 유출";
+            label.fontSize = 20f;
+            label.enableAutoSizing = true;
+            label.fontSizeMin = 14f;
+            label.fontSizeMax = 20f;
+            label.alignment = TextAlignmentOptions.MidlineRight;
+            label.color = new Color(0.72f, 0.96f, 1f, 1f);
+            label.raycastTarget = false;
+            label.enableWordWrapping = false;
+            label.overflowMode = TextOverflowModes.Ellipsis;
+            labelObject.SetActive(false);
+            PHSUIFontPaths.ApplyResolved(label);
+
             SetReference(viewData, "eventAlertIcon", iconObject);
+            SetReference(viewData, "eventAlertLabelText", label);
             viewData.ApplyModifiedPropertiesWithoutUndo();
             EditorUtility.SetDirty(eventHudView);
         }
@@ -1089,7 +1134,7 @@ namespace LastJumpCrew.ParkHanSol.Editor
             var localizedTexts = root.GetComponentsInChildren<TextMeshProUGUI>(true)
                 .Where(UsesLocalizedHudTypography)
                 .ToArray();
-            if (localizedTexts.Length != 4)
+            if (localizedTexts.Length != 5)
             {
                 throw new InvalidOperationException(
                     $"PHS_HUD_SSO_AUTHOR_FAILED reason=localized_text_count_invalid actual={localizedTexts.Length}");
@@ -1133,6 +1178,9 @@ namespace LastJumpCrew.ParkHanSol.Editor
                        StringComparison.Ordinal)
                 || path.EndsWith(
                        "/PHS Shop Product Panel/Pickup Prompt",
+                       StringComparison.Ordinal)
+                || path.EndsWith(
+                       "/PHS Event Alert/PHS Event Alert Text",
                        StringComparison.Ordinal);
         }
 
