@@ -297,7 +297,9 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
                     return false;
                 }
 
-                if (debrisSource.GetComponent<NetworkTransform>() == null)
+                var sourceNetworkObject = debrisSource.GetComponent<NetworkObject>();
+                if (sourceNetworkObject != null
+                    && debrisSource.GetComponent<NetworkTransform>() == null)
                 {
                     Debug.LogError(
                         $"PHS_DEBRIS_STREAM_SETUP_FAILED reason=source_network_transform_missing " +
@@ -306,7 +308,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
                     return false;
                 }
 
-                if (debrisSource.GetComponent<NetworkObject>() != null)
+                if (sourceNetworkObject != null)
                 {
                     networkSourceCount++;
                 }
@@ -345,7 +347,9 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
                 return false;
             }
 
-            if (!debris.TryGetComponent(out NetworkTransform networkTransform))
+            var networkObject = debris.GetComponent<NetworkObject>();
+            var networkTransform = debris.GetComponent<NetworkTransform>();
+            if (networkObject != null && networkTransform == null)
             {
                 Debug.LogError(
                     $"PHS_DEBRIS_STREAM_RUNTIME_FAILED reason=network_transform_missing " +

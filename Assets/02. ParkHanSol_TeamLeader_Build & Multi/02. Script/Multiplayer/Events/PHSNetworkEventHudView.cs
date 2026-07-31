@@ -162,6 +162,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Events
         [Header("Dedicated Event Alert (do not reuse hazard/gravity panel)")]
         [SerializeField] private GameObject eventAlertRoot;
         [SerializeField] private GameObject eventAlertIcon;
+        [SerializeField] private TMP_Text eventAlertLabelText;
         [SerializeField] private GameObject iconLineupRoot;
         [SerializeField] private AccidentIconEntry[] accidentIconEntries = new AccidentIconEntry[7];
         [SerializeField] private MiniGameIconEntry[] miniGameIconEntries = new MiniGameIconEntry[3];
@@ -360,7 +361,10 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Events
 
         private void RefreshAlertPresentation()
         {
-            if (eventAlertRoot == null || eventAlertIcon == null || iconLineupRoot == null)
+            if (eventAlertRoot == null
+                || eventAlertIcon == null
+                || eventAlertLabelText == null
+                || iconLineupRoot == null)
             {
                 return;
             }
@@ -370,7 +374,12 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Events
                 && !hasActiveMiniGameIcons;
             eventAlertRoot.SetActive(hasLineupIcons || hasGenericExternalAlert);
             iconLineupRoot.SetActive(hasLineupIcons);
-            eventAlertIcon.SetActive(hasGenericExternalAlert && !hasLineupIcons);
+            var showGenericAlert = hasGenericExternalAlert && !hasLineupIcons;
+            eventAlertIcon.SetActive(showGenericAlert);
+            eventAlertLabelText.text = showGenericAlert
+                ? externalAlertText
+                : string.Empty;
+            eventAlertLabelText.gameObject.SetActive(showGenericAlert);
         }
 
         private static bool IsMiniGameEvent(EventId eventId)
@@ -406,6 +415,12 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Events
             if (eventAlertIcon == null)
             {
                 Debug.LogError($"PHS_EVENT_HUD_VIEW_SETUP_FAILED reason=event_alert_icon_missing view={name}", this);
+                valid = false;
+            }
+
+            if (eventAlertLabelText == null)
+            {
+                Debug.LogError($"PHS_EVENT_HUD_VIEW_SETUP_FAILED reason=event_alert_label_missing view={name}", this);
                 valid = false;
             }
 

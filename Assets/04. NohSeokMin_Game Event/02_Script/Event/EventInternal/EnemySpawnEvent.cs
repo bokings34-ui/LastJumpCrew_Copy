@@ -9,7 +9,7 @@ namespace SM
 
         private EnemySpawnDataSO SpawnData { get { return _data as EnemySpawnDataSO; } }
 
-        private Transform _spawnPoint;
+        private ShipSpawnPoint _spawnPoint;
         private GameObject _chosenPrefab;
         private int _spawnedCount;
         private readonly List<EnemyBase> _activeEnemies = new List<EnemyBase>();
@@ -25,30 +25,31 @@ namespace SM
             _effectRuntimeBridge = Context?.RuntimeBridge as IEventEffectRuntimeBridge;
             _effectInstanceIds.Clear();
 
-            var spawnSetting = EnemySpawnSetting.Peek();
-            if (spawnSetting == null)
+            var config = ShipSpawnPointConfig.Peek();
+            if (config == null)
             {
                 Debug.LogError(
-                    $"<color=lime>[{SpawnData.EventName}]</color> EnemySpawnSetting 참조가 씬에 없어 발생 취소.");
+                    $"<color=lime>[{SpawnData.EventName}]</color> ShipSpawnPointConfig 참조가 씬에 없어 발생 취소.");
                 OnFail();
                 return;
             }
 
-            var spawnGroup = spawnSetting.GetRandomPoint();
-
-            if (spawnGroup == null || spawnGroup.spawnPoint == null)
+            var point = config.GetRandomFreePoint();
+            if (point == null)
             {
                 Debug.LogWarning($"<color=lime>[{SpawnData.EventName}]</color> 사용 가능한 스폰 포인트가 없어 발생 취소.");
                 OnFail();
                 return;
             }
 
-            _spawnPoint = spawnGroup.spawnPoint;
+            _spawnPoint = point;
+            _spawnPoint.Occupy(EventId.EnemySpawn);
             _chosenPrefab = PickRandomPrefab();
 
             if (_chosenPrefab == null)
             {
                 Debug.LogError($"<color=lime>[{SpawnData.EventName}]</color> 선택된 프리팹이 없습니다.");
+                _spawnPoint.Release();
                 OnFail();
                 return;
             }
@@ -104,7 +105,7 @@ namespace SM
         {
             if (_spawnedCount >= SpawnData.enemyCount) return true;
 
-            var enemyUnit = EnemyPool.Instance.Get(_chosenPrefab, _spawnPoint.position, _spawnPoint.rotation);
+            var enemyUnit = EnemyPool.Instance.Get(_chosenPrefab, _spawnPoint.transform.position, _spawnPoint.transform.rotation);
             var effectInstanceId = _effectRuntimeBridge == null
                 ? 0U
                 : _effectRuntimeBridge.AllocateEffectInstanceId(InstanceId);
@@ -125,7 +126,7 @@ namespace SM
                     InstanceId,
                     effectInstanceId,
                     EventEffectKind.Enemy,
-                    _spawnPoint.position,
+                    _spawnPoint.transform.position,
                     _chosenVariant);
             }
 
@@ -142,6 +143,7 @@ namespace SM
 
             if (_activeEnemies.Count == 0 && _spawnedCount >= SpawnData.enemyCount)
             {
+                _spawnPoint?.Release();
                 OnResolve();
             }
         }
@@ -154,12 +156,14 @@ namespace SM
         public override void OnFail()
         {
             ReleaseActiveEnemies();
+            _spawnPoint?.Release();
             base.OnFail();
         }
 
         public override void ForceTerminate()
         {
             ReleaseActiveEnemies();
+            _spawnPoint?.Release();
             _spawnedCount = SpawnData.enemyCount;
 
             base.ForceTerminate();

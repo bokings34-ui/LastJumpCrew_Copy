@@ -602,6 +602,14 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
             ConfigureCommandLineAutomation();
         }
 
+        private void Start()
+        {
+            if (!IsSpawned)
+            {
+                RefreshForActiveScene();
+            }
+        }
+
         private void OnEnable()
         {
             SceneManager.activeSceneChanged += HandleActiveSceneChanged;
@@ -1820,12 +1828,13 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
 
         private void CacheLocalOwnerHiddenRenderers()
         {
-            if (localOwnerHiddenRenderers != null && localOwnerHiddenRenderers.Length > 0)
+            if (localOwnerHiddenRenderers != null
+                && Array.Exists(localOwnerHiddenRenderers, targetRenderer => targetRenderer != null))
             {
                 return;
             }
 
-            localOwnerHiddenRenderers = GetComponentsInChildren<Renderer>(true);
+            localOwnerHiddenRenderers = GetComponentsInChildren<SkinnedMeshRenderer>(true);
         }
 
         private void SetLocalOwnerVisualsVisible(bool isVisible)
