@@ -117,13 +117,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
             }
 
             activeSnapshot = snapshot;
-            if (!explosionStarted)
-            {
-                StartExplosion();
-            }
-
-            IsPresenting = false;
-            RestoreGameplayCanvases();
+            StopPresentation(false);
             Debug.Log(
                 $"PHS_GAME_OVER_PRESENTATION_COMPLETED reason={snapshot.Reason} revision={snapshot.Revision}",
                 this);
@@ -131,9 +125,18 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
 
         public void ResetPresentation()
         {
+            StopPresentation(true);
+        }
+
+        private void StopPresentation(bool clearPresentedRevision)
+        {
             RestoreGameplayCanvases();
             activeSnapshot = default;
-            PresentedRevision = 0U;
+            if (clearPresentedRevision)
+            {
+                PresentedRevision = 0U;
+            }
+
             IsPresenting = false;
             barrageStarted = false;
             explosionStarted = false;

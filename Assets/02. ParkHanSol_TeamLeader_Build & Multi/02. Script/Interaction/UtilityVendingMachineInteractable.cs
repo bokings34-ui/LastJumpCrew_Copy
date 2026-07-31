@@ -16,8 +16,8 @@ namespace LastJumpCrew.ParkHanSol.Interaction
         // 어떤 아이템을 지급할지 담은 ScriptableObject다. Inspector에서 직접 연결한다.
         [SerializeField] private UtilityVendingMachineData vendingMachineData;
 
-        // 상호작용 UI에 보여줄 문구다. 현재 기본값은 키 안내용 F다.
-        [SerializeField] private string interactionPrompt = "F";
+        // 상호작용 UI에 보여줄 행동 문구다. 입력 키는 HUD 배지가 별도로 표시한다.
+        [SerializeField] private string interactionPrompt = "물품 받기";
 
         [Header("Server Validation")]
         [SerializeField, Min(0.1f)] private float serverInteractionDistance = 3f;

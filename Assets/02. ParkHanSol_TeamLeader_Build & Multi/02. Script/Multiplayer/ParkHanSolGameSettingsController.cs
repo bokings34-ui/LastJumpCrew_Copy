@@ -25,6 +25,8 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
         private const string ResolutionWidthKey = "PHS_ResolutionWidth";
         private const string ResolutionHeightKey = "PHS_ResolutionHeight";
         private const string VSyncKey = "PHS_VSync";
+        private const string TargetFrameRateKey = "PHS_TargetFrameRate";
+        private const int DefaultTargetFrameRate = 60;
         private const string MasterMixerParameter = "PHS_MasterVolumeDb";
         private const string UiMixerParameter = "PHS_UIVolumeDb";
         private const string EffectsMixerParameter = "PHS_SFXVolumeDb";
@@ -37,6 +39,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
         [SerializeField] private Toggle fullScreenToggle;
         [SerializeField] private TMP_Dropdown qualityDropdown;
         [SerializeField] private Toggle vSyncToggle;
+        [SerializeField] private TMP_Dropdown targetFrameRateDropdown;
         [SerializeField] private Slider masterVolumeSlider;
         [SerializeField] private Slider environmentVolumeSlider;
         [SerializeField] private Slider effectsVolumeSlider;
@@ -115,6 +118,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
             if (fullScreenToggle != null) fullScreenToggle.onValueChanged.AddListener(SetFullScreen);
             if (qualityDropdown != null) qualityDropdown.onValueChanged.AddListener(SetQuality);
             if (vSyncToggle != null) vSyncToggle.onValueChanged.AddListener(SetVSync);
+            if (targetFrameRateDropdown != null) targetFrameRateDropdown.onValueChanged.AddListener(SetTargetFrameRate);
             if (masterVolumeSlider != null) masterVolumeSlider.onValueChanged.AddListener(SetMasterVolume);
             if (environmentVolumeSlider != null) environmentVolumeSlider.onValueChanged.AddListener(SetEnvironmentVolume);
             if (effectsVolumeSlider != null) effectsVolumeSlider.onValueChanged.AddListener(SetEffectsVolume);
@@ -137,6 +141,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
             if (fullScreenToggle != null) fullScreenToggle.onValueChanged.RemoveListener(SetFullScreen);
             if (qualityDropdown != null) qualityDropdown.onValueChanged.RemoveListener(SetQuality);
             if (vSyncToggle != null) vSyncToggle.onValueChanged.RemoveListener(SetVSync);
+            if (targetFrameRateDropdown != null) targetFrameRateDropdown.onValueChanged.RemoveListener(SetTargetFrameRate);
             if (masterVolumeSlider != null) masterVolumeSlider.onValueChanged.RemoveListener(SetMasterVolume);
             if (environmentVolumeSlider != null) environmentVolumeSlider.onValueChanged.RemoveListener(SetEnvironmentVolume);
             if (effectsVolumeSlider != null) effectsVolumeSlider.onValueChanged.RemoveListener(SetEffectsVolume);
@@ -197,6 +202,19 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
                 qualityDropdown.interactable = qualityNames.Length > 1;
                 qualityDropdown.RefreshShownValue();
             }
+
+            if (targetFrameRateDropdown != null)
+            {
+                targetFrameRateDropdown.ClearOptions();
+                targetFrameRateDropdown.AddOptions(new List<string>
+                {
+                    "30 FPS",
+                    "60 FPS",
+                    "120 FPS",
+                    "UNLIMITED"
+                });
+                targetFrameRateDropdown.RefreshShownValue();
+            }
         }
 
         private void OnDisable()
@@ -251,7 +269,13 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
             if (partyVolumeSlider != null) partyVolumeSlider.value = PlayerPrefs.GetInt(PartyVolumeKey, 0);
             if (outputVolumeSlider != null) outputVolumeSlider.value = PlayerPrefs.GetInt(OutputVolumeKey, 0);
             if (qualityDropdown != null) qualityDropdown.value = Mathf.Clamp(PlayerPrefs.GetInt(QualityKey, QualitySettings.GetQualityLevel()), 0, QualitySettings.names.Length - 1);
-            if (vSyncToggle != null) vSyncToggle.isOn = PlayerPrefs.GetInt(VSyncKey, QualitySettings.vSyncCount > 0 ? 1 : 0) == 1;
+            if (vSyncToggle != null) vSyncToggle.isOn = PlayerPrefs.GetInt(VSyncKey, 1) == 1;
+            if (targetFrameRateDropdown != null)
+            {
+                targetFrameRateDropdown.value = GetFrameRateOptionIndex(
+                    PlayerPrefs.GetInt(TargetFrameRateKey, DefaultTargetFrameRate));
+                targetFrameRateDropdown.interactable = vSyncToggle == null || !vSyncToggle.isOn;
+            }
             if (resolutionDropdown != null) resolutionDropdown.value = FindSavedResolutionIndex();
             if (microphoneMuteToggle != null) microphoneMuteToggle.isOn = PlayerPrefs.GetInt(MicMutedKey, 0) == 1;
             if (outputMuteToggle != null) outputMuteToggle.isOn = PlayerPrefs.GetInt(OutputMutedKey, 0) == 1;
@@ -275,7 +299,9 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
                 QualitySettings.SetQualityLevel(Mathf.Clamp(PlayerPrefs.GetInt(QualityKey, QualitySettings.GetQualityLevel()), 0, QualitySettings.names.Length - 1));
             }
 
-            QualitySettings.vSyncCount = PlayerPrefs.GetInt(VSyncKey, QualitySettings.vSyncCount > 0 ? 1 : 0) == 1 ? 1 : 0;
+            ApplyFramePacing(
+                PlayerPrefs.GetInt(VSyncKey, 1) == 1,
+                PlayerPrefs.GetInt(TargetFrameRateKey, DefaultTargetFrameRate));
         }
 
         public void ApplySettings()
@@ -333,7 +359,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
             QualitySettings.SetQualityLevel(quality);
             if (vSyncToggle != null)
             {
-                QualitySettings.vSyncCount = vSyncToggle.isOn ? 1 : 0;
+                ApplyFramePacing(vSyncToggle.isOn, GetSelectedTargetFrameRate());
             }
 
             var displayName = qualityDropdown != null &&
@@ -351,8 +377,28 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
                 return;
             }
 
-            QualitySettings.vSyncCount = active ? 1 : 0;
+            ApplyFramePacing(active, GetSelectedTargetFrameRate());
+            if (targetFrameRateDropdown != null)
+            {
+                targetFrameRateDropdown.interactable = !active;
+            }
             SetStatus(active ? "VSYNC ON" : "VSYNC OFF");
+        }
+
+        private void SetTargetFrameRate(int index)
+        {
+            if (suppressEvents || targetFrameRateDropdown == null)
+            {
+                return;
+            }
+
+            var targetFrameRate = GetFrameRateForOption(index);
+            if (QualitySettings.vSyncCount == 0)
+            {
+                Application.targetFrameRate = targetFrameRate;
+            }
+
+            SetStatus(targetFrameRate > 0 ? $"FPS LIMIT {targetFrameRate}" : "FPS UNLIMITED");
         }
 
         private void SetMasterVolume(float value)
@@ -586,6 +632,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
                 OutputVolume = Mathf.RoundToInt(outputVolumeSlider == null ? PlayerPrefs.GetInt(OutputVolumeKey, 0) : outputVolumeSlider.value),
                 Quality = QualitySettings.GetQualityLevel(),
                 VSync = QualitySettings.vSyncCount > 0,
+                TargetFrameRate = GetSelectedTargetFrameRate(),
                 MicrophoneDevice = microphoneDeviceIndex,
                 OutputDevice = outputDeviceIndex,
                 MicrophoneDeviceId = microphoneDeviceId,
@@ -611,6 +658,11 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
             if (outputVolumeSlider != null) outputVolumeSlider.value = snapshot.OutputVolume;
             if (qualityDropdown != null) qualityDropdown.value = Mathf.Clamp(snapshot.Quality, 0, Mathf.Max(0, qualityDropdown.options.Count - 1));
             if (vSyncToggle != null) vSyncToggle.isOn = snapshot.VSync;
+            if (targetFrameRateDropdown != null)
+            {
+                targetFrameRateDropdown.value = GetFrameRateOptionIndex(snapshot.TargetFrameRate);
+                targetFrameRateDropdown.interactable = !snapshot.VSync;
+            }
             if (microphoneDropdown != null) microphoneDropdown.value = Mathf.Clamp(snapshot.MicrophoneDevice, 0, Mathf.Max(0, microphoneDropdown.options.Count - 1));
             if (outputDeviceDropdown != null) outputDeviceDropdown.value = Mathf.Clamp(snapshot.OutputDevice, 0, Mathf.Max(0, outputDeviceDropdown.options.Count - 1));
             if (microphoneMuteToggle != null) microphoneMuteToggle.isOn = snapshot.MicrophoneMuted;
@@ -647,7 +699,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
                 QualitySettings.SetQualityLevel(Mathf.Clamp(snapshot.Quality, 0, QualitySettings.names.Length - 1));
             }
 
-            QualitySettings.vSyncCount = snapshot.VSync ? 1 : 0;
+            ApplyFramePacing(snapshot.VSync, snapshot.TargetFrameRate);
             if (voiceChatSession != null)
             {
                 _ = string.IsNullOrWhiteSpace(snapshot.MicrophoneDeviceId)
@@ -682,6 +734,42 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
             PlayerPrefs.SetInt(QualityKey, qualityDropdown == null ? QualitySettings.GetQualityLevel() : qualityDropdown.value);
             SaveSelectedResolution();
             PlayerPrefs.SetInt(VSyncKey, vSyncToggle != null && vSyncToggle.isOn ? 1 : 0);
+            PlayerPrefs.SetInt(TargetFrameRateKey, GetSelectedTargetFrameRate());
+        }
+
+        private int GetSelectedTargetFrameRate()
+        {
+            return targetFrameRateDropdown == null
+                ? PlayerPrefs.GetInt(TargetFrameRateKey, DefaultTargetFrameRate)
+                : GetFrameRateForOption(targetFrameRateDropdown.value);
+        }
+
+        private static int GetFrameRateForOption(int index)
+        {
+            return index switch
+            {
+                0 => 30,
+                1 => 60,
+                2 => 120,
+                _ => -1
+            };
+        }
+
+        private static int GetFrameRateOptionIndex(int targetFrameRate)
+        {
+            return targetFrameRate switch
+            {
+                30 => 0,
+                120 => 2,
+                < 0 => 3,
+                _ => 1
+            };
+        }
+
+        private static void ApplyFramePacing(bool vSyncEnabled, int targetFrameRate)
+        {
+            QualitySettings.vSyncCount = vSyncEnabled ? 1 : 0;
+            Application.targetFrameRate = vSyncEnabled ? -1 : targetFrameRate;
         }
 
         private void SaveSelectedResolution()
@@ -866,6 +954,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
             public int OutputVolume;
             public int Quality;
             public bool VSync;
+            public int TargetFrameRate;
             public int MicrophoneDevice;
             public int OutputDevice;
             public string MicrophoneDeviceId;

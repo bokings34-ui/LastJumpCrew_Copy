@@ -108,6 +108,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Events
                     TryBindCoordinator();
                 }
 
+                UpdateMapInput();
                 return;
             }
 

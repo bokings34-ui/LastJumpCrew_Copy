@@ -97,16 +97,23 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
 
         public void SetVitals(int health, int maxHealth, int stamina, int maxStamina)
         {
-            var safeMaxHealth = Mathf.Max(1, maxHealth);
-            healthMotion?.SetValue($"+{health}<size=24>/{safeMaxHealth}</size>", (float)health / safeMaxHealth);
-            PlayValueFeedback(healthMotion, hasVitals, previousHealth, health, true);
-            previousHealth = health;
-            hasVitals = true;
+            SetHealth(health, maxHealth);
 
             if (!hasBoost)
             {
                 SetThrusterFuel(stamina, maxStamina);
             }
+        }
+
+        public void SetHealth(int health, int maxHealth)
+        {
+            var safeMaxHealth = Mathf.Max(1, maxHealth);
+            healthMotion?.SetValue(
+                $"+{health}<size=24>/{safeMaxHealth}</size>",
+                (float)health / safeMaxHealth);
+            PlayValueFeedback(healthMotion, hasVitals, previousHealth, health, true);
+            previousHealth = health;
+            hasVitals = true;
         }
 
         public void SetThrusterFuel(int currentFuel, int maxFuel)
@@ -165,6 +172,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
             var percentage = Mathf.RoundToInt(clampedValue * 100f);
             warpMotion?.SetValue($"{percentage}%", clampedValue);
             warpGaugeMotion?.SetValue(clampedValue);
+            warpGaugeMotion?.SetValueText($"WARP  {percentage}%");
 
             if (hasWarpValue && percentage != previousWarpPercent)
             {
@@ -184,6 +192,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
             var normalizedValue = (float)current / safeMax;
             shipHpMotion?.SetValue($"SHIP {current}<size=20>/{safeMax}</size>", normalizedValue);
             shipHpGaugeMotion?.SetValue(normalizedValue);
+            shipHpGaugeMotion?.SetValueText($"SHIP HP  {current}/{safeMax}");
             PlayValueFeedback(shipHpMotion, hasShipHp, previousShipHp, current, true);
             if (hasShipHp && current != previousShipHp)
             {

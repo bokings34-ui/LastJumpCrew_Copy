@@ -760,9 +760,9 @@ namespace LastJumpCrew.ParkHanSol.Editor
             var textObject = CreateRect(name, parent, anchorMin, anchorMax);
             var text = textObject.AddComponent<TextMeshProUGUI>();
             text.fontSize = fontSize;
-            text.fontStyle = FontStyles.Bold;
             text.alignment = TextAlignmentOptions.Center;
             text.color = Color.white;
+            PHSUIFontPaths.ApplyResolved(text);
             return text;
         }
 

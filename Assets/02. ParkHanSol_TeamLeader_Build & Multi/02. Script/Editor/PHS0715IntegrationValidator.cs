@@ -1135,11 +1135,15 @@ namespace LastJumpCrew.ParkHanSol.Editor
                 errors);
             if (station != null)
             {
-                RequireObject(
-                    new SerializedObject(station),
-                    "tutorialDirector",
-                    "tutorial_station_director_missing",
-                    errors);
+                var serializedStation = new SerializedObject(station);
+                if (!serializedStation.FindProperty("objectiveMode").boolValue)
+                {
+                    RequireObject(
+                        serializedStation,
+                        "tutorialDirector",
+                        "tutorial_station_director_missing",
+                        errors);
+                }
             }
         }
 

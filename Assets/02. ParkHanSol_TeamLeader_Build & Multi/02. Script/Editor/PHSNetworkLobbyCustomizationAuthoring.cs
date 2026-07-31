@@ -229,6 +229,7 @@ namespace LastJumpCrew.ParkHanSol.Editor
                     colorButtons, applyColorButton, unequipHeadButton,
                     unequipBackButton, resetPreviewButton);
 
+                PHSUIFontAssetAuthoring.ApplyTypography(root.gameObject);
                 PrefabUtility.SaveAsPrefabAsset(root.gameObject, UiPrefabPath);
             }
             finally
@@ -627,7 +628,7 @@ namespace LastJumpCrew.ParkHanSol.Editor
                 30f,
                 TextAlignmentOptions.Center);
             labelText.color = LobbyCoralColor;
-            labelText.fontStyle = FontStyles.Bold;
+            PHSUIFontPaths.Apply(labelText, PHSUIFontRole.Control);
             labelText.enableAutoSizing = false;
             labelText.characterSpacing = 0f;
             labelText.raycastTarget = false;
@@ -674,6 +675,7 @@ namespace LastJumpCrew.ParkHanSol.Editor
             text.fontSize = fontSize;
             text.alignment = alignment;
             text.color = WarmCreamColor;
+            PHSUIFontPaths.ApplyResolved(text);
             return text;
         }
 
