@@ -18,6 +18,8 @@ namespace SM
         // 점유되지 않은 포인트 중 랜덤 (Fire 첫 발화, EnemySpawn, OxygenLeak 공용)
         public ShipSpawnPoint GetRandomFreePoint()
         {
+            if (!HasValidSpawnPoints()) return null;
+
             var free = new List<ShipSpawnPoint>();
             foreach (var point in spawnPoints)
             {
@@ -48,6 +50,8 @@ namespace SM
         [ContextMenu("Auto Connect Neighbors")]
         public void AutoConnectNeighbors()
         {
+            if (!HasValidSpawnPoints()) return;
+
             foreach (var point in spawnPoints) point.ClearNeighbors();
 
             for (int i = 0; i < spawnPoints.Count; i++)
@@ -63,6 +67,14 @@ namespace SM
                     }
                 }
             }
+        }
+
+        private bool HasValidSpawnPoints()
+        {
+            if (spawnPoints.Count > 0 && !spawnPoints.Contains(null)) return true;
+
+            Debug.LogError($"SHIP_SPAWN_POINT_CONFIG_INVALID config={name}", this);
+            return false;
         }
     }
 }

@@ -65,6 +65,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
         private NetworkPlayerGrappleController grappleController;
         private NetworkPlayerUpgradeState upgradeState;
         private NetworkPlayerLifeState playerLifeState;
+        private NetworkPlayerSectorState playerSectorState;
         private Rigidbody attachedRigidbody;
         private IDebrisHolder debrisHolder;
         private float verticalVelocity;
@@ -225,7 +226,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
                 return;
             }
 
-            TeleportTo(targetPosition, targetRotation);
+            TryTeleportOnServer(targetPosition, targetRotation, "test");
         }
 
         public void RequestLocalPortalTeleport(string portalName)
@@ -390,37 +391,34 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
 
         public bool TryTeleportForWarp(Vector3 targetPosition, Quaternion targetRotation)
         {
-            if (!IsSpawned || !IsServer)
+            if (!TryRequireSectorState("warp", out var sectorState)
+                || !TryRequireLifeState("warp", out var lifeState))
             {
-                Debug.LogError($"PHS_WARP_TELEPORT_FAILED reason=server_required player={name}", this);
                 return false;
             }
 
-            var networkTransform = GetComponent<NetworkTransform>();
-            if (networkTransform == null)
+            if (!TryTeleportOnServer(targetPosition, targetRotation, "warp"))
             {
-                Debug.LogError($"PHS_WARP_TELEPORT_FAILED reason=network_transform_missing player={name}", this);
                 return false;
             }
 
-            ResetGravityTracking();
-            var wasEnabled = characterController != null && characterController.enabled;
-            if (characterController != null)
-            {
-                characterController.enabled = false;
-            }
-
-            networkTransform.Teleport(targetPosition, targetRotation, transform.localScale);
-            PlanarVelocity = Vector3.zero;
-            verticalVelocity = 0f;
-            zeroGravityVelocity = Vector3.zero;
-
-            if (characterController != null)
-            {
-                characterController.enabled = wasEnabled;
-            }
-
+            sectorState.ResetToInteriorServer("warp_teleport");
+            lifeState.CancelDeadZoneWarning();
             Debug.Log($"PHS_WARP_TELEPORT_OK player={name} pos={targetPosition}", this);
+            return true;
+        }
+
+        public bool TryTeleportForRespawn(Vector3 targetPosition, Quaternion targetRotation)
+        {
+            if (!TryRequireSectorState("respawn", out var sectorState)
+                || !TryRequireLifeState("respawn", out var lifeState)
+                || !TryTeleportOnServer(targetPosition, targetRotation, "respawn"))
+            {
+                return false;
+            }
+
+            sectorState.ResetToInteriorServer("respawn");
+            lifeState.CancelDeadZoneWarning();
             return true;
         }
 
@@ -498,8 +496,50 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
                 return;
             }
 
-            TeleportTo(destinationPosition, destinationRotation);
-            Debug.Log($"PHS_LOCAL_PORTAL_OK portal={portalName} clientId={OwnerClientId}");
+            if (!TryRequireSectorState("local_portal", out var sectorState))
+            {
+                return;
+            }
+
+            var destinationSector = matchingPortals[0].DestinationSector;
+            if (destinationSector == NetworkPlayerSector.Interior && playerLifeState == null)
+            {
+                Debug.LogError(
+                    $"PHS_LOCAL_PORTAL_FAILED reason=life_state_missing portal={portalName} clientId={OwnerClientId}",
+                    this);
+                return;
+            }
+
+            if (!sectorState.TryBeginTransitionServer(destinationSector, out var transitionReason))
+            {
+                Debug.LogError(
+                    $"PHS_LOCAL_PORTAL_FAILED reason={transitionReason} portal={portalName} clientId={OwnerClientId}",
+                    this);
+                return;
+            }
+
+            if (!TryTeleportOnServer(destinationPosition, destinationRotation, "local_portal"))
+            {
+                sectorState.CancelTransitionServer("teleport_failed");
+                return;
+            }
+
+            if (!sectorState.TryCompleteTransitionServer(out transitionReason))
+            {
+                Debug.LogError(
+                    $"PHS_LOCAL_PORTAL_FAILED reason={transitionReason} portal={portalName} clientId={OwnerClientId}",
+                    this);
+                sectorState.CancelTransitionServer("completion_failed");
+                return;
+            }
+
+            if (destinationSector == NetworkPlayerSector.Interior)
+            {
+                playerLifeState.CancelDeadZoneWarning();
+            }
+
+            Debug.Log(
+                $"PHS_LOCAL_PORTAL_OK portal={portalName} clientId={OwnerClientId} sector={destinationSector}");
         }
 
         public override void OnNetworkSpawn()
@@ -508,7 +548,12 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
             grappleController = GetComponent<NetworkPlayerGrappleController>();
             upgradeState = GetComponent<NetworkPlayerUpgradeState>();
             playerLifeState = GetComponent<NetworkPlayerLifeState>();
+            playerSectorState = GetComponent<NetworkPlayerSectorState>();
             ConfigureNetworkRigidbody(true);
+            if (playerSectorState == null)
+            {
+                Debug.LogError($"PHS_PLAYER_SECTOR_SETUP_FAILED reason=sector_state_missing player={name}", this);
+            }
             if (IsServer)
             {
                 thrusterFuel.Value = EffectiveThrusterFuelCapacity;
@@ -531,6 +576,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
             grappleController = GetComponent<NetworkPlayerGrappleController>();
             upgradeState = GetComponent<NetworkPlayerUpgradeState>();
             playerLifeState = GetComponent<NetworkPlayerLifeState>();
+            playerSectorState = GetComponent<NetworkPlayerSectorState>();
             attachedRigidbody = GetComponent<Rigidbody>();
             debrisHolder = GetComponent<IDebrisHolder>();
             if (playerControlInput == null)
@@ -554,6 +600,14 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
             currentCameraPitch = cameraPitch;
             CacheLocalOwnerHiddenRenderers();
             ConfigureCommandLineAutomation();
+        }
+
+        private void Start()
+        {
+            if (!IsSpawned)
+            {
+                RefreshForActiveScene();
+            }
         }
 
         private void OnEnable()
@@ -1310,27 +1364,18 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
                 return false;
             }
 
-            var networkTransform = GetComponent<NetworkTransform>();
-            if (networkTransform == null)
+            if (!TryRequireSectorState("gameplay_spawn", out var sectorState))
             {
-                Debug.LogError($"PHS_SPAWN_POINT_FAILED reason=network_transform_missing player={name}", this);
                 return false;
             }
 
-            var wasEnabled = characterController != null && characterController.enabled;
-            if (characterController != null)
+            if (!TryTeleportOnServer(spawnPoint.position, spawnPoint.rotation, "gameplay_spawn"))
             {
-                characterController.enabled = false;
+                return false;
             }
 
-            networkTransform.Teleport(spawnPoint.position, spawnPoint.rotation, transform.localScale);
-            verticalVelocity = 0f;
+            sectorState.ResetToInteriorServer("gameplay_spawn");
             initializedGameplaySceneHandle = activeScene.handle.GetRawData();
-
-            if (characterController != null)
-            {
-                characterController.enabled = wasEnabled;
-            }
 
             Debug.Log($"PHS_PLAYER_SPAWN_POINT ownerClientId={OwnerClientId} pos={transform.position}");
             return true;
@@ -1484,6 +1529,94 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
                 $"PHS_PLAYER_SPAWN_POINT_CONFIRMED ownerClientId={OwnerClientId} " +
                 $"scene={activeScene.name} pos={transform.position}",
                 this);
+        }
+
+        private bool TryRequireSectorState(string operation, out NetworkPlayerSectorState sectorState)
+        {
+            sectorState = playerSectorState;
+            if (!IsSpawned || !IsServer)
+            {
+                Debug.LogError(
+                    $"PHS_PLAYER_SECTOR_REQUIRED_FAILED reason=server_required operation={operation} player={name}",
+                    this);
+                return false;
+            }
+
+            if (sectorState != null)
+            {
+                return true;
+            }
+
+            Debug.LogError(
+                $"PHS_PLAYER_SECTOR_REQUIRED_FAILED reason=sector_state_missing operation={operation} player={name}",
+                this);
+            return false;
+        }
+
+        private bool TryRequireLifeState(string operation, out NetworkPlayerLifeState lifeState)
+        {
+            lifeState = playerLifeState;
+            if (lifeState != null)
+            {
+                return true;
+            }
+
+            Debug.LogError(
+                $"PHS_PLAYER_LIFE_REQUIRED_FAILED reason=life_state_missing operation={operation} player={name}",
+                this);
+            return false;
+        }
+
+        private bool TryTeleportOnServer(
+            Vector3 targetPosition,
+            Quaternion targetRotation,
+            string operation)
+        {
+            if (!IsSpawned || !IsServer)
+            {
+                Debug.LogError(
+                    $"PHS_PLAYER_TELEPORT_FAILED reason=server_required operation={operation} player={name}",
+                    this);
+                return false;
+            }
+
+            var networkTransform = GetComponent<NetworkTransform>();
+            if (networkTransform == null || characterController == null || grappleController == null)
+            {
+                Debug.LogError(
+                    $"PHS_PLAYER_TELEPORT_FAILED reason=contract_missing operation={operation} player={name} " +
+                    $"networkTransform={networkTransform != null} characterController={characterController != null} " +
+                    $"grapple={grappleController != null}",
+                    this);
+                return false;
+            }
+
+            if (!grappleController.CancelForTeleport())
+            {
+                Debug.LogError(
+                    $"PHS_PLAYER_TELEPORT_FAILED reason=grapple_cancel_failed operation={operation} player={name}",
+                    this);
+                return false;
+            }
+
+            ResetGravityTracking();
+            var wasEnabled = characterController.enabled;
+            characterController.enabled = false;
+            try
+            {
+                networkTransform.Teleport(targetPosition, targetRotation, transform.localScale);
+                ResetMovementForRespawn();
+                targetYaw = targetRotation.eulerAngles.y;
+            }
+            finally
+            {
+                characterController.enabled = wasEnabled;
+            }
+
+            Debug.Log(
+                $"PHS_PLAYER_TELEPORT_OK operation={operation} player={name} pos={targetPosition}",
+                this);
+            return true;
         }
 
         private void TeleportTo(Vector3 targetPosition, Quaternion targetRotation)
@@ -1695,12 +1828,13 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
 
         private void CacheLocalOwnerHiddenRenderers()
         {
-            if (localOwnerHiddenRenderers != null && localOwnerHiddenRenderers.Length > 0)
+            if (localOwnerHiddenRenderers != null
+                && Array.Exists(localOwnerHiddenRenderers, targetRenderer => targetRenderer != null))
             {
                 return;
             }
 
-            localOwnerHiddenRenderers = GetComponentsInChildren<Renderer>(true);
+            localOwnerHiddenRenderers = GetComponentsInChildren<SkinnedMeshRenderer>(true);
         }
 
         private void SetLocalOwnerVisualsVisible(bool isVisible)

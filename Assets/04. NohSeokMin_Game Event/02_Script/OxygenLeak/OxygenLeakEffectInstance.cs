@@ -19,7 +19,7 @@ namespace SM
         [Header("벽 무시 레이어 설정")]
         [SerializeField] private LayerMask _wallLayerMask;
 
-        [Header("흡입력 감소 시간 설정")]
+        [Header("흡입력 감소 설정")]
         [SerializeField] private float pullActiveDuration = 5f;
 
         private float _outerPullRadius;

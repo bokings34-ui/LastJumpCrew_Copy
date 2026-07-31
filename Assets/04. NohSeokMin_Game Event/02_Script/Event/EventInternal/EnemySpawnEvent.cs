@@ -25,8 +25,16 @@ namespace SM
             _effectRuntimeBridge = Context?.RuntimeBridge as IEventEffectRuntimeBridge;
             _effectInstanceIds.Clear();
 
-            var point = ShipSpawnPointConfig.Instance.GetRandomFreePoint();
+            var config = ShipSpawnPointConfig.Peek();
+            if (config == null)
+            {
+                Debug.LogError(
+                    $"<color=lime>[{SpawnData.EventName}]</color> ShipSpawnPointConfig 참조가 씬에 없어 발생 취소.");
+                OnFail();
+                return;
+            }
 
+            var point = config.GetRandomFreePoint();
             if (point == null)
             {
                 Debug.LogWarning($"<color=lime>[{SpawnData.EventName}]</color> 사용 가능한 스폰 포인트가 없어 발생 취소.");
@@ -36,7 +44,6 @@ namespace SM
 
             _spawnPoint = point;
             _spawnPoint.Occupy(EventId.EnemySpawn);
-
             _chosenPrefab = PickRandomPrefab();
 
             if (_chosenPrefab == null)
@@ -55,6 +62,7 @@ namespace SM
             {
                 OnFail();
             }
+            //Debug.Log($"<color=lime>[{SpawnData.EventName}]</color> 발생!");
         }
 
         public override void OnTick(float deltaTime)
@@ -81,7 +89,6 @@ namespace SM
                 }
             }
         }
-
         private GameObject PickRandomPrefab()
         {
             if (Random.value < 0.5f)

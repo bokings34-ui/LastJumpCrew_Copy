@@ -17,6 +17,16 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Tutorial
 
         private void OnTriggerEnter(Collider other)
         {
+            TryCompleteFromItem(other);
+        }
+
+        private void OnTriggerStay(Collider other)
+        {
+            TryCompleteFromItem(other);
+        }
+
+        private void TryCompleteFromItem(Collider other)
+        {
             if (!CanComplete)
             {
                 return;

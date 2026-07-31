@@ -46,7 +46,7 @@ namespace LastJumpCrew.ParkHanSol.Interaction
         [SerializeField] private ItemVisualProfile[] visualProfiles;
 
         // 상호작용 UI에 표시할 문구다.
-        [SerializeField] private string interactionPrompt = "F";
+        [SerializeField] private string interactionPrompt = "보관함 사용";
 
         // 개별 프로필이 없을 때 쓰는 기본 프리뷰 회전이다.
         [SerializeField] private Vector3 visibleItemLocalEuler = new(0f, 90f, 0f);

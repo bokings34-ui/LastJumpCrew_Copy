@@ -1,3 +1,4 @@
+using System;
 using LastJumpCrew.Common;
 using Unity.Netcode;
 using UnityEngine;
@@ -57,6 +58,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
             && synchronizedRespawnSeconds.Value >= 0f;
         public float DeadZoneWarningRemainingSeconds => synchronizedDeadZoneSeconds.Value;
         public float RespawnRemainingSeconds => synchronizedRespawnSeconds.Value;
+        public event Action<int, int> HealthChanged;
 
         private void Awake()
         {
@@ -69,6 +71,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
         public override void OnNetworkSpawn()
         {
             synchronizedHealth.OnValueChanged += HandleHealthChanged;
+            synchronizedMaximumHealth.OnValueChanged += HandleMaximumHealthChanged;
             synchronizedAlive.OnValueChanged += HandleAliveChanged;
             synchronizedWarpRevivePending.OnValueChanged += HandleWarpRevivePendingChanged;
             synchronizedDeadZoneSeconds.OnValueChanged += HandleWarningChanged;
@@ -82,11 +85,13 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
             ApplyAlivePresentation(synchronizedAlive.Value);
             ApplyWarningPresentation(synchronizedDeadZoneSeconds.Value);
             ApplyRespawnPresentation();
+            NotifyOwnerHealthChanged();
         }
 
         public override void OnNetworkDespawn()
         {
             synchronizedHealth.OnValueChanged -= HandleHealthChanged;
+            synchronizedMaximumHealth.OnValueChanged -= HandleMaximumHealthChanged;
             synchronizedAlive.OnValueChanged -= HandleAliveChanged;
             synchronizedWarpRevivePending.OnValueChanged -= HandleWarpRevivePendingChanged;
             synchronizedDeadZoneSeconds.OnValueChanged -= HandleWarningChanged;
@@ -237,6 +242,16 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
             synchronizedDeadZoneSeconds.Value = -1f;
         }
 
+        public void KillForContainmentBreach()
+        {
+            if (!RequireServer(nameof(KillForContainmentBreach)))
+            {
+                return;
+            }
+
+            Kill("interior_containment_breach", false);
+        }
+
         public void KillForWarp()
         {
             if (!RequireServer(nameof(KillForWarp)))
@@ -298,8 +313,15 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
                 return false;
             }
 
-            playerController.ResetMovementForRespawn();
-            TeleportTo(respawnPoint.position, respawnPoint.rotation);
+            if (!playerController.TryTeleportForRespawn(respawnPoint.position, respawnPoint.rotation))
+            {
+                synchronizedRespawnSeconds.Value = -1f;
+                Debug.LogError(
+                    $"PHS_PLAYER_REVIVE_FAILED reason=teleport_failed player={name} scene={activeScene.name}",
+                    this);
+                return false;
+            }
+
             synchronizedHealth.Value = synchronizedMaximumHealth.Value;
             synchronizedWarpRevivePending.Value = false;
             synchronizedRespawnSeconds.Value = -1f;
@@ -309,27 +331,14 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
             return true;
         }
 
-        private void TeleportTo(Vector3 position, Quaternion rotation)
-        {
-            var wasEnabled = characterController != null && characterController.enabled;
-            if (characterController != null)
-            {
-                characterController.enabled = false;
-            }
-
-            transform.SetPositionAndRotation(position, rotation);
-            if (characterController != null)
-            {
-                characterController.enabled = wasEnabled;
-            }
-        }
-
         private void HandleHealthChanged(int previousValue, int currentValue)
         {
-            if (IsServer || !IsOwner)
+            if (!IsOwner)
             {
                 return;
             }
+
+            NotifyOwnerHealthChanged();
 
             var networkManager = NetworkManager.Singleton;
             if (networkManager == null)
@@ -347,6 +356,22 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
                 $"ownerClient={OwnerClientId} " +
                 $"previous={previousValue} current={currentValue}",
                 this);
+        }
+
+        private void HandleMaximumHealthChanged(int previousValue, int currentValue)
+        {
+            if (IsOwner)
+            {
+                NotifyOwnerHealthChanged();
+            }
+        }
+
+        private void NotifyOwnerHealthChanged()
+        {
+            if (IsOwner)
+            {
+                HealthChanged?.Invoke(CurrentHealth, MaximumHealth);
+            }
         }
 
         private void HandleAliveChanged(bool previousValue, bool currentValue)

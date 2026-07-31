@@ -56,6 +56,8 @@ namespace LastJumpCrew.ParkHanSol.Interaction
         private Collider[] heldDebrisColliders;
         private bool[] heldDebrisColliderStates;
         private bool[] heldDebrisTriggerStates;
+        private NetworkObject heldDebrisNetworkObject;
+        private bool heldDebrisAutoObjectParentSync;
         private NetworkObject networkObject;
         private NetworkPlayerItemRecord networkItemRecord;
         private NetworkPlayerItemLifecycle networkItemLifecycle;
@@ -319,6 +321,13 @@ namespace LastJumpCrew.ParkHanSol.Interaction
             currentItemPrefabData = itemObject.ItemPrefabData;
             heldDebrisWorldScale = debrisItem.transform.lossyScale;
             CacheAndPrepareHeldDebrisColliders();
+            heldDebrisNetworkObject = debrisItem.GetComponent<NetworkObject>();
+            if (!IsNetworkSessionActive() && heldDebrisNetworkObject != null)
+            {
+                heldDebrisAutoObjectParentSync =
+                    heldDebrisNetworkObject.AutoObjectParentSync;
+                heldDebrisNetworkObject.AutoObjectParentSync = false;
+            }
 
             heldItemInstance.transform.SetParent(activeHoldPoint, false);
             if (!TryApplyHeldItemPose(
@@ -327,6 +336,7 @@ namespace LastJumpCrew.ParkHanSol.Interaction
                     activeHoldPoint,
                     heldDebrisWorldScale))
             {
+                heldItemInstance.transform.SetParent(null, true);
                 RestoreHeldDebrisColliders();
                 ClearHeldDebrisState();
                 heldItemInstance = null;
@@ -619,11 +629,19 @@ namespace LastJumpCrew.ParkHanSol.Interaction
 
         private void ClearHeldDebrisState()
         {
+            if (heldDebrisNetworkObject != null)
+            {
+                heldDebrisNetworkObject.AutoObjectParentSync =
+                    heldDebrisAutoObjectParentSync;
+            }
+
             heldDebris = null;
             heldDebrisWorldScale = Vector3.one;
             heldDebrisColliders = null;
             heldDebrisColliderStates = null;
             heldDebrisTriggerStates = null;
+            heldDebrisNetworkObject = null;
+            heldDebrisAutoObjectParentSync = false;
         }
 
         private void HandleNetworkHeldItemChanged(string itemId)

@@ -232,17 +232,29 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
                     continue;
                 }
 
+                // 맞은 Collider가 속한 실제 대상을 찾는다.
+                // 수리 대상, 플레이어, 몬스터 등을 모두 찾는다.
                 var targetObject = CombatHitResolver.ResolveTargetObject(hit.gameObject);
+                
 
-                if (targetObject == null || targetObject.transform.root == transform.root)//자기 자신은 공격하지 않는다.
+                if (targetObject == null)
                 {
                     continue;
                 }
 
-                if (!processedTargets.Add(targetObject)) //콜라이드가 여러개 있어도 한번 만 처리
+                // 자기 자신은 공격하거나 수리하지 않는다.
+                if (CombatHitResolver.IsSameTarget(targetObject, gameObject))
+                 
                 {
                     continue;
                 }
+
+                // Collider가 여러 개 있어도 한 번만 처리한다.
+                if (!processedTargets.Add(targetObject))
+                {
+                    continue;
+                }
+
                 var requestSequence = NextUtilityAttackSequence();
                 var hitDistance = Vector3.Distance(
                     wrenchAttackPoint.position,
@@ -253,12 +265,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
                         WrenchItemId,
                         requestSequence))
                 {
-                    RecordAcceptedItemTarget(
-                        WrenchItemId,
-                        targetObject,
-                        "utility_repair",
-                        hit.ClosestPoint(wrenchAttackPoint.position),
-                        requestSequence);
+                    RecordAcceptedItemTarget(WrenchItemId, targetObject, "utility_repair", hit.ClosestPoint(wrenchAttackPoint.position), requestSequence);
                     continue;
                 }
 
@@ -267,21 +274,18 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
                     continue;
                 }
 
-                var knockbackDirection = targetObject.transform.position - wrenchAttackPoint.position;
                 var damageable = targetObject.GetComponentInParent<IDamageable>();
                 var knockbackable = targetObject.GetComponentInParent<IKnockbackable>();
                 var acceptsCombatReaction = (damageable != null && damageable.IsAlive)
-                    || knockbackable != null;
-                CombatHitResolver.ResolveDamageAndKnockback(targetObject, gameObject, wrenchDamage, knockbackDirection, wrenchKnockback);
-                if (acceptsCombatReaction)
+                    || (knockbackable != null && knockbackable.CanReceiveKnockback);
+                if (!acceptsCombatReaction)
                 {
-                    RecordAcceptedItemTarget(
-                        WrenchItemId,
-                        targetObject,
-                        "damage_or_knockback",
-                        hit.ClosestPoint(wrenchAttackPoint.position),
-                        requestSequence);
+                    continue;
                 }
+
+                var knockbackDirection = targetObject.transform.position - wrenchAttackPoint.position;
+                CombatHitResolver.ResolveDamageAndKnockback(targetObject, gameObject, wrenchDamage, knockbackDirection, wrenchKnockback);
+                RecordAcceptedItemTarget(WrenchItemId, targetObject, "damage_or_knockback", hit.ClosestPoint(wrenchAttackPoint.position), requestSequence);
             }
             PublishItemUseFeedback(
                 PHSItemUseFeedbackKind.Wrench,
@@ -587,52 +591,78 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
 
             foreach (var hit in hits)
             {
+                // SphereCast 결과에 Collider가 없으면 처리하지 않는다.
                 if (hit.collider == null)
                 {
                     continue;
                 }
+
+                // 맞은 Collider가 속한 실제 대상 오브젝트를 찾는다.
+                // 화재, 산소 누출, 플레이어, 몬스터 등을 모두 찾을 수 있다.
                 var targetObject = CombatHitResolver.ResolveTargetObject(hit.collider.gameObject);
-
-                //소화기 사용하는 자신은 안 맞음
-                if (targetObject == null || targetObject.transform.root == transform.root)
+                
+                if (targetObject == null)
                 {
-                    continue;
-                }
-                if (!processedTargets.Add(targetObject))//Collider가 여러 개 검출돼고 한번만 데미지 넉백 처리용
-                {
-                    continue;
-                }
-                var requestSequence = NextUtilityAttackSequence();
-                if (CombatHitResolver.TryResolveUtilityAttack(
-                        targetObject,
-                        gameObject,
-                        FireExtinguisherItemId,
-                        requestSequence))
-                {
-                    RecordAcceptedItemTarget(
-                        FireExtinguisherItemId,
-                        targetObject,
-                        "fire_suppression",
-                        hit.point,
-                        requestSequence);
                     continue;
                 }
 
-                var sprayDirection = extinguisherSprayOrigin.forward; //넉백 방향
-                var damageable = targetObject.GetComponentInParent<IDamageable>();
-                var knockbackable = targetObject.GetComponentInParent<IKnockbackable>();
-                var acceptsCombatReaction = (damageable != null && damageable.IsAlive)
-                    || knockbackable != null;
+                // 소화기를 사용하는 자기 자신은 맞지 않는다.
+                if (CombatHitResolver.IsSameTarget(targetObject, gameObject))
+                   
+                {
+                    continue;
+                }
+
+                // 한 오브젝트에 Collider가 여러 개 있어도
+                // 한 번의 분사 판정에서는 한 번만 처리한다.
+                if (!processedTargets.Add(targetObject))
+                {
+                    continue;
+                }
+
+                // 이번 소화기 판정의 고유 번호를 만든다.
+                var requestSequence =
+                    NextUtilityAttackSequence();
+
+                // 먼저 화재, 산소 누출 등의 상호작용 대상을 검사한다.
+                if (CombatHitResolver.TryResolveUtilityAttack(targetObject, gameObject, FireExtinguisherItemId, requestSequence))
+                {
+                    RecordAcceptedItemTarget(FireExtinguisherItemId, targetObject, "fire_suppression", hit.point, requestSequence);
+                    
+
+                    // 상호작용에 성공했으면
+                    // 같은 대상에게 데미지와 넉백은 적용하지 않는다.
+                    continue;
+                }
+
+                // 상호작용 대상이 아니면 전투 대상을 검사한다.
+                var damageable =
+                    targetObject.GetComponentInParent<IDamageable>();
+
+                var knockbackable =
+                    targetObject.GetComponentInParent<IKnockbackable>();
+
+                bool acceptsCombatReaction =
+                    (damageable != null && damageable.IsAlive)
+                    || (knockbackable != null
+                        && knockbackable.CanReceiveKnockback);
+
+                // 데미지와 넉백을 모두 받을 수 없는 대상이면 건너뛴다.
+                if (!acceptsCombatReaction)
+                {
+                    continue;
+                }
+
+                // 소화기가 분사되는 방향으로 넉백시킨다.
+                var sprayDirection = extinguisherSprayOrigin.forward;
+                
+
                 CombatHitResolver.ResolveDamageAndKnockback(targetObject, gameObject, extinguisherDamagePerTick, sprayDirection, extinguisherKnockback);
-                if (acceptsCombatReaction)
-                {
-                    RecordAcceptedItemTarget(
-                        FireExtinguisherItemId,
-                        targetObject,
-                        "damage_or_knockback",
-                        hit.point,
-                        requestSequence);
-                }
+
+            
+                RecordAcceptedItemTarget(FireExtinguisherItemId, targetObject, "damage_or_knockback", hit.point, requestSequence);
+                
+
             }
             PublishItemUseFeedback(
                 PHSItemUseFeedbackKind.FireExtinguisher,

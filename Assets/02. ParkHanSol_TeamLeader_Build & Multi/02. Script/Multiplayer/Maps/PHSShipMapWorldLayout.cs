@@ -8,13 +8,15 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Maps
     [DisallowMultipleComponent]
     public sealed class PHSShipMapWorldLayout : MonoBehaviour
     {
-        [SerializeField] private Vector2 worldCenterXZ = new(-384.5f, -15.5f);
-        [SerializeField] private Vector2 worldSizeXZ = new(160f, 160f);
+        [SerializeField] private Vector2 worldCenterXZ = new(2f, 55f);
+        [SerializeField] private Vector2 worldSizeXZ = new(82f, 114f);
         [SerializeField] private PHSShipAccidentAnchor[] accidentAnchors = Array.Empty<PHSShipAccidentAnchor>();
+        [SerializeField] private PHSShipMapObjectAnchor[] objectAnchors = Array.Empty<PHSShipMapObjectAnchor>();
 
         private readonly Dictionary<string, PHSShipAccidentAnchor> anchorsById = new(StringComparer.Ordinal);
 
         public static PHSShipMapWorldLayout Instance { get; private set; }
+        public int ObjectAnchorCount => objectAnchors?.Length ?? 0;
 
         private void Awake()
         {
@@ -73,6 +75,16 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Maps
             return false;
         }
 
+        public PHSShipMapObjectAnchor GetObjectAnchorAt(int index)
+        {
+            if (index < 0 || index >= ObjectAnchorCount)
+            {
+                throw new ArgumentOutOfRangeException(nameof(index));
+            }
+
+            return objectAnchors[index];
+        }
+
         private void RebuildAnchorLookup()
         {
             anchorsById.Clear();
@@ -99,6 +111,27 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Maps
                 {
                     Debug.LogError(
                         $"PHS_SHIP_MAP_LAYOUT_SETUP_FAILED reason=anchor_duplicate anchor={anchor.AnchorId}",
+                        this);
+                    enabled = false;
+                }
+            }
+
+            if (objectAnchors == null || objectAnchors.Length == 0)
+            {
+                Debug.LogError("PHS_SHIP_MAP_LAYOUT_SETUP_FAILED reason=object_anchors_missing", this);
+                enabled = false;
+                return;
+            }
+
+            for (var index = 0; index < objectAnchors.Length; index++)
+            {
+                var anchor = objectAnchors[index];
+                var reason = anchor == null ? "reference_missing" : null;
+                if (anchor == null || !anchor.TryValidate(out reason))
+                {
+                    Debug.LogError(
+                        $"PHS_SHIP_MAP_LAYOUT_SETUP_FAILED reason=object_anchor_invalid " +
+                        $"index={index} detail={reason}",
                         this);
                     enabled = false;
                 }

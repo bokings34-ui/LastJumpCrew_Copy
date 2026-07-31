@@ -12,6 +12,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
         [SerializeField] private ShipGravityZoneController shipGravityController;
 
         private NetworkPlayerController boundOwner;
+        private NetworkPlayerLifeState boundLifeState;
 
         private void OnEnable()
         {
@@ -29,6 +30,8 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
 
         private void OnDisable()
         {
+            UnbindLifeState();
+            boundOwner = null;
             if (shipGravityController != null)
             {
                 shipGravityController.GravityStateChanged -= HandleGravityStateChanged;
@@ -66,8 +69,37 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
                 player.GetComponent<TempPlayerItemHolder>()?.BindPlayHudPresenter(playHudPresenter);
                 player.GetComponent<TempPlayerInteractionScanner>()?.BindPlayHudPresenter(playHudPresenter);
                 boundOwner = player;
+                BindLifeState(player.GetComponent<NetworkPlayerLifeState>());
                 return;
             }
+        }
+
+        private void BindLifeState(NetworkPlayerLifeState lifeState)
+        {
+            UnbindLifeState();
+            boundLifeState = lifeState;
+            if (boundLifeState == null)
+            {
+                Debug.LogError("PHS_PLAYER_HEALTH_HUD_BIND_FAILED reason=life_state_missing", this);
+                return;
+            }
+
+            boundLifeState.HealthChanged += HandleHealthChanged;
+            HandleHealthChanged(boundLifeState.CurrentHealth, boundLifeState.MaximumHealth);
+        }
+
+        private void UnbindLifeState()
+        {
+            if (boundLifeState != null)
+            {
+                boundLifeState.HealthChanged -= HandleHealthChanged;
+                boundLifeState = null;
+            }
+        }
+
+        private void HandleHealthChanged(int current, int maximum)
+        {
+            playHudPresenter?.SetHealth(current, maximum);
         }
 
         private void HandleGravityStateChanged(bool isEnabled)

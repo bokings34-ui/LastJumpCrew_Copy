@@ -29,6 +29,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
 
         public event Action RoomsChanged;
         public event Action SessionJoined;
+        public event Action UnexpectedSessionEnded;
         public event Action<string> OperationFailed;
 
         public IReadOnlyList<RoomSessionInfo> Rooms => rooms;
@@ -497,6 +498,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
             }
 
             Debug.LogError($"PHS_ROOM_SESSION_ENDED sessionId={endedSession.Id}");
+            UnexpectedSessionEnded?.Invoke();
             OperationFailed?.Invoke("session_ended");
         }
 

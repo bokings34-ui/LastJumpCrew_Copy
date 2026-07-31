@@ -48,16 +48,18 @@ namespace SM
             }
         }
 
-        // 첫 발화: 전체 중 랜덤 (점유 안 된 것만)
-        // 이후: 이미 불붙은 지점들의 "비어있는 이웃"만 후보 (확산)
         private ShipSpawnPoint PickNextSpawnPoint()
         {
-            if (_occupiedPoints.Count == 0)
+            var config = ShipSpawnPointConfig.Peek();
+            if (config == null)
             {
-                return ShipSpawnPointConfig.Instance.GetRandomFreePoint();
+                Debug.LogError("SHIP_SPAWN_POINT_CONFIG_MISSING event=Fire");
+                return null;
             }
 
-            return ShipSpawnPointConfig.Instance.GetRandomFreeNeighbor(_occupiedPoints.Keys);
+            return _occupiedPoints.Count == 0
+                ? config.GetRandomFreePoint()
+                : config.GetRandomFreeNeighbor(_occupiedPoints.Keys);
         }
 
         private void SpawnNextFire()

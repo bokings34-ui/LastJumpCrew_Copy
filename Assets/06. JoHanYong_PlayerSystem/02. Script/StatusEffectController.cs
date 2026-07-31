@@ -1,8 +1,8 @@
-using System;
-using System.Collections;
 using LastJumpCrew.Common;
 using Unity.Netcode;
 using UnityEngine;
+using System;
+using System.Collections;
 
 namespace LastJumpCrew.ParkHanSol.Multiplayer
 {
@@ -235,6 +235,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
                     audioSource.Play();
                 }
                 else if (!active)
+
                 {
                     audioSource.Stop();
                 }
@@ -247,6 +248,16 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
                     effectLight.enabled = active;
                 }
             }
+        }
+
+        private void OnDisable()
+        {
+            StopElectricShockRoutine();
+            if (IsSpawned && IsServer && electricShockActive.Value)
+            {
+                electricShockActive.Value = false;
+            }
+            ApplyElectricShockPresentation(false);
         }
     }
 }

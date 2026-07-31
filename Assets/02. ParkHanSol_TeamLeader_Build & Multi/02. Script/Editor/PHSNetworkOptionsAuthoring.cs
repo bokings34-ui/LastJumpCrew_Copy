@@ -268,6 +268,7 @@ public static class PHSNetworkOptionsAuthoring
                 typeof(NetworkSharedOptionsPanelController));
             presentation.transform.SetParent(host.transform, false);
             StretchRect(presentation.GetComponent<RectTransform>());
+            presentation.transform.localScale = Vector3.one;
             var canvas = presentation.GetComponent<Canvas>();
             canvas.renderMode = RenderMode.ScreenSpaceOverlay;
             canvas.sortingOrder = 200;

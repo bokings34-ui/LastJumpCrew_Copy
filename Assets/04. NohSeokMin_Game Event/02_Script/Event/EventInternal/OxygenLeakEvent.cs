@@ -11,7 +11,8 @@ namespace SM
         private OxygenLeakEffectPool _effectPool;
         private IEventEffectRuntimeBridge _effectRuntimeBridge;
         private IEventRepairRuntimeBridge _repairRuntimeBridge;
-        private ShipSpawnPoint _spawnPoint;
+        private IOxygenLeakZoneProvider _zoneProvider;
+        private IOxygenLeakZone _zone;
         private uint _effectInstanceId;
         private bool _effectSpawnPublishAttempted;
 
@@ -22,7 +23,8 @@ namespace SM
             _effectPool = null;
             _effectRuntimeBridge = null;
             _repairRuntimeBridge = null;
-            _spawnPoint = null;
+            _zoneProvider = null;
+            _zone = null;
             _effectInstanceId = 0U;
             _effectSpawnPublishAttempted = false;
 
@@ -66,18 +68,17 @@ namespace SM
 
         private bool TryStart(out string reason)
         {
-            var point = ShipSpawnPointConfig.Instance.GetRandomFreePoint();
-            if (point == null)
+            if (!_zoneProvider.TryAcquireZone(out _zone, out var zoneReason)
+                || _zone == null)
             {
-                reason = "spawn_point_unavailable";
+                reason = $"oxygen_zone_acquire_failed:{zoneReason ?? "zone_missing"}";
                 return false;
             }
 
-            _spawnPoint = point;
-            _spawnPoint.Occupy(EventId.OxygenLeak);
+            var leakPosition = _zone.RepairPosition;
 
             _effect = _effectPool.Get(
-                _spawnPoint.transform.position,
+                leakPosition,
                 LeakData,
                 false); // 로컬 테스트를 위해 true -> false 로 수정
             if (_effect == null)
@@ -129,7 +130,7 @@ namespace SM
             PublishEffectRemoved();
             _effectPool.Return(effect);
             _effect = null;
-            ReleaseSpawnPoint();
+            ReleaseOxygenZone();
             OnResolve();
         }
 
@@ -161,7 +162,7 @@ namespace SM
                 _effect = null;
             }
 
-            ReleaseSpawnPoint();
+            ReleaseOxygenZone();
             base.ForceTerminate();
         }
 
@@ -177,6 +178,21 @@ namespace SM
             var runtimeBridge = Context?.RuntimeBridge;
             _effectRuntimeBridge = runtimeBridge as IEventEffectRuntimeBridge;
             _repairRuntimeBridge = runtimeBridge as IEventRepairRuntimeBridge;
+
+            var roomComponent = Context?.Room as Component;
+            if (roomComponent == null)
+            {
+                reason = "room_component_required";
+                return false;
+            }
+
+            _zoneProvider =
+                roomComponent.GetComponent<IOxygenLeakZoneProvider>();
+            if (_zoneProvider == null)
+            {
+                reason = "oxygen_zone_provider_required";
+                return false;
+            }
 
             if (!OxygenLeakEffectPool.HasInstance
                 || OxygenLeakEffectPool.Peek() == null)
@@ -233,7 +249,7 @@ namespace SM
                 _effectInstanceId = 0U;
             }
 
-            ReleaseSpawnPoint();
+            ReleaseOxygenZone();
         }
 
         private void LogCleanupFailure(
@@ -247,10 +263,23 @@ namespace SM
                 $"{exception.Message}");
         }
 
-        private void ReleaseSpawnPoint()
+        private void ReleaseOxygenZone()
         {
-            _spawnPoint?.Release();
-            _spawnPoint = null;
+            var zone = _zone;
+            _zone = null;
+            if (zone == null)
+            {
+                return;
+            }
+
+            try
+            {
+                zone.Deactivate();
+            }
+            catch (System.Exception exception)
+            {
+                LogCleanupFailure("oxygen_zone", exception);
+            }
         }
 
         private void PublishEffectRemoved()
