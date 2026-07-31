@@ -14,8 +14,9 @@ namespace SM
             EventId.Fire,
             EventId.EnemySpawn,
             EventId.OxygenLeak,
-
-            // TODO :: PowerOff, EngineBreak, MicDestroy 구현 완료 후 추가
+            EventId.PowerOff,
+            EventId.EngineBreak,
+            EventId.MicDestroy
         };
 
         private const float TotalTime = 300f;
