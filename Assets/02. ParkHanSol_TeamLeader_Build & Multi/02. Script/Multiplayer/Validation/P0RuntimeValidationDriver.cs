@@ -29,8 +29,9 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Validation
         private const string InputOnlyScenarioFlag = "-phsInputOnlyScenario";
         private const string MapSceneName = "PHS_Map_ver1";
         private const string ShopSceneName = "PHS_ExteriorShopScene";
-        private const string LocalDebrisEntryPortalName = "PHS_DebrisCollectionPortal_0715";
-        private const string LocalDebrisReturnPortalName = "PHS_DebrisCollectionReturnPortal_0715";
+        private const string LocalDebrisEntryPortalName = "PHS_ExteriorDoorTrigger_Left";
+        private const string LocalDebrisAlternateEntryPortalName = "PHS_ExteriorDoorTrigger_Right";
+        private const string LocalDebrisReturnPortalName = "PHS_ExteriorDebrisReturnPortal";
         private const float DefaultStepTimeout = 90f;
 
         [Header("P2 Runtime Validation")]
@@ -3633,7 +3634,8 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Validation
 
             var playerObject = hostClient.PlayerObject;
             var holder = playerObject.GetComponent<TempPlayerItemHolder>();
-            if (holder == null)
+            var playerController = playerObject.GetComponent<NetworkPlayerController>();
+            if (holder == null || playerController == null)
             {
                 Fail("debris_entry_holder_missing");
                 yield break;
@@ -3650,7 +3652,12 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Validation
 
             SetPlayerPosition(playerObject, entryPortal.transform.position);
             yield return null;
-            entryPortal.Interact(holder);
+            if (Vector3.Distance(
+                    playerObject.transform.position,
+                    entryPortal.Destination.position) > 2f)
+            {
+                playerController.RequestLocalPortalTeleport(entryPortal.name);
+            }
             yield return WaitFor(
                 () => Vector3.Distance(playerObject.transform.position, entryPortal.Destination.position) <= 2f,
                 10f,
@@ -3676,7 +3683,12 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Validation
 
             SetPlayerPosition(playerObject, returnPortal.transform.position);
             yield return null;
-            returnPortal.Interact(holder);
+            if (Vector3.Distance(
+                    playerObject.transform.position,
+                    returnPortal.Destination.position) > 2f)
+            {
+                playerController.RequestLocalPortalTeleport(returnPortal.name);
+            }
             yield return WaitFor(
                 () => Vector3.Distance(playerObject.transform.position, returnPortal.Destination.position) <= 2f,
                 10f,
@@ -3816,7 +3828,10 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Validation
 
             var gameplayContext = GameplaySceneContext.FindForScene(SceneManager.GetActiveScene());
             if (gameplayContext == null
-                || !gameplayContext.TryGetSpawnPoint(remoteClientId, out var expectedSpawnPoint)
+                || !gameplayContext.TryGetSpawnPoint(
+                    remoteClientId,
+                    out var expectedSpawnPoint,
+                    out _)
                 || expectedSpawnPoint == null)
             {
                 Fail($"remote_item_spawn_point_missing client={remoteClientId}");
@@ -4313,11 +4328,23 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Validation
                 .ToArray();
             entryPortal = portals.SingleOrDefault(portal =>
                 string.Equals(portal.name, LocalDebrisEntryPortalName, StringComparison.Ordinal));
+            var alternateEntryPortal = portals.SingleOrDefault(portal =>
+                string.Equals(
+                    portal.name,
+                    LocalDebrisAlternateEntryPortalName,
+                    StringComparison.Ordinal));
             returnPortal = portals.SingleOrDefault(portal =>
                 string.Equals(portal.name, LocalDebrisReturnPortalName, StringComparison.Ordinal));
             return entryPortal != null
+                && alternateEntryPortal != null
                 && returnPortal != null
                 && entryPortal != returnPortal
+                && entryPortal.TeleportsOnTriggerEnter
+                && alternateEntryPortal.TeleportsOnTriggerEnter
+                && returnPortal.TeleportsOnTriggerEnter
+                && entryPortal.DoorTrigger != null
+                && alternateEntryPortal.DoorTrigger != null
+                && returnPortal.DoorTrigger != null
                 && Vector3.Distance(entryPortal.Destination.position, returnPortal.Destination.position) > 1f;
         }
 
@@ -5205,11 +5232,19 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Validation
                     FindObjectsInactive.Include,
                     FindObjectsSortMode.None)
                 .FirstOrDefault(player => player.IsOwner);
-            var holder = localPlayer == null ? null : localPlayer.GetComponent<TempPlayerItemHolder>();
-            var issued = portal != null && holder != null && portal.CanInteract(holder);
-            if (issued)
+            var alreadyTeleported = portal != null
+                && localPlayer != null
+                && portal.Destination != null
+                && Vector3.Distance(
+                    localPlayer.transform.position,
+                    portal.Destination.position) <= 2f;
+            var issued = portal != null
+                && localPlayer != null
+                && portal.TeleportsOnTriggerEnter
+                && portal.DoorTrigger != null;
+            if (issued && !alreadyTeleported)
             {
-                portal.Interact(holder);
+                localPlayer.RequestLocalPortalTeleport(portal.name);
             }
 
             ReportLocalPortalProbeServerRpc(token, issued);

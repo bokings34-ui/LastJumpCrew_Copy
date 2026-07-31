@@ -9,13 +9,40 @@ namespace SM
         public event Action OnPowerOff;
         // 배터리 재장착 감지 시 담당 매니저가 이 이벤트를 호출해서 종료시킴
         public event Action OnPowerRestored;
+        private IPowerFailureRoom _powerRoom;
 
         public override void OnTrigger()
         {
             ChangeState(EventState.InProgress);
+
+            var roomComponent = Context?.Room as Component;
+            _powerRoom = roomComponent == null
+                ? null
+                : roomComponent.GetComponent<IPowerFailureRoom>();
+            if (_powerRoom == null)
+            {
+                Debug.LogError(
+                    $"PHS_POWER_OFF_EVENT_FAILED reason=room_power_controller_missing event={InstanceId} room={RoomId}");
+                OnFail();
+                return;
+            }
+
+            if (!_powerRoom.TrySetPowerFailure(
+                    true,
+                    InstanceId,
+                    out var reason))
+            {
+                Debug.LogError(
+                    $"PHS_POWER_OFF_EVENT_FAILED reason={reason} event={InstanceId} room={RoomId}");
+                _powerRoom = null;
+                OnFail();
+                return;
+            }
+
             OnPowerOff?.Invoke();
 
-            Debug.Log($"<color=lime>[PowerOff]</color> 발생. 전력 차단 신호 발행.");
+            Debug.Log(
+                $"<color=lime>[PowerOff]</color> 발생. room={RoomId} event={InstanceId}");
         }
 
         public override void OnTick(float deltaTime)
@@ -32,13 +59,37 @@ namespace SM
 
         public override void OnResolve()
         {
+            if (_powerRoom != null
+                && !_powerRoom.TrySetPowerFailure(
+                    false,
+                    InstanceId,
+                    out var reason))
+            {
+                Debug.LogError(
+                    $"PHS_POWER_RESTORE_FAILED reason={reason} event={InstanceId} room={RoomId}");
+                return;
+            }
+
             ChangeState(EventState.Resolve);
             OnPowerRestored?.Invoke();
-            Debug.Log("<color=lime>[PowerOff]</color> 전력 복구 완료.");
+            _powerRoom = null;
+            Debug.Log(
+                $"<color=lime>[PowerOff]</color> 전력 복구 완료. room={RoomId} event={InstanceId}");
         }
 
         public override void ForceTerminate()
         {
+            if (_powerRoom != null
+                && !_powerRoom.TrySetPowerFailure(
+                    false,
+                    InstanceId,
+                    out var reason))
+            {
+                Debug.LogError(
+                    $"PHS_POWER_FORCE_RESTORE_FAILED reason={reason} event={InstanceId} room={RoomId}");
+            }
+
+            _powerRoom = null;
             OnPowerRestored?.Invoke();
             base.ForceTerminate();
         }

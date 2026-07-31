@@ -10,13 +10,43 @@ namespace LastJumpCrew.ParkHanSol.Interaction
         [SerializeField] private string interactionPrompt = "Move To Exterior Test Zone";
         [SerializeField, Min(0.5f)] private float serverInteractionDistance = 4f;
 
+        [Header("Optional Door Trigger")]
+        [SerializeField] private bool teleportOnTriggerEnter;
+        [SerializeField] private BoxCollider doorTrigger;
+        [SerializeField] private bool allowManualInteraction = true;
+        [SerializeField, Min(0.1f)] private float requestCooldownSeconds = 1f;
+
+        private float nextLocalRequestTime;
+
         public string InteractionPrompt => interactionPrompt;
         public Transform Destination => destination;
         public NetworkPlayerSector DestinationSector => destinationSector;
+        public bool TeleportsOnTriggerEnter => teleportOnTriggerEnter;
+        public BoxCollider DoorTrigger => doorTrigger;
+        public bool AllowsManualInteraction => allowManualInteraction;
+
+        private void Awake()
+        {
+            if (!teleportOnTriggerEnter)
+            {
+                return;
+            }
+
+            if (destination == null
+                || destinationSector == NetworkPlayerSector.Transition
+                || doorTrigger == null
+                || doorTrigger.gameObject != gameObject
+                || !doorTrigger.isTrigger)
+            {
+                Debug.LogError(
+                    $"PHS_LOCAL_PORTAL_TRIGGER_SETUP_FAILED reason=trigger_invalid portal={name}",
+                    this);
+            }
+        }
 
         public bool CanInteract(IItemHolder itemHolder)
         {
-            return destination != null && itemHolder is Component;
+            return allowManualInteraction && destination != null && itemHolder is Component;
         }
 
         public void Interact(IItemHolder itemHolder)
@@ -34,6 +64,40 @@ namespace LastJumpCrew.ParkHanSol.Interaction
                 return;
             }
 
+            player.RequestLocalPortalTeleport(name);
+        }
+
+        private void OnTriggerEnter(Collider other)
+        {
+            if (!teleportOnTriggerEnter
+                || doorTrigger == null
+                || !doorTrigger.isTrigger
+                || Time.unscaledTime < nextLocalRequestTime)
+            {
+                return;
+            }
+
+            var player = other.GetComponent<NetworkPlayerController>();
+            if (player == null || !player.IsSpawned || !player.IsOwner)
+            {
+                return;
+            }
+
+            var lifeState = other.GetComponent<NetworkPlayerLifeState>();
+            if (lifeState == null)
+            {
+                Debug.LogError(
+                    $"PHS_LOCAL_PORTAL_TRIGGER_FAILED reason=life_state_missing player={player.name} portal={name}",
+                    player);
+                return;
+            }
+
+            if (!lifeState.IsAlive)
+            {
+                return;
+            }
+
+            nextLocalRequestTime = Time.unscaledTime + requestCooldownSeconds;
             player.RequestLocalPortalTeleport(name);
         }
 

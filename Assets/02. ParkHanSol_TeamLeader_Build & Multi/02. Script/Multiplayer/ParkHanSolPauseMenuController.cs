@@ -95,7 +95,8 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
 
         private void Update()
         {
-            if (sharedOptionsPanel == null && NetworkOwnerUiRoot.HasActiveLocalPresentation)
+            if (NetworkOwnerUiRoot.HasActiveLocalPresentation
+                && GetComponentInParent<NetworkOwnerUiRoot>() == null)
             {
                 return;
             }

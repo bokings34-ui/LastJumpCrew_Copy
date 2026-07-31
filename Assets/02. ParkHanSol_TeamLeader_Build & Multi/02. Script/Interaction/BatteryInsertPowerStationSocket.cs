@@ -1,6 +1,7 @@
 using System.Collections.Generic;
 using LastJumpCrew.ParkHanSol.Multiplayer;
 using LastJumpCrew.ParkHanSol.Multiplayer.Audio;
+using LastJumpCrew.ParkHanSol.Multiplayer.Events;
 using LastJumpCrew.ParkHanSol.Multiplayer.ShipAccidents;
 using LastJumpCrew.ParkHanSol.Items;
 using Unity.Collections;
@@ -24,6 +25,9 @@ namespace LastJumpCrew.ParkHanSol.Interaction
         [SerializeField] private GameObject installedBatteryVisual;
         [SerializeField] private Transform feedbackPoint;
 
+        [Header("Optional Room Power")]
+        [SerializeField] private PHSPowerFailureRoomController roomPowerController;
+
         // Kept for existing prefab serialization. Network installation always consumes the held battery.
         [SerializeField] private bool destroyInsertedBattery = true;
 
@@ -36,7 +40,11 @@ namespace LastJumpCrew.ParkHanSol.Interaction
         private float nextStateBindingAttemptTime;
 
         public string InteractionPrompt => interactionPrompt;
-        public bool IsBatteryInstalled => boundShipState != null && boundShipState.IsBatteryInstalled;
+        public bool IsBatteryInstalled => roomPowerController != null
+            ? roomPowerController.IsBatteryInstalled
+            : boundShipState != null && boundShipState.IsBatteryInstalled;
+        public PHSPowerFailureRoomController RoomPowerController =>
+            roomPowerController;
         public float ServerInteractionDistance => serverInteractionDistance;
 
         private void Awake()
@@ -71,12 +79,23 @@ namespace LastJumpCrew.ParkHanSol.Interaction
         public override void OnNetworkSpawn()
         {
             base.OnNetworkSpawn();
-            TryBindShipState();
+            if (roomPowerController != null)
+            {
+                roomPowerController.StateChanged += RefreshInstalledVisual;
+            }
+            else
+            {
+                TryBindShipState();
+            }
             RefreshInstalledVisual();
         }
 
         public override void OnNetworkDespawn()
         {
+            if (roomPowerController != null)
+            {
+                roomPowerController.StateChanged -= RefreshInstalledVisual;
+            }
             UnbindShipState();
             completedRequests.Clear();
             requestPending = false;
@@ -85,7 +104,9 @@ namespace LastJumpCrew.ParkHanSol.Interaction
 
         private void Update()
         {
-            if (!IsSpawned || Time.unscaledTime < nextStateBindingAttemptTime)
+            if (roomPowerController != null
+                || !IsSpawned
+                || Time.unscaledTime < nextStateBindingAttemptTime)
             {
                 return;
             }
@@ -175,9 +196,7 @@ namespace LastJumpCrew.ParkHanSol.Interaction
         private bool CanSubmitRequest(Component holderComponent)
         {
             if (requestPending || installedBatteryVisual == null || !IsSpawned
-                || boundShipState == null || !boundShipState.IsSpawned
-                || boundShipState.IsBatteryInstalled
-                || (boundShipState.IsPowerEnabled && boundShipState.IsGravityEnabled))
+                || !IsPowerRestoreAvailable())
             {
                 return false;
             }
@@ -190,6 +209,21 @@ namespace LastJumpCrew.ParkHanSol.Interaction
                     holderComponent,
                     itemRecord.HeldItemId,
                     out _);
+        }
+
+        private bool IsPowerRestoreAvailable()
+        {
+            if (roomPowerController != null)
+            {
+                return roomPowerController.enabled
+                    && roomPowerController.IsPowerFailureActive;
+            }
+
+            return boundShipState != null
+                && boundShipState.IsSpawned
+                && !boundShipState.IsBatteryInstalled
+                && (!boundShipState.IsPowerEnabled
+                    || !boundShipState.IsGravityEnabled);
         }
 
         private bool TryRequestBatteryInstall(Component holderComponent)
@@ -284,18 +318,6 @@ namespace LastJumpCrew.ParkHanSol.Interaction
                 return false;
             }
 
-            var shipState = NetworkShipSystemsState.Instance;
-            if (shipState == null || !shipState.IsSpawned)
-            {
-                reason = "ship_state_missing";
-                return false;
-            }
-
-            if (!shipState.CanRestorePowerWithBattery(out reason))
-            {
-                return false;
-            }
-
             if (!itemLifecycle.TryResolveHeldItemActionServer(
                     itemId,
                     expectedRevision,
@@ -306,7 +328,39 @@ namespace LastJumpCrew.ParkHanSol.Interaction
                 return false;
             }
 
-            var shipAccidentCoordinator = PHSNetworkShipAccidentCoordinator.Instance;
+            var roomEventCoordinator = NetworkEventCoordinator.Instance;
+            var roomPowerFailureInstanceId = 0UL;
+            var usesRoomPower = roomPowerController != null;
+            var shipState = NetworkShipSystemsState.Instance;
+            if (usesRoomPower)
+            {
+                if (roomEventCoordinator == null
+                    || !roomEventCoordinator.CanResolveRoomPowerFailureServer(
+                        roomPowerController.PowerRoomId,
+                        out roomPowerFailureInstanceId,
+                        out reason))
+                {
+                    reason ??= "room_power_event_missing";
+                    return false;
+                }
+            }
+            else
+            {
+                if (shipState == null || !shipState.IsSpawned)
+                {
+                    reason = "ship_state_missing";
+                    return false;
+                }
+
+                if (!shipState.CanRestorePowerWithBattery(out reason))
+                {
+                    return false;
+                }
+            }
+
+            var shipAccidentCoordinator = usesRoomPower
+                ? null
+                : PHSNetworkShipAccidentCoordinator.Instance;
             var powerFailureInstanceId = 0U;
             var hasActivePowerFailureAccident = shipAccidentCoordinator != null
                 && shipAccidentCoordinator.TryGetSingleActiveAccidentServer(
@@ -330,7 +384,20 @@ namespace LastJumpCrew.ParkHanSol.Interaction
 
             // Both calls run synchronously on the server main thread. The preflight above
             // guarantees no valid state transition can fail after the item is consumed.
-            if (!shipState.TryRestorePowerWithBattery(out reason))
+            if (usesRoomPower)
+            {
+                if (!roomEventCoordinator.TryResolveRoomPowerFailureServer(
+                        roomPowerController.PowerRoomId,
+                        roomPowerFailureInstanceId,
+                        out reason))
+                {
+                    Debug.LogError(
+                        $"PHS_BATTERY_TRANSACTION_FAILED reason={reason} clientId={senderClientId} revision={expectedRevision}",
+                        this);
+                    return false;
+                }
+            }
+            else if (!shipState.TryRestorePowerWithBattery(out reason))
             {
                 Debug.LogError(
                     $"PHS_BATTERY_TRANSACTION_FAILED reason={reason} clientId={senderClientId} revision={expectedRevision}",
@@ -372,7 +439,7 @@ namespace LastJumpCrew.ParkHanSol.Interaction
                     expectedRevision);
 
             Debug.Log(
-                $"PHS_BATTERY_INSTALLED target={name} clientId={senderClientId} item={itemId} amount={powerRestoreProfile.Amount} durabilityCost={powerRestoreProfile.DurabilityCost} accidentInstance={powerFailureInstanceId} shipRevision={shipState.Revision}",
+                $"PHS_BATTERY_INSTALLED target={name} room={roomPowerController?.PowerRoomId ?? string.Empty} clientId={senderClientId} item={itemId} amount={powerRestoreProfile.Amount} durabilityCost={powerRestoreProfile.DurabilityCost} accidentInstance={powerFailureInstanceId} roomEventInstance={roomPowerFailureInstanceId} shipRevision={(shipState != null ? shipState.Revision : 0U)}",
                 this);
             return true;
         }
@@ -499,7 +566,7 @@ namespace LastJumpCrew.ParkHanSol.Interaction
             }
 
             installedBatteryVisual.SetActive(
-                boundShipState != null && boundShipState.IsBatteryInstalled);
+                IsBatteryInstalled);
         }
     }
 }

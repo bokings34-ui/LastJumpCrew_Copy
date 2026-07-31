@@ -20,6 +20,8 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Maps
         [SerializeField] private PHSMapIncidentCommandConsumer incidentCommandConsumer;
         [SerializeField] private PHSRandomDebrisStream debrisStream;
         [SerializeField] private GameObject shopPortalRoot;
+        [SerializeField] private GameObject exteriorTravelRoot;
+        [SerializeField] private GameObject safeAreaWarpEffectRoot;
         [SerializeField] private bool keepShopPortalAlwaysActive = true;
 
         [Header("Runtime Binding")]
@@ -46,6 +48,16 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Maps
             if (shopPortalRoot != null)
             {
                 shopPortalRoot.SetActive(keepShopPortalAlwaysActive);
+            }
+
+            if (exteriorTravelRoot != null)
+            {
+                exteriorTravelRoot.SetActive(false);
+            }
+
+            if (safeAreaWarpEffectRoot != null)
+            {
+                safeAreaWarpEffectRoot.SetActive(false);
             }
 
             enabled = setupValid;
@@ -347,6 +359,8 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Maps
             }
 
             shopPortalRoot.SetActive(keepShopPortalAlwaysActive || profile.AllowsShopPortal);
+            exteriorTravelRoot.SetActive(!profile.AllowsShopPortal);
+            safeAreaWarpEffectRoot.SetActive(profile.AllowsShopPortal);
             CurrentProfile = profile;
             CurrentProfileChanged?.Invoke(profile);
             Debug.Log($"PHS_MAP_RUNTIME_APPLIED mapId={mapId} name={profile.DisplayName}", this);
@@ -867,6 +881,18 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Maps
             if (shopPortalRoot == null)
             {
                 Debug.LogError("PHS_MAP_RUNTIME_SETUP_FAILED reason=shop_portal_root_missing", this);
+                return false;
+            }
+
+            if (exteriorTravelRoot == null)
+            {
+                Debug.LogError("PHS_MAP_RUNTIME_SETUP_FAILED reason=exterior_travel_root_missing", this);
+                return false;
+            }
+
+            if (safeAreaWarpEffectRoot == null)
+            {
+                Debug.LogError("PHS_MAP_RUNTIME_SETUP_FAILED reason=safe_area_warp_effect_root_missing", this);
                 return false;
             }
 

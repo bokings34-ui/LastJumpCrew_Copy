@@ -42,9 +42,9 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
             titleText.text = vote.IsShopExitVote
                 ? "상점 퇴장 희망"
                 : "상점 입장 희망";
-            var action = vote.IsShopExitVote ? "나가려면" : "들어가려면";
+            var action = vote.IsShopExitVote ? "퇴장" : "입장";
             statusText.text = $"플레이어가 상점 {(vote.IsShopExitVote ? "퇴장" : "입장")}을 희망합니다\n"
-                + $"{action} 문과 상호작용  {vote.AgreeCount}/{vote.RequiredAgreeCount}";
+                + $"{action} 구역에 모이기  {vote.AgreeCount}/{vote.RequiredAgreeCount}";
         }
 
         private bool ValidateReferences()

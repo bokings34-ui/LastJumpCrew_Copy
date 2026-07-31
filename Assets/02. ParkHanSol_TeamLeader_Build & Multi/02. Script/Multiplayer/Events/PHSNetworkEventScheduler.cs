@@ -16,6 +16,8 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Events
             new(EventId.Fire, 1f),
             new(EventId.EnemySpawn, 1f),
             new(EventId.OxygenLeak, 1f),
+            new(EventId.PowerOff, 1f),
+            new(EventId.EngineBreak, 1f),
             new(EventId.EnemyScout, 1f),
             new(EventId.MeteorAttack, 1f),
             new(EventId.EmpAttack, 1f)

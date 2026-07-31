@@ -18,7 +18,6 @@ namespace LastJumpCrew.ParkHanSol.Editor
             PHSUtilityItemVisualPrefabAuthoring.Build();
             PHSUpgradeVisualPrefabAuthoring.Build();
             PHSRangeCastGrappleEndpointAuthoring.Author();
-            PHSPlayHudSingleSourceAuthoring.Author();
             PHSShopStockAuthoring.Author();
             PHSNetworkTutorialAuthoring.MigrateTutorialPlayerToCanonicalVariant();
 
@@ -28,13 +27,12 @@ namespace LastJumpCrew.ParkHanSol.Editor
             PHSUpgradeVisualPrefabAuthoring.ValidateOrThrow();
             PHSUtilityItemVisualPrefabValidator.Validate();
             PHSRangeCastGrappleEndpointValidator.Validate();
-            PHSPlayHudSingleSourceAuthoring.ValidateOrThrow();
             PHSShopStockAuthoring.ValidateOrThrow();
             PHS0715IntegrationValidator.ValidateTutorialPlayerVariantFromMenu();
 
             Debug.Log(
                 "PHS_INTEGRATED_SINGLE_PROJECT_AUTHORING_OK " +
-                "upgradeVisuals=5 hudVariant=true tutorialVariant=true");
+                "upgradeVisuals=5 tutorialVariant=true");
         }
     }
 }

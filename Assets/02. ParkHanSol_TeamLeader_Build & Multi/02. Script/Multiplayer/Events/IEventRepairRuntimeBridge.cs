@@ -1,5 +1,6 @@
 using LastJumpCrew.Common;
 using LastJumpCrew.ParkHanSol.Multiplayer;
+using System;
 using UnityEngine;
 
 namespace SM
@@ -27,5 +28,16 @@ namespace SM
             IEventRepairTargetHandle target,
             NetworkPlayerItemRecord itemRecord,
             uint requestSequence);
+    }
+
+    public interface IEngineBreakRepairTarget : IEventRepairableEffect
+    {
+        bool TryBindEngineBreak(
+            ulong eventInstanceId,
+            uint effectInstanceId,
+            IEventRepairRuntimeBridge repairRuntimeBridge,
+            Func<float, bool> repairStep);
+
+        void UnbindEngineBreak();
     }
 }

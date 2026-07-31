@@ -6,7 +6,8 @@ namespace SM
     {
         Fire = 0,
         OxygenLeak = 1,
-        Enemy = 2
+        Enemy = 2,
+        EngineBreak = 3
     }
 
     public enum EventEffectLifecycle : byte
@@ -65,5 +66,16 @@ namespace SM
         bool TryApplyPowerOff(ulong eventInstanceId, out string reason);
 
         bool TryGetPowerOffState(out bool isPowerOff);
+    }
+
+    public interface IPowerFailureRoom
+    {
+        string PowerRoomId { get; }
+        bool IsPowerFailureActive { get; }
+
+        bool TrySetPowerFailure(
+            bool active,
+            ulong eventInstanceId,
+            out string reason);
     }
 }

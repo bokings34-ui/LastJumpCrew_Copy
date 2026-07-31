@@ -378,10 +378,11 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Events
                 return false;
             }
 
-            var room = roomRegistry.GetRandomRoom();
-            if (room == null)
+            if (!TrySelectCompatibleRoom(eventId, out var room))
             {
-                Debug.LogWarning($"PHS_EVENT_SERVER_SPAWN_REJECTED reason=room_missing event={eventId}", this);
+                Debug.LogWarning(
+                    $"PHS_EVENT_SERVER_SPAWN_REJECTED reason=compatible_room_missing event={eventId}",
+                    this);
                 return false;
             }
 
@@ -437,11 +438,148 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Events
             IRoom room,
             out ulong instanceId)
         {
+            if (room is ShipRoom shipRoom
+                && !IsRoomCompatible(eventId, shipRoom))
+            {
+                instanceId = 0UL;
+                Debug.LogWarning(
+                    $"PHS_EVENT_SERVER_SPAWN_REJECTED reason=room_incompatible event={eventId} room={room.RoomId}",
+                    this);
+                return false;
+            }
+
             var accepted = eventManager.TrySpawnEvent(eventId, room, out instanceId);
             Debug.Log(
                 $"PHS_EVENT_SERVER_SPAWN_RESULT accepted={accepted} instance={instanceId} event={eventId} room={room.RoomId}",
                 this);
             return accepted;
+        }
+
+        public bool CanResolveRoomPowerFailureServer(
+            string roomId,
+            out ulong eventInstanceId,
+            out string reason)
+        {
+            eventInstanceId = 0UL;
+            if (!IsAuthoritative || eventManager == null)
+            {
+                reason = "server_not_ready";
+                return false;
+            }
+
+            if (string.IsNullOrWhiteSpace(roomId))
+            {
+                reason = "room_id_missing";
+                return false;
+            }
+
+            if (eventManager.GetActiveEvent(EventId.PowerOff)
+                is not PowerOffEvent powerOffEvent)
+            {
+                reason = "power_failure_event_missing";
+                return false;
+            }
+
+            if (!string.Equals(
+                    powerOffEvent.RoomId,
+                    roomId.Trim(),
+                    StringComparison.Ordinal))
+            {
+                reason = $"power_failure_room_mismatch:{powerOffEvent.RoomId}";
+                return false;
+            }
+
+            eventInstanceId = powerOffEvent.InstanceId;
+            reason = null;
+            return true;
+        }
+
+        public bool TryResolveRoomPowerFailureServer(
+            string roomId,
+            ulong expectedEventInstanceId,
+            out string reason)
+        {
+            if (!CanResolveRoomPowerFailureServer(
+                    roomId,
+                    out var eventInstanceId,
+                    out reason))
+            {
+                return false;
+            }
+
+            if (eventInstanceId != expectedEventInstanceId)
+            {
+                reason = $"power_failure_instance_mismatch:{eventInstanceId}";
+                return false;
+            }
+
+            var powerOffEvent =
+                eventManager.GetActiveEvent(EventId.PowerOff) as PowerOffEvent;
+            powerOffEvent.NotifyPowerRestored();
+            reason = null;
+            return true;
+        }
+
+        private bool TrySelectCompatibleRoom(
+            EventId eventId,
+            out ShipRoom selectedRoom)
+        {
+            selectedRoom = null;
+            var rooms = FindObjectsByType<ShipRoom>(
+                FindObjectsInactive.Exclude,
+                FindObjectsSortMode.None);
+            var compatibleRooms = new List<ShipRoom>();
+            foreach (var room in rooms)
+            {
+                if (room != null && IsRoomCompatible(eventId, room))
+                {
+                    compatibleRooms.Add(room);
+                }
+            }
+
+            if (compatibleRooms.Count == 0)
+            {
+                return false;
+            }
+
+            selectedRoom = compatibleRooms[
+                UnityEngine.Random.Range(0, compatibleRooms.Count)];
+            return true;
+        }
+
+        private static bool IsRoomCompatible(EventId eventId, ShipRoom room)
+        {
+            if (room == null)
+            {
+                return false;
+            }
+
+            return eventId switch
+            {
+                EventId.OxygenLeak =>
+                    room.GetComponent<IOxygenLeakZoneProvider>() != null,
+                EventId.EngineBreak =>
+                    HasEngineRepairTarget(room),
+                EventId.PowerOff =>
+                    room.GetComponent<IPowerFailureRoom>() != null,
+                _ => true
+            };
+        }
+
+        private static bool HasEngineRepairTarget(ShipRoom room)
+        {
+            // ponytail: event spawning is rare; cache per scene only if this scan profiles hot.
+            foreach (var behaviour in FindObjectsByType<MonoBehaviour>(
+                         FindObjectsInactive.Exclude))
+            {
+                if (behaviour.gameObject.scene == room.gameObject.scene
+                    && behaviour is IEngineBreakRepairTarget)
+                {
+                    return true;
+                }
+            }
+
+            return false;
         }
 
         public bool TryStartSchedulerServer()

@@ -599,7 +599,6 @@ namespace LastJumpCrew.ParkHanSol.Editor
                 ValidateUtilityItemFunctionContracts(errors);
                 ValidateSellStationPrefab(errors);
                 ValidatePlayHudPrefab(errors);
-                TryValidateCanonicalHud(errors);
                 ValidatePlayerPrefab(errors);
                 ValidateRunSessionRootPrefab(errors);
                 ValidateNetworkAudioAssets(errors);
@@ -1154,18 +1153,6 @@ namespace LastJumpCrew.ParkHanSol.Editor
             }
         }
 
-        private static void TryValidateCanonicalHud(ICollection<string> errors)
-        {
-            try
-            {
-                PHSPlayHudSingleSourceAuthoring.ValidateOrThrow();
-            }
-            catch (Exception exception)
-            {
-                errors.Add($"canonical_hud_invalid detail={exception.Message}");
-            }
-        }
-
         private static void ValidateTutorialPlayerVariant(
             ICollection<string> errors)
         {
@@ -1521,7 +1508,7 @@ namespace LastJumpCrew.ParkHanSol.Editor
                 FindObjectsInactive.Include,
                 FindObjectsSortMode.None);
             Require(
-                localDebrisPortals.Length == 2,
+                localDebrisPortals.Length == 3,
                 $"map_debris_portal_pair_count_invalid actual={localDebrisPortals.Length}",
                 errors);
             var portalNames = new HashSet<string>(StringComparer.Ordinal);
@@ -1542,13 +1529,35 @@ namespace LastJumpCrew.ParkHanSol.Editor
                     serializedPortal.FindProperty("serverInteractionDistance")?.floatValue >= 0.5f,
                     $"map_debris_portal_distance_invalid portal={portal.name}",
                     errors);
+                Require(
+                    portal.TeleportsOnTriggerEnter,
+                    $"map_debris_portal_trigger_mode_disabled portal={portal.name}",
+                    errors);
+                Require(
+                    portal.DoorTrigger != null
+                    && portal.DoorTrigger.gameObject == portal.gameObject
+                    && portal.DoorTrigger.isTrigger,
+                    $"map_debris_portal_trigger_invalid portal={portal.name}",
+                    errors);
+                Require(
+                    !portal.AllowsManualInteraction,
+                    $"map_debris_portal_manual_interaction_enabled portal={portal.name}",
+                    errors);
             }
 
             ValidateNetworkScenePortal(
-                "map_shop_entry",
-                "PHS_ExteriorShopPortal_0717",
+                "map_shop_entry_left",
+                "PHS_ShopEntryZone_Left",
                 ShopSceneName,
                 ShopSceneTransitionMode.RequireShopPhase,
+                2,
+                errors);
+            ValidateNetworkScenePortal(
+                "map_shop_entry_right",
+                "PHS_ShopEntryZone_Right",
+                ShopSceneName,
+                ShopSceneTransitionMode.RequireShopPhase,
+                2,
                 errors);
 
             FindOne<WarpChargeDebugInput>("map_warp_charge_debug_input", errors);
@@ -1984,6 +1993,7 @@ namespace LastJumpCrew.ParkHanSol.Editor
                 "PHS_ReturnToShipPortal",
                 MapSceneName,
                 ShopSceneTransitionMode.CompleteShop,
+                1,
                 errors);
 
             var displayController = FindOne<ShopRandomDisplayController>("shop_display_controller", errors);
@@ -2365,8 +2375,13 @@ namespace LastJumpCrew.ParkHanSol.Editor
                 serializedRuntime.FindProperty("shopPortalRoot")?.objectReferenceValue as GameObject;
             Require(
                 shopPortalRoot != null &&
-                shopPortalRoot.GetComponent<NetworkScenePortalInteractable>() != null,
+                shopPortalRoot.GetComponentsInChildren<NetworkScenePortalInteractable>(true).Length == 2,
                 "map_runtime_shop_portal_component_missing",
+                errors);
+            RequireObject(
+                serializedRuntime,
+                "exteriorTravelRoot",
+                "map_runtime_exterior_travel_root_missing",
                 errors);
         }
 
@@ -4006,10 +4021,15 @@ namespace LastJumpCrew.ParkHanSol.Editor
 
         private static void ValidateShipPowerWiring(ICollection<string> errors)
         {
-            var batterySocket = FindOne<BatteryInsertPowerStationSocket>(
-                "map_battery_socket",
+            var batterySockets = UnityEngine.Object.FindObjectsByType<
+                BatteryInsertPowerStationSocket>(
+                FindObjectsInactive.Include,
+                FindObjectsSortMode.None);
+            Require(
+                batterySockets.Length == 4,
+                $"map_battery_socket_count_invalid actual={batterySockets.Length}",
                 errors);
-            if (batterySocket != null)
+            foreach (var batterySocket in batterySockets)
             {
                 Require(
                     batterySocket.GetComponent<NetworkObject>() != null,
@@ -4024,6 +4044,11 @@ namespace LastJumpCrew.ParkHanSol.Editor
                     serializedSocket,
                     "installedBatteryVisual",
                     "map_battery_socket_visual_missing",
+                    errors);
+                RequireObject(
+                    serializedSocket,
+                    "roomPowerController",
+                    "map_battery_socket_room_controller_missing",
                     errors);
             }
 
@@ -4753,12 +4778,16 @@ namespace LastJumpCrew.ParkHanSol.Editor
             string expectedObjectName,
             string expectedDestinationScene,
             ShopSceneTransitionMode expectedTransitionMode,
+            int expectedPortalCount,
             ICollection<string> errors)
         {
             var portals = UnityEngine.Object.FindObjectsByType<NetworkScenePortalInteractable>(
                 FindObjectsInactive.Include,
                 FindObjectsSortMode.None);
-            Require(portals.Length == 1, $"{label}_count_invalid actual={portals.Length}", errors);
+            Require(
+                portals.Length == expectedPortalCount,
+                $"{label}_count_invalid actual={portals.Length}",
+                errors);
 
             var portal = portals.FirstOrDefault(candidate => candidate.name == expectedObjectName);
             Require(portal != null, $"{label}_missing expected={expectedObjectName}", errors);
@@ -4785,6 +4814,17 @@ namespace LastJumpCrew.ParkHanSol.Editor
                 serializedPortal.FindProperty("serverInteractionDistance")?.floatValue >= 0.5f,
                 $"{label}_distance_invalid",
                 errors);
+            Require(portal.RequestsOnZoneEnter, $"{label}_zone_mode_disabled", errors);
+            Require(!portal.AllowsManualInteraction, $"{label}_manual_interaction_enabled", errors);
+            Require(
+                portal.RequestZones != null
+                && portal.RequestZones.Length > 0
+                && portal.RequestZones.All(zone =>
+                    zone != null
+                    && zone.gameObject == portal.gameObject
+                    && zone.isTrigger),
+                $"{label}_zone_trigger_invalid",
+                errors);
         }
 
         private static void ValidateGameplayContext(string sceneLabel, ICollection<string> errors)
@@ -4792,10 +4832,18 @@ namespace LastJumpCrew.ParkHanSol.Editor
             var context = FindOne<GameplaySceneContext>($"{sceneLabel}_gameplay_context", errors);
             if (context != null)
             {
-                RequireObject(
-                    new SerializedObject(context),
-                    "respawnPoint",
-                    $"{sceneLabel}_respawn_point_missing",
+                var serializedContext = new SerializedObject(context);
+                var spawnPointsRoot = serializedContext.FindProperty("spawnPointsRoot")?.objectReferenceValue as Transform;
+                var respawnPointsRoot = serializedContext.FindProperty("respawnPointsRoot")?.objectReferenceValue as Transform;
+                Require(
+                    spawnPointsRoot != null
+                    && spawnPointsRoot.childCount >= GameplaySceneContext.RequiredNetworkSlotCount,
+                    $"{sceneLabel}_spawn_slots_invalid required={GameplaySceneContext.RequiredNetworkSlotCount}",
+                    errors);
+                Require(
+                    respawnPointsRoot != null
+                    && respawnPointsRoot.childCount >= GameplaySceneContext.RequiredNetworkSlotCount,
+                    $"{sceneLabel}_respawn_slots_invalid required={GameplaySceneContext.RequiredNetworkSlotCount}",
                     errors);
             }
         }

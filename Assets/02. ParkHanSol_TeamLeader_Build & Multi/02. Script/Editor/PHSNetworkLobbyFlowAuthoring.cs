@@ -60,11 +60,20 @@ namespace LastJumpCrew.ParkHanSol.Editor
                     .objectReferenceValue = localService;
                 frontendSerialized.ApplyModifiedPropertiesWithoutUndo();
 
-                var launcher = frontend.GetComponent<
+                foreach (var staleLauncher in root.GetComponentsInChildren<
+                             LocalHostGameSessionLauncher>(true))
+                {
+                    if (staleLauncher.gameObject != root)
+                    {
+                        UnityEngine.Object.DestroyImmediate(staleLauncher);
+                    }
+                }
+
+                var launcher = root.GetComponent<
                     LocalHostGameSessionLauncher>();
                 if (launcher == null)
                 {
-                    launcher = frontend.gameObject.AddComponent<
+                    launcher = root.AddComponent<
                         LocalHostGameSessionLauncher>();
                 }
 

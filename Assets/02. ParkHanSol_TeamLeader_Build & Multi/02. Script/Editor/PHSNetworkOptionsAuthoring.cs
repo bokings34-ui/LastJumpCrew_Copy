@@ -239,6 +239,7 @@ public static class PHSNetworkOptionsAuthoring
         }
 
         ConfigurePlayHud();
+        CreateOwnerPauseUi();
     }
 
     private static void CreateOwnerPauseUi()

@@ -180,7 +180,6 @@ namespace LastJumpCrew.ParkHanSol.Editor
             Move(scene, "PHS_Map_Runtime/Interaction/PHS_UtilityBay/PHS_GravityGenerator", new Vector3(-27f, -3.74f, 48f));
             Move(scene, "PHS_Map_Runtime/Interaction/PHS_UtilityBay/PHS_Utility_BatteryStation", new Vector3(14.5f, -3.66f, 48f), Quaternion.Euler(0f, -90f, 0f));
             ConfigureBatteryFeedbackPoint(scene);
-            Move(scene, "PHS_Map_Runtime/Interaction/PHS_Portals/PHS_DebrisCollectionPortal_0715", new Vector3(-6f, -3.74f, 33f));
             Move(scene, "PHS_Map_Runtime/Interaction/PHS_Portals/PHS_ExteriorShopPortal_0717", new Vector3(4f, -2.44f, 72f));
             Move(scene, "PHS_Map_Runtime/Interaction/PHS_TravelSystem_0715/PHS_TravelConsole_0715", new Vector3(-8.3f, -3.74f, 10f));
             Move(scene, "PHS_TeamIntegration/PHS_CannonTerminal", new Vector3(-18f, -3.74f, 36f));

@@ -289,15 +289,19 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
             }
 
             deadZoneDeadline = -1f;
-            automaticRespawnDeadline = reviveAfterWarp
+            var automaticRespawnDelay = -1f;
+            if (!reviveAfterWarp && TryGetSceneRespawnPoint(out _, out var sequentialDelaySeconds))
+            {
+                automaticRespawnDelay = automaticRespawnSeconds + sequentialDelaySeconds;
+            }
+
+            automaticRespawnDeadline = automaticRespawnDelay < 0f
                 ? -1f
-                : Time.time + automaticRespawnSeconds;
+                : Time.time + automaticRespawnDelay;
             synchronizedHealth.Value = 0;
             synchronizedDeadZoneSeconds.Value = -1f;
             synchronizedWarpRevivePending.Value = reviveAfterWarp;
-            synchronizedRespawnSeconds.Value = reviveAfterWarp
-                ? -1f
-                : automaticRespawnSeconds;
+            synchronizedRespawnSeconds.Value = automaticRespawnDelay;
             synchronizedAlive.Value = false;
             Debug.Log($"PHS_PLAYER_DIED reason={reason} player={name} clientId={OwnerClientId} warpRevive={reviveAfterWarp}", this);
         }
@@ -305,8 +309,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
         private bool TryReviveAtSceneRespawnPoint(string reason)
         {
             var activeScene = SceneManager.GetActiveScene();
-            var context = GameplaySceneContext.FindForScene(activeScene);
-            if (context == null || !context.TryGetRespawnPoint(out var respawnPoint))
+            if (!TryGetSceneRespawnPoint(out var respawnPoint, out _))
             {
                 synchronizedRespawnSeconds.Value = -1f;
                 Debug.LogError($"PHS_PLAYER_REVIVE_FAILED reason=respawn_point_missing player={name} scene={activeScene.name}", this);
@@ -329,6 +332,30 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
             synchronizedAlive.Value = true;
             Debug.Log($"PHS_PLAYER_REVIVED reason={reason} player={name} clientId={OwnerClientId}", this);
             return true;
+        }
+
+        private bool TryGetSceneRespawnPoint(
+            out Transform respawnPoint,
+            out float sequentialDelaySeconds)
+        {
+            respawnPoint = null;
+            sequentialDelaySeconds = 0f;
+            var activeScene = SceneManager.GetActiveScene();
+            var context = GameplaySceneContext.FindForScene(activeScene);
+            if (context != null
+                && context.TryGetRespawnPoint(
+                    OwnerClientId,
+                    out respawnPoint,
+                    out sequentialDelaySeconds))
+            {
+                return true;
+            }
+
+            Debug.LogError(
+                $"PHS_PLAYER_RESPAWN_SLOT_FAILED player={name} clientId={OwnerClientId} " +
+                $"scene={activeScene.name}",
+                this);
+            return false;
         }
 
         private void HandleHealthChanged(int previousValue, int currentValue)

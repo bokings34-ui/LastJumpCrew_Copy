@@ -15,6 +15,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Events
 
         private readonly List<PHSOxygenDeprivationZone> availableZones =
             new();
+        private PHSOxygenDeprivationZone lastSelectedZone;
 
         public bool TryAcquireZone(
             out IOxygenLeakZone zone,
@@ -29,10 +30,18 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Events
             availableZones.Clear();
             foreach (var candidate in zones)
             {
-                if (candidate.IsAvailable)
+                if (candidate.IsAvailable
+                    && (zones.Length == 1 || candidate != lastSelectedZone))
                 {
                     availableZones.Add(candidate);
                 }
+            }
+
+            if (availableZones.Count == 0
+                && lastSelectedZone != null
+                && lastSelectedZone.IsAvailable)
+            {
+                availableZones.Add(lastSelectedZone);
             }
 
             if (availableZones.Count == 0)
@@ -48,6 +57,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Events
                 return false;
             }
 
+            lastSelectedZone = selected;
             zone = selected;
             reason = null;
             return true;

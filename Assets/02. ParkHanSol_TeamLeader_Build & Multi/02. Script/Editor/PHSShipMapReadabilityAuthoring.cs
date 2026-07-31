@@ -60,7 +60,6 @@ namespace LastJumpCrew.ParkHanSol.Editor
             }
 
             AssetDatabase.SaveAssets();
-            PHSPlayHudSingleSourceAuthoring.MigrateNetworkHudToCanonicalVariant();
             Validate();
             Debug.Log(
                 "PHS_SHIP_MAP_AUTHOR_PASS input=tab_hold frame=1180x720 " +

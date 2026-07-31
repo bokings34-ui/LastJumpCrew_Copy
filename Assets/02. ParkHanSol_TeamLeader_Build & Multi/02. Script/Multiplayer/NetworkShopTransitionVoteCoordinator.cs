@@ -17,7 +17,6 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
         private const string DefaultShopSceneName = "PHS_ExteriorShopScene";
 
         [SerializeField, Min(5f)] private float voteDurationSeconds = 20f;
-        [SerializeField, Min(1)] private int maximumRequiredAgreeCount = 4;
         [SerializeField] private string shopSceneName = DefaultShopSceneName;
 
         private readonly NetworkVariable<bool> voteActive = new(
@@ -128,7 +127,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
                 return;
             }
 
-            RemoveDisconnectedVoters();
+            RefreshEligibleVoters();
             if (TryApproveVote())
             {
                 return;
@@ -173,6 +172,13 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
                     return false;
                 }
 
+                RefreshEligibleVoters();
+                if (!eligibleClientIds.Contains(initiatorClientId))
+                {
+                    reason = "initiator_not_eligible";
+                    return false;
+                }
+
                 RecordVote(initiatorClientId, true);
                 TryApproveVote();
                 reason = null;
@@ -189,7 +195,15 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
             decliningClientIds.Clear();
             foreach (var pair in NetworkManager.ConnectedClients)
             {
-                if (pair.Value.PlayerObject != null)
+                if (pair.Value.PlayerObject != null
+                    && pair.Value.PlayerObject.GetComponent<NetworkPlayerLifeState>() == null)
+                {
+                    Debug.LogError(
+                        $"PHS_SHOP_VOTE_ELIGIBILITY_FAILED reason=life_state_missing player={pair.Value.PlayerObject.name}",
+                        pair.Value.PlayerObject);
+                }
+
+                if (IsAlivePlayer(pair.Value.PlayerObject))
                 {
                     eligibleClientIds.Add(pair.Key);
                 }
@@ -205,9 +219,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
             transitionMode.Value = requestedTransitionMode;
             shopExitVote.Value = isShopExit;
             eligiblePlayerCount.Value = eligibleClientIds.Count;
-            requiredAgreeCount.Value = Mathf.Min(
-                eligibleClientIds.Count,
-                maximumRequiredAgreeCount);
+            requiredAgreeCount.Value = eligibleClientIds.Count;
             agreeCount.Value = 0;
             voteDeadline = Time.unscaledTime + voteDurationSeconds;
             voteActive.Value = true;
@@ -543,15 +555,23 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
             }
         }
 
-        private void RemoveDisconnectedVoters()
+        private void RefreshEligibleVoters()
         {
-            eligibleClientIds.RemoveWhere(clientId => !NetworkManager.ConnectedClients.ContainsKey(clientId));
+            foreach (var pair in NetworkManager.ConnectedClients)
+            {
+                if (IsAlivePlayer(pair.Value.PlayerObject))
+                {
+                    eligibleClientIds.Add(pair.Key);
+                }
+            }
+
+            eligibleClientIds.RemoveWhere(clientId =>
+                !NetworkManager.ConnectedClients.TryGetValue(clientId, out var client)
+                || !IsAlivePlayer(client.PlayerObject));
             agreeingClientIds.RemoveWhere(clientId => !eligibleClientIds.Contains(clientId));
             decliningClientIds.RemoveWhere(clientId => !eligibleClientIds.Contains(clientId));
             eligiblePlayerCount.Value = eligibleClientIds.Count;
-            requiredAgreeCount.Value = Mathf.Min(
-                eligibleClientIds.Count,
-                maximumRequiredAgreeCount);
+            requiredAgreeCount.Value = eligibleClientIds.Count;
             agreeCount.Value = agreeingClientIds.Count;
 
             if (eligibleClientIds.Count == 0)
@@ -559,6 +579,17 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
                 Debug.Log("PHS_SHOP_VOTE_CANCELLED reason=no_eligible_players", this);
                 ResetVote();
             }
+        }
+
+        private static bool IsAlivePlayer(NetworkObject playerObject)
+        {
+            if (playerObject == null)
+            {
+                return false;
+            }
+
+            var lifeState = playerObject.GetComponent<NetworkPlayerLifeState>();
+            return lifeState != null && lifeState.IsSpawned && lifeState.IsAlive;
         }
 
         private void ResetVote()

@@ -391,18 +391,11 @@ namespace LastJumpCrew.ParkHanSol.Editor
                 spawnPointsRoot.SetParent(contextRoot.transform, false);
             }
 
-            var spawnPoint = spawnPointsRoot.Find("Spawn_01");
-            if (spawnPoint == null)
+            var respawnPointsRoot = contextRoot.transform.Find("Respawn Points");
+            if (respawnPointsRoot == null)
             {
-                spawnPoint = new GameObject("Spawn_01").transform;
-                spawnPoint.SetParent(spawnPointsRoot, false);
-            }
-
-            var respawnPoint = contextRoot.transform.Find("Respawn Point");
-            if (respawnPoint == null)
-            {
-                respawnPoint = new GameObject("Respawn Point").transform;
-                respawnPoint.SetParent(contextRoot.transform, false);
+                respawnPointsRoot = new GameObject("Respawn Points").transform;
+                respawnPointsRoot.SetParent(contextRoot.transform, false);
             }
 
             contextRoot.transform.SetPositionAndRotation(
@@ -411,12 +404,15 @@ namespace LastJumpCrew.ParkHanSol.Editor
             spawnPointsRoot.SetLocalPositionAndRotation(
                 Vector3.zero,
                 Quaternion.identity);
-            spawnPoint.SetLocalPositionAndRotation(
-                TutorialStartPosition,
-                TutorialStartRotation);
-            respawnPoint.SetLocalPositionAndRotation(
-                TutorialStartPosition,
-                TutorialStartRotation);
+            respawnPointsRoot.SetLocalPositionAndRotation(
+                Vector3.zero,
+                Quaternion.identity);
+            for (var index = 0; index < GameplaySceneContext.RequiredNetworkSlotCount; index++)
+            {
+                var offset = new Vector3((index % 4) * 1.2f, 0f, (index / 4) * 1.2f);
+                EnsurePlayerSlot(spawnPointsRoot, $"Spawn_{index + 1:00}", TutorialStartPosition + offset);
+                EnsurePlayerSlot(respawnPointsRoot, $"Respawn_{index + 1:00}", TutorialStartPosition + offset);
+            }
 
             var context = contextRoot.GetComponent<GameplaySceneContext>();
             if (context == null)
@@ -427,12 +423,24 @@ namespace LastJumpCrew.ParkHanSol.Editor
             var serialized = new SerializedObject(context);
             serialized.FindProperty("spawnPointsRoot").objectReferenceValue =
                 spawnPointsRoot;
-            serialized.FindProperty("respawnPoint").objectReferenceValue =
-                respawnPoint;
+            serialized.FindProperty("respawnPointsRoot").objectReferenceValue =
+                respawnPointsRoot;
             serialized.FindProperty("isGameplayScene").boolValue = true;
             serialized.ApplyModifiedPropertiesWithoutUndo();
             EditorUtility.SetDirty(contextRoot);
             EditorUtility.SetDirty(context);
+        }
+
+        private static void EnsurePlayerSlot(Transform root, string slotName, Vector3 localPosition)
+        {
+            var slot = root.Find(slotName);
+            if (slot == null)
+            {
+                slot = new GameObject(slotName).transform;
+                slot.SetParent(root, false);
+            }
+
+            slot.SetLocalPositionAndRotation(localPosition, TutorialStartRotation);
         }
 
         private static GameObject InstantiateTeamMap(

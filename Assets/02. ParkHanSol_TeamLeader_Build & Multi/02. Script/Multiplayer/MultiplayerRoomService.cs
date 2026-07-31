@@ -369,7 +369,8 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
                 return false;
             }
 
-            if (maxPlayers < 1)
+            if (maxPlayers < 1
+                || maxPlayers > GameplaySceneContext.RequiredNetworkSlotCount)
             {
                 ReportFailure("create_room", $"invalid_max_players_{maxPlayers}");
                 return false;
