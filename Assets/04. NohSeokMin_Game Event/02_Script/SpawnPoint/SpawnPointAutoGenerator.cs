@@ -18,6 +18,7 @@ namespace SM
         [Header("바닥 높이 필터 (각 층의 바닥 Y값 리스트, 허용 오차 포함)")]
         [SerializeField] private List<float> floorHeights = new List<float> { 0f, 3f, 6f }; // 각 층 바닥 Y값
         [SerializeField] private float floorHeightTolerance = 0.5f; // 이 범위 안이면 바닥으로 인정
+        [SerializeField] private float visualYOffset = 0.15f; // 이펙트 Z-fighting 방지용
 
         [ContextMenu("Generate Spawn Points on NavMesh")]
         public void Generate()
@@ -57,6 +58,7 @@ namespace SM
 
                             if (!duplicate)
                             {
+                                var spawnPosition = hit.position + Vector3.up * visualYOffset;
                                 var obj = Instantiate(spawnPointPrefab, hit.position, Quaternion.identity, parentContainer);
                                 obj.name = $"SpawnPoint_{count}";
                                 placedPositions.Add(hit.position);
@@ -115,6 +117,13 @@ namespace SM
             Gizmos.DrawCube(generationBounds.center, generationBounds.size);
             Gizmos.color = Color.green;
             Gizmos.DrawWireCube(generationBounds.center, generationBounds.size);
+
+            Gizmos.color = Color.yellow;
+            Gizmos.DrawSphere(transform.position, 0.05f);
+
+            // 오프셋이 얼마나 적용됐는지 아래로 선을 그어서 표시
+            Gizmos.color = Color.red;
+            Gizmos.DrawLine(transform.position, transform.position + Vector3.down * 0.3f);
         }
     }
 }
