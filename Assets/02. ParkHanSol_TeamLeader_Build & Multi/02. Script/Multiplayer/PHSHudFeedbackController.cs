@@ -109,7 +109,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
         {
             var safeMaxHealth = Mathf.Max(1, maxHealth);
             healthMotion?.SetValue(
-                $"+{health}<size=24>/{safeMaxHealth}</size>",
+                $"+{health}",
                 (float)health / safeMaxHealth);
             PlayValueFeedback(healthMotion, hasVitals, previousHealth, health, true);
             previousHealth = health;
@@ -119,7 +119,9 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
         public void SetThrusterFuel(int currentFuel, int maxFuel)
         {
             var safeMaxFuel = Mathf.Max(1, maxFuel);
-            boostMotion?.SetValue($" {currentFuel}<size=22>/{safeMaxFuel}</size>", (float)currentFuel / safeMaxFuel);
+            boostMotion?.SetValue(
+                $"{currentFuel}<size=20> BOOST</size>",
+                (float)currentFuel / safeMaxFuel);
             PlayValueFeedback(boostMotion, hasBoost, previousBoost, currentFuel, false);
             previousBoost = currentFuel;
             hasBoost = true;

@@ -672,12 +672,16 @@ namespace LastJumpCrew.ParkHanSol.Editor
                 canvasObject.transform,
                 new Vector2(0.3f, 0.3f),
                 new Vector2(0.7f, 0.7f));
-            CreateText(
+            var completionTitle = CreateText(
                 "Completion Title",
                 completionPanel.transform,
                 new Vector2(0.1f, 0.55f),
                 new Vector2(0.9f, 0.88f),
-                46f).text = "TRAINING COMPLETE";
+                46f);
+            completionTitle.text = "TRAINING COMPLETE";
+            completionTitle.color = new Color(1f, 0.78f, 0.18f, 1f);
+            completionTitle.fontStyle = FontStyles.Bold;
+            completionTitle.fontWeight = FontWeight.Bold;
             returnButton = CreateButton(
                 "Return To Lobby",
                 completionPanel.transform,
@@ -746,7 +750,11 @@ namespace LastJumpCrew.ParkHanSol.Editor
         {
             var panel = CreateRect(name, parent, anchorMin, anchorMax);
             panel.AddComponent<Image>().color =
-                new Color(0.02f, 0.06f, 0.09f, 0.96f);
+                new Color(0.004f, 0.005f, 0.006f, 0.96f);
+            var outline = panel.AddComponent<Outline>();
+            outline.effectColor = Color.black;
+            outline.effectDistance = new Vector2(3f, -3f);
+            outline.useGraphicAlpha = false;
             return panel;
         }
 
@@ -775,11 +783,23 @@ namespace LastJumpCrew.ParkHanSol.Editor
         {
             var buttonObject = CreateRect(name, parent, anchorMin, anchorMax);
             var image = buttonObject.AddComponent<Image>();
-            image.color = new Color(0.08f, 0.62f, 0.76f, 1f);
+            image.color = new Color(1f, 0.36f, 0.12f, 1f);
+            var outline = buttonObject.AddComponent<Outline>();
+            outline.effectColor = Color.black;
+            outline.effectDistance = new Vector2(3f, -3f);
+            outline.useGraphicAlpha = false;
             var button = buttonObject.AddComponent<Button>();
             button.targetGraphic = image;
-            CreateText("Label", buttonObject.transform, Vector2.zero,
-                Vector2.one, 24f).text = label;
+            var labelText = CreateText(
+                "Label",
+                buttonObject.transform,
+                Vector2.zero,
+                Vector2.one,
+                24f);
+            labelText.text = label;
+            labelText.color = Color.black;
+            labelText.fontStyle = FontStyles.Bold;
+            labelText.fontWeight = FontWeight.Bold;
             return button;
         }
 

@@ -407,23 +407,23 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Tutorial
             return actionKind switch
             {
                 TutorialActionKind.Move =>
-                    "MOVE TWICE  -  RELEASE WASD BETWEEN MOVES",
+                    "WASD\uB85C 2\uD68C \uC774\uB3D9  -  \uC911\uAC04\uC5D0 \uD0A4\uB97C \uB193\uC73C\uC138\uC694",
                 TutorialActionKind.Jump =>
-                    "JUMP TWICE  -  SPACE",
+                    "SPACE\uB85C 2\uD68C \uC810\uD504",
                 TutorialActionKind.Thruster =>
-                    "THRUST TWICE IN ZERO-G  -  RELEASE BETWEEN USES",
+                    "\uBB34\uC911\uB825\uC5D0\uC11C \uCD94\uC9C4\uAE30 2\uD68C \uC0AC\uC6A9",
                 TutorialActionKind.Grapple =>
-                    "LATCH THE ORANGE TARGET TWICE  -  HOLD Q",
+                    "Q\uB97C \uB20C\uB7EC \uC624\uB80C\uC9C0 \uBAA9\uD45C\uC5D0 2\uD68C \uADF8\uB798\uD50C",
                 TutorialActionKind.Pickup =>
-                    "PICK UP AN ITEM TWICE  -  F",
+                    "F\uB85C \uC544\uC774\uD15C 2\uD68C \uC90D\uAE30",
                 TutorialActionKind.Drop =>
-                    "PLACE THE HELD ITEM TWICE  -  TAP RIGHT MOUSE",
+                    "\uC6B0\uD074\uB9AD\uC73C\uB85C \uB4E0 \uC544\uC774\uD15C 2\uD68C \uB193\uAE30",
                 TutorialActionKind.Swap =>
-                    "SWAP HELD ITEMS TWICE WITHOUT DROPPING",
+                    "\uB5A8\uC5B4\uB728\uB9AC\uC9C0 \uC54A\uACE0 \uB4E0 \uC544\uC774\uD15C 2\uD68C \uAD50\uCCB4",
                 TutorialActionKind.Use =>
-                    "USE THE HELD TOOL TWICE  -  LEFT MOUSE",
+                    "\uC88C\uD074\uB9AD\uC73C\uB85C \uB4E0 \uB3C4\uAD6C 2\uD68C \uC0AC\uC6A9",
                 TutorialActionKind.Interaction =>
-                    "USE THE EXIT CONSOLE TWICE  -  F",
+                    "F\uB85C \uCD9C\uAD6C \uCF58\uC194 2\uD68C \uC0AC\uC6A9",
                 _ => string.Empty
             };
         }
@@ -433,7 +433,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Tutorial
             isComplete = true;
             if (instructionText != null)
             {
-                instructionText.text = "TRAINING COMPLETE";
+                instructionText.text = "\uD6C8\uB828 \uC644\uB8CC";
             }
 
             if (instructionProgressSlider != null)
