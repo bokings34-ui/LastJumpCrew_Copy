@@ -119,6 +119,18 @@ namespace SM
             TrySpawnEvent(eventId.Value, null);
         }
 
+        public void TriggerRandomEvent(IRoom room = null)
+        {
+            var eventId = GetRandomEventId();
+            if (eventId == null)
+            {
+                Debug.Log("<color=lime>[EventScheduler]</color> 발생 가능한 이벤트가 없어 트리거를 건너뜁니다.");
+                return;
+            }
+
+            TrySpawnEvent(eventId.Value, room);
+        }
+
         public void TrySpawnEvent(EventId eventId, IRoom room)
         {
             if (IsWaiting(eventId))
