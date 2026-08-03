@@ -242,7 +242,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
             {
                 if(effectLight != null)
                 {
-                    effectLight.enabled = false;
+                    effectLight.enabled = active;
                 }
             }
             

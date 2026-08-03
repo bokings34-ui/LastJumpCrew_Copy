@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using LastJumpCrew.Common;
 using LastJumpCrew.ParkHanSol.Items;
 using LastJumpCrew.ParkHanSol.Multiplayer;
 using LastJumpCrew.ParkHanSol.Shop;
@@ -13,7 +14,7 @@ namespace LastJumpCrew.ParkHanSol.Interaction
     {
         [SerializeField] private BoxCollider sellTrigger;
         [SerializeField] private MonoBehaviour shopWalletSource;
-        [SerializeField] private UtilityItemPrefabData[] sellableDebris;
+        [SerializeField] private UtilityItemDataSO[] sellableDebris;
         [SerializeField] private string debrisTag = "Debris";
         [SerializeField, Min(0.1f)] private float maximumSaleDistance = 6f;
         [SerializeField, Min(0.05f)] private float retrySeconds = 0.25f;
@@ -132,7 +133,7 @@ namespace LastJumpCrew.ParkHanSol.Interaction
             var itemObject = debrisItem.GetComponentInParent<UtilityItemObject>();
             var itemHolder = debrisItem.GetComponentInParent<TempPlayerItemHolder>();
             var playerNetworkObject = itemHolder == null ? null : itemHolder.GetComponent<NetworkObject>();
-            var itemData = itemObject == null ? null : itemObject.ItemPrefabData;
+            var itemData = itemObject == null ? null : itemObject.ItemData;
             if (itemObject == null || itemData == null || string.IsNullOrWhiteSpace(itemData.ItemId))
             {
                 return;
@@ -154,7 +155,7 @@ namespace LastJumpCrew.ParkHanSol.Interaction
             RequestSaleServerRpc(new FixedString64Bytes(itemData.ItemId));
         }
 
-        private void TryCompleteWorldDebrisSale(DebrisItem debrisItem, UtilityItemPrefabData itemData)
+        private void TryCompleteWorldDebrisSale(DebrisItem debrisItem, UtilityItemDataSO itemData)
         {
             if (!IsServer || debrisItem == null || itemData == null || !ValidateSetup() || !shopWallet.IsReady)
             {
@@ -369,7 +370,7 @@ namespace LastJumpCrew.ParkHanSol.Interaction
             }
         }
 
-        private bool TryResolveSellableDebris(string itemId, out UtilityItemPrefabData itemData)
+        private bool TryResolveSellableDebris(string itemId, out UtilityItemDataSO itemData)
         {
             itemData = null;
             if (sellableDebris == null || string.IsNullOrWhiteSpace(itemId))

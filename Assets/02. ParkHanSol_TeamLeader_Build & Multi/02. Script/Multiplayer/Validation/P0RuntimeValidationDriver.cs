@@ -33,8 +33,8 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Validation
         private const float DefaultStepTimeout = 90f;
 
         [Header("P2 Runtime Validation")]
-        [SerializeField] private UtilityItemPrefabData validationBatteryItem;
-        [SerializeField] private UtilityItemPrefabData validationThrownItem;
+        [SerializeField] private UtilityItemDataSO validationBatteryItem;
+        [SerializeField] private UtilityItemDataSO validationThrownItem;
 
         private readonly Dictionary<ulong, string> sceneReports = new();
         private readonly Dictionary<ulong, GaugeReport> gaugeReports = new();
@@ -414,9 +414,9 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Validation
             {
                 if (!lifecycle.ItemCatalog.TryGetById(itemId, out var itemData)
                     || itemData == null
-                    || !itemData.HasHeldPrefab
+                    || !itemData.HasHandPrefab
                     || !itemData.HasDroppedPrefab
-                    || !itemData.HasDurability)
+                    || !itemData.UsesDurability)
                 {
                     Fail($"item_catalog_contract_invalid item={itemId}");
                     yield break;
@@ -2122,7 +2122,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Validation
                     FindObjectsInactive.Exclude,
                     FindObjectsSortMode.None)
                 .FirstOrDefault(socket => socket != null && socket.IsSpawned);
-            if (validationBatteryItem == null || !validationBatteryItem.HasHeldPrefab
+            if (validationBatteryItem == null || !validationBatteryItem.HasHandPrefab
                 || string.IsNullOrWhiteSpace(validationBatteryItem.ItemId)
                 || shipState == null || !shipState.IsSpawned || !shipState.IsServer
                 || accidentCoordinator == null
@@ -3672,7 +3672,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Validation
         private IEnumerator RunThrownItemNetworkValidation()
         {
             if (validationThrownItem == null
-                || !validationThrownItem.HasHeldPrefab
+                || !validationThrownItem.HasHandPrefab
                 || !validationThrownItem.HasDroppedPrefab
                 || string.IsNullOrWhiteSpace(validationThrownItem.ItemId)
                 || !NetworkManager.ConnectedClients.TryGetValue(
@@ -3751,7 +3751,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Validation
         }
 
         private IEnumerator RunRemoteOwnedThrownItemValidation(
-            UtilityItemPrefabData itemData,
+            UtilityItemDataSO itemData,
             bool exercisePrimaryUse)
         {
             if (itemData == null)
@@ -3760,7 +3760,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Validation
                 yield break;
             }
 
-            var expectedDurability = itemData.HasDurability
+            var expectedDurability = itemData.UsesDurability
                 ? itemData.MaxDurability
                 : 0;
 
@@ -4120,7 +4120,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Validation
                 remoteClientId,
                 remoteThrownNetworkObject.NetworkObjectId,
                 itemData.ItemId,
-                itemData.HasDurability,
+                itemData.UsesDurability,
                 expectedDurability);
             yield return WaitFor(
                 () => thrownItemReports.Count >= expectedClientCount,

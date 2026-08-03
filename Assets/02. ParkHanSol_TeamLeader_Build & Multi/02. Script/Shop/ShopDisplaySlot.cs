@@ -32,13 +32,13 @@ namespace LastJumpCrew.ParkHanSol.Shop
             }
 
             var itemData = product.ItemPrefabData;
-            if (!itemData.HasHeldPrefab)
+            if (!itemData.HasHandPrefab)
             {
                 Debug.LogError($"PHS_SHOP_DISPLAY_FAILED reason=local_prefab_missing slot={name} offer={product.OfferId}", product);
                 return false;
             }
 
-            displayedItem = Instantiate(itemData.HeldPrefab, itemSpawnPoint.position, itemSpawnPoint.rotation);
+            displayedItem = Instantiate(itemData.HandPrefab, itemSpawnPoint.position, itemSpawnPoint.rotation);
             displayedItem.transform.localScale *= displayScaleMultiplier;
             displayedItem.name = $"PHS_ShopDisplay_{product.OfferId}";
             if (!displayedItem.TryGetComponent<UtilityItemObject>(out var itemObject) || itemObject.ItemPrefabData != itemData)

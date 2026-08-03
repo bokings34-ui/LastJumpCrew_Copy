@@ -1,176 +1,280 @@
 using LastJumpCrew.Common;
-using ParkInteraction = LastJumpCrew.ParkHanSol.Interaction;
+using LastJumpCrew.ParkHanSol.Interaction;
+using LastJumpCrew.ParkHanSol.Multiplayer;
 using Unity.Netcode;
 using UnityEngine;
+using UnityEngine.AdaptivePerformance;
+using UnityEngine.WSA;
+using ParkInteraction = LastJumpCrew.ParkHanSol.Interaction;
 
 namespace LastJumpCrew.ParkHanSol.Items
 {
-    // 아이템 프리팹 루트에 붙는 런타임 컴포넌트다.
-    // 플레이어가 아이템을 들거나 내려놓을 때 IHoldableItem 인터페이스를 통해 이 컴포넌트를 호출한다.
-    // 아이템별 기능은 여기에서 바로 늘리지 말고, 필요할 때 별도 컴포넌트로 붙이는 방향을 기본으로 둔다.
+    
+    /// 아이템 프리팹 루트에 붙는 런타임 컴포넌트입니다.
+    /// 아이템의 실제 정적 정보는 UtilityItemDataSO가 관리하고,
+    /// 이 컴포넌트는 월드 아이템의 줍기, 들기, 내려놓기 상태만 관리합니다.
+    [DisallowMultipleComponent]
     public sealed class UtilityItemObject : MonoBehaviour, IHoldableItem, ParkInteraction.IInteractable
     {
-        // 이 오브젝트가 어떤 아이템 데이터인지 알려주는 필수 참조다.
-        // prefab root의 UtilityItemObject에 연결되어 있어야 플레이어 HUD, 툴박스 보관, 드롭 처리에서 같은 아이템으로 인식된다.
-        [SerializeField] private UtilityItemPrefabData itemPrefabData;
+        [Header("Item Data")]
 
-        // 현재 이 아이템을 들고 있는 holder다.
-        // null이면 바닥/보관함/씬에 놓인 상태로 본다.
-        // 네트워크 소유권이나 실제 장비 슬롯 로직은 아직 여기에서 처리하지 않는다.
-        private IItemHolder currentHolder;
+        [Tooltip("이 프리팹이 어떤 아이템인지 나타내는 데이터입니다. " + "아이템 ID, 표시 이름, 프리팹, 내구도, 사용 설정을 제공합니다.")]
+        [SerializeField]
+        private UtilityItemDataSO itemData;
+
+
+        // 현재 이 아이템을 들고 있는 대상입니다.
+        // null이면 바닥이나 보관함에 놓인 상태로 봅니다.
+        private LastJumpCrew.Common.IItemHolder currentHolder;
+
+        // 아이템을 들기 전 Rigidbody 상태를 복원하기 위해서 필요함.
         private bool heldRigidbodyStateCached;
         private bool cachedUseGravity;
         private bool cachedIsKinematic;
 
-        public UtilityItemPrefabData ItemPrefabData => itemPrefabData;
-        public string ItemId => itemPrefabData == null ? string.Empty : itemPrefabData.ItemId;
-        public string DisplayName => itemPrefabData == null ? string.Empty : itemPrefabData.DisplayName;
 
-        // 현재는 아이템 루트 transform을 그대로 잡는 지점으로 쓴다.
-        // 추후 손잡이 위치가 따로 필요하면 GripPoint 같은 child를 만들고 여기 반환값을 바꾸면 된다.
+        
+        /// 이 오브젝트와 연결된 통합 아이템 데이터입니다.
+        public UtilityItemDataSO ItemData => itemData;
+
+
+        //기존 코드에서 이름 바꾸기 전에 잠시 사용
+        public UtilityItemDataSO ItemPrefabData => itemData;
+
+
+        public string ItemId => itemData == null ? string.Empty : itemData.ItemId;
+        public string DisplayName => itemData == null ? string.Empty : itemData.DisplayName;
+     
+        /// 현재 아이템을 잡는 기준 Transform입니다.
+        /// 추후 아이템 손잡이 위치가 따로 필요하면
+        /// 프리팹 자식에 GripPoint를 만들고 반환값을 변경하면 됩니다.
         public Transform HoldTransform => transform;
+
+
         public string InteractionPrompt => "Pick Up";
 
-        // holder 참조만 기준으로 든 상태를 판단한다.
-        // 물리 상태나 parent 여부로 판단하면 보관함/프리뷰/네트워크 상황에서 꼬일 수 있어 단순 상태값으로 둔다.
+
+        
+        /// 현재 holder 참조를 기준으로 들린 상태를 확인합니다.
+    
         public bool IsHeld => currentHolder != null;
 
-        public bool CanInteract(ParkInteraction.IItemHolder itemHolder)
+
+   
+        /// 상호작용을 요청한 플레이어가
+        /// 이 아이템을 주울 수 있는지 검사합니다.
+        public bool CanInteract(ParkInteraction.IItemHolder itemHolder)  
         {
             if (itemHolder == null)
             {
-                Debug.LogWarning($"PHS_ITEM_PICKUP_FAILED reason=itemHolder_missing item={name}");
+                Debug.LogWarning($"PHS_ITEM_PICKUP_FAILED " + $"reason=itemHolder_missing " + $"item={name}", this);
                 return false;
             }
 
             if (IsHeld)
             {
-                Debug.LogWarning($"PHS_ITEM_PICKUP_FAILED reason=already_held item={name}");
+                Debug.LogWarning(
+                    $"PHS_ITEM_PICKUP_FAILED " +
+                    $"reason=already_held " +
+                    $"item={name}",
+                    this);
+
                 return false;
             }
 
-            if (itemPrefabData == null)
+            if (itemData == null)
             {
-                Debug.LogError($"PHS_ITEM_PICKUP_FAILED reason=itemData_missing item={name}");
+                Debug.LogError($"PHS_ITEM_PICKUP_FAILED " + $"reason=itemData_missing " + $"item={name}", this);
+
                 return false;
             }
 
+            ///네트워크에 Spawn된 아이템은
+            ///로컬에서 바로 Destroy하거나 holder에 지급하지 않습니다. 
+            ///INetworkItemPickupRequester를 통해 서버에
+            ///아이템 획득을 요청해야 합니다.
             if (TryGetSpawnedNetworkObject(out _))
             {
                 if (itemHolder is not ParkInteraction.INetworkItemPickupRequester pickupRequester)
                 {
-                    Debug.LogError($"PHS_ITEM_PICKUP_FAILED reason=network_requester_missing item={name}");
+                    Debug.LogError($"PHS_ITEM_PICKUP_FAILED " + $"reason=network_requester_missing " + $"item={name}", this);
                     return false;
                 }
 
-                return pickupRequester.CanRequestNetworkPickup(this);
+                return pickupRequester.CanRequestNetworkPickup(this);       
             }
-
+            ///파편 아이템은 일반 유틸리티 아이템과 달리
+            ///현재 월드 오브젝트 자체를 손에 붙입니다.
             if (TryGetComponent<ParkInteraction.DebrisItem>(out var debrisItem))
             {
                 if (itemHolder is not ParkInteraction.IDebrisHolder debrisHolder)
+                 
                 {
-                    Debug.LogError($"PHS_DEBRIS_HOLD_FAILED reason=holder_unsupported debris={name}");
+                    Debug.LogError($"PHS_DEBRIS_HOLD_FAILED " + $"reason=holder_unsupported " + $"debris={name}", this);
                     return false;
                 }
 
                 return debrisHolder.CanHoldDebris(debrisItem);
+                  
             }
 
-            return itemHolder.CanReplaceHeldItem(itemPrefabData);
+            return itemHolder.CanReplaceHeldItem(itemData);
+              
         }
 
-        public void Interact(ParkInteraction.IItemHolder itemHolder)
+
+        /// <summary>
+        /// 플레이어가 이 아이템과 상호작용했을 때 호출됩니다.
+        /// </summary>
+        public void Interact(
+            ParkInteraction.IItemHolder itemHolder)
         {
             if (!CanInteract(itemHolder))
             {
                 return;
             }
 
+            ///네트워크 아이템은 서버에 획득을 요청합니다.
+            ///서버에서 검증한 뒤 월드 아이템을 Despawn하고
+            ///플레이어의 NetworkPlayerItemRecord를 변경합니다.
+            ///
             if (TryGetSpawnedNetworkObject(out _))
             {
-                ((ParkInteraction.INetworkItemPickupRequester)itemHolder).RequestNetworkPickup(this);
+                var pickupRequester =
+                    (ParkInteraction.INetworkItemPickupRequester)
+                    itemHolder;
+
+                pickupRequester
+                    .RequestNetworkPickup(this);
+
                 return;
             }
 
+            ///DebrisItem은 프리팹을 새로 만들지 않고
+            ///현재 월드 오브젝트 자체를 들도록 처리합니다.
             if (TryGetComponent<ParkInteraction.DebrisItem>(out var debrisItem))
             {
                 if (itemHolder is not ParkInteraction.IDebrisHolder debrisHolder)
                 {
-                    Debug.LogError($"PHS_DEBRIS_HOLD_FAILED reason=holder_unsupported debris={name}");
+                    Debug.LogError($"PHS_DEBRIS_HOLD_FAILED " + $"reason=holder_unsupported " + $"debris={name}", this);
                     return;
                 }
 
                 if (!debrisHolder.TryHoldDebris(debrisItem))
                 {
-                    Debug.LogError($"PHS_DEBRIS_HOLD_FAILED reason=holder_rejected debris={name}");
+                    Debug.LogError($"PHS_DEBRIS_HOLD_FAILED " + $"reason=holder_rejected " + $"debris={name}", this);
                 }
 
                 return;
             }
 
-            itemHolder.ReplaceHeldItem(itemPrefabData, transform);
+            ///싱글 또는 비네트워크 월드 아이템은
+            ///holder에게 UtilityItemDataSO를 전달합니다. 
+            ///holder는 HandPrefab을 손에 생성하고,
+            ///기존 월드 오브젝트는 제거합니다.
+            itemHolder.ReplaceHeldItem(itemData, transform);
             Destroy(gameObject);
-            Debug.Log($"PHS_ITEM_PICKED_UP item={itemPrefabData.ItemId}");
+
+            Debug.Log($"PHS_ITEM_PICKED_UP " + $"item={itemData.ItemId}", this);
         }
 
+
+  
+        /// 현재 오브젝트에 Spawn된 NetworkObject가 있는지 확인합니다.
         private bool TryGetSpawnedNetworkObject(out NetworkObject itemNetworkObject)
         {
             itemNetworkObject = GetComponent<NetworkObject>();
+            
+
             return itemNetworkObject != null && itemNetworkObject.IsSpawned;
         }
 
-        // 플레이어가 아이템을 획득해서 손에 붙였을 때 호출된다.
-        // 여기서는 소유자 기록과 물리 비활성화만 담당한다.
-        // HUD 갱신은 holder 쪽에서 UtilityItemPrefabData를 보고 처리한다.
-        public void OnPickedUp(IItemHolder holder)
+
+        
+        /// 플레이어가 아이템을 획득해서 손에 붙였을 때 호출됩니다.
+        /// holder 참조를 저장하고 Rigidbody 물리 시뮬레이션을 끕니다.
+        public void OnPickedUp(LastJumpCrew.Common.IItemHolder holder)
         {
-            // itemPrefabData가 없으면 이 아이템은 ID/이름/아이콘을 알 수 없다.
-            // 이 경우 조용히 대체하지 않고 로그를 남겨 prefab 연결 문제를 드러낸다.
-            if (itemPrefabData == null)
+            if (itemData == null)
             {
-                Debug.LogError($"PHS_ITEM_PICKUP_FAILED reason=itemData_missing item={name}");
+                Debug.LogError($"PHS_ITEM_PICKUP_FAILED " + $"reason=itemData_missing " + $"item={name}", this);
                 return;
             }
 
-            // holder가 없으면 누가 들고 있는지 추적할 수 없다.
-            // 드롭/교체 상태가 꼬이지 않도록 실패 처리한다.
             if (holder == null)
             {
-                Debug.LogError($"PHS_ITEM_PICKUP_FAILED reason=holder_missing item={name}");
+                Debug.LogError($"PHS_ITEM_PICKUP_FAILED " + $"reason=holder_missing " + $"item={name}", this);
                 return;
             }
 
             currentHolder = holder;
 
-            if (TryGetComponent<Rigidbody>(out var rigidbody))
+            if (!TryGetComponent<Rigidbody>(out var itemRigidbody))
             {
-                cachedUseGravity = rigidbody.useGravity;
-                cachedIsKinematic = rigidbody.isKinematic;
-                heldRigidbodyStateCached = true;
-                // 손에 들린 아이템은 물리 시뮬레이션을 끈다.
-                // 중력/충돌 힘이 켜진 채 손에 붙으면 캐릭터나 카메라가 튀는 문제가 생긴다.
-                rigidbody.useGravity = false;
-                rigidbody.isKinematic = true;
+                return;
             }
-        }
+            ///아이템을 다시 내려놓았을 때 원래 설정으로
+            ///복원할 수 있도록 Rigidbody 상태를 저장합니다.
+            cachedUseGravity =
+                itemRigidbody.useGravity;
 
-        // 아이템을 바닥에 내려놓았을 때 호출된다.
-        // holder 상태를 비우고, 드롭 위치로 이동한 뒤 물리를 다시 켠다.
+            cachedIsKinematic =
+                itemRigidbody.isKinematic;
+
+            heldRigidbodyStateCached = true;
+
+            ///손에 붙은 아이템은 물리 시뮬레이션에서 제외
+            ///물리가 켜진 상태로 플레이어 손이나 카메라에 붙으면
+            ///충돌 때문에 플레이어가 밀리거나 아이템이 흔들릴 수 있음
+            itemRigidbody.linearVelocity = Vector3.zero;
+            itemRigidbody.angularVelocity = Vector3.zero;
+            
+
+            itemRigidbody.useGravity = false;
+            itemRigidbody.isKinematic = true;
+        }
+        /// 아이템을 월드에 내려놓았을 때 호출됩니다.
+        /// holder 상태를 제거하고 원래 Rigidbody 설정을 복원합니다.
         public void OnDropped(Vector3 dropPosition)
         {
             currentHolder = null;
+
             transform.position = dropPosition;
 
-            if (TryGetComponent<Rigidbody>(out var rigidbody))
+            if (!TryGetComponent<Rigidbody>(out var itemRigidbody))          
             {
-                if (heldRigidbodyStateCached)
-                {
-                    rigidbody.useGravity = cachedUseGravity;
-                    rigidbody.isKinematic = cachedIsKinematic;
-                    heldRigidbodyStateCached = false;
-                }
+                return;
+            }
+
+            if (!heldRigidbodyStateCached)
+            {
+                return;
+            }
+
+            itemRigidbody.useGravity = cachedUseGravity;
+            itemRigidbody.isKinematic = cachedIsKinematic;
+
+            heldRigidbodyStateCached = false;
+        }
+
+
+#if UNITY_EDITOR
+
+        private void OnValidate()
+        {
+            if (itemData == null)
+            {
+                Debug.LogError($"PHS_UTILITY_ITEM_OBJECT_INVALID " + $"reason=item_data_missing " + $"object={name}", this);
+
+                return;
+            }
+
+            if (string.IsNullOrWhiteSpace(itemData.ItemId))   
+            {
+                Debug.LogError($"PHS_UTILITY_ITEM_OBJECT_INVALID " + $"reason=item_id_missing " + $"object={name} " + $"asset={itemData.name}", itemData);
             }
         }
+
+#endif
     }
 }

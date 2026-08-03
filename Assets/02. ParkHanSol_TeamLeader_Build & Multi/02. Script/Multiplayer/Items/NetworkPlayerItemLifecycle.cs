@@ -1,4 +1,5 @@
 using System;
+using LastJumpCrew.Common;
 using LastJumpCrew.ParkHanSol.Interaction;
 using LastJumpCrew.ParkHanSol.Items;
 using Unity.Netcode;
@@ -47,7 +48,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
                 || itemHolder.HasItem
                 || !string.IsNullOrEmpty(itemRecord.HeldItemId)
                 || itemObject == null
-                || !itemCatalog.Contains(itemObject.ItemPrefabData))
+                || !itemCatalog.Contains(itemObject.ItemData))
             {
                 return false;
             }
@@ -144,7 +145,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
                 return false;
             }
 
-            var initialDurability = itemData.HasDurability
+            var initialDurability = itemData.UsesDurability
                 ? itemData.MaxDurability
                 : 0;
             return itemRecord.TrySetHeldItemServer(
@@ -153,7 +154,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
                 expectedRevision);
         }
 
-        public bool TryAssignHeldItemServer(UtilityItemPrefabData itemData)
+        public bool TryAssignHeldItemServer(UtilityItemDataSO itemData)
         {
             return itemData != null
                 && itemCatalog != null
@@ -179,7 +180,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
 
             return TryCreateDroppedItemServer(
                 itemId,
-                itemData.HasDurability ? itemData.MaxDurability : 0,
+                itemData.UsesDurability ? itemData.MaxDurability : 0,
                 position,
                 rotation,
                 out spawnedItem);
@@ -231,9 +232,9 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
 
             if (networkObject == null
                 || itemObject == null
-                || itemObject.ItemPrefabData != itemData
+                || itemObject.ItemData != itemData
                 || physicsAuthority == null
-                || itemData.HasDurability && durabilityState == null)
+                || itemData.UsesDurability && durabilityState == null)
             {
                 Debug.LogError(
                     $"PHS_NETWORK_ITEM_CREATE_FAILED reason=prefab_contract player={name} item={itemId}",
@@ -246,7 +247,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
                 return false;
             }
 
-            if (itemData.HasDurability
+            if (itemData.UsesDurability
                 && !durabilityState.PrepareForServerSpawn(
                     itemData,
                     currentDurability))
@@ -306,7 +307,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
                 return false;
             }
 
-            if (actionProfile.DurabilityCost > 0 && !itemData.HasDurability)
+            if (actionProfile.DurabilityCost > 0 && !itemData.UsesDurability)
             {
                 Debug.LogError(
                     $"PHS_ITEM_ACTION_REJECTED reason=durability_contract item={expectedItemId} action={actionKind}",
@@ -404,7 +405,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
             }
 
             var itemObject = targetNetworkObject.GetComponent<UtilityItemObject>();
-            var itemData = itemObject == null ? null : itemObject.ItemPrefabData;
+            var itemData = itemObject == null ? null : itemObject.ItemData;
             if (itemData == null
                 || !itemCatalog.Contains(itemData)
                 || !itemCatalog.TryGetById(itemData.ItemId, out var catalogItem)
@@ -414,7 +415,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
             }
 
             var pickupDurability = 0;
-            if (itemData.HasDurability)
+            if (itemData.UsesDurability)
             {
                 var durabilityState =
                     targetNetworkObject.GetComponent<

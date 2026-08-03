@@ -1,6 +1,7 @@
 using System;
 using System.Linq;
 using System.Reflection;
+using LastJumpCrew.Common;
 using LastJumpCrew.ParkHanSol.Items;
 using Unity.Netcode;
 using UnityEditor;
@@ -26,7 +27,7 @@ namespace LastJumpCrew.ParkHanSol.Editor
             foreach (var itemData in catalog.Items)
             {
                 var droppedPrefab = itemData?.DroppedPrefab;
-                if (itemData == null || itemData.HeldPrefab != null || droppedPrefab == null)
+                if (itemData == null || itemData.HandPrefab != null || droppedPrefab == null)
                 {
                     continue;
                 }

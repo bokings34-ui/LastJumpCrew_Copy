@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using LastJumpCrew.Common;
 using LastJumpCrew.ParkHanSol.Items;
 using TMPro;
 using UnityEngine;
@@ -124,7 +125,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
         }
 
         public void SetHeldItem(
-            UtilityItemPrefabData itemPrefabData,
+            UtilityItemDataSO itemPrefabData,
             int currentDurability)
         {
             if (itemPrefabData == null)
@@ -274,12 +275,12 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
         }
 
         private void SetHeldItemDurability(
-            UtilityItemPrefabData itemPrefabData,
+            UtilityItemDataSO itemPrefabData,
             int currentDurability)
         {
             if (heldItemDurabilityText == null)
             {
-                if (itemPrefabData != null && itemPrefabData.HasDurability)
+                if (itemPrefabData != null && itemPrefabData.UsesDurability)
                 {
                     Debug.LogError($"PHS_HELD_ITEM_UI_FAILED reason=heldItemDurabilityText_missing target={name} item={itemPrefabData.ItemId}");
                 }
@@ -297,7 +298,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
             heldItemDurabilityText.gameObject.SetActive(true);
             SetText(
                 heldItemDurabilityText,
-                itemPrefabData.HasDurability
+                itemPrefabData.UsesDurability
                     ? $"DUR {currentDurability}/{itemPrefabData.MaxDurability}"
                     : "DUR ∞");
         }

@@ -1,3 +1,4 @@
+using LastJumpCrew.Common;
 using LastJumpCrew.ParkHanSol.Items;
 using LastJumpCrew.ParkHanSol.Multiplayer;
 using LastJumpCrew.ParkHanSol.Shop;
@@ -53,7 +54,7 @@ namespace LastJumpCrew.ParkHanSol.Interaction
             base.OnNetworkDespawn();
         }
 
-        public bool TryReceive(UtilityItemPrefabData itemPrefabData)
+        public bool TryReceive(UtilityItemDataSO itemPrefabData)
         {
             if (!ValidateSetup() || itemPrefabData == null)
             {
@@ -205,7 +206,7 @@ namespace LastJumpCrew.ParkHanSol.Interaction
             }
         }
 
-        private bool TryApplyDelivery(UtilityItemPrefabData itemPrefabData)
+        private bool TryApplyDelivery(UtilityItemDataSO itemPrefabData)
         {
             foreach (var slot in deliverySlots)
             {
@@ -218,7 +219,7 @@ namespace LastJumpCrew.ParkHanSol.Interaction
             return TryDropOverflowItem(itemPrefabData);
         }
 
-        private bool TryResolveItemData(string itemId, out UtilityItemPrefabData itemPrefabData)
+        private bool TryResolveItemData(string itemId, out UtilityItemDataSO itemPrefabData)
         {
             itemPrefabData = null;
             if (catalog == null || string.IsNullOrWhiteSpace(itemId))
@@ -240,7 +241,7 @@ namespace LastJumpCrew.ParkHanSol.Interaction
             return false;
         }
 
-        private bool TryDropOverflowItem(UtilityItemPrefabData itemPrefabData)
+        private bool TryDropOverflowItem(UtilityItemDataSO itemPrefabData)
         {
             if (overflowDropPoints == null || overflowDropPoints.Length == 0)
             {
