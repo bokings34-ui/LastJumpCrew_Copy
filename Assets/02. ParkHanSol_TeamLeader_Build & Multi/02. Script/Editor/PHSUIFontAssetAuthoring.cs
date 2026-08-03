@@ -31,6 +31,8 @@ namespace LastJumpCrew.ParkHanSol.Editor
         public const string SuitBoldAssetPath = PHSUIFontPaths.SuitBold;
         public const string SuiteSemiBoldAssetPath = PHSUIFontPaths.SuiteSemiBold;
         public const string SuiteBoldAssetPath = PHSUIFontPaths.SuiteBold;
+        public const string SuitKoreanFallbackAssetPath =
+            SuitOutputRoot + "/SUIT Korean Dynamic Fallback SDF.asset";
         private const string CanonicalTmpSettingsPath =
             "Assets/TextMesh Pro/Resources/TMP Settings.asset";
 
@@ -71,6 +73,17 @@ namespace LastJumpCrew.ParkHanSol.Editor
             SuiteBoldAssetPath
         };
 
+        private static readonly IReadOnlyDictionary<string, string> SourceFontPaths =
+            new Dictionary<string, string>
+            {
+                { SuitRegularAssetPath, SuitSourceRoot + "/SUIT-Regular.ttf" },
+                { SuitMediumAssetPath, SuitSourceRoot + "/SUIT-Medium.ttf" },
+                { SuitSemiBoldAssetPath, SuitSourceRoot + "/SUIT-SemiBold.ttf" },
+                { SuitBoldAssetPath, SuitSourceRoot + "/SUIT-Bold.ttf" },
+                { SuiteSemiBoldAssetPath, SuiteSourceRoot + "/SUITE-SemiBold.ttf" },
+                { SuiteBoldAssetPath, SuiteSourceRoot + "/SUITE-Bold.ttf" }
+            };
+
         private static readonly IReadOnlyDictionary<string, int> BuildSceneLegacyFontCounts =
             new Dictionary<string, int>
             {
@@ -88,10 +101,22 @@ namespace LastJumpCrew.ParkHanSol.Editor
                 }
             };
 
+        private static readonly string[] GlyphScenePaths =
+        {
+            Root + "/01. Scene/BEAVER_2026/PHS_Map_ver1.unity",
+            Root + "/01. Scene/BEAVER_2026/ParkHanSol_LobbyScene.unity",
+            Root + "/01. Scene/BEAVER_2026/Tutorial/PHS_NetworkTutorialScene.unity",
+            Root + "/01. Scene/BEAVER_2026/PHS_ExteriorShopScene.unity",
+            Root + "/01. Scene/BEAVER_2026/PHS_CosmeticGallery.unity",
+            Root + "/01. Scene/BEAVER_2026/PHS_CosmeticTuning.unity",
+            Root + "/01. Scene/test/PHS_FeatureInspectionScene.unity",
+            Root + "/01. Scene/test/PHS_OxygenLeakEffectReview.unity"
+        };
+
         private const string RequiredKoreanUiGlyphs =
             "상호작용 현재 구역 구매 불가 중력장 비활성 함선 체력 워프 진행도 " +
             "이벤트 지도 상태 경고 방 참가 나가기 준비 시작 실패 성공 호스트 연결 종료 " +
-            "가격 보유 크레딧 장비 장착 해제 모자 등 장식 플레이어 근 볼 승 탑";
+            "가격 보유 크레딧 장비 장착 해제 모자 등 장식 플레이어 근 볼 승 탑 번째";
 
         [MenuItem("Tools/ParkHanSol/BEAVER/Fonts/Author Unified UI Font Assets")]
         public static void Author()
@@ -136,11 +161,13 @@ namespace LastJumpCrew.ParkHanSol.Editor
             ConfigureWeightTable(suitRegular, 600, suitSemiBold);
             ConfigureWeightTable(suitRegular, 700, suitBold);
             ConfigureWeightTable(suiteSemiBold, 700, suiteBold);
+            var koreanFallback = EnsureKoreanFallbackAsset();
+            ConfigureStaticFontFallbacks(koreanFallback);
             AssetDatabase.SaveAssets();
 
             ValidateGeneratedAssets(glyphs);
             Debug.Log(
-                "PHS_UI_FONT_AUTHOR_OK sources=6 static=6 fallback=0 " +
+                "PHS_UI_FONT_AUTHOR_OK sources=6 static=6 fallback=1 dynamic=true " +
                 $"glyphs={glyphs.Length} atlas={StaticAtlasSize}");
         }
 
@@ -154,14 +181,29 @@ namespace LastJumpCrew.ParkHanSol.Editor
         public static void AddMissingUiGlyphs()
         {
             var glyphs = CollectProjectUiGlyphs();
+            var koreanFallback = EnsureKoreanFallbackAsset();
             foreach (var path in GeneratedFontAssetPaths)
             {
                 var font = AssetDatabase.LoadAssetAtPath<TMP_FontAsset>(path)
                     ?? throw new InvalidOperationException(
                         $"PHS_UI_FONT_GLYPH_ADD_FAILED reason=font_missing path={path}");
-                font.atlasPopulationMode = AtlasPopulationMode.Dynamic;
-                font.TryAddCharacters(glyphs, out var missingCharacters);
-                font.atlasPopulationMode = AtlasPopulationMode.Static;
+                var source = AssetDatabase.LoadAssetAtPath<Font>(SourceFontPaths[path])
+                    ?? throw new InvalidOperationException(
+                        $"PHS_UI_FONT_GLYPH_ADD_FAILED reason=source_missing path={SourceFontPaths[path]}");
+                string missingCharacters;
+                try
+                {
+                    font.atlasPopulationMode = AtlasPopulationMode.Dynamic;
+                    SetSourceFontEditorReference(font, source);
+                    font.TryAddCharacters(glyphs, out missingCharacters);
+                }
+                finally
+                {
+                    font.atlasPopulationMode = AtlasPopulationMode.Static;
+                    font.isMultiAtlasTexturesEnabled = false;
+                    EditorUtility.SetDirty(font);
+                }
+
                 if (missingCharacters.Length > 0)
                 {
                     throw new InvalidOperationException(
@@ -169,10 +211,9 @@ namespace LastJumpCrew.ParkHanSol.Editor
                         $"reason=source_glyphs_missing path={path} " +
                         $"count={missingCharacters.Length} chars={missingCharacters}");
                 }
-
-                EditorUtility.SetDirty(font);
             }
 
+            ConfigureStaticFontFallbacks(koreanFallback);
             AssetDatabase.SaveAssets();
             ValidateGeneratedAssets(glyphs);
             Debug.Log(
@@ -184,7 +225,7 @@ namespace LastJumpCrew.ParkHanSol.Editor
         public static void ApplyUnifiedUiFonts()
         {
             var originalGuids = CaptureGeneratedFontGuids();
-            ClearStaticFontFallbacks();
+            ConfigureStaticFontFallbacks(EnsureKoreanFallbackAsset());
             ConfigureCanonicalTmpSettings();
             ValidateGeneratedAssets(CollectProjectUiGlyphs());
             var textCount = 0;
@@ -249,22 +290,9 @@ namespace LastJumpCrew.ParkHanSol.Editor
                         replacedFontCount++;
                     }
 
-                    if (text.fontStyle != FontStyles.Normal ||
-                        text.fontWeight != FontWeight.Regular)
-                    {
-                        styleCount++;
-                    }
-
                     if (text.fontSharedMaterial.mainTexture != text.font.atlasTexture)
                     {
                         materialMismatchCount++;
-                    }
-
-                    var expectedFont = PHSUIFontPaths.Load(
-                        PHSUIFontPaths.ResolveRole(text));
-                    if (text.font != expectedFont)
-                    {
-                        roleMismatchCount++;
                     }
 
                     foreach (var character in text.text ?? string.Empty)
@@ -363,6 +391,11 @@ namespace LastJumpCrew.ParkHanSol.Editor
             var count = 0;
             foreach (var text in root.GetComponentsInChildren<TMP_Text>(true))
             {
+                if (text.font != null && !IsReplacedFont(text.font))
+                {
+                    continue;
+                }
+
                 PHSUIFontPaths.ApplyResolved(text);
                 count++;
             }
@@ -497,21 +530,9 @@ namespace LastJumpCrew.ParkHanSol.Editor
                             continue;
                         }
 
-                        if (text.fontStyle != FontStyles.Normal ||
-                            text.fontWeight != FontWeight.Regular)
-                        {
-                            scan.StyleCount++;
-                        }
-
                         if (text.fontSharedMaterial.mainTexture != text.font.atlasTexture)
                         {
                             scan.MaterialMismatchCount++;
-                        }
-
-                        if (text.font != PHSUIFontPaths.Load(
-                                PHSUIFontPaths.ResolveRole(text)))
-                        {
-                            scan.RoleMismatchCount++;
                         }
 
                         foreach (var character in text.text ?? string.Empty)
@@ -761,18 +782,62 @@ namespace LastJumpCrew.ParkHanSol.Editor
                 }
             }
 
-            var scriptRoot = Path.GetFullPath(Root + "/02. Script");
-            foreach (var scriptPath in Directory.EnumerateFiles(
-                         scriptRoot,
-                         "*.cs",
-                         SearchOption.AllDirectories))
+            foreach (var scenePath in GlyphScenePaths)
+            {
+                AddSceneUiGlyphs(characters, scenePath);
+            }
+
+            var projectRoot = Path.GetFullPath(Root);
+            var textExtensions = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+            {
+                ".asset", ".cs", ".csv", ".json", ".prefab", ".txt", ".unity"
+            };
+            foreach (var sourcePath in Directory.EnumerateFiles(
+                         projectRoot,
+                         "*.*",
+                         SearchOption.AllDirectories)
+                     .Where(path => textExtensions.Contains(Path.GetExtension(path))))
             {
                 AddRuntimeKoreanCharacters(
                     characters,
-                    File.ReadAllText(scriptPath, Encoding.UTF8));
+                    File.ReadAllText(sourcePath, Encoding.UTF8));
             }
 
             return new string(characters.ToArray());
+        }
+
+        private static void AddSceneUiGlyphs(ISet<char> target, string scenePath)
+        {
+            if (AssetDatabase.LoadAssetAtPath<SceneAsset>(scenePath) == null)
+            {
+                Debug.LogWarning($"PHS_UI_FONT_GLYPH_SCENE_MISSING path={scenePath}");
+                return;
+            }
+
+            var scene = SceneManager.GetSceneByPath(scenePath);
+            var closeWhenDone = !scene.IsValid() || !scene.isLoaded;
+            if (closeWhenDone)
+            {
+                scene = EditorSceneManager.OpenScene(scenePath, OpenSceneMode.Additive);
+            }
+
+            try
+            {
+                foreach (var root in scene.GetRootGameObjects())
+                {
+                    foreach (var text in root.GetComponentsInChildren<TMP_Text>(true))
+                    {
+                        AddCharacters(target, text.text);
+                    }
+                }
+            }
+            finally
+            {
+                if (closeWhenDone)
+                {
+                    EditorSceneManager.CloseScene(scene, true);
+                }
+            }
         }
 
         private static void AddCharacters(ISet<char> target, string value)
@@ -797,6 +862,20 @@ namespace LastJumpCrew.ParkHanSol.Editor
         {
             foreach (var character in source)
             {
+                if (character is >= '\uAC00' and <= '\uD7A3' ||
+                    character is >= '\u1100' and <= '\u11FF' ||
+                    character is >= '\u3130' and <= '\u318F')
+                {
+                    target.Add(character);
+                }
+            }
+
+            foreach (System.Text.RegularExpressions.Match match in
+                     System.Text.RegularExpressions.Regex.Matches(
+                         source,
+                         @"\\u([0-9A-Fa-f]{4})"))
+            {
+                var character = (char)Convert.ToUInt16(match.Groups[1].Value, 16);
                 if (character is >= '\uAC00' and <= '\uD7A3' ||
                     character is >= '\u1100' and <= '\u11FF' ||
                     character is >= '\u3130' and <= '\u318F')
@@ -838,6 +917,7 @@ namespace LastJumpCrew.ParkHanSol.Editor
         private static void EnsureGeneratedAssetsDoNotExist()
         {
             var existing = GeneratedFontAssetPaths
+                .Append(SuitKoreanFallbackAssetPath)
                 .Where(path => AssetDatabase.LoadAssetAtPath<TMP_FontAsset>(path) != null)
                 .ToArray();
             if (existing.Length > 0)
@@ -881,20 +961,65 @@ namespace LastJumpCrew.ParkHanSol.Editor
             }
         }
 
-        private static void ClearStaticFontFallbacks()
+        private static TMP_FontAsset EnsureKoreanFallbackAsset()
+        {
+            EnsureOutputFolders();
+            var sourcePath = SuitSourceRoot + "/SUIT-Regular.ttf";
+            var source = AssetDatabase.LoadAssetAtPath<Font>(sourcePath)
+                ?? throw new InvalidOperationException(
+                    $"PHS_UI_FONT_APPLY_FAILED reason=fallback_source_missing path={sourcePath}");
+            var fallback = AssetDatabase.LoadAssetAtPath<TMP_FontAsset>(
+                SuitKoreanFallbackAssetPath);
+            if (fallback == null)
+            {
+                fallback = CreateFontAsset(
+                    sourcePath,
+                    SuitKoreanFallbackAssetPath,
+                    "SUIT Korean Dynamic Fallback SDF",
+                    AtlasPopulationMode.Dynamic,
+                    StaticAtlasSize,
+                    true);
+            }
+
+            fallback.atlasPopulationMode = AtlasPopulationMode.Dynamic;
+            SetSourceFontEditorReference(fallback, source);
+            fallback.isMultiAtlasTexturesEnabled = true;
+            fallback.fallbackFontAssetTable = new List<TMP_FontAsset>();
+            EditorUtility.SetDirty(fallback);
+            return fallback;
+        }
+
+        private static void ConfigureStaticFontFallbacks(TMP_FontAsset fallback)
         {
             foreach (var path in GeneratedFontAssetPaths)
             {
                 var font = AssetDatabase.LoadAssetAtPath<TMP_FontAsset>(path)
                     ?? throw new InvalidOperationException(
                         $"PHS_UI_FONT_APPLY_FAILED reason=font_missing path={path}");
-                font.fallbackFontAssetTable = new List<TMP_FontAsset>();
+                font.fallbackFontAssetTable = new List<TMP_FontAsset> { fallback };
                 EditorUtility.SetDirty(font);
             }
         }
 
         private static void ValidateGeneratedAssets(string requiredGlyphs)
         {
+            var koreanFallback = AssetDatabase.LoadAssetAtPath<TMP_FontAsset>(
+                SuitKoreanFallbackAssetPath)
+                ?? throw new InvalidOperationException(
+                    $"PHS_UI_FONT_VALIDATION_FAILED reason=fallback_missing path={SuitKoreanFallbackAssetPath}");
+            if (!HasExpectedSourceFont(
+                    koreanFallback,
+                    SuitSourceRoot + "/SUIT-Regular.ttf") ||
+                koreanFallback.atlasPopulationMode != AtlasPopulationMode.Dynamic ||
+                !koreanFallback.isMultiAtlasTexturesEnabled ||
+                koreanFallback.material == null || koreanFallback.atlasTexture == null ||
+                koreanFallback.material.mainTexture != koreanFallback.atlasTexture ||
+                koreanFallback.fallbackFontAssetTable is { Count: > 0 })
+            {
+                throw new InvalidOperationException(
+                    $"PHS_UI_FONT_VALIDATION_FAILED reason=dynamic_fallback_invalid path={SuitKoreanFallbackAssetPath}");
+            }
+
             foreach (var path in GeneratedFontAssetPaths)
             {
                 var font = AssetDatabase.LoadAssetAtPath<TMP_FontAsset>(path)
@@ -906,6 +1031,12 @@ namespace LastJumpCrew.ParkHanSol.Editor
                         $"PHS_UI_FONT_VALIDATION_FAILED reason=not_static path={path}");
                 }
 
+                if (!HasExpectedSourceFont(font, SourceFontPaths[path]))
+                {
+                    throw new InvalidOperationException(
+                        $"PHS_UI_FONT_VALIDATION_FAILED reason=source_missing path={path}");
+                }
+
                 if (font.material == null || font.atlasTexture == null ||
                     font.material.mainTexture != font.atlasTexture)
                 {
@@ -914,11 +1045,12 @@ namespace LastJumpCrew.ParkHanSol.Editor
                 }
 
                 var fallback = font.fallbackFontAssetTable;
-                if (fallback != null && fallback.Count != 0)
+                if (fallback == null || fallback.Count != 1 ||
+                    fallback[0] != koreanFallback)
                 {
                     throw new InvalidOperationException(
-                        $"PHS_UI_FONT_VALIDATION_FAILED reason=fallback_not_empty path={path} " +
-                        $"count={fallback.Count}");
+                        $"PHS_UI_FONT_VALIDATION_FAILED reason=fallback_invalid path={path} " +
+                        $"count={fallback?.Count ?? 0}");
                 }
 
                 font.HasCharacters(requiredGlyphs, out var missingCharacters);
@@ -936,8 +1068,36 @@ namespace LastJumpCrew.ParkHanSol.Editor
             ValidateWeightTypeface(SuiteSemiBoldAssetPath, 700, SuiteBoldAssetPath);
 
             Debug.Log(
-                "PHS_UI_FONT_VALIDATION_OK static=6 fallback=0 " +
+                "PHS_UI_FONT_VALIDATION_OK static=6 fallback=1 dynamic=true " +
                 $"requiredGlyphs={requiredGlyphs.Length}");
+        }
+
+        private static void SetSourceFontEditorReference(
+            TMP_FontAsset fontAsset,
+            Font sourceFont)
+        {
+            var property = typeof(TMP_FontAsset).GetProperty(
+                "SourceFont_EditorRef",
+                System.Reflection.BindingFlags.Instance |
+                System.Reflection.BindingFlags.NonPublic);
+            if (property == null)
+            {
+                throw new InvalidOperationException(
+                    "PHS_UI_FONT_SOURCE_BIND_FAILED reason=editor_property_missing");
+            }
+
+            property.SetValue(fontAsset, sourceFont);
+        }
+
+        private static bool HasExpectedSourceFont(
+            TMP_FontAsset fontAsset,
+            string expectedSourcePath)
+        {
+            var serialized = new SerializedObject(fontAsset);
+            var guidProperty = serialized.FindProperty("m_SourceFontFileGUID");
+            return guidProperty != null &&
+                AssetDatabase.GUIDToAssetPath(guidProperty.stringValue) ==
+                expectedSourcePath;
         }
 
         private static void ValidateWeightTypeface(

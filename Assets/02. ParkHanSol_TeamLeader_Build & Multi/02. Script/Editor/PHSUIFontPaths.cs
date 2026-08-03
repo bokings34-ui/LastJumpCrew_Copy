@@ -126,8 +126,6 @@ namespace LastJumpCrew.ParkHanSol.Editor
             text.fontSharedMaterial = preserveCustomMaterial
                 ? currentMaterial
                 : font.material;
-            text.fontStyle = FontStyles.Normal;
-            text.fontWeight = FontWeight.Regular;
             EditorUtility.SetDirty(text);
         }
 
