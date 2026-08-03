@@ -292,6 +292,23 @@ namespace SM
             return true;
         }
 
+        // ===== IRepairable 대응 준비 (팀원 IRepairable.cs main 반영 후 주석 해제) =====
+        /*
+        public bool CanRepair => !IsSealed;
+
+        public float CurrentIntegrity => _repairProgress;
+
+        public float MaxIntegrity => maxRepairProgress;
+
+        public bool ApplyRepair(float amount, GameObject repairer)
+        {
+            if (!CanRepair) return false;
+            ApplyRepair(amount); // 기존 ApplyRepair(float) 재사용
+            return true;
+        }
+        */
+        // ================================================================
+
         private void OnDrawGizmosSelected()
         {
             Gizmos.color = new Color(0.6f, 0.1f, 0.9f);

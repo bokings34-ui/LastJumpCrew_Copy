@@ -137,5 +137,22 @@ namespace SM
                     _renderers[i].enabled = alive && _initialRendererStates[i];
             }
         }
+
+        // ===== IRepairable 대응 준비 (팀원 IRepairable.cs main 반영 후 주석 해제) =====
+        /*
+        public bool CanRepair => _isDestroyed;
+
+        public float CurrentIntegrity => _repairProgress;
+
+        public float MaxIntegrity => maxRepairProgress;
+
+        public bool ApplyRepair(float amount, GameObject repairer)
+        {
+            if (!CanRepair) return false;
+            ApplyRepair(amount); // 기존 ApplyRepair(float) 재사용 - 이름 겹침 주의, 아래 참고
+            return true;
+        }
+        */
+        // ================================================================
     }
 }
