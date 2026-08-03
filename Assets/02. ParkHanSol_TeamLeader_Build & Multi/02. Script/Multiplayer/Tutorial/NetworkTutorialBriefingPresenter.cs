@@ -362,21 +362,20 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Tutorial
             pageIndicatorText.text =
                 $"{currentPageIndex + 1} / {currentPages.Length}";
             var hasMultiplePages = currentPages.Length > 1;
-            previousButton.gameObject.SetActive(hasMultiplePages);
+            previousButton.gameObject.SetActive(true);
             pageIndicatorText.gameObject.SetActive(hasMultiplePages);
             previousButton.interactable = currentPageIndex > 0;
+            var previousRect = previousButton.GetComponent<RectTransform>();
+            previousRect.anchorMin = new Vector2(0.30f, 0.055f);
+            previousRect.anchorMax = new Vector2(0.44f, 0.16f);
+            previousRect.offsetMin = Vector2.zero;
+            previousRect.offsetMax = Vector2.zero;
             var nextRect = nextButton.GetComponent<RectTransform>();
-            nextRect.anchorMin = hasMultiplePages
-                ? new Vector2(0.78f, 0.06f)
-                : new Vector2(0.30f, 0.07f);
-            nextRect.anchorMax = hasMultiplePages
-                ? new Vector2(0.94f, 0.17f)
-                : new Vector2(0.70f, 0.15f);
+            nextRect.anchorMin = new Vector2(0.56f, 0.055f);
+            nextRect.anchorMax = new Vector2(0.70f, 0.16f);
             nextRect.offsetMin = Vector2.zero;
             nextRect.offsetMax = Vector2.zero;
-            nextButtonLabel.text = currentPageIndex == currentPages.Length - 1
-                ? "\uC2DC\uC791"
-                : "\uB2E4\uC74C";
+            nextButtonLabel.text = ">";
 
             StopVideo();
             var showVideo = page.PageKind == TutorialBriefingPageKind.Video;
