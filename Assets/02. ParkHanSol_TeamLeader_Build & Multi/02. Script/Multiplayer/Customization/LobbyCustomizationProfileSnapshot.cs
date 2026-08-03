@@ -12,6 +12,8 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Customization
             IEnumerable<string> ownedItemIds,
             string equippedHeadId,
             string equippedBackId,
+            string equippedPetId,
+            string equippedFrontId,
             Color32 bodyColor,
             int credits)
         {
@@ -20,6 +22,8 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Customization
                 StringComparer.Ordinal);
             EquippedHeadId = equippedHeadId ?? string.Empty;
             EquippedBackId = equippedBackId ?? string.Empty;
+            EquippedPetId = equippedPetId ?? string.Empty;
+            EquippedFrontId = equippedFrontId ?? string.Empty;
             BodyColor = bodyColor;
             Credits = credits;
         }
@@ -27,6 +31,8 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Customization
         public IReadOnlyCollection<string> OwnedItemIds => ownedItemIds;
         public string EquippedHeadId { get; }
         public string EquippedBackId { get; }
+        public string EquippedPetId { get; }
+        public string EquippedFrontId { get; }
         public Color32 BodyColor { get; }
         public int Credits { get; }
 

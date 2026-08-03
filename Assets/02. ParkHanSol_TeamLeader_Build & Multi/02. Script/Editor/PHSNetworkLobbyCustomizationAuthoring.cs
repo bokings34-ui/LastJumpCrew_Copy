@@ -32,7 +32,7 @@ namespace LastJumpCrew.ParkHanSol.Editor
         private const string CatalogPath = RootFolder +
             "/04. Data/Customization/PHS_CosmeticCatalog.asset";
         private const string ModelPath =
-            "Assets/TripoModels/cute_white_ghost_3d_model_Clone1_3/cute_white_ghost_3d_model_Clone1_3.fbx";
+            RootFolder + "/_ThirdParty/Models/Player/CharacterGhost/AnimatedGhost.fbx";
         private const string LobbyScenePath = RootFolder +
             "/01. Scene/BEAVER_2026/ParkHanSol_LobbyScene.unity";
         private const string MainMenuPrefabPath = RootFolder +
@@ -123,10 +123,22 @@ namespace LastJumpCrew.ParkHanSol.Editor
                     throw AuthoringFailure("preview_body_renderer_missing");
                 }
 
-                var headBone = RequireChild(model.transform, "Head");
-                var backBone = RequireChild(model.transform, "Spine02");
-                CreateSlot(headBone, "HeadSlot", new Vector3(0f, 0.12f, 0f));
-                CreateSlot(backBone, "BackSlot", new Vector3(0f, 0f, -0.12f));
+                var headBone = RequireChild(model.transform, "mixamorig:Head");
+                var backBone = RequireChild(model.transform, "mixamorig:Spine2");
+                var headSlot = CreateSlot(headBone, "HeadSlot", Vector3.zero);
+                headSlot.localScale = Vector3.one * 0.01f;
+                var backSlot = CreateSlot(backBone, "BackSlot", Vector3.zero);
+                backSlot.localScale = Vector3.one * 0.01f;
+                var petSlot = CreateSlot(
+                    model.transform,
+                    "PetSlot",
+                    new Vector3(-0.49f, 0.18f, 0.30f));
+                petSlot.localEulerAngles = new Vector3(17.24f, 121.49f, 0f);
+                var frontSlot = CreateSlot(
+                    backBone,
+                    "FrontSlot",
+                    new Vector3(0f, 0f, 0.01f));
+                frontSlot.localScale = Vector3.one * 0.01f;
 
                 var cameraObject = new GameObject(
                     "PreviewCamera",
@@ -283,6 +295,8 @@ namespace LastJumpCrew.ParkHanSol.Editor
                 var rotationRoot = RequireChild(rig.transform, "RotationRoot");
                 var headSlot = RequireChild(rig.transform, "HeadSlot");
                 var backSlot = RequireChild(rig.transform, "BackSlot");
+                var petSlot = RequireChild(rig.transform, "PetSlot");
+                var frontSlot = RequireChild(rig.transform, "FrontSlot");
                 var rawImage = presenter.GetComponent<RawImage>();
                 previewCamera.targetTexture = renderTexture;
                 var serializedRawImage = new SerializedObject(rawImage);
@@ -305,6 +319,8 @@ namespace LastJumpCrew.ParkHanSol.Editor
                 serialized.FindProperty("bodyRenderer").objectReferenceValue = bodyRenderer;
                 serialized.FindProperty("headSlot").objectReferenceValue = headSlot;
                 serialized.FindProperty("backSlot").objectReferenceValue = backSlot;
+                serialized.FindProperty("petSlot").objectReferenceValue = petSlot;
+                serialized.FindProperty("frontSlot").objectReferenceValue = frontSlot;
                 serialized.FindProperty("previewCamera").objectReferenceValue = previewCamera;
                 serialized.FindProperty("previewImage").objectReferenceValue = rawImage;
                 serialized.ApplyModifiedPropertiesWithoutUndo();
@@ -724,7 +740,7 @@ namespace LastJumpCrew.ParkHanSol.Editor
             light.intensity = intensity;
         }
 
-        private static void CreateSlot(
+        private static Transform CreateSlot(
             Transform parent,
             string name,
             Vector3 localPosition)
@@ -732,6 +748,7 @@ namespace LastJumpCrew.ParkHanSol.Editor
             var slot = new GameObject(name).transform;
             slot.SetParent(parent, false);
             slot.localPosition = localPosition;
+            return slot;
         }
 
         private static Canvas RequireCanvas(Scene scene)
