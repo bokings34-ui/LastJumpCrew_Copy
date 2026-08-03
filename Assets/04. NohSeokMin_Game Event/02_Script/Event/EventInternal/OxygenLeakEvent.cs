@@ -12,6 +12,7 @@ namespace SM
         private IEventEffectRuntimeBridge _effectRuntimeBridge;
         private IEventRepairRuntimeBridge _repairRuntimeBridge;
         private ShipSpawnPoint _spawnPoint;
+        private IOxygenLeakZone _oxygenZone;
         private uint _effectInstanceId;
         private bool _effectSpawnPublishAttempted;
 
@@ -23,6 +24,7 @@ namespace SM
             _effectRuntimeBridge = null;
             _repairRuntimeBridge = null;
             _spawnPoint = null;
+            _oxygenZone = null;
             _effectInstanceId = 0U;
             _effectSpawnPublishAttempted = false;
 
@@ -66,18 +68,13 @@ namespace SM
 
         private bool TryStart(out string reason)
         {
-            var point = ShipSpawnPointConfig.Peek()?.GetRandomFreePoint();
-            if (point == null)
+            if (!TryAcquireSpawnPosition(out var spawnPosition, out reason))
             {
-                reason = "spawn_point_unavailable";
                 return false;
             }
 
-            _spawnPoint = point;
-            _spawnPoint.Occupy(EventId.OxygenLeak);
-
             _effect = _effectPool.Get(
-                _spawnPoint.transform.position,
+                spawnPosition,
                 LeakData,
                 false);
             if (_effect == null)
@@ -107,11 +104,46 @@ namespace SM
                     InstanceId,
                     _effectInstanceId,
                     EventEffectKind.OxygenLeak,
-                    _spawnPoint.transform.position,
+                    spawnPosition,
                     0);
             }
 
             _effect.OnSealed += HandleSealed;
+            reason = null;
+            return true;
+        }
+
+        private bool TryAcquireSpawnPosition(
+            out Vector3 spawnPosition,
+            out string reason)
+        {
+            var roomComponent = TargetRoom as Component;
+            var zoneProvider = roomComponent == null
+                ? null
+                : roomComponent.GetComponent<IOxygenLeakZoneProvider>();
+            if (zoneProvider != null)
+            {
+                if (!zoneProvider.TryAcquireZone(out _oxygenZone, out reason))
+                {
+                    spawnPosition = default;
+                    return false;
+                }
+
+                spawnPosition = _oxygenZone.RepairPosition;
+                reason = null;
+                return true;
+            }
+
+            _spawnPoint = ShipSpawnPointConfig.Peek()?.GetRandomFreePoint();
+            if (_spawnPoint == null)
+            {
+                spawnPosition = default;
+                reason = "spawn_point_unavailable";
+                return false;
+            }
+
+            _spawnPoint.Occupy(EventId.OxygenLeak);
+            spawnPosition = _spawnPoint.transform.position;
             reason = null;
             return true;
         }
@@ -248,6 +280,8 @@ namespace SM
         {
             _spawnPoint?.Release();
             _spawnPoint = null;
+            _oxygenZone?.Deactivate();
+            _oxygenZone = null;
         }
 
         private void PublishEffectRemoved()

@@ -269,7 +269,7 @@ namespace LastJumpCrew.ParkHanSol.Interaction
             }
         }
 
-        private bool TryGetItemPrefabData(out UtilityItemPrefabData itemPrefabData)
+        private bool TryGetItemPrefabData(out UtilityItemDataSO itemPrefabData)
         {
             itemPrefabData = null;
 
@@ -300,13 +300,13 @@ namespace LastJumpCrew.ParkHanSol.Interaction
                 return false;
             }
 
-            if (itemPrefabData.HeldPrefab == null)
+            if (itemPrefabData.HandPrefab == null)
             {
                 Debug.LogWarning($"PHS_VENDING_ITEM_PREFAB_MISSING target={name} item={itemPrefabData.ItemId}");
                 return false;
             }
 
-            item = itemPrefabData.HeldPrefab.GetComponent<LastJumpCrew.Common.IHoldableItem>();
+            item = itemPrefabData.HandPrefab.GetComponent<LastJumpCrew.Common.IHoldableItem>();
             if (item == null)
             {
                 Debug.LogWarning($"PHS_VENDING_ITEM_CONTRACT_MISSING target={name} item={itemPrefabData.ItemId}");

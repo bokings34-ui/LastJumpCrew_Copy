@@ -3,8 +3,10 @@ using UnityEngine;
 
 namespace SM
 {
-    public class CommDeviceTarget : MonoBehaviour, IDevice, IDamageable, IInteractable, IRequireHeldItem
+    public class CommDeviceTarget : MonoBehaviour, IDevice, IDamageable, IInteractable, IRequireHeldItem, IRepairable
     {
+        private const string WrenchItemId = "wrench";
+
         [SerializeField, Min(1)] private int maximumHealth = 10;
         [SerializeField] private Transform visualRoot;
 
@@ -22,7 +24,7 @@ namespace SM
         public bool IsAlive => _currentHealth > 0;
 
         // IRequireHeldItem
-        public string RequiredItemId => ItemType.Wrench.ToString();
+        public string RequiredItemId => WrenchItemId;
 
         public bool IsRequirementMet(IItemHolder itemHolder)
         {
@@ -139,7 +141,6 @@ namespace SM
         }
 
         // ===== IRepairable 대응 준비 (팀원 IRepairable.cs main 반영 후 주석 해제) =====
-        /*
         public bool CanRepair => _isDestroyed;
 
         public float CurrentIntegrity => _repairProgress;
@@ -148,11 +149,10 @@ namespace SM
 
         public bool ApplyRepair(float amount, GameObject repairer)
         {
-            if (!CanRepair) return false;
+            if (!CanRepair || amount <= 0f) return false;
             ApplyRepair(amount); // 기존 ApplyRepair(float) 재사용 - 이름 겹침 주의, 아래 참고
             return true;
         }
-        */
         // ================================================================
     }
 }

@@ -1,8 +1,8 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using LastJumpCrew.Common;
 using LastJumpCrew.ParkHanSol.Multiplayer;
-using LastJumpCrew.ParkHanSol.Interaction;
 using LastJumpCrew.ParkHanSol.Multiplayer.Incidents.Fire;
 using LastJumpCrew.ParkHanSol.Multiplayer.Incidents.Locations;
 using LastJumpCrew.ParkHanSol.Multiplayer.ShipAccidents;
@@ -17,8 +17,8 @@ namespace LastJumpCrew.ParkHanSol.Editor
     {
         private const string ScenePath =
             "Assets/02. ParkHanSol_TeamLeader_Build & Multi/01. Scene/BEAVER_2026/PHS_Map_ver1.unity";
-        private const string PlayerPrefabPath =
-            "Assets/02. ParkHanSol_TeamLeader_Build & Multi/03. Prefab/PlayerPrefab/PHS_CuteWhiteGhost_Player.prefab";
+        private const string FireExtinguisherDataPath =
+            "Assets/02. ParkHanSol_TeamLeader_Build & Multi/04. Data/UtilityItems/ParkHanSol_FireExtinguisherItemPrefabData.asset";
 
         [MenuItem("Tools/ParkHanSol/BEAVER/Validate Map Ver3 Redesign")]
         public static void Validate()
@@ -82,7 +82,6 @@ namespace LastJumpCrew.ParkHanSol.Editor
                 .SelectMany(root => root.GetComponentsInChildren<PHSFireZone>(true))
                 .ToArray();
             Require(fireZones.Length == 4, $"fire_zone_count:{fireZones.Length}", errors);
-            ValidateBatteryFeedback(scene, errors);
             ValidateFeedbackTuning(scene, errors);
 
             if (errors.Count > 0)
@@ -97,7 +96,7 @@ namespace LastJumpCrew.ParkHanSol.Editor
             Debug.Log(
                 "PHS_MAP_VER3_REDESIGN_VALIDATION_PASS interiorGravityAreas=7 " +
                 "interiorGravity=7 accidentAnchors=12 incidentLocations=20 fireZones=4 " +
-                "batteryFeedback=slot debrisFlow=bidirectional extinguisherKnockback=5");
+                "debrisFlow=bidirectional extinguisherEffects=SO");
         }
 
         private static void ValidateInteriorContainment(Scene scene, ICollection<string> errors)
@@ -119,29 +118,6 @@ namespace LastJumpCrew.ParkHanSol.Editor
             Require(collider.bounds.size.z >= 152f, "interior_safety_envelope_length_small", errors);
         }
 
-        private static void ValidateBatteryFeedback(Scene scene, ICollection<string> errors)
-        {
-            var socket = Find(
-                    scene,
-                    "PHS_Map_Runtime/Interaction/PHS_UtilityBay/PHS_Utility_BatteryStation")
-                ?.GetComponent<BatteryInsertPowerStationSocket>();
-            Require(socket != null, "battery_socket_missing", errors);
-            if (socket == null)
-            {
-                return;
-            }
-
-            var state = new SerializedObject(socket);
-            var feedbackPoint = state.FindProperty("feedbackPoint").objectReferenceValue as Transform;
-            var installedVisual = state.FindProperty("installedBatteryVisual").objectReferenceValue as GameObject;
-            Require(feedbackPoint != null, "battery_feedback_point_missing", errors);
-            Require(installedVisual != null, "battery_installed_visual_missing", errors);
-            if (feedbackPoint != null && installedVisual != null)
-            {
-                Require(Vector3.Distance(feedbackPoint.position, installedVisual.transform.position) < 0.01f, "battery_feedback_point_misaligned", errors);
-            }
-        }
-
         private static void ValidateFeedbackTuning(Scene scene, ICollection<string> errors)
         {
             var debrisStream = scene.GetRootGameObjects()
@@ -154,13 +130,21 @@ namespace LastJumpCrew.ParkHanSol.Editor
                 Require(streamState.FindProperty("oppositeFlowChance").floatValue > 0f, "debris_opposite_flow_disabled", errors);
             }
 
-            var playerPrefab = AssetDatabase.LoadAssetAtPath<GameObject>(PlayerPrefabPath);
-            var combat = playerPrefab?.GetComponent<NetworkPlayerCombatController>();
-            Require(combat != null, "player_combat_missing", errors);
-            if (combat != null)
+            var extinguisher = AssetDatabase.LoadAssetAtPath<UtilityItemDataSO>(
+                FireExtinguisherDataPath);
+            Require(extinguisher != null, "extinguisher_data_missing", errors);
+            if (extinguisher != null)
             {
-                var combatState = new SerializedObject(combat);
-                Require(Mathf.Approximately(combatState.FindProperty("extinguisherKnockback").floatValue, 5f), "extinguisher_knockback_not_five", errors);
+                Require(
+                    extinguisher.UseType == ItemUseType.Spray,
+                    "extinguisher_use_type_invalid",
+                    errors);
+                Require(
+                    extinguisher.HitEffects.Any(effect =>
+                        effect.EffectType == ItemEffectType.Knockback
+                        && effect.Amount > 0f),
+                    "extinguisher_knockback_missing",
+                    errors);
             }
         }
 

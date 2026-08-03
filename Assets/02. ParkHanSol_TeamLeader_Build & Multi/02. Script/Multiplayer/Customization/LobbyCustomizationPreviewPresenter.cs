@@ -12,12 +12,15 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Customization
         IScrollHandler
     {
         private const int RequiredRenderTextureSize = 1024;
+        private static readonly Vector3 FrontEulerAngles = new(0f, 180f, 0f);
 
         [SerializeField] private Transform previewRigRoot;
         [SerializeField] private Transform rotationRoot;
         [SerializeField] private SkinnedMeshRenderer bodyRenderer;
         [SerializeField] private Transform headSlot;
         [SerializeField] private Transform backSlot;
+        [SerializeField] private Transform petSlot;
+        [SerializeField] private Transform frontSlot;
         [SerializeField] private Camera previewCamera;
         [SerializeField] private RawImage previewImage;
         [SerializeField, Min(0.01f)] private float rotationDegreesPerPixel = 0.35f;
@@ -29,8 +32,12 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Customization
         private ILobbyCustomizationService service;
         private GameObject headVisual;
         private GameObject backVisual;
+        private GameObject petVisual;
+        private GameObject frontVisual;
         private string renderedHeadId = string.Empty;
         private string renderedBackId = string.Empty;
+        private string renderedPetId = string.Empty;
+        private string renderedFrontId = string.Empty;
 
         private void Awake()
         {
@@ -41,7 +48,8 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Customization
             ILobbyCustomizationService customizationService,
             out string reason)
         {
-            if (!ValidateSetup(out reason)
+            if (!ResolveAdditionalSlots(out reason)
+                || !ValidateSetup(out reason)
                 || customizationService == null)
             {
                 reason ??= "service_missing";
@@ -53,6 +61,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Customization
                 return false;
             }
 
+            rotationRoot.localRotation = Quaternion.Euler(FrontEulerAngles);
             service = customizationService;
             return TryRefresh(out reason);
         }
@@ -62,8 +71,12 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Customization
             service = null;
             renderedHeadId = string.Empty;
             renderedBackId = string.Empty;
+            renderedPetId = string.Empty;
+            renderedFrontId = string.Empty;
             DestroyVisual(ref headVisual);
             DestroyVisual(ref backVisual);
+            DestroyVisual(ref petVisual);
+            DestroyVisual(ref frontVisual);
         }
 
         public bool TryRefresh(out string reason)
@@ -87,6 +100,20 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Customization
                     backSlot,
                     ref backVisual,
                     ref renderedBackId,
+                    out reason)
+                || !TryApplyVisual(
+                    service.PreviewPetId,
+                    CosmeticSlot.Pet,
+                    petSlot,
+                    ref petVisual,
+                    ref renderedPetId,
+                    out reason)
+                || !TryApplyVisual(
+                    service.PreviewFrontId,
+                    CosmeticSlot.Front,
+                    frontSlot,
+                    ref frontVisual,
+                    ref renderedFrontId,
                     out reason))
             {
                 return false;
@@ -215,6 +242,8 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Customization
                 || bodyRenderer == null
                 || headSlot == null
                 || backSlot == null
+                || petSlot == null
+                || frontSlot == null
                 || previewCamera == null
                 || previewImage == null)
             {
@@ -242,6 +271,29 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Customization
             if (minimumFieldOfView > maximumFieldOfView)
             {
                 reason = "preview_zoom_range_invalid";
+                return false;
+            }
+
+            reason = null;
+            return true;
+        }
+
+        private bool ResolveAdditionalSlots(out string reason)
+        {
+            if (petSlot == null && rotationRoot != null)
+            {
+                petSlot = rotationRoot.Find("PetSlot");
+            }
+
+            if (frontSlot == null && rotationRoot != null)
+            {
+                frontSlot = rotationRoot.Find("FrontSlot");
+            }
+
+            if (petSlot == null || frontSlot == null)
+            {
+                reason = "preview_additional_slot_missing";
+                Debug.LogError($"PHS_COSMETIC_PREVIEW_SETUP_FAILED reason={reason}", this);
                 return false;
             }
 

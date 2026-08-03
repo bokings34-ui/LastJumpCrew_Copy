@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using LastJumpCrew.Common;
 using LastJumpCrew.ParkHanSol.Interaction;
 using LastJumpCrew.ParkHanSol.Items;
 using LastJumpCrew.ParkHanSol.Multiplayer;
@@ -46,10 +47,10 @@ namespace LastJumpCrew.ParkHanSol.Editor
                 "holderRefs=preserved");
         }
 
-        private static Dictionary<string, UtilityItemPrefabData> BuildCatalogMap(
+        private static Dictionary<string, UtilityItemDataSO> BuildCatalogMap(
             UtilityItemCatalogSO catalog)
         {
-            var result = new Dictionary<string, UtilityItemPrefabData>(
+            var result = new Dictionary<string, UtilityItemDataSO>(
                 StringComparer.Ordinal);
             foreach (var item in catalog.Items)
             {
@@ -63,13 +64,13 @@ namespace LastJumpCrew.ParkHanSol.Editor
         }
 
         private static void ValidateItem(
-            UtilityItemPrefabData item,
+            UtilityItemDataSO item,
             PHSItemHeldPresentationSpec.ItemPoseSpec spec)
         {
-            Require(item.HeldPrefab != null, $"held_prefab_missing item={spec.ItemId}");
+            Require(item.HandPrefab != null, $"held_prefab_missing item={spec.ItemId}");
             Require(item.DroppedPrefab != null, $"dropped_prefab_missing item={spec.ItemId}");
             Require(
-                item.HeldPrefab != item.DroppedPrefab,
+                item.HandPrefab != item.DroppedPrefab,
                 $"held_dropped_prefab_shared item={spec.ItemId}");
 
             var serializedItem = new SerializedObject(item);
@@ -84,9 +85,9 @@ namespace LastJumpCrew.ParkHanSol.Editor
                 $"pose_not_explicitly_serialized item={spec.ItemId}");
         }
 
-        private static void ValidateDebrisPrefabs(UtilityItemPrefabData item)
+        private static void ValidateDebrisPrefabs(UtilityItemDataSO item)
         {
-            var held = item.HeldPrefab;
+            var held = item.HandPrefab;
             var dropped = item.DroppedPrefab;
             Require(
                 AssetDatabase.GetAssetPath(held).Contains(

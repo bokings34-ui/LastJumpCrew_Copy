@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using LastJumpCrew.Common;
 using LastJumpCrew.ParkHanSol.Items;
 using LastJumpCrew.ParkHanSol.Multiplayer;
 using LastJumpCrew.ParkHanSol.Shop;
@@ -19,7 +20,7 @@ namespace LastJumpCrew.ParkHanSol.Interaction
     {
         public static SessionPurchaseDeliveryService Instance { get; private set; }
 
-        private static readonly Queue<UtilityItemPrefabData> offlinePendingItems = new();
+        private static readonly Queue<UtilityItemDataSO> offlinePendingItems = new();
 
         public int PendingCount
         {
@@ -62,12 +63,12 @@ namespace LastJumpCrew.ParkHanSol.Interaction
             }
         }
 
-        public bool TryQueueDelivery(UtilityItemPrefabData itemPrefabData)
+        public bool TryQueueDelivery(UtilityItemDataSO itemPrefabData)
         {
             return TryQueueDeliveries(new[] { itemPrefabData });
         }
 
-        public bool CanQueueDeliveries(IReadOnlyList<UtilityItemPrefabData> itemPrefabData)
+        public bool CanQueueDeliveries(IReadOnlyList<UtilityItemDataSO> itemPrefabData)
         {
             if (!ValidateItems(itemPrefabData))
             {
@@ -90,7 +91,7 @@ namespace LastJumpCrew.ParkHanSol.Interaction
             return true;
         }
 
-        public bool TryQueueDeliveries(IReadOnlyList<UtilityItemPrefabData> itemPrefabData)
+        public bool TryQueueDeliveries(IReadOnlyList<UtilityItemDataSO> itemPrefabData)
         {
             if (!CanQueueDeliveries(itemPrefabData))
             {
@@ -167,7 +168,7 @@ namespace LastJumpCrew.ParkHanSol.Interaction
                 out reason);
         }
 
-        public void QueueDelivery(UtilityItemPrefabData itemPrefabData)
+        public void QueueDelivery(UtilityItemDataSO itemPrefabData)
         {
             TryQueueDelivery(itemPrefabData);
         }
@@ -189,7 +190,7 @@ namespace LastJumpCrew.ParkHanSol.Interaction
             }
         }
 
-        private bool ValidateItems(IReadOnlyList<UtilityItemPrefabData> itemPrefabData)
+        private bool ValidateItems(IReadOnlyList<UtilityItemDataSO> itemPrefabData)
         {
             if (itemPrefabData == null || itemPrefabData.Count == 0)
             {

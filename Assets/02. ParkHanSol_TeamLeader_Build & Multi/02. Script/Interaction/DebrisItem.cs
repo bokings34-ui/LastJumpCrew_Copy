@@ -1,3 +1,4 @@
+using LastJumpCrew.Common;
 using LastJumpCrew.ParkHanSol.Items;
 using UnityEngine;
 
@@ -7,7 +8,7 @@ namespace LastJumpCrew.ParkHanSol.Interaction
     public sealed class DebrisItem : MonoBehaviour
     {
         [Tooltip("판매 가격을 가진 데브리 아이템 데이터. Inspector에서 직접 연결한다.")]
-        [SerializeField] private UtilityItemPrefabData debrisData;
+        [SerializeField] private UtilityItemDataSO debrisData;
         [SerializeField] private bool recalculateMassFromVolume = true;
         [SerializeField, Min(0.01f)] private float materialDensity = 2f;
 

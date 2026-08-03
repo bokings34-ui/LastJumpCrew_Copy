@@ -351,6 +351,10 @@ namespace LastJumpCrew.ParkHanSol.Interaction
                 return false;
             }
 
+            var nohPowerOffEvent = SM.EventManager.Instance
+                .GetActiveEvent(SM.EventId.PowerOff) as SM.PowerOffEvent;
+            nohPowerOffEvent?.NotifyPowerRestored();
+
             if (!TryResolveBatteryFamilyItem(
                     client.PlayerObject,
                     itemId,
@@ -378,11 +382,9 @@ namespace LastJumpCrew.ParkHanSol.Interaction
         }
 
         private static bool HasBatteryFamilyPowerProfile(
-            UtilityItemPrefabData itemData)
+            CommonInteraction.UtilityItemDataSO itemData)
         {
             return itemData != null
-                && itemData.UtilityFamily
-                    == PHSUtilityFamilyActionKind.Battery
                 && itemData.TryGetActionProfile(
                     UtilityItemActionKind.PowerRestore,
                     out _);
@@ -391,7 +393,7 @@ namespace LastJumpCrew.ParkHanSol.Interaction
         private static bool TryResolveBatteryFamilyItem(
             Component holderComponent,
             string itemId,
-            out UtilityItemPrefabData itemData)
+            out CommonInteraction.UtilityItemDataSO itemData)
         {
             itemData = null;
             if (holderComponent == null || string.IsNullOrWhiteSpace(itemId))
