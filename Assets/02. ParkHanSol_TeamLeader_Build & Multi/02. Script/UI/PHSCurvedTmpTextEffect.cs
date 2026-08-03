@@ -3,6 +3,7 @@ using UnityEngine;
 
 namespace LastJumpCrew.ParkHanSol.UI
 {
+    [ExecuteAlways]
     [DisallowMultipleComponent]
     [RequireComponent(typeof(TMP_Text))]
     public sealed class PHSCurvedTmpTextEffect : MonoBehaviour
@@ -38,6 +39,23 @@ namespace LastJumpCrew.ParkHanSol.UI
                 targetText.OnPreRenderText -= ApplyCurvature;
             }
         }
+
+        private void OnValidate()
+        {
+            CacheText();
+            targetText?.SetVerticesDirty();
+        }
+
+#if UNITY_EDITOR
+        private void Update()
+        {
+            if (!Application.isPlaying)
+            {
+                CacheText();
+                targetText?.SetVerticesDirty();
+            }
+        }
+#endif
 
         private void CacheText()
         {

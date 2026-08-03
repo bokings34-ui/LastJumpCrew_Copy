@@ -2,7 +2,6 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using LastJumpCrew.ParkHanSol.Multiplayer;
-using LastJumpCrew.ParkHanSol.Interaction;
 using LastJumpCrew.ParkHanSol.Multiplayer.Incidents.Fire;
 using LastJumpCrew.ParkHanSol.Multiplayer.Incidents.Locations;
 using LastJumpCrew.ParkHanSol.Multiplayer.ShipAccidents;
@@ -66,7 +65,7 @@ namespace LastJumpCrew.ParkHanSol.Editor
             var anchors = scene.GetRootGameObjects()
                 .SelectMany(root => root.GetComponentsInChildren<PHSShipAccidentAnchor>(true))
                 .ToArray();
-            Require(anchors.Length == 12, $"accident_anchor_count:{anchors.Length}", errors);
+            Require(anchors.Length == 11, $"accident_anchor_count:{anchors.Length}", errors);
             Require(anchors.Select(anchor => anchor.AnchorId).Distinct(StringComparer.Ordinal).Count() == anchors.Length, "accident_anchor_duplicate", errors);
             foreach (var anchor in anchors)
             {
@@ -76,13 +75,12 @@ namespace LastJumpCrew.ParkHanSol.Editor
             var locations = scene.GetRootGameObjects()
                 .SelectMany(root => root.GetComponentsInChildren<PHSIncidentLocationAnchor>(true))
                 .ToArray();
-            Require(locations.Length == 20, $"incident_location_count:{locations.Length}", errors);
+            Require(locations.Length == 19, $"incident_location_count:{locations.Length}", errors);
             Require(locations.Select(location => location.LocationId).Distinct(StringComparer.Ordinal).Count() == locations.Length, "incident_location_duplicate", errors);
             var fireZones = scene.GetRootGameObjects()
                 .SelectMany(root => root.GetComponentsInChildren<PHSFireZone>(true))
                 .ToArray();
             Require(fireZones.Length == 4, $"fire_zone_count:{fireZones.Length}", errors);
-            ValidateBatteryFeedback(scene, errors);
             ValidateFeedbackTuning(scene, errors);
 
             if (errors.Count > 0)
@@ -96,8 +94,8 @@ namespace LastJumpCrew.ParkHanSol.Editor
 
             Debug.Log(
                 "PHS_MAP_VER3_REDESIGN_VALIDATION_PASS interiorGravityAreas=7 " +
-                "interiorGravity=7 accidentAnchors=12 incidentLocations=20 fireZones=4 " +
-                "batteryFeedback=slot debrisFlow=bidirectional extinguisherKnockback=5");
+                "interiorGravity=7 accidentAnchors=11 incidentLocations=19 fireZones=4 " +
+                "debrisFlow=bidirectional extinguisherKnockback=5");
         }
 
         private static void ValidateInteriorContainment(Scene scene, ICollection<string> errors)
@@ -117,29 +115,6 @@ namespace LastJumpCrew.ParkHanSol.Editor
             Require(collider.bounds.size.x >= 82f, "interior_safety_envelope_width_small", errors);
             Require(collider.bounds.size.y >= 22f, "interior_safety_envelope_height_small", errors);
             Require(collider.bounds.size.z >= 152f, "interior_safety_envelope_length_small", errors);
-        }
-
-        private static void ValidateBatteryFeedback(Scene scene, ICollection<string> errors)
-        {
-            var socket = Find(
-                    scene,
-                    "PHS_Map_Runtime/Interaction/PHS_UtilityBay/PHS_Utility_BatteryStation")
-                ?.GetComponent<BatteryInsertPowerStationSocket>();
-            Require(socket != null, "battery_socket_missing", errors);
-            if (socket == null)
-            {
-                return;
-            }
-
-            var state = new SerializedObject(socket);
-            var feedbackPoint = state.FindProperty("feedbackPoint").objectReferenceValue as Transform;
-            var installedVisual = state.FindProperty("installedBatteryVisual").objectReferenceValue as GameObject;
-            Require(feedbackPoint != null, "battery_feedback_point_missing", errors);
-            Require(installedVisual != null, "battery_installed_visual_missing", errors);
-            if (feedbackPoint != null && installedVisual != null)
-            {
-                Require(Vector3.Distance(feedbackPoint.position, installedVisual.transform.position) < 0.01f, "battery_feedback_point_misaligned", errors);
-            }
         }
 
         private static void ValidateFeedbackTuning(Scene scene, ICollection<string> errors)

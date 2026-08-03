@@ -1,7 +1,6 @@
 using System;
 using System.Linq;
 using LastJumpCrew.ParkHanSol.Multiplayer;
-using LastJumpCrew.ParkHanSol.Interaction;
 using LastJumpCrew.ParkHanSol.Multiplayer.Incidents.Locations;
 using LastJumpCrew.ParkHanSol.Multiplayer.Maps;
 using LastJumpCrew.ParkHanSol.Multiplayer.ShipAccidents;
@@ -42,7 +41,7 @@ namespace LastJumpCrew.ParkHanSol.Editor
 
             Debug.Log(
                 "PHS_MAP_VER3_REDESIGN_AUTHOR_OK interiorGravityZones=7 fireRooms=4 " +
-                "accidentAnchors=12 legacyVisualsDisabled=true mapProjection=112x130");
+                "accidentAnchors=11 legacyVisualsDisabled=true mapProjection=60.247x141.362");
         }
 
         private static void DisableLegacyVisuals(Scene scene)
@@ -50,9 +49,9 @@ namespace LastJumpCrew.ParkHanSol.Editor
             Find(scene, "Cube").gameObject.SetActive(false);
             Find(scene, "PHS_ShipAccessRetrofit/PHS_EntryWing_A").gameObject.SetActive(false);
             Find(scene, "PHS_ShipAccessRetrofit/PHS_EntryWing_B").gameObject.SetActive(false);
-            var legacyExteriorShell = Find(
-                scene,
-                "PHS_ShipAccessRetrofit/PHS_ExteriorCollisionShell");
+            var legacyExteriorShell = FindDirectChild(
+                Find(scene, "PHS_ShipAccessRetrofit"),
+                "PHS_ExteriorCollisionShell");
             if (legacyExteriorShell != null)
             {
                 legacyExteriorShell.gameObject.SetActive(false);
@@ -176,39 +175,12 @@ namespace LastJumpCrew.ParkHanSol.Editor
             Move(scene, "PHS_Map_Runtime/Interaction/PHS_FireExtinguisherVending", new Vector3(-6f, -3.72f, 69f));
             Move(scene, "PHS_Map_Runtime/Interaction/PHS_WrenchVending", new Vector3(-9f, -3.72f, 69f));
             Move(scene, "PHS_Map_Runtime/Interaction/PHS_UtilityBay/PHS_Utility_Respawn", new Vector3(-10f, 0f, -6f));
-            Move(scene, "PHS_Map_Runtime/Interaction/PHS_UtilityBay/PHS_Utility_Oxygen", new Vector3(12f, -3.74f, 51f));
             Move(scene, "PHS_Map_Runtime/Interaction/PHS_UtilityBay/PHS_GravityGenerator", new Vector3(-27f, -3.74f, 48f));
-            Move(scene, "PHS_Map_Runtime/Interaction/PHS_UtilityBay/PHS_Utility_BatteryStation", new Vector3(14.5f, -3.66f, 48f), Quaternion.Euler(0f, -90f, 0f));
-            ConfigureBatteryFeedbackPoint(scene);
-            Move(scene, "PHS_Map_Runtime/Interaction/PHS_Portals/PHS_DebrisCollectionPortal_0715", new Vector3(-6f, -3.74f, 33f));
             Move(scene, "PHS_Map_Runtime/Interaction/PHS_Portals/PHS_ExteriorShopPortal_0717", new Vector3(4f, -2.44f, 72f));
             Move(scene, "PHS_Map_Runtime/Interaction/PHS_TravelSystem_0715/PHS_TravelConsole_0715", new Vector3(-8.3f, -3.74f, 10f));
             Move(scene, "PHS_TeamIntegration/PHS_CannonTerminal", new Vector3(-18f, -3.74f, 36f));
             Move(scene, "PHS_TeamIntegration/PHS_WireTerminal", new Vector3(-6f, -3.74f, 36f));
             Move(scene, "PHS_TeamIntegration/PHS_PowerTerminal", new Vector3(6f, -3.74f, 36f));
-        }
-
-        private static void ConfigureBatteryFeedbackPoint(Scene scene)
-        {
-            var station = Find(
-                scene,
-                "PHS_Map_Runtime/Interaction/PHS_UtilityBay/PHS_Utility_BatteryStation");
-            var socket = station.GetComponent<BatteryInsertPowerStationSocket>();
-            var socketState = new SerializedObject(socket);
-            var installedVisual = socketState.FindProperty("installedBatteryVisual")
-                .objectReferenceValue as GameObject;
-            Require(installedVisual != null, "battery_installed_visual_missing");
-
-            var feedbackPoint = FindDirectChild(station, "PHS_BatteryFeedbackPoint");
-            if (feedbackPoint == null)
-            {
-                feedbackPoint = new GameObject("PHS_BatteryFeedbackPoint").transform;
-                feedbackPoint.SetParent(station, false);
-            }
-
-            feedbackPoint.position = installedVisual.transform.position;
-            feedbackPoint.rotation = installedVisual.transform.rotation;
-            SetSerializedValue(socket, "feedbackPoint", feedbackPoint);
         }
 
         private static void AuthorIncidentSources(Scene scene)
@@ -262,8 +234,8 @@ namespace LastJumpCrew.ParkHanSol.Editor
         private static void ConfigureMapProjection(Scene scene)
         {
             var layout = Find(scene, "PHS_ShipMapWorldLayout").GetComponent<PHSShipMapWorldLayout>();
-            SetSerializedValue(layout, "worldCenterXZ", new Vector2(2f, 55f));
-            SetSerializedValue(layout, "worldSizeXZ", new Vector2(112f, 130f));
+            SetSerializedValue(layout, "worldCenterXZ", new Vector2(-6.409424f, 48.29463f));
+            SetSerializedValue(layout, "worldSizeXZ", new Vector2(60.24707f, 141.362f));
         }
 
         private static void ConfigureAccidentReferences(Scene scene)
@@ -272,7 +244,7 @@ namespace LastJumpCrew.ParkHanSol.Editor
                 .SelectMany(root => root.GetComponentsInChildren<PHSShipAccidentAnchor>(true))
                 .OrderBy(anchor => anchor.AnchorId, StringComparer.Ordinal)
                 .ToArray();
-            Require(anchors.Length == 12, $"accident_anchor_count:{anchors.Length}");
+            Require(anchors.Length == 11, $"accident_anchor_count:{anchors.Length}");
 
             var coordinator = Find(scene, "PHS_Map_Runtime/PHS_ShipRuntime")
                 .GetComponent<PHSNetworkShipAccidentCoordinator>();

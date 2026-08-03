@@ -1,8 +1,10 @@
 using System.Collections.Generic;
+using LastJumpCrew.ParkHanSol.Items;
 using LastJumpCrew.ParkHanSol.Multiplayer;
 using LastJumpCrew.ParkHanSol.Multiplayer.Events;
 using LastJumpCrew.ParkHanSol.Multiplayer.ShipAccidents;
 using Unity.Netcode;
+using Unity.Netcode.Components;
 using UnityEngine;
 using UnityEngine.InputSystem;
 using UnityEngine.SceneManagement;
@@ -27,6 +29,8 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Maps
         private readonly List<ShipMapEventDetail> eventDetails = new();
         private readonly List<NetworkEventEffectSnapshot> effectSnapshots = new();
         private readonly List<NetworkEventLifecycleSnapshot> lifecycleSnapshots = new();
+        private readonly HashSet<ulong> itemMarkerSetupErrors = new();
+        private readonly HashSet<PHSShipAccidentId> accidentDefinitionErrors = new();
         private PHSMapRuntimeContext mapRuntimeContext;
         private bool requestedVisible;
         private float nextRefreshTime;
@@ -37,6 +41,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Maps
         private bool mapProfileErrorLogged;
         private bool shipSystemsErrorLogged;
         private bool hudBridgeErrorLogged;
+        private bool itemSpawnManagerErrorLogged;
         private string observedScenePath;
         private float coordinatorBindDeadline;
 
@@ -167,6 +172,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Maps
             eventDetails.Clear();
             AppendPlayerMarkers(layout);
             AppendObjectMarkers(layout);
+            AppendFloorItemMarkers(layout);
             AppendEventMarkers(layout);
             AppendAccidentMarkers(layout);
 
@@ -191,6 +197,9 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Maps
             coordinatorBindDeadline = Time.unscaledTime + coordinatorBindTimeoutSeconds;
             eventCoordinatorErrorLogged = false;
             accidentCoordinatorErrorLogged = false;
+            accidentDefinitionErrors.Clear();
+            itemMarkerSetupErrors.Clear();
+            itemSpawnManagerErrorLogged = false;
             runFlowErrorLogged = false;
             mapProfileErrorLogged = false;
             shipSystemsErrorLogged = false;
@@ -381,11 +390,26 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Maps
                         ResolveAccidentIcon(snapshot.AccidentId)));
                 }
 
+                if (!coordinator.TryGetAccidentDefinition(snapshot.AccidentId, out var definition)
+                    || definition == null
+                    || string.IsNullOrWhiteSpace(definition.RequiredItemId))
+                {
+                    if (accidentDefinitionErrors.Add(snapshot.AccidentId))
+                    {
+                        Debug.LogError(
+                            $"PHS_HANDHELD_MAP_ACCIDENTS_FAILED reason=required_item_missing accident={snapshot.AccidentId}",
+                            this);
+                    }
+
+                    continue;
+                }
+
+                accidentDefinitionErrors.Remove(snapshot.AccidentId);
                 eventDetails.Add(new ShipMapEventDetail(
                     ResolveAccidentIcon(snapshot.AccidentId),
                     ResolveAccidentSymbol(snapshot.AccidentId),
                     ResolveAccidentTitle(snapshot.AccidentId),
-                    "발생 중"));
+                    $"발생 중 · 필요: {definition.RequiredItemId}"));
             }
         }
 
@@ -394,7 +418,9 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Maps
             for (var index = 0; index < layout.ObjectAnchorCount; index++)
             {
                 var anchor = layout.GetObjectAnchorAt(index);
-                if (anchor != null && layout.TryProject(anchor.transform.position, out var position))
+                if (anchor != null
+                    && (anchor.Kind == ShipMapObjectKind.SellStation || anchor.gameObject.activeInHierarchy)
+                    && layout.TryProject(anchor.transform.position, out var position))
                 {
                     markers.Add(new ShipMapMarker(
                         ShipMapMarkerKind.Object,
@@ -403,6 +429,91 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Maps
                         anchor.IconId));
                 }
             }
+        }
+
+        private void AppendFloorItemMarkers(PHSShipMapWorldLayout layout)
+        {
+            var spawnManager = NetworkManager.Singleton == null
+                ? null
+                : NetworkManager.Singleton.SpawnManager;
+            if (spawnManager == null)
+            {
+                if (!itemSpawnManagerErrorLogged)
+                {
+                    itemSpawnManagerErrorLogged = true;
+                    Debug.LogError("PHS_HANDHELD_MAP_ITEMS_FAILED reason=spawn_manager_missing", this);
+                }
+
+                return;
+            }
+
+            itemSpawnManagerErrorLogged = false;
+            foreach (var pair in spawnManager.SpawnedObjects)
+            {
+                var networkObject = pair.Value;
+                var itemObject = networkObject == null
+                    ? null
+                    : networkObject.GetComponent<UtilityItemObject>();
+                if (itemObject == null)
+                {
+                    continue;
+                }
+
+                if (itemObject.ItemPrefabData == null)
+                {
+                    if (itemMarkerSetupErrors.Add(pair.Key))
+                    {
+                        Debug.LogError(
+                            $"PHS_HANDHELD_MAP_ITEMS_FAILED reason=item_data_missing networkObjectId={pair.Key}",
+                            networkObject);
+                    }
+
+                    continue;
+                }
+
+                if (!TryResolveTrackedItemIcon(itemObject.ItemId, out var iconId))
+                {
+                    itemMarkerSetupErrors.Remove(pair.Key);
+                    continue;
+                }
+
+                var networkTransform = networkObject.GetComponent<NetworkTransform>();
+                if (networkTransform == null)
+                {
+                    if (itemMarkerSetupErrors.Add(pair.Key))
+                    {
+                        Debug.LogError(
+                            $"PHS_HANDHELD_MAP_ITEMS_FAILED reason=network_transform_missing networkObjectId={pair.Key} item={itemObject.ItemId}",
+                            networkObject);
+                    }
+
+                    continue;
+                }
+
+                itemMarkerSetupErrors.Remove(pair.Key);
+                if (layout.TryProject(networkTransform.transform.position, out var position))
+                {
+                    markers.Add(new ShipMapMarker(
+                        ShipMapMarkerKind.Object,
+                        position,
+                        string.Empty,
+                        iconId));
+                }
+            }
+        }
+
+        private static bool TryResolveTrackedItemIcon(
+            string itemId,
+            out ShipMapIconId iconId)
+        {
+            iconId = itemId switch
+            {
+                "battery_pack" => ShipMapIconId.Battery,
+                "wrench" => ShipMapIconId.Wrench,
+                "fire_extinguisher" => ShipMapIconId.FireExtinguisher,
+                _ => ShipMapIconId.None
+            };
+            return iconId != ShipMapIconId.None;
         }
 
         private bool TryResolveEventSymbol(ulong eventInstanceId, out string symbol)
