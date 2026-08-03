@@ -120,6 +120,24 @@ ZoneEventScheduler.Instance.StopScheduler();
 | 발행 신호 | OnMicDisabled (발생 시), OnMicRestored (자동 복구/강제종료 시) |
 | 처리 필요 항목 | 마이크 on/off 처리는 음성 시스템 담당이 이 신호를 구독 |
 
+## 장치 파괴 (신규)
+
+| 항목 | 내용 |
+|---|---|
+| 클래스 | `CommDeviceTarget` |
+| 역할 | DeviceRegistry에 등록되는 파괴 가능한 장치, DeviceAttackEnemy의 공격 대상 |
+| 발생 트리거 | 장치 HP 0 → `EventScheduler.TriggerRandomEvent(room)` 호출 → 사고 풀 중 랜덤 발생 |
+| 수리 연동 | `CommDeviceTarget.ApplyRepair(float amount)` — 렌치 아이템이 직접 호출 |
+
+## PowerOff 배터리 소켓 (신규)
+
+| 항목 | 내용 |
+|---|---|
+| 클래스 | `BatterySocket` |
+| 역할 | 발전기에 배치, PowerOff 발생 시 배터리 자동 소실 |
+| 종료 진입점 | `BatterySocket.InsertBattery()` — 배터리 아이템이 직접 호출, 내부적으로 `PowerOffEvent.NotifyPowerRestored()` 호출 |
+| 확인 필요 | 조명 연출은 미구현, 팀원의 `PHSPowerFailureRoomController`로 역할 분리 |
+
 ---
 
 ## 외부 경고 3종 (미니게임 연동)

@@ -15,7 +15,7 @@ namespace SM
             _originalPriority = owner.Agent.avoidancePriority;
             owner.Agent.avoidancePriority = 10;
 
-            _cooldownTimer = 0f;
+            _cooldownTimer = owner.AttackCooldown;
 
             if (owner.Anim != null) owner.Anim.CrossFade(EnemyAnimData.Attack, 0.05f);
         }
@@ -44,6 +44,7 @@ namespace SM
             {
                 _cooldownTimer = 0f;
                 owner.PerformAttack(target);
+                owner.PlayAttackSound();
 
                 if (owner.Anim != null) owner.Anim.Play(EnemyAnimData.Attack, -1, 0f);
             }
