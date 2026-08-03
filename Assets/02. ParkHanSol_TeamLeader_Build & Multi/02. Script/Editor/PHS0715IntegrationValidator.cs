@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using LastJumpCrew.Common;
 using LastJumpCrew.ParkHanSol.Interaction;
 using LastJumpCrew.ParkHanSol.Items;
 using LastJumpCrew.ParkHanSol.Multiplayer;
@@ -2929,7 +2930,7 @@ namespace LastJumpCrew.ParkHanSol.Editor
             string label,
             ICollection<string> errors)
         {
-            var itemData = AssetDatabase.LoadAssetAtPath<UtilityItemPrefabData>(itemDataPath);
+            var itemData = AssetDatabase.LoadAssetAtPath<UtilityItemDataSO>(itemDataPath);
             Require(itemData != null, $"{label}_item_data_missing", errors);
             if (itemData == null)
             {
@@ -2937,7 +2938,7 @@ namespace LastJumpCrew.ParkHanSol.Editor
             }
 
             Require(
-                AssetDatabase.GetAssetPath(itemData.HeldPrefab) == expectedHeldPath,
+                AssetDatabase.GetAssetPath(itemData.HandPrefab) == expectedHeldPath,
                 $"{label}_held_prefab_invalid",
                 errors);
             Require(
@@ -4253,7 +4254,7 @@ namespace LastJumpCrew.ParkHanSol.Editor
             ICollection<string> errors)
         {
             var itemData = product?.ItemPrefabData;
-            var heldPrefab = itemData?.HeldPrefab;
+            var heldPrefab = itemData?.HandPrefab;
             var droppedPrefab = itemData?.DroppedPrefab;
             var offerId = product?.OfferId ?? "null";
             Require(itemData != null, $"shop_item_data_missing offer={offerId}", errors);
@@ -4366,7 +4367,7 @@ namespace LastJumpCrew.ParkHanSol.Editor
                     $"utility_item_id_duplicate item={itemId}",
                     errors);
 
-                var heldPrefab = itemData.HeldPrefab;
+                var heldPrefab = itemData.HandPrefab;
                 var droppedPrefab = itemData.DroppedPrefab;
                 Require(heldPrefab != null, $"utility_held_prefab_missing item={itemId}", errors);
                 Require(droppedPrefab != null, $"utility_dropped_prefab_missing item={itemId}", errors);

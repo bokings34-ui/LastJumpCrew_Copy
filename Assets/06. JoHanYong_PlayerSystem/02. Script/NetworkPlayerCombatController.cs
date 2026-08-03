@@ -17,66 +17,24 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
     [RequireComponent(typeof(NetworkObject))]
     public sealed class NetworkPlayerCombatController : NetworkBehaviour
     {
-        private const string WrenchItemId = "wrench";
-        private const string FireExtinguisherItemId = "fire_extinguisher";
+        private TempPlayerItemHolder itemHolder;
 
         [Header("Wrench Attack")]
 
         [SerializeField]
         private Transform wrenchAttackPoint;
 
-        [SerializeField, Min(0.1f)]
-        private float wrenchAttackRadius = 1.2f; //렌치 공격의 구형 판정 범위
-
-        [SerializeField, Min(0.1f)]
-        private float wrenchRepairRadius = 2.4f;
-
-        [SerializeField, Min(0)]
-        private int wrenchDamage = 15; //몬스터한테 적용되는 데미지
-
-        [SerializeField, Min(0f)]
-        private float wrenchKnockback = 4f; //넉백 세기 => 몬스터
-
-        [SerializeField, Min(0.01f)]
-        private float wrenchCooldown = 0.5f; //공격 간격
-
         [Header("Fire Extinguisher Spray")]
         [SerializeField]
         private Transform extinguisherSprayOrigin; //분사 시작위치
 
-        [SerializeField, Min(0.05f)]
-        private float extinguisherSprayRadius = 0.6f; //분사 범위
-
-        [SerializeField, Min(0.1f)]
-        private float extinguisherSprayDistance = 4f; //분사 도달하는 최대거리
-
-        [SerializeField, Min(0)]
-        private int extinguisherDamagePerTick = 2; //데미지
-
-        [SerializeField, Min(0f)]
-        private float extinguisherKnockback = 2f; //넉백 세기
-        [SerializeField, Min(0.05f)]
-        private float extinguisherDamageInterval = 0.5f; //분사 판정을 실행하는 시간 간격
-
-        [SerializeField]
-        private LayerMask extinguisherTargetLayers; //분사로 감지하는 레이어 플레이어 몬스터
-
-        private float nextExtinguisherDamgeTime; //서버가 관리하는 다음 분사판정 가능 시간
+        private float nextExtinguisherDamageTime; //서버가 관리하는 다음 분사판정 가능 시간
 
         [Header("Battery Throw")] //배터리 필드
         [SerializeField] private Transform batteryThrowOrigin;
 
-        [SerializeField, Min(0f)]
-        private float batteryThrowForce = 12f; //카메라 전면 투척 힘
-        [SerializeField, Min(0f)]
-        private float battetyUpwardForce = 1.5f; //약간 뛰우기 위한 값 -> 포물선 느낌?
-
-        [SerializeField, Min(0f)]
-        private float batteryThrowCooldown = 0.8f; //좌클릭 연속 입력 요청 중복 방지
-
         private float nextBatteryThrowTime;
 
-        private float nextBatteryServerThrowTime;
         [Header("General Item Throw")] //일반 투척
 
         [SerializeField]
@@ -115,8 +73,6 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
 
         [SerializeField]
         private string batteryItemId = "battery_pack";
-        [SerializeField]
-        private LayerMask wrenchTargetLayers; //몬스터 플레이어 레이어 판정
 
         private readonly HashSet<GameObject> processedTargets = new();
         private readonly List<Vector3> itemFeedbackTargetPositions = new();
@@ -128,12 +84,67 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
         private bool isExtinguisherEffectPlaying;
         private void Awake()
         {
+            itemHolder = GetComponent<TempPlayerItemHolder>();
+
+            if(itemHolder == null)
+            {
+                Debug.LogError($"PHS_COMBAT_SETUP_FAILED " + $"reason=item_holder_missing " + $"player={name}", this);
+            }
             CacheExtinguisherEffects();
         }
         private void Update()
         {
             UpdateExtinguisherEffect();
 
+        }
+        private bool TryGetCurrentItemData(out UtilityItemDataSO itemData)
+        {
+            itemData = null;
+            if(itemHolder == null)
+            {
+                return false;
+            }
+            itemData = itemHolder.CurrentItemPrefabData;
+
+            return itemData != null;
+        }
+        private bool TryGetHeldItemData(ItemUseType expectedUseType, out UtilityItemDataSO itemData)
+        {
+            itemData = null;
+            if(itemHolder == null)
+            {
+                Debug.LogError($"PHS_ITEM_USE_FAILED " + $"reason=item_holder_missing " + $"player={name}", this);
+
+                return false;
+            }
+            itemData = itemHolder.CurrentItemPrefabData;
+
+            if(itemData == null)
+            {
+                Debug.LogWarning($"PHS_ITEM_USE_FAILED " + $"reason=held_item_data_missing " + $"player={name}", this);
+
+                return false;
+            }
+            if(itemData.UseType != expectedUseType)
+            {
+                Debug.LogWarning($"PHS_ITEM_USE_FAILED " + $"reason=use_type_mismatch " + $"player={name} " + $"item={itemData.ItemId} " +
+                    $"expected={expectedUseType} " + $"actual={itemData.UseType}", this);
+
+                itemData = null;
+                return false;
+            }
+            return true;
+        }
+        private bool HasExpectedHeldItem(ItemUseType expectedUseType, out UtilityItemDataSO itemData)
+        {
+            itemData = null;
+
+            if(!TryGetCurrentItemData(out itemData))
+            {
+                return false;
+            }
+
+            return itemData.UseType == expectedUseType;
         }
         private void CacheExtinguisherEffects()
         {
@@ -197,9 +208,11 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
             {
                 return;
             }
-            if (!HasExpectedHeldItem(WrenchItemId))
+            /// 변경 : 고정된 ItemId 검사 대시 현재 아이템 UseType 이 Melee인지 검사하고 SO 데이터를 가져온다.
+            if(!TryGetHeldItemData(ItemUseType.Melee, out var itemData))
             {
-                Debug.LogWarning($"PHS_WRENCH_ATTACK_FAILED reason=item_mismatch player={name}");
+                Debug.LogWarning($"PHS_WRENCH_ATTACK_FAILED " + $"reason=item_data_or_use_type_invalid " + $"player={name}");
+
                 return;
             }
             if (wrenchAttackPoint == null)
@@ -210,17 +223,21 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
 
                 return;
             }
-            if (Time.time < nextWrenchAttackTime) //서버 기준 쿨타임 검사
+            if (Time.time < nextWrenchAttackTime) 
             {
                 return;
             }
-            nextWrenchAttackTime = Time.time + wrenchCooldown;
+            if(!CanUseHeldItemDurabiliy(itemData, out uint expectedRevision))
+            {
+                Debug.LogWarning($"PHS_WRENCH_ATTACK_FAILED " + $"reason=durability_unavailable " + $"player={name} " + $"item={itemData.ItemId}", this);
+                return;
+            }
+            nextWrenchAttackTime = Time.time + itemData.Cooldown;
+            //변경 오버랩 스피어 범위를 SO 데이터 값을 읽게 수정
+            
 
-            var hits = Physics.OverlapSphere(
-                wrenchAttackPoint.position,
-                Mathf.Max(wrenchAttackRadius, wrenchRepairRadius),
-                wrenchTargetLayers,
-                QueryTriggerInteraction.Collide);
+            bool successfulUse = false; 
+            var hits = Physics.OverlapSphere(wrenchAttackPoint.position, itemData.AttackRadius, itemData.TargetLayers, QueryTriggerInteraction.Collide);
 
             processedTargets.Clear();
             itemFeedbackTargetPositions.Clear();
@@ -256,43 +273,68 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
                 }
 
                 var requestSequence = NextUtilityAttackSequence();
-                var hitDistance = Vector3.Distance(
-                    wrenchAttackPoint.position,
-                    hit.ClosestPoint(wrenchAttackPoint.position));
-                if (CombatHitResolver.TryResolveUtilityAttack(
-                        targetObject,
-                        gameObject,
-                        WrenchItemId,
-                        requestSequence))
+               
+
+                bool utilityAccepted = CombatHitResolver.TryResolveUtilityAttack(targetObject, gameObject, itemData.ItemId, requestSequence);
+
+                if (utilityAccepted)
                 {
-                    RecordAcceptedItemTarget(WrenchItemId, targetObject, "utility_repair", hit.ClosestPoint(wrenchAttackPoint.position), requestSequence);
+                    bool repairApplied = RepairResolver.TryRepair(itemData, targetObject, gameObject);
+                    //기존 상조작용에서 ItemId 조건 통과 후 아이템 SO에 수리량 대상에게 전달
+
+                    if (repairApplied)
+                    {
+                        successfulUse = true; 
+
+                        RecordAcceptedItemTarget(itemData.ItemId, targetObject, "utility_repair",hit.ClosestPoint(wrenchAttackPoint.position), requestSequence);
+                    }
+
                     continue;
                 }
+                
 
-                if (hitDistance > wrenchAttackRadius)
-                {
-                    continue;
-                }
-
+                // 상호작용 대상이 아니라면 전투 대상을 검사한다.
                 var damageable = targetObject.GetComponentInParent<IDamageable>();
+               
+
                 var knockbackable = targetObject.GetComponentInParent<IKnockbackable>();
-                var acceptsCombatReaction = (damageable != null && damageable.IsAlive)
-                    || (knockbackable != null && knockbackable.CanReceiveKnockback);
+               
+             
+                bool acceptsCombatReaction = (damageable != null && damageable.IsAlive) || (knockbackable != null && knockbackable.CanReceiveKnockback);
+             
+
                 if (!acceptsCombatReaction)
                 {
                     continue;
                 }
 
+                // 렌치 공격 지점에서 대상 방향으로 넉백한다.
                 var knockbackDirection = targetObject.transform.position - wrenchAttackPoint.position;
-                CombatHitResolver.ResolveDamageAndKnockback(targetObject, gameObject, wrenchDamage, knockbackDirection, wrenchKnockback);
-                RecordAcceptedItemTarget(WrenchItemId, targetObject, "damage_or_knockback", hit.ClosestPoint(wrenchAttackPoint.position), requestSequence);
+
+
+                bool effectApplied = ItemEffectResolver.ApplyEffects(itemData, targetObject, knockbackDirection, gameObject);
+                if (!effectApplied)
+                {
+                    continue;
+                }
+
+                successfulUse = true;
+
+                RecordAcceptedItemTarget(itemData.ItemId, targetObject, "dmage_or_knockback", hit.ClosestPoint(wrenchAttackPoint.position), requestSequence);
+            }
+            if (successfulUse)
+            {
+                if(!TryConsumeHeldItemDurability(itemData, expectedRevision))
+                {
+                    Debug.LogWarning($"PHS_WRENCH_DURABILITY_CONSUME_FAILED " + $"player={name} " + $"item={itemData.ItemId}", this);
+                }
             }
             PublishItemUseFeedback(
                 PHSItemUseFeedbackKind.Wrench,
                 PHSItemUseFeedbackShape.Sphere,
                 wrenchAttackPoint.position,
                 wrenchAttackPoint.forward,
-                wrenchAttackRadius,
+                itemData.AttackRadius,
                 0f);
             Debug.Log(
                 $"PHS_WRENCH_ATTACK player={name} candidates={processedTargets.Count} acceptedTargets={itemFeedbackTargetPositions.Count}",
@@ -331,21 +373,26 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
             {
                 return;
             }
+            if(!TryGetHeldItemData(ItemUseType.Throwable, out var itemData))
+            {
+                Debug.LogWarning($"PHS_BATTERY_THROW_FAILED " + $"reason=item_data_or_use_type_invalid " + $"player={name}");
+                return;
+            }
+            if(itemData.ItemId != batteryItemId)//다른 투척형 아이템의 배터리 공격 방지
+            {
+                Debug.LogWarning($"PHS_BATTERY_THROW_FAILED " + $"reason=battery_not_held " + $"player={name} " + $"actual={itemData.ItemId}");
+                return;
+            }
             if(Time.time < nextBatteryThrowTime) //쿨타임 아직 끝나지 않으면 중복 투척 요청 x
             {
                 return ;
             }
-            if(batteryThrowOrigin == null)
-            {
-                Debug.LogError($"PHS_BATTERY_THROW_FAILED " + $"reason=throw_origin_missing " + $"player={name}");
-                return;
-            }
-            nextBatteryThrowTime = Time.time + batteryThrowCooldown;
+            nextBatteryThrowTime = Time.time + itemData.Cooldown;
             PlayOneShotEffect(batteryUseEffect);
 
             var direction = batteryThrowOrigin.forward.normalized; //플레이어가 바라보는 방향
 
-            Debug.Log($"PHS_BATTERY_THROW_INPUT_ACCEPTED " + $"player={name} " + $"position={batteryThrowOrigin.position} " + $"direction={direction}");
+            Debug.Log($"PHS_BATTERY_THROW_INPUT_ACCEPTED " + $"player={name} " + $"item={itemData.ItemId} " + $"position={batteryThrowOrigin.position} " + $"direction={direction}");
 
             RequestBatteryThrowServerRpc(batteryThrowOrigin.position, direction);
 
@@ -409,16 +456,23 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
             }
             var throwForce = Mathf.Clamp(requestedForce, minimumThrowForce, maximumThrowForce);
 
-            var isBatteryThrow = itemHolder.IsHoldingItem(batteryItemId);
+            var thrownItemData = itemHolder.CurrentItemPrefabData; //아이템 제거 전에 SO 저장
+            if(thrownItemData == null)
+            {
+                Debug.LogError($"PHS_ITEM_THROW_FAILED " + $"reason=item_data_missing " + $"player={name}");
+
+                return;
+            }
+            var isBatteryThrow = thrownItemData.ItemId == batteryItemId;
             GameObject thrownItem;
-            var batteryDamage = 0;
+        
             var created = isBatteryThrow
                 ? itemHolder.TryCreateThrownItem(
                     throwPosition,
                     Quaternion.LookRotation(direction),
                     UtilityItemActionKind.BatteryDischarge,
                     out thrownItem,
-                    out batteryDamage)
+                    out _)
                 : itemHolder.TryCreateThrownItem(
                     throwPosition,
                     Quaternion.LookRotation(direction),
@@ -451,7 +505,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
                     return;
                 }
 
-                batteryImpact.InitializeAttackThrow(gameObject, batteryDamage);
+                batteryImpact.InitializeAttackThrow(gameObject, thrownItemData);
             }
 
             //카메라 방향으로 계산된 힘 만큼 날린다.
@@ -493,6 +547,19 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
                 Debug.LogWarning($"PHS_BATTERY_THROW_FAILED " + $"reason=battery_not_held " + $"player={name} " + $"actual=" + $"{itemHolder.CurrentItemPrefabData?.ItemId ?? "none"}");
                 return;
             }
+
+
+            if(!TryGetHeldItemData(ItemUseType.Throwable, out var batteryItemData))
+            {
+                Debug.LogWarning($"PHS_BATTERY_THROW_FAILED " + $"reason=item_data_or_use_type_invalid " + $"player={name}");
+                return;
+            }
+
+            if(batteryItemData == null)
+            {
+                Debug.LogError($"PHS_BATTERY_THROW_FAILED" + $"reason = item_data_missing" + $"player = {name}");
+                return;
+            }
             var direction = requestedDirection.sqrMagnitude > 0.001f ? requestedDirection.normalized : transform.forward;
 
             var throwPosition = requestedPosition;
@@ -506,7 +573,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
                     Quaternion.LookRotation(direction),
                     UtilityItemActionKind.BatteryDischarge,
                     out var batteryInstance,
-                    out var batteryDamage))
+                    out _ )) //효과 수치는 SO HitEffects가 처리
             {
                 return;
             }
@@ -524,15 +591,14 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
             body.isKinematic = false;
             body.detectCollisions = true;
 
-            impact.InitializeAttackThrow(gameObject, batteryDamage);
+            impact.InitializeAttackThrow(gameObject, batteryItemData);
 
-            var throwVelocity = direction * batteryThrowForce + Vector3.up * battetyUpwardForce;
+            var throwVelocity = direction * batteryItemData.ThrowForce + Vector3.up * batteryItemData.UpwardForce;
 
             body.linearVelocity = throwVelocity;
 
-            Debug.Log(
-                $"PHS_BATTERY_THROW_EXECUTED player={name} battery={batteryInstance.name} rangeFeedback=on_first_impact",
-                this);
+            Debug.Log($"PHS_BATTERY_THROW_EXECUTED " + $"player={name} " + $"battery={batteryInstance.name} " + $"item={batteryItemData.ItemId} " + $"throwForce={batteryItemData.ThrowForce:F2} " +
+              $"upwardForce={batteryItemData.UpwardForce:F2} " + $"rangeFeedback=on_first_impact", this);
         }
         private void RemoveFailedThrownObject(GameObject thrownObject)
         {
@@ -563,9 +629,9 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
             {
                 return false;
             }//네트워크 플레이 중에는 서버만 공격판정 수행
-            if (!HasExpectedHeldItem(FireExtinguisherItemId))
+            if(!TryGetHeldItemData(ItemUseType.Spray, out var itemData))//고정 ID 대신 UseType 과 SO 데이터 검사
             {
-                Debug.LogWarning($"PHS_EXTINGUISHER_SPRAY_FAILED reason=item_mismatch player={name}");
+                Debug.LogWarning($"PHS_EXTINGUISHER_SPRAY_FAILED " + $"reason=item_data_or_use_type_invalid " + $"player={name}");
                 return false;
             }
 
@@ -575,31 +641,69 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
 
                 return false;
             }
+            if(itemData.AttackRange <= 0f)
+            {
+                Debug.LogError($"PHS_EXTINGUISHER_SPRAY_FAILED " + $"reason=attack_distance_invalid " + $"player={name} " + $"item={itemData.ItemId} " + $"distance={itemData.AttackRange:F2}");
+                return false;
+
+            }
+            if(itemData.AttackAngle <= 0f)
+            {
+                Debug.LogError($"PHS_EXTINGUISHER_SPRAY_FAILED " + $"reason=attack_angle_invalid " + $"player={name} " + $"item={itemData.ItemId} " + $"angle={itemData.AttackAngle:F2}");
+                return false;
+            }
 
             //서버 판정 간격 검사
-            if (Time.time < nextExtinguisherDamgeTime)
+            if (Time.time < nextExtinguisherDamageTime)
             {
                 return false;
             }
-            nextExtinguisherDamgeTime = Time.time + extinguisherDamageInterval;
+            if(!CanUseHeldItemDurabiliy(itemData, out uint expectedRevision))
+            {
+                Debug.LogWarning($"PHS_EXTINGUISHER_SPRAY_FAILED " + $"reason=durability_unavailable " + $"player={name} " + $"item={itemData.ItemId}", this);
+
+                return false;   
+            }
+            nextExtinguisherDamageTime = Time.time + itemData.Cooldown; //SO 쿨타운 사용
+
+            bool successfulUse = false;
 
             //분사 범위 판정
-            var hits = Physics.SphereCastAll(extinguisherSprayOrigin.position, extinguisherSprayRadius, extinguisherSprayOrigin.forward, extinguisherSprayDistance, extinguisherTargetLayers, QueryTriggerInteraction.Collide);
+            var hits = Physics.OverlapSphere(extinguisherSprayOrigin.position, itemData.AttackRange, itemData.TargetLayers, QueryTriggerInteraction.Collide); ;
 
             processedTargets.Clear();
             itemFeedbackTargetPositions.Clear();
 
+            float halfAttackAngle = Mathf.Clamp(itemData.AttackAngle, 0f, 360f) * 0.5f;
+
             foreach (var hit in hits)
             {
                 // SphereCast 결과에 Collider가 없으면 처리하지 않는다.
-                if (hit.collider == null)
+                if (hit == null)
                 {
                     continue;
                 }
+                Vector3 feedbackPosition = hit.ClosestPoint(extinguisherSprayOrigin.position);
 
+                Vector3 directionToHit = feedbackPosition - extinguisherSprayOrigin.position; 
+
+                if(directionToHit.sqrMagnitude <= 0.0001f)
+                {
+                    directionToHit = hit.transform.position - extinguisherSprayOrigin.position; 
+                }
+                if(directionToHit.sqrMagnitude <= 0.0001f)
+                {
+                    continue;
+                }
+                float targetAngle = Vector3.Angle(extinguisherSprayOrigin.forward, directionToHit.normalized); //정면과 대상 사이 각도 계산
+
+                if(targetAngle > halfAttackAngle)//부채꼴 범위밖 대상은 제외
+                {
+                    continue;
+                }
                 // 맞은 Collider가 속한 실제 대상 오브젝트를 찾는다.
                 // 화재, 산소 누출, 플레이어, 몬스터 등을 모두 찾을 수 있다.
-                var targetObject = CombatHitResolver.ResolveTargetObject(hit.collider.gameObject);
+                var targetObject = CombatHitResolver.ResolveTargetObject(hit.gameObject);
                 
                 if (targetObject == null)
                 {
@@ -607,8 +711,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
                 }
 
                 // 소화기를 사용하는 자기 자신은 맞지 않는다.
-                if (CombatHitResolver.IsSameTarget(targetObject, gameObject))
-                   
+                if (CombatHitResolver.IsSameTarget(targetObject, gameObject))   
                 {
                     continue;
                 }
@@ -625,55 +728,53 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
                     NextUtilityAttackSequence();
 
                 // 먼저 화재, 산소 누출 등의 상호작용 대상을 검사한다.
-                if (CombatHitResolver.TryResolveUtilityAttack(targetObject, gameObject, FireExtinguisherItemId, requestSequence))
+                bool utilityAccepted = CombatHitResolver.TryResolveUtilityAttack(targetObject, gameObject, itemData.ItemId, requestSequence);
+
+                if (utilityAccepted)
                 {
-                    RecordAcceptedItemTarget(FireExtinguisherItemId, targetObject, "fire_suppression", hit.point, requestSequence);
-                    
+                    bool repairApplied = RepairResolver.TryRepair(itemData, targetObject, gameObject);
+                    //소화기 SO의 수리량을 사고 대상에게 전달
+                    if (repairApplied)
+                    {
+                        successfulUse = true; //추가 : 실제 수리 성공
+                        RecordAcceptedItemTarget(itemData.ItemId, targetObject, "fire_suppression", feedbackPosition, requestSequence);
+                    }
 
-                    // 상호작용에 성공했으면
-                    // 같은 대상에게 데미지와 넉백은 적용하지 않는다.
-                    continue;
-                }
-
-                // 상호작용 대상이 아니면 전투 대상을 검사한다.
-                var damageable =
-                    targetObject.GetComponentInParent<IDamageable>();
-
-                var knockbackable =
-                    targetObject.GetComponentInParent<IKnockbackable>();
-
-                bool acceptsCombatReaction =
-                    (damageable != null && damageable.IsAlive)
-                    || (knockbackable != null
-                        && knockbackable.CanReceiveKnockback);
-
-                // 데미지와 넉백을 모두 받을 수 없는 대상이면 건너뛴다.
-                if (!acceptsCombatReaction)
-                {
                     continue;
                 }
 
                 // 소화기가 분사되는 방향으로 넉백시킨다.
                 var sprayDirection = extinguisherSprayOrigin.forward;
+
+                bool effectApplied = ItemEffectResolver.ApplyEffects(itemData, targetObject, sprayDirection, gameObject);
+
+                if (!effectApplied)//아무 효과도 적용하지 않으면 피드팩대상 제외
+                {
+                    continue;
+                }
+
+                successfulUse = true;
+        
+                RecordAcceptedItemTarget(itemData.ItemId, targetObject, "damage_or_knockback", feedbackPosition, requestSequence);
                 
 
-                CombatHitResolver.ResolveDamageAndKnockback(targetObject, gameObject, extinguisherDamagePerTick, sprayDirection, extinguisherKnockback);
-
-            
-                RecordAcceptedItemTarget(FireExtinguisherItemId, targetObject, "damage_or_knockback", hit.point, requestSequence);
-                
-
+            }
+            if (successfulUse)
+            {
+                if (!TryConsumeHeldItemDurability(itemData, expectedRevision))
+                {
+                    Debug.LogWarning($"PHS_EXTINGUISHER_DURABILITY_CONSUME_FAILED " + $"player={name} " + $"item={itemData.ItemId}", this);
+                }
             }
             PublishItemUseFeedback(
                 PHSItemUseFeedbackKind.FireExtinguisher,
                 PHSItemUseFeedbackShape.Cast,
                 extinguisherSprayOrigin.position,
                 extinguisherSprayOrigin.forward,
-                extinguisherSprayRadius,
-                extinguisherSprayDistance);
+                0f, itemData.AttackRange);
             Debug.Log(
-                $"PHS_EXTINGUISHER_SPRAY player={name} candidates={processedTargets.Count} acceptedTargets={itemFeedbackTargetPositions.Count}",
-                this);
+                $"PHS_EXTINGUISHER_SPRAY" + $"player = {name}" + $"item={itemData.ItemId}" + $"distance = {itemData.AttackRange:F2}" + $"angle={itemData.AttackAngle:F2}" 
+                + $"candidates = {processedTargets.Count}" +$"acceptedTargets = {itemFeedbackTargetPositions.Count}");
             return true;
         }
         [ServerRpc]
@@ -687,41 +788,6 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
         {
             PerformThrowHeldItem(throwPosition, throwDirection, requestedForce);
         }
-        private void OnDrawGizmosSelected()
-        {
-            if (wrenchAttackPoint == null)
-            {
-                return;
-            }
-            Gizmos.DrawWireSphere(wrenchAttackPoint.position, wrenchAttackRadius);
-
-            // 소화기 분사 범위
-
-
-            if (extinguisherSprayOrigin != null)
-            {
-                var endPosition =
-                    extinguisherSprayOrigin.position
-                    + extinguisherSprayOrigin.forward
-                    * extinguisherSprayDistance;
-
-                // 분사 시작 지점
-                Gizmos.DrawWireSphere(
-                    extinguisherSprayOrigin.position,
-                    extinguisherSprayRadius);
-
-                // 분사 끝 지점
-                Gizmos.DrawWireSphere(
-                    endPosition,
-                    extinguisherSprayRadius);
-
-                // 분사 방향
-                Gizmos.DrawLine(
-                    extinguisherSprayOrigin.position,
-                    endPosition);
-            }
-        }
-
         private uint NextUtilityAttackSequence()
         {
             utilityAttackSequence++;
@@ -774,22 +840,6 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
             Debug.Log(
                 $"PHS_ITEM_TARGET_REACTION item={itemId} target={target?.name ?? "missing"} reaction={reaction} result=accepted sequence={requestSequence} position={resolvedPosition}",
                 target);
-        }
-
-        private bool HasExpectedHeldItem(string expectedItemId)
-        {
-            if (IsSpawned)
-            {
-                var itemRecord = GetComponent<NetworkPlayerItemRecord>();
-                return itemRecord != null
-                    && itemRecord.IsSpawned
-                    && itemRecord.HeldItemId == expectedItemId;
-            }
-
-            var itemHolder = GetComponent<TempPlayerItemHolder>();
-            return itemHolder != null
-                && itemHolder.CurrentItemPrefabData != null
-                && itemHolder.CurrentItemPrefabData.ItemId == expectedItemId;
         }
         [ClientRpc]
         private void PlayExtinguisherEffectClientRpc()
@@ -1002,6 +1052,73 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
                 $"PHS_EXTINGUISHER_EFFECT_FAILED reason=particles_missing player={name} view={view}",
                 effectRoot);
             return false;
+        }
+        private bool TryConsumeHeldItemDurability(UtilityItemDataSO itemData, uint expectedRevision)
+        {
+            if(itemData == null)
+            {
+                return false;
+            }
+            if (!itemData.UsesDurability)
+            {
+                return true;
+            }
+            int cost = itemData.DurabilityCostPerUse;
+
+            if(cost <= 0)
+            {
+                return true;
+            }
+            var itemRecord = GetComponent<NetworkPlayerItemRecord>();
+
+            if(itemRecord == null)
+            {
+                Debug.LogError($"PHS_ITEM_DURABILITY_CONSUME_FAILED " + $"reason=item_record_missing" + $"player={name}" + $"item={itemData.ItemId}", this);
+
+                return false;   
+            }
+            if (!IsSpawned)
+            {
+                return true;
+            }
+            if (!IsServer)
+            {
+                Debug.LogError($"PHS_ITEM_DURABILITY_CONSUME_FAILED " + $"reason=server_required " + $"player={name} " + $"item={itemData.ItemId}", this);
+
+                return false;
+            }
+            return itemRecord.TrySpendHeldItemDurabilityServer(itemData.ItemId,expectedRevision,cost);
+        }
+        private bool CanUseHeldItemDurabiliy(UtilityItemDataSO itemData, out uint expectedRevision)
+        {
+            expectedRevision = 0U;
+
+            if(itemData == null)
+            {
+                return false;
+            }
+            if(!itemData.UsesDurability || itemData.DurabilityCostPerUse <= 0)
+            {
+                return true;
+            }
+            if (!IsSpawned)
+            {
+                return false ;
+            }
+            if (!IsServer)
+            {
+                return false;
+            }
+            var itemRecord = GetComponent<NetworkPlayerItemRecord>();
+
+            if(itemRecord == null || !itemRecord.IsSpawned)
+            {
+                Debug.LogError($"PHS_ITEM_DURABILITY_CHECK_FAILED " + $"reason=item_record_missing " + $"player={name} " + $"item={itemData.ItemId}", this);
+                return false;
+            }
+            expectedRevision = itemRecord.Revision;
+
+            return itemRecord.CanSpendHeldItemDurabilityServer(itemData.ItemId, expectedRevision, itemData.DurabilityCostPerUse);
         }
     }
 }

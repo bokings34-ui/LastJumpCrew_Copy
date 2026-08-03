@@ -26,7 +26,6 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Validation
     {
         private const string ScenarioFlag = "-phsAutoP0Scenario";
         private const string ItemScenarioFlag = "-phsAutoItemScenario";
-        private const string InputOnlyScenarioFlag = "-phsInputOnlyScenario";
         private const string MapSceneName = "PHS_Map_ver1";
         private const string ShopSceneName = "PHS_ExteriorShopScene";
         private const string LocalDebrisEntryPortalName = "PHS_DebrisCollectionPortal_0715";
@@ -34,8 +33,8 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Validation
         private const float DefaultStepTimeout = 90f;
 
         [Header("P2 Runtime Validation")]
-        [SerializeField] private UtilityItemPrefabData validationBatteryItem;
-        [SerializeField] private UtilityItemPrefabData validationThrownItem;
+        [SerializeField] private UtilityItemDataSO validationBatteryItem;
+        [SerializeField] private UtilityItemDataSO validationThrownItem;
 
         private readonly Dictionary<ulong, string> sceneReports = new();
         private readonly Dictionary<ulong, GaugeReport> gaugeReports = new();
@@ -372,12 +371,6 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Validation
 
             expectedClientCount = Mathf.Max(2, GetCommandLineInt("-phsAutoStartClients", 2));
             scenarioRunning = true;
-            if (HasCommandLineFlag(InputOnlyScenarioFlag))
-            {
-                StartCoroutine(RunInputOnlyServerScenario());
-                return;
-            }
-
             if (HasCommandLineFlag(ItemScenarioFlag))
             {
                 StartCoroutine(RunItemServerScenario());
@@ -421,9 +414,9 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Validation
             {
                 if (!lifecycle.ItemCatalog.TryGetById(itemId, out var itemData)
                     || itemData == null
-                    || !itemData.HasHeldPrefab
+                    || !itemData.HasHandPrefab
                     || !itemData.HasDroppedPrefab
-                    || !itemData.HasDurability)
+                    || !itemData.UsesDurability)
                 {
                     Fail($"item_catalog_contract_invalid item={itemId}");
                     yield break;
@@ -445,25 +438,6 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Validation
             }
 
             Pass($"item_network_lifecycle peers={expectedClientCount} items={itemIds.Length}");
-        }
-
-        private IEnumerator RunInputOnlyServerScenario()
-        {
-            yield return WaitFor(
-                () => NetworkManager != null && NetworkManager.ConnectedClients.Count >= expectedClientCount,
-                DefaultStepTimeout,
-                "input_only_clients_not_connected");
-            if (scenarioFinished) yield break;
-
-            yield return WaitFor(
-                () => SceneManager.GetActiveScene().name == MapSceneName,
-                DefaultStepTimeout,
-                "input_only_map_scene_not_loaded");
-            if (scenarioFinished) yield break;
-
-            Debug.Log(
-                $"PHS_INPUT_SCENE_READY peers={NetworkManager.ConnectedClients.Count} scene={MapSceneName}",
-                this);
         }
 
         public override void OnNetworkDespawn()
@@ -2148,7 +2122,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Validation
                     FindObjectsInactive.Exclude,
                     FindObjectsSortMode.None)
                 .FirstOrDefault(socket => socket != null && socket.IsSpawned);
-            if (validationBatteryItem == null || !validationBatteryItem.HasHeldPrefab
+            if (validationBatteryItem == null || !validationBatteryItem.HasHandPrefab
                 || string.IsNullOrWhiteSpace(validationBatteryItem.ItemId)
                 || shipState == null || !shipState.IsSpawned || !shipState.IsServer
                 || accidentCoordinator == null
@@ -3698,7 +3672,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Validation
         private IEnumerator RunThrownItemNetworkValidation()
         {
             if (validationThrownItem == null
-                || !validationThrownItem.HasHeldPrefab
+                || !validationThrownItem.HasHandPrefab
                 || !validationThrownItem.HasDroppedPrefab
                 || string.IsNullOrWhiteSpace(validationThrownItem.ItemId)
                 || !NetworkManager.ConnectedClients.TryGetValue(
@@ -3777,7 +3751,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Validation
         }
 
         private IEnumerator RunRemoteOwnedThrownItemValidation(
-            UtilityItemPrefabData itemData,
+            UtilityItemDataSO itemData,
             bool exercisePrimaryUse)
         {
             if (itemData == null)
@@ -3786,7 +3760,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Validation
                 yield break;
             }
 
-            var expectedDurability = itemData.HasDurability
+            var expectedDurability = itemData.UsesDurability
                 ? itemData.MaxDurability
                 : 0;
 
@@ -4141,16 +4115,13 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Validation
 
             thrownItemReports.Clear();
             var throwProbeToken = ++activeProbeToken;
-            var expectedThrownDurability = isBatteryThrow
-                ? 0
-                : expectedDurability;
             ProbeRemoteThrownItemClientRpc(
                 throwProbeToken,
                 remoteClientId,
                 remoteThrownNetworkObject.NetworkObjectId,
                 itemData.ItemId,
-                itemData.HasDurability,
-                expectedThrownDurability);
+                itemData.UsesDurability,
+                expectedDurability);
             yield return WaitFor(
                 () => thrownItemReports.Count >= expectedClientCount,
                 10f,
@@ -4170,7 +4141,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Validation
                 $"PHS_P0_REMOTE_ITEM_OWNERSHIP_OK client={remoteClientId} " +
                 $"item={itemData.ItemId} pickupNetworkObjectId={pickupNetworkObjectId} " +
                 $"thrownNetworkObjectId={thrownNetworkObjectId} peers={thrownItemReports.Count} " +
-                $"heldVisualNetworkObjects=0 durability={expectedThrownDurability} " +
+                $"heldVisualNetworkObjects=0 durability={expectedDurability} " +
                 $"recordRevision={remoteRecord.Revision}",
                 this);
         }
@@ -6207,8 +6178,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Validation
         {
             return Debug.isDebugBuild
                 && (HasCommandLineFlag(ScenarioFlag)
-                    || HasCommandLineFlag(ItemScenarioFlag)
-                    || HasCommandLineFlag(InputOnlyScenarioFlag));
+                    || HasCommandLineFlag(ItemScenarioFlag));
         }
 
         private static bool HasCommandLineFlag(string flag)
