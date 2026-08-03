@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using LastJumpCrew.Common;
 using LastJumpCrew.ParkHanSol.Items;
 
 namespace LastJumpCrew.ParkHanSol.Shop
@@ -7,14 +8,14 @@ namespace LastJumpCrew.ParkHanSol.Shop
     {
         public ShopPurchaseDeliveryRequest(
             string purchaseId,
-            UtilityItemPrefabData itemPrefabData)
+            UtilityItemDataSO itemPrefabData)
         {
             PurchaseId = purchaseId;
             ItemPrefabData = itemPrefabData;
         }
 
         public string PurchaseId { get; }
-        public UtilityItemPrefabData ItemPrefabData { get; }
+        public UtilityItemDataSO ItemPrefabData { get; }
     }
 
     /// <summary>

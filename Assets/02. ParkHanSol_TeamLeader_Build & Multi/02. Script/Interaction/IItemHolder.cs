@@ -1,4 +1,4 @@
-using LastJumpCrew.ParkHanSol.Items;
+using LastJumpCrew.Common;
 using UnityEngine;
 
 namespace LastJumpCrew.ParkHanSol.Interaction
@@ -8,13 +8,13 @@ namespace LastJumpCrew.ParkHanSol.Interaction
     public interface IItemHolder
     {
         // 현재 손에 든 아이템 데이터다. null이면 빈손이다.
-        UtilityItemPrefabData CurrentItemPrefabData { get; }
+        UtilityItemDataSO CurrentItemPrefabData { get; }
 
         // 기존 아이템을 내려놓고 새 아이템을 들 수 있는지 검사한다.
-        bool CanReplaceHeldItem(UtilityItemPrefabData itemPrefabData);
+        bool CanReplaceHeldItem(UtilityItemDataSO itemPrefabData);
 
         // 새 아이템을 손에 생성한다. interactionSource는 로그/드롭 기준 확장용으로 넘긴다.
-        void ReplaceHeldItem(UtilityItemPrefabData itemPrefabData, Transform interactionSource);
+        void ReplaceHeldItem(UtilityItemDataSO itemPrefabData, Transform interactionSource);
 
         // 현재 든 아이템을 드롭 프리팹으로 월드에 배치한다.
         void PlaceHeldItem();

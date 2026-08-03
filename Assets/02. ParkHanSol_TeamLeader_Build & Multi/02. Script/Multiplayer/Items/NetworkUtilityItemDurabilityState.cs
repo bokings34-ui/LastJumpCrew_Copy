@@ -1,3 +1,4 @@
+using LastJumpCrew.Common;
 using LastJumpCrew.ParkHanSol.Items;
 using Unity.Netcode;
 using UnityEngine;
@@ -32,14 +33,14 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
         }
 
         public bool PrepareForServerSpawn(
-            UtilityItemPrefabData expectedItem,
+            UtilityItemDataSO expectedItem,
             int durability)
         {
             if (IsSpawned
                 || itemObject == null
                 || expectedItem == null
                 || itemObject.ItemPrefabData != expectedItem
-                || !expectedItem.HasDurability
+                || !expectedItem.UsesDurability
                 || durability < 0
                 || durability > expectedItem.MaxDurability)
             {
@@ -61,7 +62,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
                 var itemData = itemObject == null
                     ? null
                     : itemObject.ItemPrefabData;
-                if (itemData == null || !itemData.HasDurability)
+                if (itemData == null || !itemData.UsesDurability)
                 {
                     Debug.LogError(
                         $"PHS_DROPPED_ITEM_DURABILITY_SPAWN_FAILED reason=item_contract item={name}",
@@ -82,7 +83,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
         }
 
         public bool TryGetServerDurability(
-            UtilityItemPrefabData expectedItem,
+            UtilityItemDataSO expectedItem,
             out int durability)
         {
             durability = 0;
@@ -91,7 +92,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
                 || itemObject == null
                 || expectedItem == null
                 || itemObject.ItemPrefabData != expectedItem
-                || !expectedItem.HasDurability
+                || !expectedItem.UsesDurability
                 || currentDurability.Value < 0
                 || currentDurability.Value > expectedItem.MaxDurability)
             {

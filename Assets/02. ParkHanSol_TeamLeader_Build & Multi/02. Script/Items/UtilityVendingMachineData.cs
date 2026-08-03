@@ -16,10 +16,10 @@ namespace LastJumpCrew.ParkHanSol.Items
         [SerializeField] private string displayName;
 
         // 이 자판기가 플레이어 손에 지급할 아이템 데이터다.
-        [SerializeField] private UtilityItemPrefabData itemPrefabData;
+        [SerializeField] private LastJumpCrew.Common.UtilityItemDataSO itemPrefabData;
 
         public string MachineId => machineId;
         public string DisplayName => displayName;
-        public UtilityItemPrefabData ItemPrefabData => itemPrefabData;
+        public LastJumpCrew.Common.UtilityItemDataSO ItemPrefabData => itemPrefabData;
     }
 }

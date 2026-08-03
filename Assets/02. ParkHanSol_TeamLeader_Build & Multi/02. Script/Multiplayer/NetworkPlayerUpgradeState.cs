@@ -1,3 +1,4 @@
+using LastJumpCrew.Common;
 using LastJumpCrew.ParkHanSol.Interaction;
 using LastJumpCrew.ParkHanSol.Items;
 using Unity.Netcode;
@@ -109,7 +110,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
             return true;
         }
 
-        private bool CanApply(UtilityItemPrefabData itemData, out string reason)
+        private bool CanApply(UtilityItemDataSO itemData, out string reason)
         {
             if (itemData.UpgradeAmount <= 0f)
             {
@@ -224,7 +225,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
             return true;
         }
 
-        private bool Apply(UtilityItemPrefabData itemData, out string reason)
+        private bool Apply(UtilityItemDataSO itemData, out string reason)
         {
             switch (itemData.UpgradeEffect)
             {

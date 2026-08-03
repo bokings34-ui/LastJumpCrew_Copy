@@ -1,6 +1,7 @@
-using System.Collections.Generic;
 using LastJumpCrew.Common;
+using LastJumpCrew.ParkHanSol.Combat;
 using LastJumpCrew.ParkHanSol.Multiplayer;
+using System.Collections.Generic;
 using Unity.Netcode;
 using UnityEngine;
 
@@ -11,20 +12,6 @@ namespace LastJumpCrew.ParkHanSol.Items
     [RequireComponent(typeof(Collider))]
     public sealed class BatteryThrownImpact : NetworkBehaviour
     {
-        [Header("Explosion")]
-        [SerializeField, Min(0.1f)]
-        private float explosionRedius = 3f;
-
-        [SerializeField]
-        private LayerMask targetLayers;
-
-        [Header("Electric Shock")]
-        [SerializeField, Min(0f)]
-        private float electricShockDuration = 2f;
-
-        [SerializeField, Min(0f)]
-        private float playerKnockbackForce = 4f;
-
         [Header("Impact Visual Effect")]
         [SerializeField] private GameObject lightningBallEffectPrefab;
         [SerializeField] private GameObject lightningRingEffectPrefab;
@@ -33,12 +20,12 @@ namespace LastJumpCrew.ParkHanSol.Items
         [SerializeField, Min(0.05f)] private float impactEffectLifetime = 0.8f;
 
         private GameObject attacker;
-        private int attackDamage;
+        private UtilityItemDataSO itemData; //투척 당시 배터리 SO 저장
         private bool isAttackThrow;
         private bool hasExploded;
 
         public bool WasAttackThrow => isAttackThrow;
-        public bool HasExploded => hasExploded;
+        public bool HasExploded => hasExploded; //둘 다 검증 코드에서 사용
 
         private void Awake()
         {
@@ -48,28 +35,48 @@ namespace LastJumpCrew.ParkHanSol.Items
 
         public void InitializeAttackThrow(
             GameObject throwAttacker,
-            int damage)
+            UtilityItemDataSO throwItemData) //투척 당시 배터리SO 전달
         {
             if (!IsServer)
             {
                 return;
             }
 
-            if (throwAttacker == null || damage <= 0)
+            if (throwAttacker == null || throwItemData == null)
             {
-                Debug.LogError(
-                    $"PHS_BATTERY_ATTACK_THROW_FAILED reason=contract attacker={(throwAttacker == null ? "null" : throwAttacker.name)} damage={damage}",
-                    this);
+                Debug.LogError($"PHS_BATTERY_ATTACK_THROW_FAILED " + $"reason=contract " + $"attacker={(throwAttacker == null ? "null" : throwAttacker.name)} " +
+                    $"item = {(throwItemData == null ? "null" :  throwItemData.ItemId)} ", this);
+
+                return;
+            }
+            if(throwItemData.UseType != ItemUseType.Throwable)
+            {
+                Debug.LogError($"PHS_BATTERY_ATTACK_THROW_FAILED " + $"reason=use_type_invalid " + $"battery={name} " + $"item={throwItemData.ItemId} " +
+                    $"useType={throwItemData.UseType}", throwItemData);
+
+                return;
+            }
+            if (throwItemData.AttackRadius <= 0f)
+            {
+                Debug.LogError($"PHS_BATTERY_ATTACK_THROW_FAILED " + $"reason=attack_radius_invalid " + $"battery={name} " +
+                    $"item={throwItemData.ItemId} " + $"radius={throwItemData.AttackRadius:F2}", throwItemData);
+
+                return;
+            }
+            if(throwItemData.HitEffects ==null || throwItemData.HitEffects.Count == 0)
+            {
+                Debug.LogError($"PHS_BATTERY_ATTACK_THROW_FAILED " + $"reason=hit_effects_missing " + $"battery={name} " +
+                     $"item={throwItemData.ItemId}", throwItemData);
+
                 return;
             }
 
             attacker = throwAttacker;
-            attackDamage = damage;
+            itemData = throwItemData;
             isAttackThrow = true;
             hasExploded = false;
             Debug.Log(
-                $"PHS_BATTERY_ATTACK_THROW_ARMED battery={name} attacker={(attacker != null ? attacker.name : "null")}",
-                this);
+                $"PHS_BATTERY_ATTACK_THROW_ARMED" + $"battery = {name}" + $"attacker = {attacker.name}" + $"item = {itemData.ItemId}", this);
         }
 
         private void OnCollisionEnter(Collision collision)
@@ -78,6 +85,11 @@ namespace LastJumpCrew.ParkHanSol.Items
             {
                 return;
             }
+            if(collision == null)
+            {
+                return;
+            }
+
 
             hasExploded = true;
             var hitPosition = collision.contactCount > 0
@@ -91,12 +103,29 @@ namespace LastJumpCrew.ParkHanSol.Items
 
         private void Explode(Vector3 center)
         {
+            if(itemData == null)
+            {
+                Debug.LogError($"PHS_BATTERY_EXPLOSION_FAILED " + $"reason=item_data_missing " + $"battery={name}", this); 
+                return;
+            }
+            if(attacker  == null)
+            {
+                Debug.LogError($"PHS_BATTERY_EXPLOSION_FAILED " + $"reason=attacker_missing " + $"battery={name} " + $"item={itemData.ItemId}", this);
+                return;
+            }
+            if(itemData.AttackRadius <= 0f)
+            {
+                Debug.LogError($"PHS_BATTERY_EXPLOSION_FAILED " + $"reason=attack_radius_invalid " + $"battery={name} " 
+                    + $"item={itemData.ItemId} " + $"radius={itemData.AttackRadius:F2}", this);
+
+                return;
+            }
             PlayImpactEffectClientRpc(center);
 
             var colliders = Physics.OverlapSphere(
                 center,
-                explosionRedius,
-                targetLayers,
+                itemData.AttackRadius, //SO 폭발 반경
+                itemData.TargetLayers, //SO 대상 레이어
                 QueryTriggerInteraction.Collide);
             var processedTargets = new HashSet<GameObject>();
             var acceptedTargetPositions = new List<Vector3>();
@@ -108,21 +137,29 @@ namespace LastJumpCrew.ParkHanSol.Items
                     continue;
                 }
 
-                var targetRoot = hitCollider.transform.root.gameObject;
-                if (!processedTargets.Add(targetRoot)
-                    || !TryApplyBatteryEffect(
-                        targetRoot,
-                        center,
-                        out var reaction))
+                var targetObject = CombatHitResolver.ResolveTargetObject(hitCollider.gameObject);
+                if (targetObject == null)
                 {
                     continue;
                 }
-
+                if(CombatHitResolver.IsSameTarget(targetObject, attacker))
+                {
+                    continue;
+                }
+                if (!processedTargets.Add(targetObject))
+                {
+                    continue;
+                }
+                if(!TryApplyBatteryEffect(targetObject,center,out var reaction))
+                {
+                    continue;
+                }
+            
                 var feedbackPosition = hitCollider.ClosestPoint(center);
                 acceptedTargetPositions.Add(feedbackPosition);
                 Debug.Log(
-                    $"PHS_ITEM_TARGET_REACTION item=battery_pack target={targetRoot.name} reaction={reaction} result=accepted position={feedbackPosition}",
-                    targetRoot);
+                    $"PHS_ITEM_TARGET_REACTION " + $"item={itemData.ItemId} " + $"target={targetObject.name} " + $"reaction={reaction} " + $"result=accepted " +
+                    $"position={feedbackPosition}");
             }
 
             var feedback = attacker == null
@@ -135,7 +172,7 @@ namespace LastJumpCrew.ParkHanSol.Items
                     PHSItemUseFeedbackShape.Sphere,
                     center,
                     Vector3.up,
-                    explosionRedius,
+                    itemData.AttackRadius,
                     0f,
                     acceptedTargetPositions.ToArray());
             }
@@ -146,9 +183,8 @@ namespace LastJumpCrew.ParkHanSol.Items
                     this);
             }
 
-            Debug.Log(
-                $"PHS_BATTERY_EXPLODED battery={name} radius={explosionRedius:F2} candidates={processedTargets.Count} acceptedTargets={acceptedTargetPositions.Count}",
-                this);
+            Debug.Log($"PHS_BATTERY_EXPLODED " + $"battery={name} " + $"item={itemData.ItemId} " + $"radius={itemData.AttackRadius:F2} " +
+                $"candidates={processedTargets.Count} " + $"acceptedTargets={acceptedTargetPositions.Count}", this);
         }
 
         [ClientRpc]
@@ -238,102 +274,41 @@ namespace LastJumpCrew.ParkHanSol.Items
             {
                 return false;
             }
-
-            var playerTarget =
-                target.GetComponentInParent<NetworkPlayerController>() != null;
-            var effectReceiver =
-                target.GetComponentInParent<IStatusEffectReceiver>();
-
-            if (playerTarget)
+            if(itemData == null)
             {
-                var playerShockApplied = effectReceiver != null
-                    && effectReceiver.CanReceiveStatusEffect(
-                        StatusEffectType.ElectricShok);
-                if (playerShockApplied)
-                {
-                    effectReceiver.ApplyStatusEffect(
-                        StatusEffectType.ElectricShok,
-                        electricShockDuration,
-                        attacker);
-                }
+                Debug.LogError($"PHS_BATTERY_EFFECT_FAILED" + $"reason=item_data_missing " + $"battery={name}", this);
+                return false;
+            }
+            var effectDirection = target.transform.position - explosionCenter; //폭발 중심에서 대상 바깥쪽으로 넉백 방향 계산
 
-                var knockbackable = target.GetComponentInParent<IKnockbackable>();
-                var playerKnockbackApplied = knockbackable != null
-                    && knockbackable.CanReceiveKnockback;
-                if (playerKnockbackApplied)
-                {
-                    var direction = target.transform.position - explosionCenter;
-                    if (direction.sqrMagnitude <= 0.001f)
-                    {
-                        direction = Vector3.up;
-                    }
-
-                    direction = (direction.normalized + Vector3.up * 0.2f)
-                        .normalized;
-                    knockbackable.ApplyKnockback(
-                        direction,
-                        playerKnockbackForce,
-                        attacker);
-                }
-
-                if (!playerShockApplied && !playerKnockbackApplied)
-                {
-                    Debug.LogError(
-                        $"PHS_BATTERY_PLAYER_REACTION_FAILED " +
-                        $"reason=receivers_missing target={target.name}",
-                        target);
-                    return false;
-                }
-
-                reaction = playerShockApplied && playerKnockbackApplied
-                    ? "player_shock_and_knockback"
-                    : playerShockApplied
-                        ? "player_shock"
-                        : "player_knockback";
-                Debug.Log(
-                    $"PHS_BATTERY_PLAYER_REACTED target={target.name} " +
-                    $"reaction={reaction}",
-                    target);
-                return true;
+            if(effectDirection.sqrMagnitude <= 0.001f)
+            {
+                effectDirection = Vector3.up;
             }
 
-            var damageable = target.GetComponentInParent<IDamageable>();
-            var damageApplied = false;
-            var shockApplied = false;
-            if (damageable != null && damageable.IsAlive)
+            effectDirection = (effectDirection.normalized + Vector3.up * 0.2f).normalized;
+
+            bool effectApplied = ItemEffectResolver.ApplyEffects(itemData, target, effectDirection, attacker);
+
+            if (!effectApplied)
             {
-                damageable.ApplyDamage(attackDamage, attacker);
-                damageApplied = true;
-                Debug.Log(
-                    $"PHS_BATTERY_DAMAGE_APPLIED target={target.name} damage={attackDamage}",
-                    target);
+                return false;
             }
 
-            if (effectReceiver != null
-                && effectReceiver.CanReceiveStatusEffect(
-                    StatusEffectType.ElectricShok))
-            {
-                effectReceiver.ApplyStatusEffect(
-                    StatusEffectType.ElectricShok,
-                    electricShockDuration,
-                    attacker);
-                shockApplied = true;
-                Debug.Log($"PHS_BATTERY_ENEMY_SHOCKED target={target.name}", target);
-            }
+            reaction = "item_effects_applied"; //실제 효과 처리는 ItemEffectResolver가 담당
 
-            reaction = damageApplied && shockApplied
-                ? "damage_and_shock"
-                : damageApplied
-                    ? "damage"
-                    : shockApplied
-                        ? "shock"
-                        : null;
-            return damageApplied || shockApplied;
+            Debug.Log($"PHS_BATTERY_TARGET_REACTED " + $"item={itemData.ItemId} " + $"target={target.name} " + $"reaction={reaction}", target);
+            return true;
+
         }
 
         private void OnDrawGizmosSelected()
         {
-            Gizmos.DrawWireSphere(transform.position, explosionRedius);
+            if(itemData == null)
+            {
+                return;
+            }
+            Gizmos.DrawWireSphere(transform.position, itemData.AttackRadius);
         }
     }
 }
