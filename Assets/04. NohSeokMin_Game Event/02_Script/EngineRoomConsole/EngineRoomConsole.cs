@@ -6,6 +6,29 @@ namespace SM
 {
     public class EngineRoomConsole : MonoBehaviour, IInteractable, IRequireHeldItem
     {
+        [SerializeField] private AudioSource audioSource;
+
+        private EngineBreakEvent _boundEvent;
+
+        private void Update()
+        {
+            var evt = EventManager.Instance.GetActiveEvent(EventId.EngineBreak) as EngineBreakEvent;
+
+            if (evt != _boundEvent)
+            {
+                if (_boundEvent == null && evt != null)
+                {
+                    if (audioSource != null) audioSource.Play();
+                }
+                else if (_boundEvent != null && evt == null)
+                {
+                    if (audioSource != null) audioSource.Stop();
+                }
+
+                _boundEvent = evt;
+            }
+        }
+
         public string RequiredItemId { get { return ItemType.Wrench.ToString(); } }
 
         public bool IsRequirementMet(IItemHolder itemHolder)
@@ -32,5 +55,36 @@ namespace SM
             var evt = EventManager.Instance.GetActiveEvent(EventId.EngineBreak) as EngineBreakEvent;
             evt?.ApplyRepair(amount);
         }
+
+        // ===== IRepairable 대응 준비 (팀원 IRepairable.cs main 반영 후 주석 해제) =====
+        /*
+        public bool CanRepair
+        {
+            get
+            {
+                var evt = EventManager.Instance.GetActiveEvent(EventId.EngineBreak) as EngineBreakEvent;
+                return evt != null;
+            }
+        }
+
+        public float CurrentIntegrity
+        {
+            get
+            {
+                var evt = EventManager.Instance.GetActiveEvent(EventId.EngineBreak) as EngineBreakEvent;
+                return evt?.RepairProgress ?? 0f;
+            }
+        }
+
+        public float MaxIntegrity => (_data as EngineBreakEventDataSO)?.maxRepairProgress ?? 0f;
+
+        public bool ApplyRepair(float amount, GameObject repairer)
+        {
+            if (!CanRepair) return false;
+            ApplyRepairToEngine(amount); // 기존 메서드 재사용
+            return true;
+        }
+        */
+        // ================================================================
     }
 }
