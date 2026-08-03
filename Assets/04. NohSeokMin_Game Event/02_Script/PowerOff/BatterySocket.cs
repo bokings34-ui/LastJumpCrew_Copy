@@ -6,6 +6,8 @@ namespace SM
 {
     public class BatterySocket : MonoBehaviour, CommonInteraction.IInteractable, CommonInteraction.IRequireHeldItem, IBatteryUseTarget
     {
+        private const string BatteryItemId = "battery_pack";
+
         [Header("배터리 비주얼 (PowerOff 시 삭제, 장착 시 재생성)")]
         [SerializeField] private GameObject batteryVisual;
 
@@ -15,7 +17,7 @@ namespace SM
         private PowerOffEvent _boundEvent;
         private bool _hasBattery;
 
-        public string RequiredItemId => ItemType.Battery.ToString();
+        public string RequiredItemId => BatteryItemId;
 
         public bool IsRequirementMet(CommonInteraction.IItemHolder itemHolder)
         {

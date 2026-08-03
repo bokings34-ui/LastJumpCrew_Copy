@@ -11,6 +11,8 @@ namespace SM
         private float _fuelLossTimer;
 
         public float RepairProgress => _repairProgress;
+        public float MaxRepairProgress =>
+            EngineData == null ? 0f : EngineData.maxRepairProgress;
 
         // 담당 매니저(워프 게이지 시스템)가 구독
         public event Action OnEngineBroken;

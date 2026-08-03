@@ -351,6 +351,10 @@ namespace LastJumpCrew.ParkHanSol.Interaction
                 return false;
             }
 
+            var nohPowerOffEvent = SM.EventManager.Instance
+                .GetActiveEvent(SM.EventId.PowerOff) as SM.PowerOffEvent;
+            nohPowerOffEvent?.NotifyPowerRestored();
+
             if (!TryResolveBatteryFamilyItem(
                     client.PlayerObject,
                     itemId,
