@@ -548,7 +548,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
         }
 
         private bool TryCommitHeldItemAssignmentServer(
-            UtilityItemPrefabData replacementItemData,
+            UtilityItemDataSO replacementItemData,
             int replacementDurability,
             uint expectedRevision,
             out HeldItemAssignmentTransaction transaction)

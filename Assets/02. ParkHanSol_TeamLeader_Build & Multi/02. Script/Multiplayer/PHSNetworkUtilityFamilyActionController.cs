@@ -49,7 +49,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
 
         public bool CanRequestAction(
             PHSUtilityFamilyActionKind familyKind,
-            UtilityItemPrefabData itemData)
+            UtilityItemDataSO itemData)
         {
             return IsSpawned
                 && IsOwner
@@ -138,7 +138,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
 
         private bool TryResolveNearestTargetServer(
             PHSUtilityFamilyActionKind familyKind,
-            UtilityItemPrefabData itemData,
+            UtilityItemDataSO itemData,
             uint expectedRevision,
             uint requestSequence)
         {
@@ -392,11 +392,10 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
         }
 
         private static bool HasFamilyProfile(
-            UtilityItemPrefabData itemData,
+            UtilityItemDataSO itemData,
             PHSUtilityFamilyActionKind familyKind)
         {
-            if (itemData == null
-                || itemData.UtilityFamily != familyKind)
+            if (itemData == null)
             {
                 return false;
             }

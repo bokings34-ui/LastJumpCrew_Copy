@@ -4,6 +4,7 @@ using LastJumpCrew.ParkHanSol.Items;
 using Unity.Collections;
 using Unity.Netcode;
 using UnityEngine;
+using UtilityItemDataSO = LastJumpCrew.Common.UtilityItemDataSO;
 
 namespace LastJumpCrew.ParkHanSol.Multiplayer
 {
@@ -124,7 +125,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
 
         public bool TryReceiveDeliveryServer(
             UtilityToolBoxStorageSlotInteractable slot,
-            UtilityItemPrefabData itemPrefabData)
+            UtilityItemDataSO itemPrefabData)
         {
             if (!IsSpawned || !IsServer || itemPrefabData == null
                 || !TryGetSlotIndex(slot, out var slotIndex)
@@ -135,13 +136,13 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
                 return false;
             }
 
-            var durability = itemPrefabData.HasDurability ? itemPrefabData.MaxDurability : 0;
+            var durability = itemPrefabData.UsesDurability ? itemPrefabData.MaxDurability : 0;
             slotStates[slotIndex] = new SlotState(itemPrefabData.ItemId, durability);
             Debug.Log($"PHS_TOOL_BOX_DELIVERY_STORED box={name} slot={slotIndex} item={itemPrefabData.ItemId}", this);
             return true;
         }
 
-        public bool TryResolveItemData(string itemId, out UtilityItemPrefabData itemPrefabData)
+        public bool TryResolveItemData(string itemId, out UtilityItemDataSO itemPrefabData)
         {
             itemPrefabData = null;
             if (itemCatalog == null || string.IsNullOrWhiteSpace(itemId)
@@ -174,7 +175,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
                     ? new SlotState(string.Empty, 0)
                     : new SlotState(
                         initialItem.ItemId,
-                        initialItem.HasDurability ? initialItem.MaxDurability : 0));
+                        initialItem.UsesDurability ? initialItem.MaxDurability : 0));
             }
         }
 
@@ -267,7 +268,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
             return true;
         }
 
-        private bool TryStoreServer(int slotIndex, UtilityItemPrefabData heldItem, NetworkPlayerItemRecord record, ulong senderClientId)
+        private bool TryStoreServer(int slotIndex, UtilityItemDataSO heldItem, NetworkPlayerItemRecord record, ulong senderClientId)
         {
             var heldDurability = record.CurrentDurability;
             if (!record.TryConsumeHeldItemServer(heldItem.ItemId, record.Revision))
@@ -280,7 +281,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
             return true;
         }
 
-        private bool TrySwapServer(int slotIndex, SlotState storedState, UtilityItemPrefabData heldItem, NetworkPlayerItemRecord record, ulong senderClientId)
+        private bool TrySwapServer(int slotIndex, SlotState storedState, UtilityItemDataSO heldItem, NetworkPlayerItemRecord record, ulong senderClientId)
         {
             var heldDurability = record.CurrentDurability;
             if (!record.TryReplaceHeldItemServer(
