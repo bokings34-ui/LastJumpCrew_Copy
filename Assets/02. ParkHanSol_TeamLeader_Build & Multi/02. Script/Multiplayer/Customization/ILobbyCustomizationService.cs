@@ -11,9 +11,13 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Customization
         string ProfileFailureReason { get; }
         string EquippedHeadId { get; }
         string EquippedBackId { get; }
+        string EquippedPetId { get; }
+        string EquippedFrontId { get; }
         Color32 BodyColor { get; }
         string PreviewHeadId { get; }
         string PreviewBackId { get; }
+        string PreviewPetId { get; }
+        string PreviewFrontId { get; }
         Color32 PreviewBodyColor { get; }
 
         event Action StateChanged;
