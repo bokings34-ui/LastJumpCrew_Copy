@@ -18,6 +18,10 @@ namespace SM
         [SerializeField] private float attackDamage = 1f;
         [SerializeField] private float attackCooldown = 1f;
 
+        [Header("사운드")]
+        [SerializeField] private AudioSource audioSource;
+        [SerializeField] private AudioClip attackSound;
+
         protected float _currentHealth;
         private GameObject _enemyPrefab;
         private Collider[] _colliders;
@@ -227,6 +231,14 @@ namespace SM
         public void ForceReturnToPool()
         {
             EnemyPool.Instance.Return(_enemyPrefab, this);
+        }
+
+        public void PlayAttackSound()
+        {
+            if (audioSource != null && attackSound != null)
+            {
+                audioSource.PlayOneShot(attackSound);
+            }
         }
 
         protected virtual void OnDrawGizmosSelected()

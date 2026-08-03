@@ -9,6 +9,9 @@ namespace SM
         [Header("배터리 비주얼 (PowerOff 시 삭제, 장착 시 재생성)")]
         [SerializeField] private GameObject batteryVisual;
 
+        [Header("사운드")]
+        [SerializeField] private AudioSource audioSource;
+
         private PowerOffEvent _boundEvent;
         private bool _hasBattery;
 
@@ -66,6 +69,11 @@ namespace SM
                 if (_boundEvent == null && evt != null)
                 {
                     RemoveBattery();
+                    if (audioSource != null) audioSource.Play();
+                }
+                else if (_boundEvent != null && evt == null)
+                {
+                    if (audioSource != null) audioSource.Stop();
                 }
 
                 _boundEvent = evt;

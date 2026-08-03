@@ -22,6 +22,8 @@ namespace SM
         [Header("흡입력 감소 설정")]
         [SerializeField] private float pullActiveDuration = 5f;
 
+        [SerializeField] private AudioSource audioSource;
+
         private float _outerPullRadius;
         private float _innerDamageRadius;
         private float _initialPullSpeed;
@@ -70,6 +72,10 @@ namespace SM
             IsSealed = false;
 
             gameObject.SetActive(true);
+            if (audioSource != null)
+            {
+                audioSource.Play();
+            }
         }
 
         public void Deactivate()
@@ -78,6 +84,10 @@ namespace SM
             _targetsInRange.Clear();
             _hazardHandledExternally = false;
             gameObject.SetActive(false);
+            if (audioSource != null)
+            {
+                audioSource.Stop();
+            }
         }
 
         public bool BindRepairTarget(

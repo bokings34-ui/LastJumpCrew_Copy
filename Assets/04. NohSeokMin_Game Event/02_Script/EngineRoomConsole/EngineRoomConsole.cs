@@ -6,6 +6,29 @@ namespace SM
 {
     public class EngineRoomConsole : MonoBehaviour, IInteractable, IRequireHeldItem
     {
+        [SerializeField] private AudioSource audioSource;
+
+        private EngineBreakEvent _boundEvent;
+
+        private void Update()
+        {
+            var evt = EventManager.Instance.GetActiveEvent(EventId.EngineBreak) as EngineBreakEvent;
+
+            if (evt != _boundEvent)
+            {
+                if (_boundEvent == null && evt != null)
+                {
+                    if (audioSource != null) audioSource.Play();
+                }
+                else if (_boundEvent != null && evt == null)
+                {
+                    if (audioSource != null) audioSource.Stop();
+                }
+
+                _boundEvent = evt;
+            }
+        }
+
         public string RequiredItemId { get { return ItemType.Wrench.ToString(); } }
 
         public bool IsRequirementMet(IItemHolder itemHolder)

@@ -19,6 +19,8 @@ namespace SM
         [Header("데미지 틱 설정")]
         [SerializeField] private float tickInterval = 1f;
 
+        [SerializeField] private AudioSource audioSource;
+
         private float _damagePerSecond;
         private float _maxRepairProgress;
         private float _repairProgress;
@@ -43,6 +45,10 @@ namespace SM
             IsRepaired = false;
             _timer = 0f;
             gameObject.SetActive(true);
+            if (audioSource != null)
+            {
+                audioSource.Play();
+            }
         }
 
         public void Deactivate()
@@ -50,6 +56,10 @@ namespace SM
             UnbindRepairTarget();
             _targetsInRange.Clear();
             gameObject.SetActive(false);
+            if (audioSource != null)
+            {
+                audioSource.Stop();
+            }
         }
 
         public bool BindRepairTarget(
