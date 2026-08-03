@@ -1,10 +1,10 @@
-using LastJumpCrew.Common;
 using UnityEngine;
+using LastJumpCrew.ParkHanSol.Interaction;
+using CommonInteraction = LastJumpCrew.Common;
 
 namespace SM
 {
-    // 발전기 배터리 소켓 - PowerOff 발생 시 배터리 제거, 새 배터리 장착 시 전력 복구
-    public class BatterySocket : MonoBehaviour, IInteractable, IRequireHeldItem
+    public class BatterySocket : MonoBehaviour, CommonInteraction.IInteractable, CommonInteraction.IRequireHeldItem, IBatteryUseTarget
     {
         [Header("배터리 비주얼 (PowerOff 시 삭제, 장착 시 재생성)")]
         [SerializeField] private GameObject batteryVisual;
@@ -14,21 +14,41 @@ namespace SM
 
         public string RequiredItemId => ItemType.Battery.ToString();
 
-        public bool IsRequirementMet(IItemHolder itemHolder)
+        public bool IsRequirementMet(CommonInteraction.IItemHolder itemHolder)
         {
             return itemHolder.HasItem && itemHolder.CurrentItem.ItemId == RequiredItemId;
         }
 
         public string InteractionPrompt => "배터리 장착하기";
 
-        public bool CanInteract(IItemHolder itemHolder)
+        public bool CanInteract(CommonInteraction.IItemHolder itemHolder)
         {
             return !_hasBattery && IsRequirementMet(itemHolder);
         }
 
-        public void Interact(IItemHolder itemHolder)
+        public void Interact(CommonInteraction.IItemHolder itemHolder)
         {
-            // 실제 처리는 배터리 아이템의 IUsableItem.Use()에서 InsertBattery() 호출
+        }
+
+        // IBatteryUseTarget (LastJumpCrew.ParkHanSol.Interaction 소속, using으로 그대로 참조)
+        public bool CanUseBattery(CommonInteraction.IItemHolder user)
+        {
+            return !_hasBattery && IsRequirementMet(user);
+        }
+
+        public bool TryUseBattery(CommonInteraction.IItemHolder user)
+        {
+            if (!CanUseBattery(user)) return false;
+
+            var evt = EventManager.Instance.GetActiveEvent(EventId.PowerOff) as PowerOffEvent;
+            if (evt == null || !evt.IsPowerOffActive) return false;
+
+            _hasBattery = true;
+            SetBatteryVisual(true);
+            evt.NotifyPowerRestored();
+
+            Debug.Log("<color=lime>[BatterySocket]</color> 배터리 장착 완료, 전력 복구.");
+            return true;
         }
 
         private void OnEnable()
@@ -45,7 +65,6 @@ namespace SM
             {
                 if (_boundEvent == null && evt != null)
                 {
-                    // 새로 PowerOff가 발생한 순간 -> 배터리 제거
                     RemoveBattery();
                 }
 
@@ -60,23 +79,7 @@ namespace SM
             _hasBattery = false;
             SetBatteryVisual(false);
 
-            Debug.Log("<color=orange>[PowerSocket]</color> 배터리 소실, 새 배터리 장착 필요.");
-        }
-
-        // 배터리 아이템이 Use()에서 직접 호출하는 진입점
-        public void InsertBattery()
-        {
-            if (_hasBattery) return;
-
-            var evt = EventManager.Instance.GetActiveEvent(EventId.PowerOff) as PowerOffEvent;
-            if (evt == null || !evt.IsPowerOffActive) return;
-
-            _hasBattery = true;
-            SetBatteryVisual(true);
-
-            evt.NotifyPowerRestored();
-
-            Debug.Log("<color=lime>[PowerSocket]</color> 배터리 장착 완료, 전력 복구.");
+            Debug.Log("<color=orange>[BatterySocket]</color> 배터리 소실, 새 배터리 장착 필요.");
         }
 
         private void SetBatteryVisual(bool active)
