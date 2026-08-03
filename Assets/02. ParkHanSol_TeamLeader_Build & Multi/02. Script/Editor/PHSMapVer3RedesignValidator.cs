@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using LastJumpCrew.Common;
 using LastJumpCrew.ParkHanSol.Multiplayer;
 using LastJumpCrew.ParkHanSol.Multiplayer.Incidents.Fire;
 using LastJumpCrew.ParkHanSol.Multiplayer.Incidents.Locations;
@@ -16,8 +17,8 @@ namespace LastJumpCrew.ParkHanSol.Editor
     {
         private const string ScenePath =
             "Assets/02. ParkHanSol_TeamLeader_Build & Multi/01. Scene/BEAVER_2026/PHS_Map_ver1.unity";
-        private const string PlayerPrefabPath =
-            "Assets/02. ParkHanSol_TeamLeader_Build & Multi/03. Prefab/PlayerPrefab/PHS_CuteWhiteGhost_Player.prefab";
+        private const string FireExtinguisherDataPath =
+            "Assets/02. ParkHanSol_TeamLeader_Build & Multi/04. Data/UtilityItems/ParkHanSol_FireExtinguisherItemPrefabData.asset";
 
         [MenuItem("Tools/ParkHanSol/BEAVER/Validate Map Ver3 Redesign")]
         public static void Validate()
@@ -65,7 +66,7 @@ namespace LastJumpCrew.ParkHanSol.Editor
             var anchors = scene.GetRootGameObjects()
                 .SelectMany(root => root.GetComponentsInChildren<PHSShipAccidentAnchor>(true))
                 .ToArray();
-            Require(anchors.Length == 11, $"accident_anchor_count:{anchors.Length}", errors);
+            Require(anchors.Length == 12, $"accident_anchor_count:{anchors.Length}", errors);
             Require(anchors.Select(anchor => anchor.AnchorId).Distinct(StringComparer.Ordinal).Count() == anchors.Length, "accident_anchor_duplicate", errors);
             foreach (var anchor in anchors)
             {
@@ -75,7 +76,7 @@ namespace LastJumpCrew.ParkHanSol.Editor
             var locations = scene.GetRootGameObjects()
                 .SelectMany(root => root.GetComponentsInChildren<PHSIncidentLocationAnchor>(true))
                 .ToArray();
-            Require(locations.Length == 19, $"incident_location_count:{locations.Length}", errors);
+            Require(locations.Length == 20, $"incident_location_count:{locations.Length}", errors);
             Require(locations.Select(location => location.LocationId).Distinct(StringComparer.Ordinal).Count() == locations.Length, "incident_location_duplicate", errors);
             var fireZones = scene.GetRootGameObjects()
                 .SelectMany(root => root.GetComponentsInChildren<PHSFireZone>(true))
@@ -94,8 +95,8 @@ namespace LastJumpCrew.ParkHanSol.Editor
 
             Debug.Log(
                 "PHS_MAP_VER3_REDESIGN_VALIDATION_PASS interiorGravityAreas=7 " +
-                "interiorGravity=7 accidentAnchors=11 incidentLocations=19 fireZones=4 " +
-                "debrisFlow=bidirectional extinguisherKnockback=5");
+                "interiorGravity=7 accidentAnchors=12 incidentLocations=20 fireZones=4 " +
+                "debrisFlow=bidirectional extinguisherEffects=SO");
         }
 
         private static void ValidateInteriorContainment(Scene scene, ICollection<string> errors)
@@ -129,13 +130,21 @@ namespace LastJumpCrew.ParkHanSol.Editor
                 Require(streamState.FindProperty("oppositeFlowChance").floatValue > 0f, "debris_opposite_flow_disabled", errors);
             }
 
-            var playerPrefab = AssetDatabase.LoadAssetAtPath<GameObject>(PlayerPrefabPath);
-            var combat = playerPrefab?.GetComponent<NetworkPlayerCombatController>();
-            Require(combat != null, "player_combat_missing", errors);
-            if (combat != null)
+            var extinguisher = AssetDatabase.LoadAssetAtPath<UtilityItemDataSO>(
+                FireExtinguisherDataPath);
+            Require(extinguisher != null, "extinguisher_data_missing", errors);
+            if (extinguisher != null)
             {
-                var combatState = new SerializedObject(combat);
-                Require(Mathf.Approximately(combatState.FindProperty("extinguisherKnockback").floatValue, 5f), "extinguisher_knockback_not_five", errors);
+                Require(
+                    extinguisher.UseType == ItemUseType.Spray,
+                    "extinguisher_use_type_invalid",
+                    errors);
+                Require(
+                    extinguisher.HitEffects.Any(effect =>
+                        effect.EffectType == ItemEffectType.Knockback
+                        && effect.Amount > 0f),
+                    "extinguisher_knockback_missing",
+                    errors);
             }
         }
 

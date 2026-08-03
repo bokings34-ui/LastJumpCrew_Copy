@@ -41,7 +41,7 @@ namespace LastJumpCrew.ParkHanSol.Editor
 
             Debug.Log(
                 "PHS_MAP_VER3_REDESIGN_AUTHOR_OK interiorGravityZones=7 fireRooms=4 " +
-                "accidentAnchors=11 legacyVisualsDisabled=true mapProjection=60.247x141.362");
+                "accidentAnchors=12 legacyVisualsDisabled=true mapProjection=60.247x141.362");
         }
 
         private static void DisableLegacyVisuals(Scene scene)
@@ -244,7 +244,7 @@ namespace LastJumpCrew.ParkHanSol.Editor
                 .SelectMany(root => root.GetComponentsInChildren<PHSShipAccidentAnchor>(true))
                 .OrderBy(anchor => anchor.AnchorId, StringComparer.Ordinal)
                 .ToArray();
-            Require(anchors.Length == 11, $"accident_anchor_count:{anchors.Length}");
+            Require(anchors.Length == 12, $"accident_anchor_count:{anchors.Length}");
 
             var coordinator = Find(scene, "PHS_Map_Runtime/PHS_ShipRuntime")
                 .GetComponent<PHSNetworkShipAccidentCoordinator>();
