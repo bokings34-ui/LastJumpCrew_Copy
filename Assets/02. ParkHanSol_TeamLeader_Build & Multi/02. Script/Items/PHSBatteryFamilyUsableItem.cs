@@ -22,8 +22,6 @@ namespace LastJumpCrew.ParkHanSol.Items
                 || phsHolder.CurrentItemPrefabData == null
                 || phsHolder.CurrentItemPrefabData.ItemId
                     != holder.CurrentItem.ItemId
-                || phsHolder.CurrentItemPrefabData.UtilityFamily
-                    != PHSUtilityFamilyActionKind.Battery
                 || !phsHolder.CurrentItemPrefabData.TryGetActionProfile(
                     UtilityItemActionKind.PowerRestore,
                     out _))

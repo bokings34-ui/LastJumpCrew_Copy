@@ -3,8 +3,7 @@ using LastJumpCrew.ParkHanSol.Interaction;
 using LastJumpCrew.ParkHanSol.Multiplayer;
 using Unity.Netcode;
 using UnityEngine;
-using UnityEngine.AdaptivePerformance;
-using UnityEngine.WSA;
+using UnityEngine.Serialization;
 using ParkInteraction = LastJumpCrew.ParkHanSol.Interaction;
 
 namespace LastJumpCrew.ParkHanSol.Items
@@ -20,6 +19,7 @@ namespace LastJumpCrew.ParkHanSol.Items
 
         [Tooltip("이 프리팹이 어떤 아이템인지 나타내는 데이터입니다. " + "아이템 ID, 표시 이름, 프리팹, 내구도, 사용 설정을 제공합니다.")]
         [SerializeField]
+        [FormerlySerializedAs("itemPrefabData")]
         private UtilityItemDataSO itemData;
 
 
@@ -49,9 +49,7 @@ namespace LastJumpCrew.ParkHanSol.Items
         /// 추후 아이템 손잡이 위치가 따로 필요하면
         /// 프리팹 자식에 GripPoint를 만들고 반환값을 변경하면 됩니다.
         public Transform HoldTransform => transform;
-
-
-        public string InteractionPrompt => "Pick Up";
+        public string InteractionPrompt => "아이템 줍기";
 
 
         

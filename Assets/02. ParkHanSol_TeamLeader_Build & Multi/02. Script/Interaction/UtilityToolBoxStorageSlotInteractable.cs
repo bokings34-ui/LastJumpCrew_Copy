@@ -67,7 +67,7 @@ namespace LastJumpCrew.ParkHanSol.Interaction
         private int networkSlotIndex = -1;
 
         public string InteractionPrompt => interactionPrompt;
-        public UtilityItemPrefabData InitialStoredItemPrefabData => storedItemPrefabData;
+        public UtilityItemDataSO InitialStoredItemPrefabData => storedItemPrefabData;
         public bool IsNetworkManaged => networkCoordinator != null && networkCoordinator.IsSpawned;
 
         public void BindNetworkCoordinator(
@@ -78,7 +78,7 @@ namespace LastJumpCrew.ParkHanSol.Interaction
             networkSlotIndex = slotIndex;
         }
 
-        public void ApplyNetworkStoredItem(UtilityItemPrefabData itemPrefabData)
+        public void ApplyNetworkStoredItem(UtilityItemDataSO itemPrefabData)
         {
             storedItemPrefabData = itemPrefabData;
             RefreshVisual();

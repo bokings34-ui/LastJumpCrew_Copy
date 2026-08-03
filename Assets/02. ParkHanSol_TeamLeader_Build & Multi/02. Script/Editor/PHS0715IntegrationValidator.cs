@@ -45,7 +45,7 @@ namespace LastJumpCrew.ParkHanSol.Editor
         private const string TutorialWallPrefabPath =
             "Assets/02. ParkHanSol_TeamLeader_Build & Multi/03. Prefab/Tutorial/PHS_NetworkTutorialWall.prefab";
         private const string TutorialGrappleTargetPrefabPath =
-            "Assets/05. TakHyunJae_Map & MiniGame/06. MyAsset/Creepy_Cat/3D Scifi Kit Vol 3/Prefabs/Props/Update 1.00-First build/Things/P_Light_Ring_01.prefab";
+            "Assets/02. ParkHanSol_TeamLeader_Build & Multi/03. Prefab/Tutorial/PHS_NetworkTutorialGrappleTarget.prefab";
         private const string TutorialGrappleTargetMaterialPath =
             "Assets/02. ParkHanSol_TeamLeader_Build & Multi/03. Environment/Grapple/PHS_GrappleAnchor_Test.mat";
         private const string TutorialPlayerPrefabPath =
