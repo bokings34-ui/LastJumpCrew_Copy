@@ -24,6 +24,10 @@ namespace SM
         OxygenLeak = 7104,
         EngineBreak = 7105,
         MicDestroy = 7106,
+        HullBreach = 7107,
+        SteamLeak = 7108,
+        OxygenGeneratorFailure = 7109,
+        GravityGeneratorFailure = 7110,
         
         EnemyScout = 7201,
         MeteorAttack = 7202,

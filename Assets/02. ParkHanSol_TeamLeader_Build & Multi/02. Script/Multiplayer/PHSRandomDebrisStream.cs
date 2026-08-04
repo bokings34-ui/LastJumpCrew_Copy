@@ -7,7 +7,9 @@ using UnityEngine.SceneManagement;
 
 namespace LastJumpCrew.ParkHanSol.Multiplayer
 {
-    public sealed class PHSRandomDebrisStream : MonoBehaviour
+    public sealed class PHSRandomDebrisStream :
+        MonoBehaviour,
+        IDebrisPopulationRuntime
     {
         [SerializeField] private Transform[] debrisRoots;
         [SerializeField, Min(1)] private int minimumDebrisCount = 20;
@@ -36,6 +38,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
         private readonly List<Transform> activeDebris = new();
         private readonly List<Transform> runtimeGeneratedDebris = new();
         private int targetDebrisCount;
+        private int configuredDebrisAmount;
         private NetworkManager boundNetworkManager;
         private NetworkSceneManager boundSceneManager;
         private bool simulationInitialized;
@@ -43,6 +46,46 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
         private bool usesNetworkDebrisSources;
         private bool networkSceneReady;
         private bool offlineLocalSimulationActive;
+
+        public int ConfiguredDebrisAmount => configuredDebrisAmount;
+        public int ActiveDebrisAmount => simulationRequested
+            ? activeDebris.Count
+            : 0;
+
+        public bool ConfigureTargetDebrisCount(int debrisAmount)
+        {
+            if (debrisAmount < 0)
+            {
+                Debug.LogError(
+                    $"PHS_DEBRIS_STREAM_CONFIG_FAILED reason=amount_negative amount={debrisAmount}",
+                    this);
+                return false;
+            }
+
+            if (debrisAmount > 0
+                && debrisRoots != null
+                && debrisAmount < debrisRoots.Length)
+            {
+                Debug.LogError(
+                    $"PHS_DEBRIS_STREAM_CONFIG_FAILED reason=amount_below_seed_count " +
+                    $"amount={debrisAmount} seeds={debrisRoots.Length}",
+                    this);
+                return false;
+            }
+
+            if (configuredDebrisAmount == debrisAmount)
+            {
+                return true;
+            }
+
+            configuredDebrisAmount = debrisAmount;
+            if (simulationInitialized)
+            {
+                RebuildSimulationForConfiguredAmount();
+            }
+
+            return true;
+        }
 
         public void SetSimulationEnabled(bool simulationEnabled)
         {
@@ -211,10 +254,12 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
                 return;
             }
 
-            targetDebrisCount = Mathf.RoundToInt(Random.Range(
-                Mathf.Min(minimumDebrisCount, maximumDebrisCount),
-                Mathf.Max(minimumDebrisCount, maximumDebrisCount) + 1)
-                * densityMultiplier);
+            targetDebrisCount = configuredDebrisAmount > 0
+                ? configuredDebrisAmount
+                : Mathf.RoundToInt(Random.Range(
+                    Mathf.Min(minimumDebrisCount, maximumDebrisCount),
+                    Mathf.Max(minimumDebrisCount, maximumDebrisCount) + 1)
+                    * densityMultiplier);
             while (activeDebris.Count < targetDebrisCount)
             {
                 activeDebris.Add(CreateDebris(activeDebris.Count));
@@ -242,6 +287,53 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
                 $"mode={(offlineLocalSimulationActive ? "offline_local" : usesNetworkDebrisSources ? "network" : "local")} " +
                 $"total={activeDebris.Count} generated={runtimeGeneratedDebris.Count}",
                 this);
+        }
+
+        private void RebuildSimulationForConfiguredAmount()
+        {
+            foreach (var debris in runtimeGeneratedDebris)
+            {
+                if (debris == null)
+                {
+                    continue;
+                }
+
+                var networkObject = debris.GetComponent<NetworkObject>();
+                if (networkObject != null && networkObject.IsSpawned)
+                {
+                    if (boundNetworkManager != null
+                        && boundNetworkManager.IsServer)
+                    {
+                        networkObject.Despawn(true);
+                    }
+
+                    continue;
+                }
+
+                Destroy(debris.gameObject);
+            }
+
+            runtimeGeneratedDebris.Clear();
+            activeDebris.Clear();
+            activeDebris.AddRange(debrisRoots);
+            simulationInitialized = false;
+            if (configuredDebrisAmount == 0)
+            {
+                return;
+            }
+
+            if (offlineLocalSimulationActive)
+            {
+                InitializeSimulation();
+            }
+            else if (usesNetworkDebrisSources)
+            {
+                TryInitializeNetworkSimulation();
+            }
+            else if (simulationRequested)
+            {
+                InitializeSimulation();
+            }
         }
 
         private Transform CreateDebris(int index)

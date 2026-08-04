@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using LastJumpCrew.Common;
+using LastJumpCrew.ParkHanSol.Multiplayer;
 using LastJumpCrew.ParkHanSol.Multiplayer.Incidents.Fire;
 using LastJumpCrew.ParkHanSol.Multiplayer.Audio;
 using LastJumpCrew.ParkHanSol.Multiplayer.ShipAccidents;
@@ -15,8 +16,8 @@ namespace LastJumpCrew.ParkHanSol.Items
     public sealed class PHSNetworkFoamCoordinator : NetworkBehaviour
     {
         public const string FoamItemId = "foam_sealant_gun";
-        public const int FireBlobThreshold = 4;
-        public const int HullBreachBlobThreshold = 6;
+        public const int FireBlobThreshold = 1;
+        public const int HullBreachBlobThreshold = 1;
         public const int SurfaceBlobThreshold = 3;
 
         [Header("Prefab")]
@@ -365,6 +366,10 @@ namespace LastJumpCrew.ParkHanSol.Items
             }
 
             if (accumulator.Target is not IUtilityAttackTarget utilityTarget
+                || !TryResolveFoamConsumption(
+                    shooter,
+                    out var itemRecord,
+                    out var expectedRevision)
                 || !utilityTarget.TryResolveUtilityAttack(
                     new UtilityAttackHit(
                         FoamItemId,
@@ -373,6 +378,17 @@ namespace LastJumpCrew.ParkHanSol.Items
             {
                 Debug.LogWarning(
                     $"PHS_FOAM_THRESHOLD_REJECTED target={accumulator.Key} kind={accumulator.Kind}",
+                    this);
+                BeginDissolveAccumulator(accumulator, now);
+                return;
+            }
+
+            if (!itemRecord.TryConsumeHeldItemServer(
+                    FoamItemId,
+                    expectedRevision))
+            {
+                Debug.LogError(
+                    $"PHS_FOAM_TRANSACTION_FAILED reason=item_consume_failed target={accumulator.Key} owner={shooter.OwnerClientId}",
                     this);
                 BeginDissolveAccumulator(accumulator, now);
                 return;
@@ -392,6 +408,21 @@ namespace LastJumpCrew.ParkHanSol.Items
             Debug.Log(
                 $"PHS_FOAM_TARGET_COMPLETED kind={accumulator.Kind} target={accumulator.Key} blobs={accumulator.Current}/{accumulator.Required}",
                 this);
+        }
+
+        private static bool TryResolveFoamConsumption(
+            NetworkObject shooter,
+            out NetworkPlayerItemRecord itemRecord,
+            out uint expectedRevision)
+        {
+            itemRecord = shooter == null
+                ? null
+                : shooter.GetComponent<NetworkPlayerItemRecord>();
+            expectedRevision = itemRecord == null ? 0U : itemRecord.Revision;
+            return itemRecord != null
+                && itemRecord.IsSpawned
+                && itemRecord.IsServer
+                && itemRecord.HeldItemId == FoamItemId;
         }
 
         internal void ReleaseFlyingBlobServer(

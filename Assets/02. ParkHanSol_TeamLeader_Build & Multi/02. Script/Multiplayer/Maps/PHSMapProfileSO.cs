@@ -20,7 +20,10 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Maps
         [SerializeField] private bool selectable = true;
 
         [Header("Difficulty And Reward")]
-        [SerializeField, Min(1)] private int difficulty = 1;
+        [FormerlySerializedAs("difficulty")]
+        [SerializeField] private PHSMapDifficultyTier difficultyTier =
+            PHSMapDifficultyTier.Normal;
+        [SerializeField, Min(0)] private int debrisAmount;
         [SerializeField, Min(1f)] private float stageTimeLimitSeconds = 180f;
         [SerializeField, Min(0)] private int clearRewardCredits;
 
@@ -71,9 +74,41 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Maps
         public int MapId => id;
         public string DisplayName => displayName;
         public bool Selectable => selectable;
-        public int Difficulty => difficulty;
+        public int Difficulty => (int)difficultyTier;
+        public PHSMapDifficultyTier DifficultyTier => difficultyTier;
+        public string DifficultyLabel => difficultyTier switch
+        {
+            PHSMapDifficultyTier.Easy => "하",
+            PHSMapDifficultyTier.Normal => "중",
+            PHSMapDifficultyTier.Hard => "상",
+            _ => "-"
+        };
+        public float DifficultyIntervalMultiplier => difficultyTier switch
+        {
+            PHSMapDifficultyTier.Easy => 1.2f,
+            PHSMapDifficultyTier.Normal => 1f,
+            PHSMapDifficultyTier.Hard => 0.8f,
+            _ => 1f
+        };
+        public float DifficultyDamageMultiplier => difficultyTier switch
+        {
+            PHSMapDifficultyTier.Easy => 0.85f,
+            PHSMapDifficultyTier.Normal => 1f,
+            PHSMapDifficultyTier.Hard => 1.25f,
+            _ => 1f
+        };
+        public float DifficultyRewardMultiplier => difficultyTier switch
+        {
+            PHSMapDifficultyTier.Easy => 0.9f,
+            PHSMapDifficultyTier.Normal => 1f,
+            PHSMapDifficultyTier.Hard => 1.25f,
+            _ => 1f
+        };
+        public int DebrisAmount => debrisAmount;
+        public string DebrisAmountLabel => debrisAmount.ToString();
         public float StageTimeLimitSeconds => stageTimeLimitSeconds;
-        public int ClearRewardCredits => clearRewardCredits;
+        public int ClearRewardCredits => Mathf.RoundToInt(
+            clearRewardCredits * DifficultyRewardMultiplier);
         public bool IsWarpMaintenance => isWarpMaintenance;
         public bool IsShopPortalProfile => isShopPortalProfile;
         public bool AdvancesStageTime => advancesStageTime;
@@ -88,15 +123,21 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Maps
         public Material ArrivalSkybox => arrivalSkybox;
         public int IncidentPressureCapacity => incidentPressureCapacity;
         public IReadOnlyList<PHSMapEventWeight> ExternalThreatWeights => externalThreatWeights;
-        public float ExternalThreatIntervalMinSeconds => externalThreatIntervalMinSeconds;
-        public float ExternalThreatIntervalMaxSeconds => externalThreatIntervalMaxSeconds;
+        public float ExternalThreatIntervalMinSeconds =>
+            externalThreatIntervalMinSeconds * DifficultyIntervalMultiplier;
+        public float ExternalThreatIntervalMaxSeconds =>
+            externalThreatIntervalMaxSeconds * DifficultyIntervalMultiplier;
         public int MaximumActiveExternalThreats => maximumActiveExternalThreats;
         public IReadOnlyList<PHSMapShipAccidentWeight> InternalAccidentWeights => internalAccidentWeights;
-        public float InternalAccidentIntervalMinSeconds => internalAccidentIntervalMinSeconds;
-        public float InternalAccidentIntervalMaxSeconds => internalAccidentIntervalMaxSeconds;
+        public float InternalAccidentIntervalMinSeconds =>
+            internalAccidentIntervalMinSeconds * DifficultyIntervalMultiplier;
+        public float InternalAccidentIntervalMaxSeconds =>
+            internalAccidentIntervalMaxSeconds * DifficultyIntervalMultiplier;
         public int MaximumActiveInternalAccidents => maximumActiveInternalAccidents;
-        public float InternalModuleDamageMultiplier => internalModuleDamageMultiplier;
-        public float InternalShipDamageMultiplier => internalShipDamageMultiplier;
+        public float InternalModuleDamageMultiplier =>
+            internalModuleDamageMultiplier * DifficultyDamageMultiplier;
+        public float InternalShipDamageMultiplier =>
+            internalShipDamageMultiplier * DifficultyDamageMultiplier;
 
         private void OnValidate()
         {
@@ -122,9 +163,23 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Maps
                 return false;
             }
 
-            if (difficulty <= 0)
+            if (!System.Enum.IsDefined(
+                    typeof(PHSMapDifficultyTier),
+                    difficultyTier))
             {
-                reason = $"difficulty_not_positive:value={difficulty}";
+                reason = $"difficulty_tier_invalid:value={(byte)difficultyTier}";
+                return false;
+            }
+
+            if (allowsDebrisGeneration && debrisAmount <= 0)
+            {
+                reason = $"debris_amount_required:value={debrisAmount}";
+                return false;
+            }
+
+            if (!allowsDebrisGeneration && debrisAmount != 0)
+            {
+                reason = $"debris_amount_must_be_zero:value={debrisAmount}";
                 return false;
             }
 

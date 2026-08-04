@@ -14,6 +14,14 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
         public const int OxygenFailureAccidentId = 6;
         public const int GravityGeneratorFailureAccidentId = 7;
 
+        public const int FireEventId = 7101;
+        public const int PowerOffEventId = 7103;
+        public const int EngineBreakEventId = 7105;
+        public const int HullBreachEventId = 7107;
+        public const int SteamLeakEventId = 7108;
+        public const int OxygenGeneratorFailureEventId = 7109;
+        public const int GravityGeneratorFailureEventId = 7110;
+
         public const int EnemyScoutEventId = 7201;
         public const int MeteorAttackEventId = 7202;
         public const int EmpAttackEventId = 7203;
@@ -25,6 +33,17 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
             int contentId,
             out string reason)
         {
+            if (!TryNormalize(
+                    channel,
+                    payloadKind,
+                    contentId,
+                    out payloadKind,
+                    out contentId,
+                    out reason))
+            {
+                return false;
+            }
+
             switch (channel)
             {
                 case NetworkRunIncidentChannel.External:
@@ -42,7 +61,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
 
                 case NetworkRunIncidentChannel.Internal:
                     if (payloadKind
-                        != NetworkRunIncidentPayloadKind.ShipAccident)
+                        != NetworkRunIncidentPayloadKind.EventManagerEvent)
                     {
                         reason = "channel_payload_mismatch";
                         return false;
@@ -56,6 +75,73 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
                 default:
                     reason = "channel_invalid";
                     return false;
+            }
+        }
+
+        public static bool TryNormalize(
+            NetworkRunIncidentChannel channel,
+            NetworkRunIncidentPayloadKind payloadKind,
+            int contentId,
+            out NetworkRunIncidentPayloadKind normalizedPayloadKind,
+            out int normalizedContentId,
+            out string reason)
+        {
+            normalizedPayloadKind = payloadKind;
+            normalizedContentId = contentId;
+            reason = null;
+
+            if (channel != NetworkRunIncidentChannel.Internal)
+            {
+                return true;
+            }
+
+            if (payloadKind == NetworkRunIncidentPayloadKind.EventManagerEvent)
+            {
+                return true;
+            }
+
+            if (payloadKind != NetworkRunIncidentPayloadKind.ShipAccident
+                || !TryMapLegacyAccidentToEvent(contentId, out normalizedContentId))
+            {
+                reason = $"internal_content_mapping_missing:{contentId}";
+                return false;
+            }
+
+            normalizedPayloadKind = NetworkRunIncidentPayloadKind.EventManagerEvent;
+            return true;
+        }
+
+        public static bool TryMapLegacyAccidentToEvent(
+            int legacyAccidentId,
+            out int eventId)
+        {
+            switch (legacyAccidentId)
+            {
+                case FireAccidentId: eventId = FireEventId; return true;
+                case PowerFailureAccidentId: eventId = PowerOffEventId; return true;
+                case DeviceFailureAccidentId: eventId = EngineBreakEventId; return true;
+                case HullBreachAccidentId: eventId = HullBreachEventId; return true;
+                case SteamLeakAccidentId: eventId = SteamLeakEventId; return true;
+                case OxygenFailureAccidentId: eventId = OxygenGeneratorFailureEventId; return true;
+                case GravityGeneratorFailureAccidentId: eventId = GravityGeneratorFailureEventId; return true;
+                default: eventId = 0; return false;
+            }
+        }
+
+        public static bool TryMapEventToLegacyAccident(
+            int eventId,
+            out int legacyAccidentId)
+        {
+            switch (eventId)
+            {
+                case FireEventId: legacyAccidentId = FireAccidentId; return true;
+                case PowerOffEventId: legacyAccidentId = PowerFailureAccidentId; return true;
+                case EngineBreakEventId: legacyAccidentId = DeviceFailureAccidentId; return true;
+                case HullBreachEventId: legacyAccidentId = HullBreachAccidentId; return true;
+                case SteamLeakEventId: legacyAccidentId = SteamLeakAccidentId; return true;
+                case OxygenGeneratorFailureEventId: legacyAccidentId = OxygenFailureAccidentId; return true;
+                case GravityGeneratorFailureEventId: legacyAccidentId = GravityGeneratorFailureAccidentId; return true;
+                default: legacyAccidentId = 0; return false;
             }
         }
 
@@ -96,25 +182,25 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
             NetworkRunIncidentFamily expectedFamily;
             switch (contentId)
             {
-                case FireAccidentId:
+                case FireEventId:
                     expectedFamily = NetworkRunIncidentFamily.Fire;
                     break;
-                case PowerFailureAccidentId:
+                case PowerOffEventId:
                     expectedFamily = NetworkRunIncidentFamily.Power;
                     break;
-                case DeviceFailureAccidentId:
+                case EngineBreakEventId:
                     expectedFamily = NetworkRunIncidentFamily.Device;
                     break;
-                case HullBreachAccidentId:
+                case HullBreachEventId:
                     expectedFamily = NetworkRunIncidentFamily.Hull;
                     break;
-                case SteamLeakAccidentId:
+                case SteamLeakEventId:
                     expectedFamily = NetworkRunIncidentFamily.Steam;
                     break;
-                case OxygenFailureAccidentId:
+                case OxygenGeneratorFailureEventId:
                     expectedFamily = NetworkRunIncidentFamily.Oxygen;
                     break;
-                case GravityGeneratorFailureAccidentId:
+                case GravityGeneratorFailureEventId:
                     expectedFamily = NetworkRunIncidentFamily.Gravity;
                     break;
                 default:
