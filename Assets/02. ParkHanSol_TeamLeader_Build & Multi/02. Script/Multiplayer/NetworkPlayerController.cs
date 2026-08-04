@@ -65,7 +65,6 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
         private NetworkPlayerGrappleController grappleController;
         private NetworkPlayerUpgradeState upgradeState;
         private NetworkPlayerLifeState playerLifeState;
-        private StatusEffectController statusEffectController;
         private NetworkPlayerSectorState playerSectorState;
         private Rigidbody attachedRigidbody;
         private IDebrisHolder debrisHolder;
@@ -238,21 +237,15 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
                 return;
             }
 
-            if (!IsSpawned)
+            if (!IsSpawned || !IsOwner)
             {
-                Debug.LogError($"PHS_LOCAL_PORTAL_FAILED reason=player_not_spawned player={name}");
+                Debug.LogError($"PHS_LOCAL_PORTAL_FAILED reason=owner_required player={name}");
                 return;
             }
 
             if (IsServer)
             {
                 TeleportThroughLocalPortal(portalName);
-                return;
-            }
-
-            if (!IsOwner)
-            {
-                Debug.LogError($"PHS_LOCAL_PORTAL_FAILED reason=owner_required player={name}");
                 return;
             }
 
@@ -555,7 +548,6 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
             grappleController = GetComponent<NetworkPlayerGrappleController>();
             upgradeState = GetComponent<NetworkPlayerUpgradeState>();
             playerLifeState = GetComponent<NetworkPlayerLifeState>();
-            statusEffectController = GetComponent<StatusEffectController>();
             playerSectorState = GetComponent<NetworkPlayerSectorState>();
             ConfigureNetworkRigidbody(true);
             if (playerSectorState == null)
@@ -567,7 +559,6 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
                 thrusterFuel.Value = EffectiveThrusterFuelCapacity;
             }
 
-            SetLocalOwnerVisualsVisible(!IsOwner);
             RefreshForActiveScene();
         }
 
@@ -585,7 +576,6 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
             grappleController = GetComponent<NetworkPlayerGrappleController>();
             upgradeState = GetComponent<NetworkPlayerUpgradeState>();
             playerLifeState = GetComponent<NetworkPlayerLifeState>();
-            statusEffectController = GetComponent<StatusEffectController>();
             playerSectorState = GetComponent<NetworkPlayerSectorState>();
             attachedRigidbody = GetComponent<Rigidbody>();
             debrisHolder = GetComponent<IDebrisHolder>();
@@ -692,27 +682,11 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
 
             if (!IsSpawned || IsServer)
             {
-                MoveOnServer(
-                    move,
-                    verticalMove,
-                    look.x * GetMouseLookDegrees(),
-                    cameraPitch,
-                    jump,
-                    ascend,
-                    sprint,
-                    deltaTime);
+                MoveOnServer(move, verticalMove, look.x, cameraPitch, jump, ascend, sprint, deltaTime);
             }
             else
             {
-                SubmitInputServerRpc(
-                    move,
-                    verticalMove,
-                    look.x * GetMouseLookDegrees(),
-                    cameraPitch,
-                    jump,
-                    ascend,
-                    sprint,
-                    deltaTime);
+                SubmitInputServerRpc(move, verticalMove, look.x, cameraPitch, jump, ascend, sprint, deltaTime);
             }
         }
 
@@ -992,9 +966,9 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
         }
 
         [ServerRpc]
-        private void SubmitInputServerRpc(Vector2 move, float verticalMove, float yawDegrees, float lookPitch, bool jump, bool ascend, bool sprint, float deltaTime)
+        private void SubmitInputServerRpc(Vector2 move, float verticalMove, float yawInput, float lookPitch, bool jump, bool ascend, bool sprint, float deltaTime)
         {
-            MoveOnServer(move, verticalMove, yawDegrees, lookPitch, jump, ascend, sprint, Mathf.Clamp(deltaTime, 0f, 0.05f));
+            MoveOnServer(move, verticalMove, yawInput, lookPitch, jump, ascend, sprint, Mathf.Clamp(deltaTime, 0f, 0.05f));
         }
 
         public void SetLifeInputBlocked(bool blocked)
@@ -1100,10 +1074,9 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
             }
         }
 
-        private void MoveOnServer(Vector2 move, float verticalMove, float yawDegrees, float lookPitch, bool jump, bool ascend, bool sprint, float deltaTime)
+        private void MoveOnServer(Vector2 move, float verticalMove, float yawInput, float lookPitch, bool jump, bool ascend, bool sprint, float deltaTime)
         {
-            if ((playerLifeState != null && !playerLifeState.IsAlive)
-                || (statusEffectController != null && statusEffectController.IsShocked))
+            if (playerLifeState != null && !playerLifeState.IsAlive)
             {
                 HasMoveInput = false;
                 IsRunning = false;
@@ -1113,7 +1086,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
                 return;
             }
 
-            RotatePlayer(yawDegrees, deltaTime);
+            RotatePlayer(yawInput, deltaTime);
             RecoverThrusterFuel(deltaTime);
 
             if (gravityMode != NetworkPlayerGravityMode.ShipGravity)
@@ -1723,9 +1696,9 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
                 * zeroGravityCollisionRestitution;
         }
 
-        private void RotatePlayer(float yawDegrees, float deltaTime)
+        private void RotatePlayer(float yawInput, float deltaTime)
         {
-            targetYaw += yawDegrees;
+            targetYaw += yawInput * GetMouseLookDegrees();
             var nextYaw = Mathf.SmoothDampAngle(
                 transform.eulerAngles.y,
                 targetYaw,
@@ -1805,8 +1778,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
                 return !pauseInputBlocked
                     && !lifeInputBlocked
                     && !warpInputBlocked
-                    && !resultInputBlocked
-                    && (statusEffectController == null || !statusEffectController.IsShocked);
+                    && !resultInputBlocked;
             }
 
             return IsOwner
@@ -1814,8 +1786,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
                 && !pauseInputBlocked
                 && !lifeInputBlocked
                 && !warpInputBlocked
-                && !resultInputBlocked
-                && (statusEffectController == null || !statusEffectController.IsShocked);
+                && !resultInputBlocked;
         }
 
         private float ReadVerticalMove()

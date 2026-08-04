@@ -42,45 +42,14 @@ namespace LastJumpCrew.ParkHanSol.Editor
                 "Assets/02. ParkHanSol_TeamLeader_Build & Multi/03. Prefab/Tutorial/PHS_NetworkTutorialPlayer.prefab",
                 errors);
 
-            ValidateData("wrench", true, 100, new[]
-            {
-                (UtilityItemActionKind.HullBreachRepair, 20, 1),
-                (UtilityItemActionKind.SteamLeakRepair, 20, 1),
-                (UtilityItemActionKind.OxygenLeakRepair, 3, 5),
-                (UtilityItemActionKind.OxygenGeneratorRepair, 20, 1),
-                (UtilityItemActionKind.GravityGeneratorRepair, 20, 1)
-            }, errors);
-            ValidateData("futuristic_adjustable_wrench", true, 150, new[]
-            {
-                (UtilityItemActionKind.DeviceRepair, 40, 1),
-                (UtilityItemActionKind.HullBreachRepair, 40, 1),
-                (UtilityItemActionKind.SteamLeakRepair, 40, 1),
-                (UtilityItemActionKind.OxygenLeakRepair, 40, 1),
-                (UtilityItemActionKind.OxygenGeneratorRepair, 40, 1),
-                (UtilityItemActionKind.GravityGeneratorRepair, 40, 1)
-            }, errors);
-            ValidateData("fire_extinguisher", true, 100,
-                new[] { (UtilityItemActionKind.FireSuppression, 2, 5) }, errors);
-            ValidateData("tripo_fire_extinguisher", true, 150,
-                new[] { (UtilityItemActionKind.FireSuppression, 70, 1) }, errors);
-            ValidateData("battery_pack", true, 100, new[]
-            {
-                (UtilityItemActionKind.PowerRestore, 100, 100),
-                (UtilityItemActionKind.BatteryDischarge, 20, 100)
-            }, errors);
-            ValidateData("auto_repair_kit", false, 100, new[]
-            {
-                (UtilityItemActionKind.DeviceRepair, 100, 0),
-                (UtilityItemActionKind.SteamLeakRepair, 100, 0),
-                (UtilityItemActionKind.OxygenLeakRepair, 100, 0),
-                (UtilityItemActionKind.OxygenGeneratorRepair, 100, 0),
-                (UtilityItemActionKind.GravityGeneratorRepair, 100, 0)
-            }, errors);
-            ValidateData("foam_sealant_gun", false, 100, new[]
-            {
-                (UtilityItemActionKind.FireSuppression, 100, 0),
-                (UtilityItemActionKind.HullBreachRepair, 100, 0)
-            }, errors);
+            ValidateData("wrench", PHSUtilityFamilyActionKind.Wrench, 100, UtilityItemActionKind.DeviceRepair, 20, 1, errors);
+            ValidateData("futuristic_adjustable_wrench", PHSUtilityFamilyActionKind.Wrench, 150, UtilityItemActionKind.DeviceRepair, 40, 1, errors);
+            ValidateData("fire_extinguisher", PHSUtilityFamilyActionKind.FireExtinguisher, 100, UtilityItemActionKind.FireSuppression, 35, 1, errors);
+            ValidateData("tripo_fire_extinguisher", PHSUtilityFamilyActionKind.FireExtinguisher, 150, UtilityItemActionKind.FireSuppression, 70, 1, errors);
+            ValidateData("battery_pack", PHSUtilityFamilyActionKind.Battery, 100, UtilityItemActionKind.PowerRestore, 100, 100, errors);
+            ValidateWrenchProfiles("wrench", 20, 1, errors);
+            ValidateWrenchProfiles("futuristic_adjustable_wrench", 40, 40, errors);
+            ValidateBatteryProfiles("battery_pack", errors);
 
             if (errors.Count > 0)
             {
@@ -89,7 +58,7 @@ namespace LastJumpCrew.ParkHanSol.Editor
                     string.Join("\n", errors));
             }
 
-            Debug.Log("PHS_UTILITY_FAMILY_VALIDATION_PASSED held=5 players=2 data=7");
+            Debug.Log("PHS_UTILITY_FAMILY_VALIDATION_PASSED held=5 players=2 data=5");
         }
 
         private static void ValidateHeld<TFamily>(
@@ -150,43 +119,124 @@ namespace LastJumpCrew.ParkHanSol.Editor
 
         private static void ValidateData(
             string itemId,
-            bool usesDurability,
+            PHSUtilityFamilyActionKind familyKind,
             int maxDurability,
-            (UtilityItemActionKind Action, int Amount, int Cost)[] expectedProfiles,
+            UtilityItemActionKind sampleAction,
+            int sampleAmount,
+            int sampleCost,
             ICollection<string> errors)
         {
             var itemData = FindItemData(itemId);
             if (itemData == null
-                || itemData.UsesDurability != usesDurability
+                || itemData.UtilityFamily != familyKind
+                || !itemData.HasDurability
                 || itemData.MaxDurability != maxDurability
-                || itemData.ActionProfiles.Count != expectedProfiles.Length)
+                || !itemData.TryGetActionProfile(sampleAction, out var profile)
+                || profile.Amount != sampleAmount
+                || profile.DurabilityCost != sampleCost)
             {
                 errors.Add($"data_contract item={itemId}");
                 return;
             }
 
-            if (expectedProfiles.Any(expected =>
-                    !itemData.TryGetActionProfile(expected.Action, out var actual)
-                    || actual.Amount != expected.Amount
-                    || actual.DurabilityCost != expected.Cost))
+            var expectedActions = familyKind switch
             {
-                errors.Add($"data_profile_contract item={itemId}");
+                PHSUtilityFamilyActionKind.Wrench =>
+                    new[]
+                    {
+                        UtilityItemActionKind.DeviceRepair,
+                        UtilityItemActionKind.HullBreachRepair,
+                        UtilityItemActionKind.SteamLeakRepair,
+                        UtilityItemActionKind.OxygenLeakRepair,
+                        UtilityItemActionKind.OxygenGeneratorRepair,
+                        UtilityItemActionKind.GravityGeneratorRepair
+                    },
+                PHSUtilityFamilyActionKind.FireExtinguisher =>
+                    new[]
+                    {
+                        UtilityItemActionKind.FireSuppression
+                    },
+                PHSUtilityFamilyActionKind.Battery =>
+                    new[]
+                    {
+                        UtilityItemActionKind.PowerRestore,
+                        UtilityItemActionKind.BatteryDischarge
+                    },
+                _ => Array.Empty<UtilityItemActionKind>()
+            };
+            var actualActions = itemData.ActionProfiles
+                .Select(profile => profile.ActionKind)
+                .OrderBy(action => action)
+                .ToArray();
+            if (!actualActions.SequenceEqual(
+                    expectedActions.OrderBy(action => action)))
+            {
+                errors.Add($"data_family_actions item={itemId}");
             }
         }
 
-        private static UtilityItemDataSO FindItemData(string itemId)
+        private static void ValidateWrenchProfiles(
+            string itemId,
+            int regularAmount,
+            int oxygenLeakAmount,
+            ICollection<string> errors)
+        {
+            var itemData = FindItemData(itemId);
+            var expectations = new[]
+            {
+                (UtilityItemActionKind.DeviceRepair, regularAmount),
+                (UtilityItemActionKind.HullBreachRepair, regularAmount),
+                (UtilityItemActionKind.SteamLeakRepair, regularAmount),
+                (UtilityItemActionKind.OxygenLeakRepair, oxygenLeakAmount),
+                (UtilityItemActionKind.OxygenGeneratorRepair, regularAmount),
+                (UtilityItemActionKind.GravityGeneratorRepair, regularAmount)
+            };
+            if (itemData == null
+                || expectations.Any(expectation =>
+                    !itemData.TryGetActionProfile(
+                        expectation.Item1,
+                        out var profile)
+                    || profile.Amount != expectation.Item2
+                    || profile.DurabilityCost != 1))
+            {
+                errors.Add($"wrench_profile_exact item={itemId}");
+            }
+        }
+
+        private static UtilityItemPrefabData FindItemData(string itemId)
         {
             return AssetDatabase.FindAssets(
-                    "t:UtilityItemDataSO",
+                    "t:UtilityItemPrefabData",
                     new[]
                     {
                         "Assets/02. ParkHanSol_TeamLeader_Build & Multi/04. Data/UtilityItems"
                     })
                 .Select(AssetDatabase.GUIDToAssetPath)
                 .Select(path => AssetDatabase.LoadAssetAtPath<
-                    UtilityItemDataSO>(path))
+                    UtilityItemPrefabData>(path))
                 .FirstOrDefault(candidate => candidate != null
                     && candidate.ItemId == itemId);
+        }
+
+        private static void ValidateBatteryProfiles(
+            string itemId,
+            ICollection<string> errors)
+        {
+            var itemData = FindItemData(itemId);
+            if (itemData == null
+                || !itemData.TryGetActionProfile(
+                    UtilityItemActionKind.PowerRestore,
+                    out var restore)
+                || restore.Amount != 100
+                || restore.DurabilityCost != 100
+                || !itemData.TryGetActionProfile(
+                    UtilityItemActionKind.BatteryDischarge,
+                    out var discharge)
+                || discharge.Amount != 20
+                || discharge.DurabilityCost != 100)
+            {
+                errors.Add($"battery_profile_exact item={itemId}");
+            }
         }
     }
 }

@@ -434,7 +434,7 @@ namespace LastJumpCrew.ParkHanSol.Interaction
                 return false;
             }
 
-            return true;
+            return !itemObject.IsHeld;
         }
 
         private bool TryConsumeHeldDebris(DebrisItem debrisItem, out bool isHeldDebris)

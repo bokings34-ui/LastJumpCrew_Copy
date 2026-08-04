@@ -66,8 +66,6 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
             player.EnterGravityArea(this);
         }
 
-        private void OnTriggerStay(Collider other) => OnTriggerEnter(other);
-
         private void OnTriggerExit(Collider other)
         {
             if (!TryGetPlayer(other, out var player))

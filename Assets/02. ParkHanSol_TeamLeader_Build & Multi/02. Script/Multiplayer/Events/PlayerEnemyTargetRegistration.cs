@@ -33,16 +33,15 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Events
         private void RefreshRegistration()
         {
             var shouldRegister = lifeState != null && lifeState.IsAlive;
-            var registry = PlayerRegistry.Instance;
-            if (shouldRegister && (!isRegistered || !registry.Contains(transform)))
+            if (shouldRegister == isRegistered)
             {
-                registry.Register(transform);
-                isRegistered = true;
                 return;
             }
 
             if (shouldRegister)
             {
+                PlayerRegistry.Instance.Register(transform);
+                isRegistered = true;
                 return;
             }
 

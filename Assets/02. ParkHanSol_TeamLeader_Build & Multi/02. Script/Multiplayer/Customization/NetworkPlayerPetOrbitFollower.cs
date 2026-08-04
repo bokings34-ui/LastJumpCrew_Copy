@@ -1,5 +1,4 @@
 using UnityEngine;
-using UnityEngine.Serialization;
 
 namespace LastJumpCrew.ParkHanSol.Multiplayer.Customization
 {
@@ -7,11 +6,10 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Customization
     public sealed class NetworkPlayerPetOrbitFollower : MonoBehaviour
     {
         [SerializeField] private Transform orbitCenter;
-        [FormerlySerializedAs("orbitRadius")]
-        [SerializeField, Min(0f)] private float trailingDistance = 0.58f;
-        [FormerlySerializedAs("orbitHeight")]
-        [SerializeField] private float trailingHeight = 0.18f;
-        [SerializeField] private float trailingSideOffset = 0.35f;
+        [SerializeField, Min(0f)] private float orbitRadius = 0.58f;
+        [SerializeField] private float orbitHeight = 0.18f;
+        [SerializeField] private float orbitDegreesPerSecond = 80f;
+        [SerializeField] private float phaseOffsetDegrees = 205f;
 
         private void Awake()
         {
@@ -28,13 +26,17 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Customization
                 return;
             }
 
-            transform.position = orbitCenter.TransformPoint(
-                new Vector3(trailingSideOffset, trailingHeight, -trailingDistance));
+            var angle = (phaseOffsetDegrees + Time.time * orbitDegreesPerSecond) * Mathf.Deg2Rad;
+            var orbitOffset = new Vector3(
+                Mathf.Cos(angle) * orbitRadius,
+                orbitHeight,
+                Mathf.Sin(angle) * orbitRadius);
+            transform.position = orbitCenter.TransformPoint(orbitOffset);
         }
 
         private void OnValidate()
         {
-            trailingDistance = Mathf.Max(0f, trailingDistance);
+            orbitRadius = Mathf.Max(0f, orbitRadius);
         }
     }
 }

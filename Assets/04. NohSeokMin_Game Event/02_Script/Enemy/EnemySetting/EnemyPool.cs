@@ -21,6 +21,8 @@ namespace SM
             {
                 instance = queue.Dequeue();
                 instance.gameObject.SetActive(true);
+                instance.Agent.Warp(position);
+
                 bool warpSuccess = instance.Agent.Warp(position);
                 Debug.Log($"[EnemyPool] Warp 결과: {warpSuccess}, 목표위치: {position}, 실제위치: {instance.transform.position}");
 

@@ -14,7 +14,6 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
         private readonly HashSet<ulong> playersInsideSafeVolume = new();
 
         public bool IsPlayerInside(ulong clientId) => playersInside.Contains(clientId);
-        public bool IsPlayerInsideSafeVolume(ulong clientId) => playersInsideSafeVolume.Contains(clientId);
 
         private void Awake()
         {

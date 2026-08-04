@@ -7,7 +7,7 @@ namespace SM
     {
         protected override Transform SetTarget()
         {
-            var target = PlayerRegistry.Peek()?.GetRandomActivePlayer();
+            var target = PlayerRegistry.Peek()?.GetNearestPlayer(transform.position);
 
             if (target == null)
             {

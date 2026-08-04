@@ -159,29 +159,13 @@ namespace LastJumpCrew.ParkHanSol.Interaction
                 itemIds[index] = delivery.ItemPrefabData.ItemId;
             }
 
-            var committed = ledger.TryCommitPurchaseServer(
+            return ledger.TryCommitPurchaseServer(
                 transactionId,
                 purchaseIds,
                 itemIds,
                 totalPrice,
                 purchaserClientId,
                 out reason);
-            if (!committed)
-            {
-                return false;
-            }
-
-            var deliveryBox = PurchaseDeliveryBox.Instance;
-            if (deliveryBox == null)
-            {
-                Debug.LogError(
-                    $"PHS_PURCHASE_DELIVERY_FAILED reason=delivery_box_missing service={name} transaction={transactionId}",
-                    this);
-                return true;
-            }
-
-            deliveryBox.DeliverPendingItemsServer();
-            return true;
         }
 
         public void QueueDelivery(UtilityItemDataSO itemPrefabData)

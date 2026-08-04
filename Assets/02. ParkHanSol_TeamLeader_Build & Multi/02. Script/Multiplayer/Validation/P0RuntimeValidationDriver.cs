@@ -3944,22 +3944,6 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Validation
                 yield break;
             }
 
-            if (HasCommandLineFlag("-phsVisualCapture"))
-            {
-                Debug.Log($"PHS_VISUAL_CAPTURE_ITEM_HELD item={itemData.ItemId} duration=5", this);
-                yield return new WaitForSecondsRealtime(5f);
-                if (!remoteRecord.TryConsumeHeldItemServer(itemData.ItemId, remoteRecord.Revision))
-                {
-                    Fail($"visual_capture_item_release_failed item={itemData.ItemId}");
-                    yield break;
-                }
-
-                yield return new WaitForSecondsRealtime(0.25f);
-                activeRemoteItemClientId = ulong.MaxValue;
-                Debug.Log($"PHS_VISUAL_CAPTURE_ITEM_OK item={itemData.ItemId}", this);
-                yield break;
-            }
-
             if (exercisePrimaryUse)
             {
                 var knownPrimaryUseNetworkObjectIds =
