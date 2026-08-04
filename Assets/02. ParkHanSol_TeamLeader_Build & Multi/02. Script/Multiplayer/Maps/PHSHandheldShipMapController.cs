@@ -173,6 +173,8 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Maps
             AppendPlayerMarkers(layout);
             AppendEventMarkers(layout);
             AppendAccidentMarkers(layout);
+            AppendObjectMarkers(layout);
+            AppendFloorItemMarkers(layout);
 
             if (!TryBuildPresentation(out var presentation))
             {
