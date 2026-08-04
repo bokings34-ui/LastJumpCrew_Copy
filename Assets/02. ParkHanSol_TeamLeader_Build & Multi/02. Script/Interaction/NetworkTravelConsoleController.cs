@@ -665,9 +665,13 @@ namespace LastJumpCrew.ParkHanSol.Interaction
                 return "맵 데이터 오류";
             }
 
-            return selected
-                ? $"{mapProfile.DisplayName}\n선택됨"
-                : $"{mapProfile.DisplayName}\n구역 {mapProfile.MapId}";
+            var selectionText = selected
+                ? "선택됨"
+                : $"구역 {mapProfile.MapId}";
+            return $"{mapProfile.DisplayName}\n" +
+                $"잔해량 {mapProfile.DebrisAmountLabel} · " +
+                $"난이도 {mapProfile.DifficultyLabel}\n" +
+                selectionText;
         }
 
         private bool TryBuildSelectableProfiles()

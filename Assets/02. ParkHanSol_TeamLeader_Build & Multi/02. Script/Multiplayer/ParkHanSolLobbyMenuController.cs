@@ -54,6 +54,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
         [SerializeField] private ParkHanSolGameSettingsController gameSettingsController;
 
         private SettingsReturnTarget settingsReturnTarget = SettingsReturnTarget.Start;
+        private int voiceChannelRequestVersion;
 
         private void Awake()
         {
@@ -261,12 +262,13 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
             SetPanel(settingsApplyButton, false);
             SetPanel(sessionPanel, false);
             SetLocalGameplayInput(false);
-            ConfigureVoiceChannel();
+            _ = ConfigureVoiceChannelAsync();
             Debug.Log($"PHS_ONLINE_ROOM scene={SceneManager.GetActiveScene().name} clients={GetConnectedClientCount()}");
         }
 
         private async void LeaveRoom()
         {
+            voiceChannelRequestVersion++;
             if (voiceChatSession != null)
             {
                 await voiceChatSession.LeaveAsync();
@@ -288,7 +290,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
             ShowLobbySelection();
         }
 
-        private void ConfigureVoiceChannel()
+        private async Task ConfigureVoiceChannelAsync()
         {
             if (voiceChatSession == null || roomService == null || string.IsNullOrWhiteSpace(roomService.SessionCode))
             {
@@ -296,7 +298,29 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
                 return;
             }
 
-            voiceChatSession.SetVoiceChannel(roomService.SessionCode);
+            var sessionCode = roomService.SessionCode;
+            var requestVersion = ++voiceChannelRequestVersion;
+            voiceChatSession.SetVoiceChannel(sessionCode);
+            const int maximumAttempts = 30;
+            for (var attempt = 1; attempt <= maximumAttempts; attempt++)
+            {
+                if (requestVersion != voiceChannelRequestVersion)
+                {
+                    return;
+                }
+
+                if (await voiceChatSession.JoinLocalPlayerIfReadyAsync())
+                {
+                    Debug.Log(
+                        $"PHS_ROOM_VOICE_CHANNEL_JOINED channel={sessionCode} attempt={attempt}");
+                    return;
+                }
+
+                await Task.Delay(100);
+            }
+
+            Debug.LogError(
+                $"PHS_ROOM_VOICE_CHANNEL_FAILED reason=join_timeout channel={sessionCode}");
         }
 
         private void StartGame()

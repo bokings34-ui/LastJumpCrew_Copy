@@ -18,9 +18,11 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Events
     public sealed class NetworkEventCoordinator :
         NetworkBehaviour,
         IEventRuntimeBridge,
+        IEventProgressRuntimeBridge,
         IEventEffectRuntimeBridge,
         IEventRepairRuntimeBridge,
-        IShipPowerEventRuntimeBridge
+        IShipPowerEventRuntimeBridge,
+        IShipModuleEventRuntimeBridge
     {
         [Header("Event Domain References")]
         [SerializeField] private EventManager eventManager;
@@ -52,6 +54,9 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Events
         private readonly Dictionary<ulong, NetworkEventLifecycleSnapshot> snapshotCache = new();
         private readonly Dictionary<uint, NetworkEventEffectSnapshot> effectSnapshotCache = new();
         private readonly Dictionary<uint, IEventRepairableEffect> repairTargets = new();
+        private readonly Dictionary<ulong, int> registeredRepairTargetCounts = new();
+        private readonly Dictionary<ulong, int> completedRepairTargetCounts = new();
+        private readonly HashSet<uint> completedRepairEffectIds = new();
         private readonly Dictionary<
             (ulong ClientId, ulong PlayerNetworkObjectId),
             uint> repairRequestSequences = new();
@@ -59,6 +64,8 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Events
 
         private bool setupValid;
         private bool suppressTerminalShipImpact;
+        private float shipModuleDamageMultiplier = 1f;
+        private float shipHullDamageMultiplier = 1f;
         private ulong nextEventInstanceId;
         private uint nextEffectInstanceId;
 
@@ -149,6 +156,9 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Events
             snapshotCache.Clear();
             effectSnapshotCache.Clear();
             repairTargets.Clear();
+            registeredRepairTargetCounts.Clear();
+            completedRepairTargetCounts.Clear();
+            completedRepairEffectIds.Clear();
             repairRequestSequences.Clear();
             effectMirrorPresenter?.ClearMirrors();
             base.OnNetworkDespawn();
@@ -171,6 +181,13 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Events
             }
 
             repairTargets.Add(target.EffectInstanceId, target);
+            registeredRepairTargetCounts.TryGetValue(target.EventInstanceId, out var registeredCount);
+            registeredRepairTargetCounts[target.EventInstanceId] = registeredCount + 1;
+            completedRepairTargetCounts.TryGetValue(target.EventInstanceId, out var completedCount);
+            PublishEventProgressServer(
+                target.EventInstanceId,
+                completedCount,
+                registeredCount + 1);
             Debug.Log(
                 $"PHS_EVENT_REPAIR_TARGET_REGISTERED event={target.EventInstanceId} effect={target.EffectInstanceId} kind={target.EffectKind} item={target.RequiredItemId}",
                 this);
@@ -279,6 +296,107 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Events
         public bool TryGetSnapshot(ulong instanceId, out NetworkEventLifecycleSnapshot snapshot)
         {
             return snapshotCache.TryGetValue(instanceId, out snapshot);
+        }
+
+        public bool BindEventIncidentContextServer(
+            ulong instanceId,
+            ulong commandId,
+            string locationId)
+        {
+            if (!IsAuthoritative || instanceId == 0UL || commandId == 0UL)
+            {
+                return false;
+            }
+
+            var index = FindSnapshotIndex(instanceId);
+            if (index < 0)
+            {
+                return false;
+            }
+
+            var current = lifecycleSnapshots[index];
+            var normalizedLocationId = locationId ?? string.Empty;
+            if (current.CommandId == commandId
+                && current.LocationId.ToString() == normalizedLocationId)
+            {
+                return true;
+            }
+
+            lifecycleSnapshots[index] = new NetworkEventLifecycleSnapshot(
+                current.InstanceId,
+                current.EventId,
+                commandId,
+                current.RoomId.ToString(),
+                normalizedLocationId,
+                current.State,
+                current.Progress,
+                current.RequiredProgress,
+                current.Success,
+                NextNonZeroRevision(current.Revision),
+                GetServerTime());
+            return true;
+        }
+
+        public bool PublishEventProgressServer(
+            ulong instanceId,
+            float progress,
+            float requiredProgress)
+        {
+            if (!IsAuthoritative || instanceId == 0UL)
+            {
+                return false;
+            }
+
+            var index = FindSnapshotIndex(instanceId);
+            if (index < 0)
+            {
+                return false;
+            }
+
+            var current = lifecycleSnapshots[index];
+            var safeRequired = Mathf.Max(0f, requiredProgress);
+            var safeProgress = Mathf.Clamp(progress, 0f, safeRequired > 0f ? safeRequired : float.MaxValue);
+            if (Mathf.Approximately(current.Progress, safeProgress)
+                && Mathf.Approximately(current.RequiredProgress, safeRequired))
+            {
+                return true;
+            }
+
+            lifecycleSnapshots[index] = new NetworkEventLifecycleSnapshot(
+                current.InstanceId,
+                current.EventId,
+                current.CommandId,
+                current.RoomId.ToString(),
+                current.LocationId.ToString(),
+                current.State,
+                safeProgress,
+                safeRequired,
+                current.Success,
+                NextNonZeroRevision(current.Revision),
+                GetServerTime());
+            return true;
+        }
+
+        public int ClearTerminalSnapshotsServer()
+        {
+            if (!IsAuthoritative)
+            {
+                return 0;
+            }
+
+            var removedCount = 0;
+            for (var index = lifecycleSnapshots.Count - 1; index >= 0; index--)
+            {
+                if (!lifecycleSnapshots[index].IsTerminal)
+                {
+                    continue;
+                }
+
+                lifecycleSnapshots.RemoveAt(index);
+                removedCount++;
+            }
+
+            return removedCount;
         }
 
         public bool TryGetSnapshotAt(int index, out NetworkEventLifecycleSnapshot snapshot)
@@ -539,6 +657,170 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Events
             }
 
             isPowerOff = !shipSystems.IsPowerEnabled;
+            return true;
+        }
+
+        public bool TryApplyInitialImpact(
+            ulong eventInstanceId,
+            EventId eventId,
+            ShipModuleEventDataSO data,
+            out string reason)
+        {
+            return TryApplyShipModuleImpact(
+                eventInstanceId,
+                eventId,
+                data,
+                data == null ? 0 : data.InitialModuleDamage,
+                data == null ? 0 : data.InitialShipDamage,
+                "initial",
+                out reason);
+        }
+
+        public bool TryConfigureShipModuleImpactServer(
+            float moduleDamageMultiplier,
+            float shipDamageMultiplier,
+            out string reason)
+        {
+            if (!IsAuthoritative)
+            {
+                reason = "server_required";
+                return false;
+            }
+
+            if (moduleDamageMultiplier <= 0f
+                || shipDamageMultiplier <= 0f
+                || float.IsNaN(moduleDamageMultiplier)
+                || float.IsNaN(shipDamageMultiplier)
+                || float.IsInfinity(moduleDamageMultiplier)
+                || float.IsInfinity(shipDamageMultiplier))
+            {
+                reason = "damage_multiplier_invalid";
+                return false;
+            }
+
+            shipModuleDamageMultiplier = moduleDamageMultiplier;
+            shipHullDamageMultiplier = shipDamageMultiplier;
+            reason = null;
+            return true;
+        }
+
+        public bool TryApplyPeriodicImpact(
+            ulong eventInstanceId,
+            EventId eventId,
+            ShipModuleEventDataSO data,
+            out string reason)
+        {
+            return TryApplyShipModuleImpact(
+                eventInstanceId,
+                eventId,
+                data,
+                data == null ? 0 : data.PeriodicModuleDamage,
+                data == null ? 0 : data.PeriodicShipDamage,
+                "periodic",
+                out reason);
+        }
+
+        public bool TryApplyResolveRepair(
+            ulong eventInstanceId,
+            EventId eventId,
+            ShipModuleEventDataSO data,
+            out string reason)
+        {
+            if (!TryGetAuthoritativeShipSystems(data, out var shipSystems, out reason))
+            {
+                return false;
+            }
+
+            if (data.ModuleRepairOnResolve <= 0)
+            {
+                reason = null;
+                return true;
+            }
+
+            var applied = shipSystems.TryRepairModule(
+                data.TargetModule,
+                data.ModuleRepairOnResolve,
+                out reason);
+            if (applied)
+            {
+                Debug.Log(
+                    $"PHS_EVENT_MODULE_REPAIR instance={eventInstanceId} event={eventId} " +
+                    $"module={data.TargetModule} amount={data.ModuleRepairOnResolve}",
+                    this);
+            }
+
+            return applied;
+        }
+
+        private bool TryApplyShipModuleImpact(
+            ulong eventInstanceId,
+            EventId eventId,
+            ShipModuleEventDataSO data,
+            int moduleDamage,
+            int shipDamage,
+            string phase,
+            out string reason)
+        {
+            if (!TryGetAuthoritativeShipSystems(data, out var shipSystems, out reason))
+            {
+                return false;
+            }
+
+            var cause = $"event:{eventId}:{eventInstanceId}:{phase}";
+            var adjustedModuleDamage = Mathf.RoundToInt(
+                moduleDamage * shipModuleDamageMultiplier);
+            var adjustedShipDamage = Mathf.RoundToInt(
+                shipDamage * shipHullDamageMultiplier);
+            if (adjustedModuleDamage > 0
+                && !shipSystems.TryApplyModuleDamage(
+                    data.TargetModule,
+                    adjustedModuleDamage,
+                    data.CausesModuleFault,
+                    cause,
+                    out reason))
+            {
+                return false;
+            }
+
+            if (adjustedShipDamage > 0
+                && !shipSystems.TryApplyShipDamage(adjustedShipDamage, cause, out reason))
+            {
+                return false;
+            }
+
+            reason = null;
+            Debug.Log(
+                $"PHS_EVENT_MODULE_IMPACT instance={eventInstanceId} event={eventId} phase={phase} " +
+                $"module={data.TargetModule} moduleDamage={adjustedModuleDamage} shipDamage={adjustedShipDamage}",
+                this);
+            return true;
+        }
+
+        private bool TryGetAuthoritativeShipSystems(
+            ShipModuleEventDataSO data,
+            out NetworkShipSystemsState shipSystems,
+            out string reason)
+        {
+            shipSystems = NetworkShipSystemsState.Instance;
+            if (!IsAuthoritative)
+            {
+                reason = "server_required";
+                return false;
+            }
+
+            if (data == null)
+            {
+                reason = "event_data_missing";
+                return false;
+            }
+
+            if (shipSystems == null || !shipSystems.IsSpawned || !shipSystems.IsServer)
+            {
+                reason = "server_ship_systems_required";
+                return false;
+            }
+
+            reason = null;
             return true;
         }
 
@@ -823,7 +1105,8 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Events
                 eventId,
                 roomId,
                 terminalState,
-                false);
+                false,
+                success);
 
             if (terminalState == EventState.Fail)
             {
@@ -837,7 +1120,6 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Events
             Debug.Log(
                 $"PHS_EVENT_LIFECYCLE_FINISHED instance={instanceId} event={eventId} success={success} revision={revision}",
                 this);
-            StartCoroutine(RemoveTerminalSnapshotAfterDelay(instanceId, revision));
             NotifyServerEventFinished(instanceId, eventId, success);
         }
 
@@ -1000,6 +1282,19 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Events
                     $"PHS_EVENT_REPAIR_INVARIANT_FAILED reason=durability_commit event={eventInstanceId} effect={effectInstanceId} client={senderClientId}",
                     this);
                 return false;
+            }
+
+            if (target.IsRepairComplete
+                && completedRepairEffectIds.Add(effectInstanceId))
+            {
+                completedRepairTargetCounts.TryGetValue(eventInstanceId, out var completedCount);
+                completedCount++;
+                completedRepairTargetCounts[eventInstanceId] = completedCount;
+                registeredRepairTargetCounts.TryGetValue(eventInstanceId, out var registeredCount);
+                PublishEventProgressServer(
+                    eventInstanceId,
+                    completedCount,
+                    Mathf.Max(registeredCount, completedCount));
             }
 
             repairRequestSequences[sequenceKey] = requestSequence;
@@ -1232,7 +1527,8 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Events
             EventId eventId,
             string roomId,
             EventState state,
-            bool rejectDuplicate)
+            bool rejectDuplicate,
+            bool? success = null)
         {
             var index = FindSnapshotIndex(instanceId);
             if (index >= 0)
@@ -1246,17 +1542,23 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Events
 
                 if (current.EventId == eventId
                     && current.State == state
-                    && current.RoomId.ToString() == (roomId ?? string.Empty))
+                    && current.RoomId.ToString() == (roomId ?? string.Empty)
+                    && (!success.HasValue || current.Success == success.Value))
                 {
                     return current.Revision;
                 }
 
-                var nextRevision = current.Revision + 1U;
+                var nextRevision = NextNonZeroRevision(current.Revision);
                 lifecycleSnapshots[index] = new NetworkEventLifecycleSnapshot(
                     instanceId,
                     eventId,
+                    current.CommandId,
                     roomId,
+                    current.LocationId.ToString(),
                     state,
+                    current.Progress,
+                    current.RequiredProgress,
+                    success ?? current.Success,
                     nextRevision,
                     GetServerTime());
                 return nextRevision;
@@ -1266,11 +1568,22 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Events
             lifecycleSnapshots.Add(new NetworkEventLifecycleSnapshot(
                 instanceId,
                 eventId,
+                0UL,
+                roomId,
                 roomId,
                 state,
+                0f,
+                0f,
+                success ?? false,
                 initialRevision,
                 GetServerTime()));
             return initialRevision;
+        }
+
+        private static uint NextNonZeroRevision(uint revision)
+        {
+            revision++;
+            return revision == 0U ? 1U : revision;
         }
 
         private IEnumerator RemoveTerminalSnapshotAfterDelay(ulong instanceId, uint terminalRevision)

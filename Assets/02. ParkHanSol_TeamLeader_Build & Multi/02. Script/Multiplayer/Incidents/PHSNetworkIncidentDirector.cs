@@ -423,6 +423,23 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
             var payloadKind = channel == NetworkRunIncidentChannel.External
                 ? NetworkRunIncidentPayloadKind.EventManagerEvent
                 : NetworkRunIncidentPayloadKind.ShipAccident;
+            if (!IncidentRequestContentContract.TryNormalize(
+                    channel,
+                    payloadKind,
+                    selectedEntry.ContentId,
+                    out payloadKind,
+                    out var normalizedContentId,
+                    out var normalizeReason))
+            {
+                schedulingEnabled = false;
+                readinessReason = normalizeReason;
+                Debug.LogError(
+                    $"PHS_INCIDENT_DIRECTOR_FAILED reason={normalizeReason} " +
+                    $"channel={channel} content={selectedEntry.ContentId}",
+                    this);
+                return;
+            }
+
             var request = new NetworkRunIncidentRequest(
                 requestId,
                 0UL,
@@ -431,7 +448,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
                 channel,
                 payloadKind,
                 selectedEntry.IncidentFamily,
-                selectedEntry.ContentId,
+                normalizedContentId,
                 NetworkRunIncidentSourceKind.Scheduled,
                 selectedEntry.PressureCost,
                 selectedEntry.WarpChargeMultiplier,

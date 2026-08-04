@@ -189,7 +189,12 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Events
         {
             if (profile != null)
             {
-                eventHudView.ShowCurrentMap(profile.DisplayName, currentMapMessageSeconds);
+                eventHudView.ShowCurrentMap(
+                    profile.DisplayName,
+                    profile.DebrisAmount,
+                    profile.DebrisAmountLabel,
+                    profile.DifficultyLabel,
+                    currentMapMessageSeconds);
             }
         }
 

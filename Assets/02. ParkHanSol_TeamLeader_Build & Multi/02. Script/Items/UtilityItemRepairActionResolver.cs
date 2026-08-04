@@ -9,13 +9,21 @@ namespace LastJumpCrew.ParkHanSol.Items
             string itemId,
             UtilityItemActionKind actionKind)
         {
-            return itemId == "auto_repair_kit"
-                && actionKind is UtilityItemActionKind.DeviceRepair
-                    or UtilityItemActionKind.HullBreachRepair
-                    or UtilityItemActionKind.SteamLeakRepair
-                    or UtilityItemActionKind.OxygenLeakRepair
-                    or UtilityItemActionKind.OxygenGeneratorRepair
-                    or UtilityItemActionKind.GravityGeneratorRepair;
+            return itemId switch
+            {
+                "auto_repair_kit" =>
+                    actionKind is UtilityItemActionKind.DeviceRepair
+                        or UtilityItemActionKind.SteamLeakRepair
+                        or UtilityItemActionKind.OxygenLeakRepair
+                        or UtilityItemActionKind.OxygenGeneratorRepair
+                        or UtilityItemActionKind.GravityGeneratorRepair,
+                "foam_sealant_gun" =>
+                    actionKind is UtilityItemActionKind.FireSuppression
+                        or UtilityItemActionKind.HullBreachRepair,
+                "futuristic_canister" =>
+                    actionKind == UtilityItemActionKind.PowerRestore,
+                _ => false
+            };
         }
 
         public static bool TryResolve(

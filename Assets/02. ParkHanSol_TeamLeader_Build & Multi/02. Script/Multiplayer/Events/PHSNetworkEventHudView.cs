@@ -202,13 +202,29 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Events
 
         public void ShowCurrentMap(string displayName, float visibleSeconds)
         {
+            ShowCurrentMap(displayName, 0, string.Empty, string.Empty, visibleSeconds);
+        }
+
+        public void ShowCurrentMap(
+            string displayName,
+            int debrisAmount,
+            string debrisAmountLabel,
+            string difficultyLabel,
+            float visibleSeconds)
+        {
             if (!IsConfigured || string.IsNullOrWhiteSpace(displayName))
             {
                 ClearCurrentMap();
                 return;
             }
 
-            currentMapText = $"현재 구역 · {displayName.Trim()}";
+            var resolvedDebrisAmount = string.IsNullOrWhiteSpace(debrisAmountLabel)
+                ? debrisAmount.ToString()
+                : debrisAmountLabel.Trim();
+            currentMapText = string.IsNullOrWhiteSpace(difficultyLabel)
+                ? $"현재 구역 · {displayName.Trim()}"
+                : $"현재 구역 · {displayName.Trim()}\n" +
+                    $"잔해량 {resolvedDebrisAmount} · 난이도 {difficultyLabel}";
             RefreshCurrentMapText();
         }
 

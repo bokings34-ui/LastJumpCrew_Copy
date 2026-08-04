@@ -748,6 +748,13 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
             synchronizedWarpCharge.Value = 0f;
             MirrorGameState();
 
+            if (gameState.Phase == GamePhase.ZoneSelect
+                || gameState.Phase == GamePhase.Shop
+                || gameState.Phase == GamePhase.GameClear)
+            {
+                TryAwardMapClearRewardServer();
+            }
+
             switch (gameState.Phase)
             {
                 case GamePhase.ZoneSelect:
@@ -787,6 +794,48 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
             }
 
             Debug.Log($"PHS_RUN_FLOW_WARP_COMPLETED cleared={gameState.ClearedZoneCount} phase={gameState.Phase}");
+        }
+
+        private void TryAwardMapClearRewardServer()
+        {
+            if (!IsServer
+                || mapCatalog == null
+                || !mapCatalog.TryResolve(ActiveMapId, out var profile)
+                || profile.ClearRewardCredits <= 0)
+            {
+                return;
+            }
+
+            var economy = NetworkRunSessionRoot.Instance?.Economy;
+            if (economy == null || !economy.IsSpawned || !economy.IsServer)
+            {
+                Debug.LogError(
+                    $"PHS_MAP_CLEAR_REWARD_FAILED reason=economy_not_ready " +
+                    $"map={ActiveMapId} sequence={stageClock.StageSequence}",
+                    this);
+                return;
+            }
+
+            var transactionId =
+                $"map_clear:{stageClock.StageSequence}:{ActiveMapId}";
+            if (!economy.TryAddCreditsServer(
+                    transactionId,
+                    profile.ClearRewardCredits,
+                    NetworkRunEconomyTransactionKind.RewardCredit,
+                    NetworkManager.ServerClientId,
+                    out var reason))
+            {
+                Debug.LogWarning(
+                    $"PHS_MAP_CLEAR_REWARD_SKIPPED transaction={transactionId} " +
+                    $"amount={profile.ClearRewardCredits} reason={reason}",
+                    this);
+                return;
+            }
+
+            Debug.Log(
+                $"PHS_MAP_CLEAR_REWARD_COMMITTED transaction={transactionId} " +
+                $"amount={profile.ClearRewardCredits} tier={profile.DifficultyTier}",
+                this);
         }
 
         private bool TryTeleportConnectedPlayersToSafeZone()
