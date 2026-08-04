@@ -53,7 +53,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.RunFlow
             // This component normally lives on the persistent lobby root. Keep
             // a safe handoff for an older scene/prefab instance that still owns
             // it from a hidden customization UI object.
-            var coroutineHost = isActiveAndEnabled
+            MonoBehaviour coroutineHost = isActiveAndEnabled
                 ? this
                 : NetworkManager.Singleton;
             if (coroutineHost == null || !coroutineHost.isActiveAndEnabled)
