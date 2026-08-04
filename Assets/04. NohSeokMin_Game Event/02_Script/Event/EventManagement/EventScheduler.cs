@@ -1,6 +1,7 @@
 using System;
 using System.Collections;
 using System.Collections.Generic;
+using LastJumpCrew.ParkHanSol.Multiplayer.Events;
 using UnityEngine;
 
 namespace SM
@@ -16,7 +17,11 @@ namespace SM
             EventId.OxygenLeak,
             EventId.PowerOff,
             EventId.EngineBreak,
-            EventId.MicDestroy
+            EventId.MicDestroy,
+            EventId.HullBreach,
+            EventId.SteamLeak,
+            EventId.OxygenGeneratorFailure,
+            EventId.GravityGeneratorFailure
         };
 
         private const float TotalTime = 300f;
@@ -186,7 +191,16 @@ namespace SM
                 return;
             }
 
-            EventManager.Instance.SpawnEvent(eventId, targetRoom, HandleEventFinished);
+            if (!EventManager.Instance.TrySpawnEvent(
+                    eventId,
+                    targetRoom,
+                    HandleEventFinished,
+                    out _))
+            {
+                Debug.LogError($"PHS_EVENT_SCHEDULER_SPAWN_FAILED event={eventId}");
+                return;
+            }
+
             _activeEventCount++;
 
             Debug.Log($"<color=lime>[EventScheduler]</color> {eventId} 발생!");
@@ -194,7 +208,7 @@ namespace SM
 
         private void HandleEventFinished(EventBase evt, bool success)
         {
-            _activeEventCount--;
+            _activeEventCount = Mathf.Max(0, _activeEventCount - 1);
             TryProcessQueue();
         }
 
