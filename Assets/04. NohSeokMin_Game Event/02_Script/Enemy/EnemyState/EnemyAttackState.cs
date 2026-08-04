@@ -43,8 +43,6 @@ namespace SM
             if (_cooldownTimer >= owner.AttackCooldown)
             {
                 _cooldownTimer = 0f;
-                owner.PerformAttack(target);
-                owner.PlayAttackSound();
 
                 if (owner.Anim != null) owner.Anim.Play(EnemyAnimData.Attack, -1, 0f);
             }
