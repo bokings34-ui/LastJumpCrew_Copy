@@ -623,13 +623,43 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
         private void OnEnable()
         {
             SceneManager.activeSceneChanged += HandleActiveSceneChanged;
+            if (statusEffectController != null)
+            {
+                statusEffectController.StatusEffectStarted += HandleStatusEffectStarted;
+            }
         }
 
         private void OnDisable()
         {
             SceneManager.activeSceneChanged -= HandleActiveSceneChanged;
+            if (statusEffectController != null)
+            {
+                statusEffectController.StatusEffectStarted -= HandleStatusEffectStarted;
+            }
             SetLocalOwnerVisualsVisible(true);
             StopThrusterFeedback();
+        }
+
+        private void HandleStatusEffectStarted(StatusEffectType effectType)
+        {
+            if (effectType != StatusEffectType.ElectricShok)
+            {
+                return;
+            }
+
+            // The remote owner stops submitting movement as soon as the replicated
+            // status arrives. Clear the server's last accepted velocity here so that
+            // stale input cannot continue moving the shocked player.
+            if (IsSpawned && !IsServer)
+            {
+                return;
+            }
+
+            StopMovementForShock();
+            Debug.Log(
+                $"PHS_SHOCK_RESTRAINT_APPLIED player={name} " +
+                $"ownerClientId={OwnerClientId} server={IsServer}",
+                this);
         }
 
         private void Update()
@@ -1105,11 +1135,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
             if ((playerLifeState != null && !playerLifeState.IsAlive)
                 || (statusEffectController != null && statusEffectController.IsShocked))
             {
-                HasMoveInput = false;
-                IsRunning = false;
-                PlanarVelocity = Vector3.zero;
-                verticalVelocity = 0f;
-                zeroGravityVelocity = Vector3.zero;
+                StopMovementForShock();
                 return;
             }
 
@@ -1161,6 +1187,16 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
             var velocity = PlanarVelocity;
             velocity.y = verticalVelocity;
             characterController.Move(velocity * deltaTime);
+        }
+
+        private void StopMovementForShock()
+        {
+            HasMoveInput = false;
+            IsRunning = false;
+            PlanarVelocity = Vector3.zero;
+            verticalVelocity = 0f;
+            zeroGravityVelocity = Vector3.zero;
+            UpdateLocalThrusterFeedback(false);
         }
 
         private void MoveZeroGravity(Vector2 move, float verticalMove, float lookPitch, bool ascend, bool precision, float deltaTime)

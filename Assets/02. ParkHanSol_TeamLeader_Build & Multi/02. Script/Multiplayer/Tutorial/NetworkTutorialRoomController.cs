@@ -498,8 +498,8 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Tutorial
                 }
 
                 markerCanvas.transform.rotation = Quaternion.LookRotation(
-                    markerCanvas.transform.position
-                    - guidanceCamera.transform.position,
+                    guidanceCamera.transform.position
+                    - markerCanvas.transform.position,
                     guidanceCamera.transform.up);
             }
 

@@ -970,13 +970,6 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Incidents.Fire
                 return false;
             }
 
-            if (accidentCoordinator.FireCoordinator != this)
-            {
-                reason =
-                    "accident_fire_coordinator_reference_mismatch";
-                return false;
-            }
-
             if (areaDamageGateway.gameObject != gameObject)
             {
                 reason =

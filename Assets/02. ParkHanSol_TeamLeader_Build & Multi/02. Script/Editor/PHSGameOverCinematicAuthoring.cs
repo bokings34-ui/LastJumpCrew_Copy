@@ -23,6 +23,8 @@ namespace LastJumpCrew.ParkHanSol.Editor
 
         private const string CarrierPath =
             "Assets/SpecialSkillsEffectsPack/Models/AircraftCarrier_01.fbx";
+        private const string HeroShipPath =
+            "Assets/05. TakHyunJae_Map & MiniGame/03. Prefab/Spaceship_SpaceCrew_Outside.prefab";
         private const string JetPath =
             "Assets/SpecialSkillsEffectsPack/Models/Jet_04.fbx";
         private const string BomberPath =
@@ -104,10 +106,9 @@ namespace LastJumpCrew.ParkHanSol.Editor
                 rimLight.intensity = 1.6f;
 
                 var heroRoot = CreateChild(visualRoot.transform, "HeroShipVisualRoot", Vector3.zero);
-                var hero = InstantiateAsset(CarrierPath, heroRoot.transform, "HeroShip_AircraftCarrier");
+                var hero = InstantiateAsset(HeroShipPath, heroRoot.transform, "HeroShip_SpaceCrew_Outside");
                 hero.transform.localRotation = Quaternion.Euler(-4f, 155f, -3f);
-                hero.transform.localScale = Vector3.one * 1.1f;
-                ReplaceMaterials(hero, heroMaterial);
+                hero.transform.localScale = Vector3.one;
 
                 var enemyRoot = CreateChild(visualRoot.transform, "EnemyFleetRoot", new Vector3(0f, 3f, 52f));
                 CreateFleetMember(CarrierPath, enemyRoot.transform, "EnemyCarrier", new Vector3(0f, 4f, 0f), 0.55f, enemyMaterial);
@@ -412,6 +413,7 @@ namespace LastJumpCrew.ParkHanSol.Editor
             var requiredPaths = new[]
             {
                 CarrierPath,
+                HeroShipPath,
                 JetPath,
                 BomberPath,
                 FleetArrivalPath,
