@@ -1,3 +1,4 @@
+using LastJumpCrew.Common;
 using LastJumpCrew.ParkHanSol.Items;
 using LastJumpCrew.ParkHanSol.Multiplayer;
 using UnityEngine;
@@ -13,7 +14,7 @@ namespace LastJumpCrew.ParkHanSol.Interaction
         private sealed class ItemVisualProfile
         {
             // 이 프로필을 적용할 아이템 데이터다.
-            [SerializeField] private UtilityItemPrefabData itemPrefabData;
+            [SerializeField] private UtilityItemDataSO itemPrefabData;
 
             // visualRoot 기준 로컬 위치다.
             [SerializeField] private Vector3 localPosition;
@@ -24,14 +25,14 @@ namespace LastJumpCrew.ParkHanSol.Interaction
             // visualRoot 기준 표시 크기다.
             [SerializeField, Min(0.001f)] private float localScale = 0.12f;
 
-            public UtilityItemPrefabData ItemPrefabData => itemPrefabData;
+            public UtilityItemDataSO ItemPrefabData => itemPrefabData;
             public Vector3 LocalPosition => localPosition;
             public Vector3 LocalEuler => localEuler;
             public float LocalScale => localScale;
         }
 
         // 현재 슬롯에 보관된 아이템 데이터다. null이면 빈 슬롯이다.
-        [SerializeField] private UtilityItemPrefabData storedItemPrefabData;
+        [SerializeField] private UtilityItemDataSO storedItemPrefabData;
 
         // 보관 아이템 프리뷰가 생성될 부모 Transform이다.
         [SerializeField] private Transform visualRoot;
@@ -66,7 +67,7 @@ namespace LastJumpCrew.ParkHanSol.Interaction
         private int networkSlotIndex = -1;
 
         public string InteractionPrompt => interactionPrompt;
-        public UtilityItemPrefabData InitialStoredItemPrefabData => storedItemPrefabData;
+        public UtilityItemDataSO InitialStoredItemPrefabData => storedItemPrefabData;
         public bool IsNetworkManaged => networkCoordinator != null && networkCoordinator.IsSpawned;
 
         public void BindNetworkCoordinator(
@@ -77,13 +78,13 @@ namespace LastJumpCrew.ParkHanSol.Interaction
             networkSlotIndex = slotIndex;
         }
 
-        public void ApplyNetworkStoredItem(UtilityItemPrefabData itemPrefabData)
+        public void ApplyNetworkStoredItem(UtilityItemDataSO itemPrefabData)
         {
             storedItemPrefabData = itemPrefabData;
             RefreshVisual();
         }
 
-        public bool TryReceiveDelivery(UtilityItemPrefabData itemPrefabData)
+        public bool TryReceiveDelivery(UtilityItemDataSO itemPrefabData)
         {
             if (IsNetworkManaged)
             {
@@ -244,7 +245,7 @@ namespace LastJumpCrew.ParkHanSol.Interaction
             Debug.Log($"PHS_TOOL_BOX_SLOT_TAKEN slot={name} item={itemToHold.ItemId}");
         }
 
-        private void StoreHeldItem(IItemHolder itemHolder, UtilityItemPrefabData heldItem)
+        private void StoreHeldItem(IItemHolder itemHolder, UtilityItemDataSO heldItem)
         {
             // 플레이어 손 아이템을 소비한 뒤 슬롯 데이터로 저장한다.
             if (!itemHolder.TryConsumeHeldItem(heldItem.ItemId))
@@ -258,7 +259,7 @@ namespace LastJumpCrew.ParkHanSol.Interaction
             Debug.Log($"PHS_TOOL_BOX_SLOT_STORED slot={name} item={heldItem.ItemId}");
         }
 
-        private void SwapHeldItem(IItemHolder itemHolder, UtilityItemPrefabData heldItem)
+        private void SwapHeldItem(IItemHolder itemHolder, UtilityItemDataSO heldItem)
         {
             // 슬롯 아이템과 손 아이템을 맞바꾼다. 먼저 손 아이템 소비가 성공해야 슬롯 상태를 바꾼다.
             var itemToHold = storedItemPrefabData;
@@ -298,7 +299,7 @@ namespace LastJumpCrew.ParkHanSol.Interaction
             return true;
         }
 
-        private bool CanDisplayItem(UtilityItemPrefabData itemPrefabData, bool shouldLog = true)
+        private bool CanDisplayItem(UtilityItemDataSO itemPrefabData, bool shouldLog = true)
         {
             // 보관 슬롯 프리뷰는 heldPrefab을 복제해서 보여준다.
             // 따라서 heldPrefab과 UtilityItemObject 연결이 필수다.
@@ -312,7 +313,7 @@ namespace LastJumpCrew.ParkHanSol.Interaction
                 return false;
             }
 
-            if (!itemPrefabData.HasHeldPrefab)
+            if (!itemPrefabData.HasHandPrefab)
             {
                 if (shouldLog)
                 {
@@ -322,7 +323,7 @@ namespace LastJumpCrew.ParkHanSol.Interaction
                 return false;
             }
 
-            if (!itemPrefabData.HeldPrefab.TryGetComponent<UtilityItemObject>(out _))
+            if (!itemPrefabData.HandPrefab.TryGetComponent<UtilityItemObject>(out _))
             {
                 if (shouldLog)
                 {
@@ -361,7 +362,7 @@ namespace LastJumpCrew.ParkHanSol.Interaction
                 return;
             }
 
-            visibleItemInstance = Instantiate(storedItemPrefabData.HeldPrefab, visualRoot);
+            visibleItemInstance = Instantiate(storedItemPrefabData.HandPrefab, visualRoot);
             visibleItemInstance.name = $"{name}_VisibleItem";
             var visualPosition = Vector3.zero;
             var visualEuler = visibleItemLocalEuler;
@@ -407,7 +408,7 @@ namespace LastJumpCrew.ParkHanSol.Interaction
             glowOutlineRoot.SetActive(isActive);
         }
 
-        private bool TryGetVisualProfile(UtilityItemPrefabData itemPrefabData, out ItemVisualProfile profile)
+        private bool TryGetVisualProfile(UtilityItemDataSO itemPrefabData, out ItemVisualProfile profile)
         {
             // 아이템별 프로필이 있으면 기본 위치/회전/크기 대신 해당 값을 사용한다.
             profile = null;

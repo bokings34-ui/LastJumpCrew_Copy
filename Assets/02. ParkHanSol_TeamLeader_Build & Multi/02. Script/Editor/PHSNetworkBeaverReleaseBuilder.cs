@@ -31,7 +31,7 @@ namespace LastJumpCrew.ParkHanSol.Editor
         public static void BuildReleasePlayer()
         {
             ValidateReleaseScenes();
-            PHS0715IntegrationValidator.ValidateOrThrow();
+            PHSIntegratedReleaseValidator.Validate();
 
             var absoluteOutputPath = Path.GetFullPath(OutputPath);
             var outputDirectory = Path.GetDirectoryName(absoluteOutputPath);

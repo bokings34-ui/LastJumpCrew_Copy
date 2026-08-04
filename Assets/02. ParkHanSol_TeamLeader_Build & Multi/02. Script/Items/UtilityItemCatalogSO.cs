@@ -1,3 +1,4 @@
+using LastJumpCrew.Common;
 using System;
 using System.Collections.Generic;
 using UnityEngine;
@@ -9,11 +10,11 @@ namespace LastJumpCrew.ParkHanSol.Items
         menuName = "LastJumpCrew/ParkHanSol/Utility Item Catalog")]
     public sealed class UtilityItemCatalogSO : ScriptableObject
     {
-        [SerializeField] private List<UtilityItemPrefabData> items = new();
+        [SerializeField] private List<UtilityItemDataSO> items = new();
 
-        public IReadOnlyList<UtilityItemPrefabData> Items => items;
+        public IReadOnlyList<UtilityItemDataSO> Items => items;
 
-        public bool TryGetById(string itemId, out UtilityItemPrefabData item)
+        public bool TryGetById(string itemId, out UtilityItemDataSO item)
         {
             item = null;
             if (items == null || string.IsNullOrWhiteSpace(itemId))
@@ -34,7 +35,7 @@ namespace LastJumpCrew.ParkHanSol.Items
             return false;
         }
 
-        public bool Contains(UtilityItemPrefabData item)
+        public bool Contains(UtilityItemDataSO item)
         {
             return item != null && items != null && items.Contains(item);
         }

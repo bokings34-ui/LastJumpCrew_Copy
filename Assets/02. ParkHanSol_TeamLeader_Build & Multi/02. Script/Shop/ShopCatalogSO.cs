@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using LastJumpCrew.Common;
 using LastJumpCrew.ParkHanSol.Items;
 using UnityEngine;
 
@@ -14,7 +15,7 @@ namespace LastJumpCrew.ParkHanSol.Shop
 
         private IReadOnlyList<ShopProductData> orderedProducts = Array.Empty<ShopProductData>();
         private Dictionary<string, ShopProductData> productsByOfferId;
-        private Dictionary<UtilityItemPrefabData, ShopProductData> productsByItemData;
+        private Dictionary<UtilityItemDataSO, ShopProductData> productsByItemData;
         private Dictionary<int, ShopProductData> productsByEconomyItemId;
 
         public IReadOnlyList<ShopProductData> Products
@@ -38,7 +39,7 @@ namespace LastJumpCrew.ParkHanSol.Shop
             return productsByOfferId.TryGetValue(offerId, out product);
         }
 
-        public bool TryGetByItemData(UtilityItemPrefabData itemData, out ShopProductData product)
+        public bool TryGetByItemData(UtilityItemDataSO itemData, out ShopProductData product)
         {
             product = null;
             if (itemData == null)
@@ -83,11 +84,11 @@ namespace LastJumpCrew.ParkHanSol.Shop
         private void RebuildIndexes()
         {
             productsByOfferId = new Dictionary<string, ShopProductData>(StringComparer.Ordinal);
-            productsByItemData = new Dictionary<UtilityItemPrefabData, ShopProductData>();
+            productsByItemData = new Dictionary<UtilityItemDataSO, ShopProductData>();
             productsByEconomyItemId = new Dictionary<int, ShopProductData>();
 
             var duplicateOfferIds = new HashSet<string>(StringComparer.Ordinal);
-            var duplicateItemData = new HashSet<UtilityItemPrefabData>();
+            var duplicateItemData = new HashSet<UtilityItemDataSO>();
             var duplicateEconomyItemIds = new HashSet<int>();
             var sortedProducts = new List<ShopProductData>(products?.Count ?? 0);
 
@@ -136,7 +137,7 @@ namespace LastJumpCrew.ParkHanSol.Shop
                 return;
             }
 
-            if (!itemData.HasHeldPrefab)
+            if (!itemData.HasHandPrefab)
             {
                 Debug.LogError(
                     $"PHS_SHOP_CATALOG_HELD_PREFAB_MISSING catalog={name} index={index} product={product.name} item={itemData.ItemId}",
@@ -188,7 +189,7 @@ namespace LastJumpCrew.ParkHanSol.Shop
         private void IndexItemData(
             ShopProductData product,
             int index,
-            HashSet<UtilityItemPrefabData> duplicateItemData)
+            HashSet<UtilityItemDataSO> duplicateItemData)
         {
             var itemData = product.ItemPrefabData;
             if (itemData == null)

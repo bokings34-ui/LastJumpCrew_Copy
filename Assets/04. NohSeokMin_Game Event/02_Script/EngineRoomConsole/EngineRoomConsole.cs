@@ -4,8 +4,10 @@ using LastJumpCrew.Common;
 
 namespace SM
 {
-    public class EngineRoomConsole : MonoBehaviour, IInteractable, IRequireHeldItem
+    public class EngineRoomConsole : MonoBehaviour, IInteractable, IRequireHeldItem, IRepairable
     {
+        private const string WrenchItemId = "wrench";
+
         [SerializeField] private AudioSource audioSource;
 
         private EngineBreakEvent _boundEvent;
@@ -29,7 +31,7 @@ namespace SM
             }
         }
 
-        public string RequiredItemId { get { return ItemType.Wrench.ToString(); } }
+        public string RequiredItemId { get { return WrenchItemId; } }
 
         public bool IsRequirementMet(IItemHolder itemHolder)
         {
@@ -41,7 +43,7 @@ namespace SM
         public bool CanInteract(IItemHolder itemHolder)
         {
             var evt = EventManager.Instance.GetActiveEvent(EventId.EngineBreak) as EngineBreakEvent;
-            return evt != null;
+            return evt != null && IsRequirementMet(itemHolder);
         }
 
         public void Interact(IItemHolder itemHolder)
@@ -57,7 +59,6 @@ namespace SM
         }
 
         // ===== IRepairable 대응 준비 (팀원 IRepairable.cs main 반영 후 주석 해제) =====
-        /*
         public bool CanRepair
         {
             get
@@ -76,15 +77,21 @@ namespace SM
             }
         }
 
-        public float MaxIntegrity => (_data as EngineBreakEventDataSO)?.maxRepairProgress ?? 0f;
+        public float MaxIntegrity
+        {
+            get
+            {
+                var evt = EventManager.Instance.GetActiveEvent(EventId.EngineBreak) as EngineBreakEvent;
+                return evt?.MaxRepairProgress ?? 0f;
+            }
+        }
 
         public bool ApplyRepair(float amount, GameObject repairer)
         {
-            if (!CanRepair) return false;
+            if (!CanRepair || amount <= 0f) return false;
             ApplyRepairToEngine(amount); // 기존 메서드 재사용
             return true;
         }
-        */
         // ================================================================
     }
 }

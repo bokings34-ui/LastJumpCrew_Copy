@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using LastJumpCrew.Common;
 using LastJumpCrew.ParkHanSol.Interaction;
 using LastJumpCrew.ParkHanSol.Items;
 using LastJumpCrew.ParkHanSol.Multiplayer;
@@ -44,10 +45,10 @@ namespace LastJumpCrew.ParkHanSol.Editor
                 $"catalog={catalog.Items.Count} debrisHeld=5 poses={catalog.Items.Count * 2}");
         }
 
-        private static Dictionary<string, UtilityItemPrefabData> BuildCatalogMap(
+        private static Dictionary<string, UtilityItemDataSO> BuildCatalogMap(
             UtilityItemCatalogSO catalog)
         {
-            var result = new Dictionary<string, UtilityItemPrefabData>(
+            var result = new Dictionary<string, UtilityItemDataSO>(
                 StringComparer.Ordinal);
             foreach (var item in catalog.Items)
             {
@@ -61,10 +62,10 @@ namespace LastJumpCrew.ParkHanSol.Editor
         }
 
         private static void AuthorPose(
-            UtilityItemPrefabData item,
+            UtilityItemDataSO item,
             PHSItemHeldPresentationSpec.ItemPoseSpec spec)
         {
-            var heldPrefab = item.HeldPrefab;
+            var heldPrefab = item.HandPrefab;
             var droppedPrefab = item.DroppedPrefab;
             Require(heldPrefab != null, $"held_prefab_missing item={spec.ItemId}");
             Require(droppedPrefab != null, $"dropped_prefab_missing item={spec.ItemId}");
@@ -79,13 +80,13 @@ namespace LastJumpCrew.ParkHanSol.Editor
             EditorUtility.SetDirty(item);
 
             Require(
-                item.HeldPrefab == heldPrefab && item.DroppedPrefab == droppedPrefab,
+                item.HandPrefab == heldPrefab && item.DroppedPrefab == droppedPrefab,
                 $"prefab_reference_changed item={spec.ItemId}");
         }
 
-        private static void RebuildDebrisHeldPrefab(UtilityItemPrefabData item)
+        private static void RebuildDebrisHeldPrefab(UtilityItemDataSO item)
         {
-            var heldPrefabPath = AssetDatabase.GetAssetPath(item.HeldPrefab);
+            var heldPrefabPath = AssetDatabase.GetAssetPath(item.HandPrefab);
             var droppedPrefabPath = AssetDatabase.GetAssetPath(item.DroppedPrefab);
             Require(
                 heldPrefabPath.Contains("/Debris/Held/", StringComparison.Ordinal),
@@ -97,7 +98,7 @@ namespace LastJumpCrew.ParkHanSol.Editor
                     StringComparison.Ordinal),
                 $"debris_prefab_shared item={item.ItemId}");
 
-            var heldName = item.HeldPrefab.name;
+            var heldName = item.HandPrefab.name;
             var previewScene = EditorSceneManager.NewPreviewScene();
             GameObject heldRoot = null;
             try

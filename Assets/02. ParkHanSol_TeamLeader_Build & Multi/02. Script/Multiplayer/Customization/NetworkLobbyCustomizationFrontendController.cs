@@ -3,7 +3,6 @@ using System.Collections.Generic;
 using TMPro;
 using Unity.Netcode;
 using UnityEngine;
-using UnityEngine.Events;
 using UnityEngine.EventSystems;
 using UnityEngine.UI;
 
@@ -12,32 +11,18 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Customization
     [DisallowMultipleComponent]
     public sealed class NetworkLobbyCustomizationFrontendController : MonoBehaviour
     {
-        private const int RequiredItemRowCount = 6;
-        private const int RequiredColorButtonCount = 6;
-
-        [Serializable]
-        private sealed class ItemRowBinding
+        private enum ItemFilter
         {
-            [SerializeField] private CosmeticItemData item;
-            [SerializeField] private Button previewButton;
-            [SerializeField] private TMP_Text itemLabel;
-            [SerializeField] private TMP_Text priceLabel;
-            [SerializeField] private Button actionButton;
-            [SerializeField] private TMP_Text actionLabel;
-
-            public CosmeticItemData Item => item;
-            public Button PreviewButton => previewButton;
-            public TMP_Text ItemLabel => itemLabel;
-            public TMP_Text PriceLabel => priceLabel;
-            public Button ActionButton => actionButton;
-            public TMP_Text ActionLabel => actionLabel;
+            All,
+            Head,
+            Back,
+            Pet
         }
 
         [Serializable]
         private sealed class ColorButtonBinding
         {
-            [SerializeField] private Color32 color =
-                new Color32(255, 255, 255, 255);
+            [SerializeField] private Color32 color = new(255, 255, 255, 255);
             [SerializeField] private Button button;
             [SerializeField] private Image swatch;
 
@@ -55,23 +40,24 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Customization
         [SerializeField] private LobbyLocalCustomizationService localService;
         [SerializeField] private LobbyCustomizationPreviewPresenter previewPresenter;
         [SerializeField] private EventSystem lobbyEventSystem;
-        [SerializeField] private Button[] blockedLobbyMenuButtons =
-            Array.Empty<Button>();
-        [SerializeField] private ItemRowBinding[] itemRows =
-            Array.Empty<ItemRowBinding>();
-        [SerializeField] private ColorButtonBinding[] colorButtons =
-            Array.Empty<ColorButtonBinding>();
+        [SerializeField] private Button[] blockedLobbyMenuButtons = Array.Empty<Button>();
+        [SerializeField] private RectTransform itemContent;
+        [SerializeField] private LobbyCustomizationItemRowView itemRowTemplate;
+        [SerializeField] private Button allItemsButton;
+        [SerializeField] private Button headItemsButton;
+        [SerializeField] private Button backItemsButton;
+        [SerializeField] private Button petItemsButton;
+        [SerializeField] private ColorButtonBinding[] colorButtons = Array.Empty<ColorButtonBinding>();
         [SerializeField] private Button applyColorButton;
         [SerializeField] private Button unequipHeadButton;
         [SerializeField] private Button unequipBackButton;
         [SerializeField] private Button resetPreviewButton;
 
+        private readonly List<LobbyCustomizationItemRowView> itemRows = new();
         private ILobbyCustomizationService service;
-        private UnityAction[] previewActions;
-        private UnityAction[] itemActions;
-        private UnityAction[] colorActions;
         private bool[] blockedLobbyMenuInteractableStates;
         private bool isLobbyMenuBlocked;
+        private ItemFilter activeFilter;
 
         private void Awake()
         {
@@ -81,6 +67,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Customization
                 return;
             }
 
+            CreateItemRows();
             BindUiActions();
             panelRoot.SetActive(false);
             openButton.gameObject.SetActive(true);
@@ -93,6 +80,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Customization
             RestoreLobbyMenuInteraction();
             UnbindService();
             UnbindUiActions();
+            ClearItemRows();
         }
 
         private void OnDisable()
@@ -119,9 +107,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Customization
             if (!previewPresenter.TryBind(service, out reason))
             {
                 SetStatus($"PREVIEW ERROR: {reason}");
-                Debug.LogError(
-                    $"PHS_NETWORK_LOBBY_CUSTOMIZATION_PREVIEW_FAILED reason={reason}",
-                    this);
+                Debug.LogError($"PHS_NETWORK_LOBBY_CUSTOMIZATION_PREVIEW_FAILED reason={reason}", this);
                 return;
             }
 
@@ -135,8 +121,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Customization
 
         private void ClosePanel()
         {
-            if (service != null
-                && service.IsProfileReady
+            if (service != null && service.IsProfileReady
                 && !service.TryResetPreview(out var reason))
             {
                 SetStatus(reason);
@@ -150,6 +135,52 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Customization
             SelectButton(openButton);
         }
 
+        private void CreateItemRows()
+        {
+            itemRowTemplate.gameObject.SetActive(false);
+            foreach (var item in catalog.Items)
+            {
+                if (item == null)
+                {
+                    Debug.LogError("PHS_NETWORK_LOBBY_CUSTOMIZATION_SETUP_FAILED reason=catalog_item_missing", this);
+                    continue;
+                }
+
+                var row = Instantiate(itemRowTemplate, itemContent);
+                row.name = $"ItemRow_{item.ItemId}";
+                row.gameObject.SetActive(true);
+                row.Bind(item, SelectPreviewItem, RequestItemAction);
+                itemRows.Add(row);
+            }
+        }
+
+        private void ClearItemRows()
+        {
+            foreach (var row in itemRows)
+            {
+                if (row != null)
+                {
+                    row.Clear();
+                }
+            }
+
+            itemRows.Clear();
+        }
+
+        private void SetFilter(ItemFilter filter)
+        {
+            activeFilter = filter;
+            RefreshView();
+        }
+
+        private bool IsVisible(CosmeticItemData item)
+        {
+            return activeFilter == ItemFilter.All
+                || activeFilter == ItemFilter.Head && item.Slot == CosmeticSlot.Head
+                || activeFilter == ItemFilter.Back && item.Slot == CosmeticSlot.Back
+                || activeFilter == ItemFilter.Pet && item.Slot == CosmeticSlot.Pet;
+        }
+
         private void BlockLobbyMenuInteraction()
         {
             if (isLobbyMenuBlocked)
@@ -157,11 +188,8 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Customization
                 return;
             }
 
-            blockedLobbyMenuInteractableStates =
-                new bool[blockedLobbyMenuButtons.Length];
-            for (var index = 0;
-                 index < blockedLobbyMenuButtons.Length;
-                 index++)
+            blockedLobbyMenuInteractableStates = new bool[blockedLobbyMenuButtons.Length];
+            for (var index = 0; index < blockedLobbyMenuButtons.Length; index++)
             {
                 var button = blockedLobbyMenuButtons[index];
                 blockedLobbyMenuInteractableStates[index] = button.interactable;
@@ -178,17 +206,13 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Customization
                 return;
             }
 
-            for (var index = 0;
-                 index < blockedLobbyMenuButtons.Length;
-                 index++)
+            for (var index = 0; index < blockedLobbyMenuButtons.Length; index++)
             {
                 var button = blockedLobbyMenuButtons[index];
-                if (button != null
-                    && blockedLobbyMenuInteractableStates != null
+                if (button != null && blockedLobbyMenuInteractableStates != null
                     && index < blockedLobbyMenuInteractableStates.Length)
                 {
-                    button.interactable =
-                        blockedLobbyMenuInteractableStates[index];
+                    button.interactable = blockedLobbyMenuInteractableStates[index];
                 }
             }
 
@@ -209,9 +233,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Customization
                 ? networkManager.LocalClient?.PlayerObject
                 : null;
             ILobbyCustomizationService resolvedService = null;
-            if (playerObject != null
-                && playerObject.TryGetComponent<NetworkPlayerCustomization>(
-                    out var customization))
+            if (playerObject != null && playerObject.TryGetComponent<NetworkPlayerCustomization>(out var customization))
             {
                 resolvedService = customization;
             }
@@ -223,18 +245,14 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Customization
             if (resolvedService == null)
             {
                 reason = "CUSTOMIZATION SERVICE NOT READY";
-                Debug.LogError(
-                    "PHS_NETWORK_LOBBY_CUSTOMIZATION_BIND_FAILED reason=service_missing",
-                    this);
+                Debug.LogError("PHS_NETWORK_LOBBY_CUSTOMIZATION_BIND_FAILED reason=service_missing", this);
                 return false;
             }
 
             if (resolvedService.Catalog != catalog)
             {
                 reason = "CATALOG MISMATCH";
-                Debug.LogError(
-                    "PHS_NETWORK_LOBBY_CUSTOMIZATION_BIND_FAILED reason=catalog_mismatch",
-                    this);
+                Debug.LogError("PHS_NETWORK_LOBBY_CUSTOMIZATION_BIND_FAILED reason=catalog_mismatch", this);
                 return false;
             }
 
@@ -274,9 +292,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Customization
             if (!previewPresenter.TryRefresh(out var reason))
             {
                 SetStatus($"PREVIEW ERROR: {reason}");
-                Debug.LogError(
-                    $"PHS_NETWORK_LOBBY_CUSTOMIZATION_PREVIEW_FAILED reason={reason}",
-                    this);
+                Debug.LogError($"PHS_NETWORK_LOBBY_CUSTOMIZATION_PREVIEW_FAILED reason={reason}", this);
             }
 
             RefreshView();
@@ -323,9 +339,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Customization
         private void ApplyPreviewColor()
         {
             if (!TryRequireReadyService(out var reason)
-                || !service.TryRequestSetBodyColor(
-                    service.PreviewBodyColor,
-                    out reason))
+                || !service.TryRequestSetBodyColor(service.PreviewBodyColor, out reason))
             {
                 SetStatus(reason);
                 return;
@@ -380,22 +394,14 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Customization
         private void RefreshView()
         {
             var ready = service != null && service.IsProfileReady;
-            creditsLabel.text = ready
-                ? $"CUSTOM CREDITS  {service.CurrentCredits}"
-                : "CUSTOM CREDITS  ---";
+            creditsLabel.text = ready ? $"CUSTOM CREDITS  {service.CurrentCredits}" : "CUSTOM CREDITS  ---";
 
-            for (var index = 0; index < itemRows.Length; index++)
+            foreach (var row in itemRows)
             {
-                var row = itemRows[index];
-                var owned = ready && service.OwnsItem(row.Item.ItemId);
-                var equipped = owned && IsEquipped(row.Item);
-                row.PreviewButton.interactable = ready;
-                row.ActionLabel.text = !owned
-                    ? "BUY"
-                    : equipped
-                        ? "EQUIPPED"
-                        : "EQUIP";
-                row.ActionButton.interactable = ready && !equipped;
+                var item = row.Item;
+                row.gameObject.SetActive(IsVisible(item));
+                var owned = ready && service.OwnsItem(item.ItemId);
+                row.Refresh(ready, owned, owned && IsEquipped(item));
             }
 
             for (var index = 0; index < colorButtons.Length; index++)
@@ -403,26 +409,30 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Customization
                 colorButtons[index].Button.interactable = ready;
             }
 
-            applyColorButton.interactable = ready
-                && !service.PreviewBodyColor.Equals(service.BodyColor);
-            unequipHeadButton.interactable = ready
-                && !string.IsNullOrEmpty(service.EquippedHeadId);
-            unequipBackButton.interactable = ready
-                && !string.IsNullOrEmpty(service.EquippedBackId);
+            applyColorButton.interactable = ready && !service.PreviewBodyColor.Equals(service.BodyColor);
+            unequipHeadButton.interactable = ready && !string.IsNullOrEmpty(service.EquippedHeadId);
+            unequipBackButton.interactable = ready && !string.IsNullOrEmpty(service.EquippedBackId);
             resetPreviewButton.interactable = ready && IsPreviewChanged();
         }
 
         private bool IsEquipped(CosmeticItemData item)
         {
-            return item.Slot == CosmeticSlot.Head
-                ? service.EquippedHeadId == item.ItemId
-                : service.EquippedBackId == item.ItemId;
+            return item.Slot switch
+            {
+                CosmeticSlot.Head => service.EquippedHeadId == item.ItemId,
+                CosmeticSlot.Back => service.EquippedBackId == item.ItemId,
+                CosmeticSlot.Pet => service.EquippedPetId == item.ItemId,
+                CosmeticSlot.Front => service.EquippedFrontId == item.ItemId,
+                _ => false
+            };
         }
 
         private bool IsPreviewChanged()
         {
             return service.PreviewHeadId != service.EquippedHeadId
                 || service.PreviewBackId != service.EquippedBackId
+                || service.PreviewPetId != service.EquippedPetId
+                || service.PreviewFrontId != service.EquippedFrontId
                 || !service.PreviewBodyColor.Equals(service.BodyColor);
         }
 
@@ -430,30 +440,18 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Customization
         {
             openButton.onClick.AddListener(OpenPanel);
             closeButton.onClick.AddListener(ClosePanel);
+            allItemsButton.onClick.AddListener(ShowAllItems);
+            headItemsButton.onClick.AddListener(ShowHeadItems);
+            backItemsButton.onClick.AddListener(ShowBackItems);
+            petItemsButton.onClick.AddListener(ShowPetItems);
             applyColorButton.onClick.AddListener(ApplyPreviewColor);
             unequipHeadButton.onClick.AddListener(RequestUnequipHead);
             unequipBackButton.onClick.AddListener(RequestUnequipBack);
             resetPreviewButton.onClick.AddListener(ResetPreview);
-
-            previewActions = new UnityAction[itemRows.Length];
-            itemActions = new UnityAction[itemRows.Length];
-            for (var index = 0; index < itemRows.Length; index++)
-            {
-                var capturedItem = itemRows[index].Item;
-                previewActions[index] = () => SelectPreviewItem(capturedItem);
-                itemActions[index] = () => RequestItemAction(capturedItem);
-                itemRows[index].PreviewButton.onClick.AddListener(
-                    previewActions[index]);
-                itemRows[index].ActionButton.onClick.AddListener(
-                    itemActions[index]);
-            }
-
-            colorActions = new UnityAction[colorButtons.Length];
             for (var index = 0; index < colorButtons.Length; index++)
             {
-                var capturedColor = colorButtons[index].Color;
-                colorActions[index] = () => SelectPreviewColor(capturedColor);
-                colorButtons[index].Button.onClick.AddListener(colorActions[index]);
+                var color = colorButtons[index].Color;
+                colorButtons[index].Button.onClick.AddListener(() => SelectPreviewColor(color));
             }
         }
 
@@ -461,141 +459,71 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Customization
         {
             if (openButton != null) openButton.onClick.RemoveListener(OpenPanel);
             if (closeButton != null) closeButton.onClick.RemoveListener(ClosePanel);
+            if (allItemsButton != null) allItemsButton.onClick.RemoveListener(ShowAllItems);
+            if (headItemsButton != null) headItemsButton.onClick.RemoveListener(ShowHeadItems);
+            if (backItemsButton != null) backItemsButton.onClick.RemoveListener(ShowBackItems);
+            if (petItemsButton != null) petItemsButton.onClick.RemoveListener(ShowPetItems);
             if (applyColorButton != null) applyColorButton.onClick.RemoveListener(ApplyPreviewColor);
             if (unequipHeadButton != null) unequipHeadButton.onClick.RemoveListener(RequestUnequipHead);
             if (unequipBackButton != null) unequipBackButton.onClick.RemoveListener(RequestUnequipBack);
             if (resetPreviewButton != null) resetPreviewButton.onClick.RemoveListener(ResetPreview);
-
-            if (previewActions != null && itemActions != null)
-            {
-                for (var index = 0; index < itemRows.Length; index++)
-                {
-                    itemRows[index].PreviewButton.onClick.RemoveListener(previewActions[index]);
-                    itemRows[index].ActionButton.onClick.RemoveListener(itemActions[index]);
-                }
-            }
-
-            if (colorActions != null)
-            {
-                for (var index = 0; index < colorButtons.Length; index++)
-                {
-                    colorButtons[index].Button.onClick.RemoveListener(colorActions[index]);
-                }
-            }
         }
 
-        private void RequestUnequipHead()
-        {
-            RequestUnequip(CosmeticSlot.Head);
-        }
-
-        private void RequestUnequipBack()
-        {
-            RequestUnequip(CosmeticSlot.Back);
-        }
+        private void ShowAllItems() => SetFilter(ItemFilter.All);
+        private void ShowHeadItems() => SetFilter(ItemFilter.Head);
+        private void ShowBackItems() => SetFilter(ItemFilter.Back);
+        private void ShowPetItems() => SetFilter(ItemFilter.Pet);
+        private void RequestUnequipHead() => RequestUnequip(CosmeticSlot.Head);
+        private void RequestUnequipBack() => RequestUnequip(CosmeticSlot.Back);
 
         private void SetStatus(string message)
         {
-            statusLabel.text = string.IsNullOrWhiteSpace(message)
-                ? "REQUEST FAILED"
-                : message;
+            statusLabel.text = string.IsNullOrWhiteSpace(message) ? "REQUEST FAILED" : message;
         }
 
         private bool ValidateSetup()
         {
-            if (catalog == null
-                || panelRoot == null
-                || openButton == null
-                || closeButton == null
-                || creditsLabel == null
-                || statusLabel == null
-                || localService == null
-                || previewPresenter == null
-                || lobbyEventSystem == null
-                || blockedLobbyMenuButtons == null
-                || blockedLobbyMenuButtons.Length != 4
+            if (catalog == null || panelRoot == null
+                || openButton == null || closeButton == null || creditsLabel == null
+                || statusLabel == null || localService == null || previewPresenter == null
+                || lobbyEventSystem == null || blockedLobbyMenuButtons == null
+                || itemContent == null || itemRowTemplate == null || allItemsButton == null
+                || headItemsButton == null || backItemsButton == null || petItemsButton == null
                 || applyColorButton == null
-                || unequipHeadButton == null
-                || unequipBackButton == null
-                || resetPreviewButton == null
-                || itemRows == null
-                || itemRows.Length != RequiredItemRowCount
-                || colorButtons == null
-                || colorButtons.Length != RequiredColorButtonCount)
+                || unequipHeadButton == null || unequipBackButton == null || resetPreviewButton == null
+                || colorButtons == null || colorButtons.Length == 0)
             {
-                return FailSetup("root_reference_or_count_invalid");
+                return FailSetup("root_reference_missing");
             }
 
             var blockedButtons = new HashSet<Button>();
-            for (var index = 0;
-                 index < blockedLobbyMenuButtons.Length;
-                 index++)
+            foreach (var button in blockedLobbyMenuButtons)
             {
-                if (blockedLobbyMenuButtons[index] == null
-                    || !blockedButtons.Add(blockedLobbyMenuButtons[index]))
+                if (button == null || !blockedButtons.Add(button))
                 {
-                    return FailSetup(
-                        $"blocked_lobby_menu_button_invalid:index={index}");
+                    return FailSetup("blocked_lobby_menu_button_invalid");
                 }
             }
 
-            if (catalog.Items.Count != RequiredItemRowCount
-                || catalog.AllowedBodyColors.Count != RequiredColorButtonCount)
+            foreach (var binding in colorButtons)
             {
-                return FailSetup("catalog_count_invalid");
-            }
-
-            var itemIds = new HashSet<string>(StringComparer.Ordinal);
-            for (var index = 0; index < itemRows.Length; index++)
-            {
-                var row = itemRows[index];
-                if (row == null
-                    || row.Item == null
-                    || row.PreviewButton == null
-                    || row.ItemLabel == null
-                    || row.PriceLabel == null
-                    || row.ActionButton == null
-                    || row.ActionLabel == null
-                    || !itemIds.Add(row.Item.ItemId)
-                    || !catalog.TryGetItem(row.Item.ItemId, out var catalogItem)
-                    || catalogItem != row.Item)
+                if (binding == null || binding.Button == null || binding.Swatch == null
+                    || !catalog.IsBodyColorAllowed(binding.Color))
                 {
-                    return FailSetup($"item_row_invalid:index={index}");
-                }
-
-                row.ItemLabel.text = row.Item.DisplayName;
-                row.PriceLabel.text = row.Item.Price.ToString();
-            }
-
-            var colors = new HashSet<Color32>();
-            for (var index = 0; index < colorButtons.Length; index++)
-            {
-                var binding = colorButtons[index];
-                if (binding == null
-                    || binding.Button == null
-                    || binding.Swatch == null
-                    || !catalog.IsBodyColorAllowed(binding.Color)
-                    || !colors.Add(binding.Color))
-                {
-                    return FailSetup($"color_binding_invalid:index={index}");
+                    return FailSetup("color_binding_invalid");
                 }
 
                 binding.Swatch.color = binding.Color;
             }
 
-            if (!previewPresenter.ValidateCatalog(catalog, out var reason))
-            {
-                return FailSetup(reason);
-            }
-
-            return true;
+            return previewPresenter.ValidateCatalog(catalog, out var reason)
+                ? true
+                : FailSetup(reason);
         }
 
         private bool FailSetup(string reason)
         {
-            Debug.LogError(
-                $"PHS_NETWORK_LOBBY_CUSTOMIZATION_SETUP_FAILED reason={reason}",
-                this);
+            Debug.LogError($"PHS_NETWORK_LOBBY_CUSTOMIZATION_SETUP_FAILED reason={reason}", this);
             return false;
         }
     }

@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using LastJumpCrew.Common;
 using LastJumpCrew.ParkHanSol.Items;
 using Unity.Collections;
 using Unity.Netcode;
@@ -180,7 +181,7 @@ namespace LastJumpCrew.ParkHanSol.Shop
 
             var requestIds = new HashSet<string>(StringComparer.Ordinal);
             var onePerVisitOfferIds = new HashSet<string>(StringComparer.Ordinal);
-            var deliveryItems = new List<UtilityItemPrefabData>(requests.Count);
+            var deliveryItems = new List<UtilityItemDataSO>(requests.Count);
             var transactionDeliveries =
                 new List<ShopPurchaseDeliveryRequest>(requests.Count);
             var totalPrice = 0;
