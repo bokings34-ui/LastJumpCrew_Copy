@@ -55,7 +55,17 @@ namespace LastJumpCrew.ParkHanSol.Items
                     PHSItemUseActionKind.Battery,
                     () =>
                     {
-                        holder.Drop();
+                        var combat = holderComponent.GetComponent<
+                            NetworkPlayerCombatController>();
+                        if (combat == null)
+                        {
+                            Debug.LogError(
+                                $"PHS_BATTERY_ATTACK_FAILED reason=combat_controller_missing player={holderComponent.name}",
+                                holderComponent);
+                            return;
+                        }
+
+                        combat.RequestBatteryThrow();
                     }))
             {
                 return;

@@ -535,6 +535,13 @@ namespace LastJumpCrew.ParkHanSol.Interaction
                 return;
             }
 
+            var heldItemData = GetComponent<TempPlayerItemHolder>()?.CurrentItemPrefabData;
+            if (heldItemData != null && heldItemData.ItemId == "battery_pack")
+            {
+                combatController.RequestBatteryThrow();
+                return;
+            }
+
             combatController.RequestThrowHeldItem(heldDuration);
         }
         

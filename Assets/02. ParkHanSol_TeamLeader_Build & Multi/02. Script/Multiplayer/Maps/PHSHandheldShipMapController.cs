@@ -171,8 +171,6 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Maps
             markers.Clear();
             eventDetails.Clear();
             AppendPlayerMarkers(layout);
-            AppendObjectMarkers(layout);
-            AppendFloorItemMarkers(layout);
             AppendEventMarkers(layout);
             AppendAccidentMarkers(layout);
 
