@@ -117,9 +117,41 @@ namespace LastJumpCrew.ParkHanSol.Editor
             Require(
                 networkManager.NetworkConfig.Prefabs?.NetworkPrefabsLists?.Count > 0,
                 "lobby_network_prefab_list_missing");
+            var menuControllers = roots
+                .SelectMany(root => root.GetComponentsInChildren<ParkHanSolLobbyMenuController>(true))
+                .ToArray();
+            Require(menuControllers.Length == 1, "lobby_menu_controller_invalid");
+            var menuController = menuControllers[0];
+            var lobbyCanvas = menuController.GetComponentInParent<Canvas>();
             Require(
-                roots.SelectMany(root => root.GetComponentsInChildren<ParkHanSolLobbyMenuController>(true)).Count() == 1,
-                "lobby_menu_controller_invalid");
+                lobbyCanvas != null
+                && lobbyCanvas.enabled
+                && lobbyCanvas.gameObject.activeInHierarchy,
+                "lobby_canvas_inactive");
+            var canvasScale = lobbyCanvas.transform.localScale;
+            Require(
+                Mathf.Abs(canvasScale.x) > 0.001f
+                && Mathf.Abs(canvasScale.y) > 0.001f
+                && Mathf.Abs(canvasScale.z) > 0.001f,
+                $"lobby_canvas_scale_invalid:{canvasScale}");
+            var menu = new SerializedObject(menuController);
+            RequireReferences(
+                menu,
+                "startPanel",
+                "lobbyPanel",
+                "roomPanel",
+                "settingsPanel",
+                "startButton");
+            var startPanel = menu.FindProperty("startPanel").objectReferenceValue as GameObject;
+            Require(startPanel != null && startPanel.activeSelf, "lobby_start_panel_inactive");
+            var startTitle = startPanel.transform.Find("Title");
+            var startButtons = startPanel.transform.Find("lobby");
+            Require(
+                startTitle != null && startTitle.gameObject.activeSelf,
+                "lobby_start_title_inactive");
+            Require(
+                startButtons != null && startButtons.gameObject.activeSelf,
+                "lobby_start_buttons_inactive");
 
             var frontends = roots
                 .SelectMany(root => root.GetComponentsInChildren<NetworkLobbyCustomizationFrontendController>(true))
