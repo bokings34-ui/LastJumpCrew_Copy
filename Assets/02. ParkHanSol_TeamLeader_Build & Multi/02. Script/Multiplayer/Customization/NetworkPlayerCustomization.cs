@@ -296,7 +296,9 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Customization
                 Debug.LogError($"PHS_COSMETIC_PURCHASE_FAILED reason=owner_or_catalog_invalid player={name}", this);
                 return;
             }
-            if (Owns(item.ItemId) || !personalCreditsWallet.TrySpendCreditsServer(item.Price)) return;
+            if (Owns(item.ItemId)
+                || item.Price < 0
+                || (item.Price > 0 && !personalCreditsWallet.TrySpendCreditsServer(item.Price))) return;
             ownedItemIds.Add(itemId);
             Debug.Log($"PHS_COSMETIC_PURCHASED player={name} item={item.ItemId}", this);
         }
@@ -451,6 +453,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Customization
         {
             if (currentVisual != null) Destroy(currentVisual);
             currentVisual = null;
+            if (IsOwner && slot != CosmeticSlot.Pet) return;
             if (string.IsNullOrEmpty(itemId)) return;
             if (!catalog.TryGetItem(itemId, out var item) || item.Slot != slot || item.VisualPrefab == null)
             {

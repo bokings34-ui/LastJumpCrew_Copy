@@ -17,6 +17,44 @@ namespace SM
             _players.Remove(player);
         }
 
+        public bool Contains(Transform player)
+        {
+            return _players.Contains(player);
+        }
+
+        public Transform GetRandomActivePlayer()
+        {
+            var activeCount = 0;
+            foreach (var player in _players)
+            {
+                if (player != null && player.gameObject.activeInHierarchy)
+                {
+                    activeCount++;
+                }
+            }
+
+            if (activeCount == 0)
+            {
+                return null;
+            }
+
+            var selectedIndex = Random.Range(0, activeCount);
+            foreach (var player in _players)
+            {
+                if (player == null || !player.gameObject.activeInHierarchy)
+                {
+                    continue;
+                }
+
+                if (selectedIndex-- == 0)
+                {
+                    return player;
+                }
+            }
+
+            return null;
+        }
+
         public Transform GetNearestPlayer(Vector3 fromPosition)
         {
             Transform closest = null;

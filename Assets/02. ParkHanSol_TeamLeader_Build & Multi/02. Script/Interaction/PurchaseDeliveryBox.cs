@@ -12,6 +12,8 @@ namespace LastJumpCrew.ParkHanSol.Interaction
     [RequireComponent(typeof(NetworkObject))]
     public sealed class PurchaseDeliveryBox : NetworkBehaviour
     {
+        public static PurchaseDeliveryBox Instance { get; private set; }
+
         [SerializeField] private ShopCatalogSO catalog;
         [SerializeField] private UtilityToolBoxStorageSlotInteractable[] deliverySlots;
         [SerializeField] private Transform[] overflowDropPoints;
@@ -31,6 +33,26 @@ namespace LastJumpCrew.ParkHanSol.Interaction
             if (networkManager == null || !networkManager.IsListening)
             {
                 DeliverPendingItems();
+            }
+        }
+
+        private void Awake()
+        {
+            if (Instance != null && Instance != this)
+            {
+                Debug.LogError($"PHS_PURCHASE_DELIVERY_SETUP_FAILED reason=duplicate_delivery_box box={name}", this);
+                enabled = false;
+                return;
+            }
+
+            Instance = this;
+        }
+
+        private void OnDestroy()
+        {
+            if (Instance == this)
+            {
+                Instance = null;
             }
         }
 
@@ -81,6 +103,17 @@ namespace LastJumpCrew.ParkHanSol.Interaction
             deliveredItemIds.Add(new FixedString64Bytes(itemPrefabData.ItemId));
             appliedNetworkDeliveryCount = deliveredItemIds.Count;
             return true;
+        }
+
+        public void DeliverPendingItemsServer()
+        {
+            if (!IsSpawned || !IsServer)
+            {
+                Debug.LogError($"PHS_PURCHASE_DELIVERY_FAILED reason=server_required box={name}", this);
+                return;
+            }
+
+            DeliverNetworkLedgerItems();
         }
 
         private void DeliverPendingItems()
