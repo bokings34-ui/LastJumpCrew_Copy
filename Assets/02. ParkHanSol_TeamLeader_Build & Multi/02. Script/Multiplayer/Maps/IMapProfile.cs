@@ -16,12 +16,26 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Maps
         DedicatedSceneGameplayWithProfileArrival = 1
     }
 
+    public enum PHSMapDifficultyTier : byte
+    {
+        Easy = 1,
+        Normal = 2,
+        Hard = 3
+    }
+
     public interface IMapProfile
     {
         int MapId { get; }
         string DisplayName { get; }
         bool Selectable { get; }
         int Difficulty { get; }
+        PHSMapDifficultyTier DifficultyTier { get; }
+        string DifficultyLabel { get; }
+        float DifficultyIntervalMultiplier { get; }
+        float DifficultyDamageMultiplier { get; }
+        float DifficultyRewardMultiplier { get; }
+        int DebrisAmount { get; }
+        string DebrisAmountLabel { get; }
         float StageTimeLimitSeconds { get; }
         int ClearRewardCredits { get; }
         bool IsWarpMaintenance { get; }

@@ -66,4 +66,48 @@ namespace SM
 
         bool TryGetPowerOffState(out bool isPowerOff);
     }
+
+    /// <summary>
+    /// Server-authoritative lifecycle metadata and repair progress publication.
+    /// Event implementations may use this optional bridge without changing the
+    /// base lifecycle contract.
+    /// </summary>
+    public interface IEventProgressRuntimeBridge
+    {
+        bool BindEventIncidentContextServer(
+            ulong instanceId,
+            ulong commandId,
+            string locationId);
+
+        bool PublishEventProgressServer(
+            ulong instanceId,
+            float progress,
+            float requiredProgress);
+    }
+
+    public interface IShipModuleEventRuntimeBridge
+    {
+        bool TryConfigureShipModuleImpactServer(
+            float moduleDamageMultiplier,
+            float shipDamageMultiplier,
+            out string reason);
+
+        bool TryApplyInitialImpact(
+            ulong eventInstanceId,
+            EventId eventId,
+            ShipModuleEventDataSO data,
+            out string reason);
+
+        bool TryApplyPeriodicImpact(
+            ulong eventInstanceId,
+            EventId eventId,
+            ShipModuleEventDataSO data,
+            out string reason);
+
+        bool TryApplyResolveRepair(
+            ulong eventInstanceId,
+            EventId eventId,
+            ShipModuleEventDataSO data,
+            out string reason);
+    }
 }

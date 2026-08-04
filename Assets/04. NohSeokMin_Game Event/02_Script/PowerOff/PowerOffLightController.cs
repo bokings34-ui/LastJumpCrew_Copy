@@ -1,39 +1,37 @@
 using UnityEngine;
-using UnityEngine.Rendering;
 
 namespace SM
 {
     public class PowerOffLightController : MonoBehaviour
     {
-        [Header("전력 차단 시 활성화할 어둠 Volume")]
-        [SerializeField] private Volume powerOffVolume;
+        [SerializeField, Range(0f, 1f)] private float lowIntensity = 0.1f;
+        [SerializeField] private float transitionSpeed = 1f;
 
-        [Header("전환 속도")]
-        [SerializeField] private float transitionSpeed = 3f;
+        private float _normalIntensity;
+        private float _targetIntensity;
 
-        private bool _isPowerOff;
-        private float _targetWeight;
+        private void Awake()
+        {
+            _normalIntensity = RenderSettings.ambientIntensity; // 시작 시점 값을 그대로 기억
+            _targetIntensity = _normalIntensity;
+        }
 
         private void Update()
         {
-            var currentEvent = EventManager.Instance.GetActiveEvent(EventId.PowerOff) as PowerOffEvent;
-            bool shouldBeOff = currentEvent != null && currentEvent.IsPowerOffActive;
+            var evt = EventManager.Instance.GetActiveEvent(EventId.PowerOff) as PowerOffEvent;
+            bool shouldBeOff = evt != null && evt.IsPowerOffActive;
 
-            if (shouldBeOff != _isPowerOff)
-            {
-                _isPowerOff = shouldBeOff;
-                _targetWeight = shouldBeOff ? 1f : 0f;
+            _targetIntensity = shouldBeOff ? lowIntensity : _normalIntensity;
 
-                if (shouldBeOff)
-                    Debug.Log("<color=yellow>[PowerOffLightController]</color> 화면 어둡게 전환 시작.");
-                else
-                    Debug.Log("<color=lime>[PowerOffLightController]</color> 화면 밝기 복구 시작.");
-            }
+            RenderSettings.ambientIntensity = Mathf.MoveTowards(
+                RenderSettings.ambientIntensity,
+                _targetIntensity,
+                transitionSpeed * Time.deltaTime);
+        }
 
-            if (powerOffVolume != null)
-            {
-                powerOffVolume.weight = Mathf.MoveTowards(powerOffVolume.weight, _targetWeight, transitionSpeed * Time.deltaTime);
-            }
+        private void OnDisable()
+        {
+            RenderSettings.ambientIntensity = _normalIntensity; // 비활성화 시 강제 복구
         }
     }
 }

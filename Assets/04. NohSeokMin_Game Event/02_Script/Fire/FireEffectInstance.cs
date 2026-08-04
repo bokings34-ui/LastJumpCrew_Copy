@@ -12,7 +12,8 @@ namespace SM
         IInteractable,
         IRequireHeldItem,
         IEventRepairableEffect,
-        IUtilityAttackTarget
+        IUtilityAttackTarget,
+        IRepairable
     {
         private const string FireExtinguisherItemId = "fire_extinguisher";
 
@@ -213,13 +214,12 @@ namespace SM
             return true;
         }
 
-        // ===== IRepairable 대응 준비 (팀원 IRepairable.cs main 반영 후 주석 해제) =====
-        /*
-        public bool CanRepair => !IsSealed;
+        // _____ IRepairable _____
+        public bool CanRepair => !IsRepaired;
 
         public float CurrentIntegrity => _repairProgress;
 
-        public float MaxIntegrity => maxRepairProgress;
+        public float MaxIntegrity => _maxRepairProgress;
 
         public bool ApplyRepair(float amount, GameObject repairer)
         {
@@ -227,7 +227,5 @@ namespace SM
             ApplyRepair(amount); // 기존 ApplyRepair(float) 재사용
             return true;
         }
-        */
-        // ================================================================
     }
 }

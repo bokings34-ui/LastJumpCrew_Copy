@@ -341,7 +341,15 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
                     ProcessExternalCommand(command);
                     return;
                 case NetworkRunIncidentChannel.Internal:
-                    ProcessInternalCommand(command);
+                    if (command.PayloadKind
+                        == NetworkRunIncidentPayloadKind.EventManagerEvent)
+                    {
+                        ProcessExternalCommand(command);
+                    }
+                    else
+                    {
+                        ProcessInternalCommand(command);
+                    }
                     return;
                 default:
                     CancelPendingCommand(command.CommandId, "channel_invalid");
@@ -373,12 +381,20 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
                 return;
             }
 
-            if (!TryResolveExternalRoom(
+            var roomResolved = command.Channel == NetworkRunIncidentChannel.Internal
+                ? TryResolveInternalEventRoom(
                     command,
                     out var room,
                     out var resolvedTargetId,
                     out var managedLocationId,
-                    out var roomReason))
+                    out var roomReason)
+                : TryResolveExternalRoom(
+                    command,
+                    out room,
+                    out resolvedTargetId,
+                    out managedLocationId,
+                    out roomReason);
+            if (!roomResolved)
             {
                 Debug.LogWarning(
                     $"PHS_INCIDENT_CONSUME_FAILED command={command.CommandId} " +
@@ -487,8 +503,19 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
                 return;
             }
 
+            if (!eventCoordinator.BindEventIncidentContextServer(
+                    runtimeInstanceId,
+                    claimed.CommandId,
+                    resolvedTargetId))
+            {
+                Debug.LogError(
+                    $"PHS_INCIDENT_EVENT_SNAPSHOT_BIND_FAILED command={claimed.CommandId} " +
+                    $"runtime={runtimeInstanceId} location={resolvedTargetId}",
+                    this);
+            }
+
             Debug.Log(
-                $"PHS_INCIDENT_EXTERNAL_ACTIVATED command={claimed.CommandId} " +
+                $"PHS_INCIDENT_EVENT_ACTIVATED command={claimed.CommandId} " +
                 $"runtime={runtimeInstanceId} event={eventId} room={room.RoomId}",
                 this);
 
@@ -1496,6 +1523,94 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
             return true;
         }
 
+        private bool TryResolveInternalEventRoom(
+            in NetworkRunIncidentCommand command,
+            out ShipRoom room,
+            out string resolvedTargetId,
+            out string managedLocationId,
+            out string reason)
+        {
+            room = null;
+            if (!TryResolveInternalAnchorId(
+                    command,
+                    out var anchorId,
+                    out resolvedTargetId,
+                    out managedLocationId,
+                    out reason))
+            {
+                return false;
+            }
+
+            Transform targetTransform = null;
+            if (incidentLayout != null
+                && incidentLayout.TryResolveAnchor(
+                    resolvedTargetId,
+                    out var locationAnchor))
+            {
+                targetTransform = locationAnchor.transform;
+                if (locationAnchor.RuntimeTarget is PHSShipAccidentAnchor accidentAnchor)
+                {
+                    targetTransform = accidentAnchor.transform;
+                }
+            }
+
+            if (targetTransform == null)
+            {
+                var anchors = FindObjectsByType<PHSShipAccidentAnchor>(
+                    FindObjectsInactive.Include,
+                    FindObjectsSortMode.None);
+                foreach (var candidate in anchors)
+                {
+                    if (candidate != null
+                        && string.Equals(
+                            candidate.AnchorId,
+                            anchorId,
+                            StringComparison.Ordinal))
+                    {
+                        targetTransform = candidate.transform;
+                        break;
+                    }
+                }
+            }
+
+            if (targetTransform != null)
+            {
+                room = targetTransform.GetComponentInParent<ShipRoom>(true);
+            }
+
+            if (room == null && configuredRooms.Length > 0)
+            {
+                room = configuredRooms[0];
+                if (targetTransform != null)
+                {
+                    var bestDistance =
+                        (room.transform.position - targetTransform.position)
+                        .sqrMagnitude;
+                    for (var index = 1; index < configuredRooms.Length; index++)
+                    {
+                        var candidate = configuredRooms[index];
+                        var distance =
+                            (candidate.transform.position - targetTransform.position)
+                            .sqrMagnitude;
+                        if (distance < bestDistance)
+                        {
+                            room = candidate;
+                            bestDistance = distance;
+                        }
+                    }
+                }
+            }
+
+            if (room == null)
+            {
+                reason = $"internal_event_room_missing:{anchorId}";
+                return false;
+            }
+
+            reason = null;
+            return true;
+        }
+
         private bool TrySelectLayoutLocation(
             in NetworkRunIncidentCommand command,
             PHSDeterministicRandom random,
@@ -1581,10 +1696,20 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
                     ? IncidentLocationCapability.HazardArea
                         | IncidentLocationCapability.FirePropagation
                     : IncidentLocationCapability.None;
+            var locationContentId = command.ContentId;
+            if (command.Channel == NetworkRunIncidentChannel.Internal
+                && command.PayloadKind
+                    == NetworkRunIncidentPayloadKind.EventManagerEvent)
+            {
+                IncidentRequestContentContract.TryMapEventToLegacyAccident(
+                    command.ContentId,
+                    out locationContentId);
+            }
+
             return new IncidentLocationQuery(
                 command.Channel,
                 command.IncidentFamily,
-                command.ContentId,
+                locationContentId,
                 NetworkShipModuleId.None,
                 IncidentLocationKind.None,
                 requiredCapabilities,

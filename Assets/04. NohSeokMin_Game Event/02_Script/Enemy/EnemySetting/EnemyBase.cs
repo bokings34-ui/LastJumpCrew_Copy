@@ -241,6 +241,17 @@ namespace SM
             }
         }
 
+        public void OnAttackHitFrame()
+        {
+            var target = GetTarget();
+            if (target == null) return;
+
+            if (GetDistanceToTarget(target) > AttackRange * 1.5f) return;
+
+            PerformAttack(target);
+            PlayAttackSound();
+        }
+
         protected virtual void OnDrawGizmosSelected()
         {
             Gizmos.color = Color.red;
