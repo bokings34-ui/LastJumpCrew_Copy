@@ -1781,6 +1781,55 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Validation
                 yield break;
             }
 
+            if (!succeeded)
+            {
+                if (!PHSShipEventImpactAdapter.TryGetFailureConsequence(
+                        validationCase.ExternalEventId,
+                        out var delegatedConsequenceEventId))
+                {
+                    Fail(
+                        $"p1_minigame_delegated_consequence_mapping_missing " +
+                        $"event={validationCase.ExternalEventId}");
+                    yield break;
+                }
+
+                var delegatedConsequence =
+                    eventManager.GetActiveEvent(delegatedConsequenceEventId);
+                if (delegatedConsequence == null
+                    || delegatedConsequence.InstanceId == 0UL)
+                {
+                    Fail(
+                        $"p1_minigame_delegated_consequence_not_active " +
+                        $"event={validationCase.ExternalEventId} " +
+                        $"consequence={delegatedConsequenceEventId}");
+                    yield break;
+                }
+
+                var delegatedConsequenceInstanceId =
+                    delegatedConsequence.InstanceId;
+                delegatedConsequence.ForceTerminate();
+                yield return WaitFor(
+                    () => !eventCoordinator.TryGetSnapshot(
+                              delegatedConsequenceInstanceId,
+                              out _)
+                        && !eventManager.IsInstanceActive(
+                            delegatedConsequenceInstanceId),
+                    5f,
+                    $"p1_minigame_delegated_consequence_cleanup_incomplete " +
+                    $"event={validationCase.ExternalEventId} " +
+                    $"consequence={delegatedConsequenceEventId} " +
+                    $"instance={delegatedConsequenceInstanceId}");
+                if (scenarioFinished) yield break;
+
+                Debug.Log(
+                    $"PHS_P1_MINIGAME_DELEGATED_CONSEQUENCE_OK " +
+                    $"event={validationCase.ExternalEventId} " +
+                    $"consequence={delegatedConsequenceEventId} " +
+                    $"instance={delegatedConsequenceInstanceId} " +
+                    $"spawned=true removed=true",
+                    this);
+            }
+
             if (succeeded)
             {
                 yield return WaitFor(
@@ -1813,6 +1862,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Validation
             }
 
             NetworkShipAccidentSnapshot consequenceAccident = default;
+            EventBase consequenceEvent = null;
             yield return WaitFor(
                 () => incidentLedger.TryGetCommand(
                         parentCommand.CommandId,
@@ -1826,10 +1876,14 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Validation
                     && consequence.State
                         == NetworkRunIncidentCommandState.Active
                     && consequence.RuntimeInstanceId != 0UL
-                    && TryGetActiveAccidentForEvent(
-                        accidentCoordinator,
-                        consequence.ContentId,
-                        out consequenceAccident),
+                    && (TryGetActiveAccidentForEvent(
+                            accidentCoordinator,
+                            consequence.ContentId,
+                            out consequenceAccident)
+                        || TryGetActiveEventForCommand(
+                            eventManager,
+                            in consequence,
+                            out consequenceEvent)),
                 DefaultStepTimeout,
                 $"p1_minigame_consequence_not_active " +
                 $"parent={parentCommand.CommandId}");
@@ -1889,7 +1943,8 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Validation
                 synchronizedIncidentSignature);
             if (scenarioFinished) yield break;
 
-            if (!accidentCoordinator.TryTerminateAccidentServer(
+            if (consequenceAccident.InstanceId != 0U
+                && !accidentCoordinator.TryTerminateAccidentServer(
                     consequenceAccident.InstanceId,
                     "p1_minigame_consequence_cleanup",
                     out var terminateReason))
@@ -1901,15 +1956,23 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Validation
                 yield break;
             }
 
+            if (consequenceAccident.InstanceId == 0U)
+            {
+                consequenceEvent.ForceTerminate();
+            }
+
             yield return WaitFor(
                 () => incidentLedger.TryGetCommand(
                         consequenceCommand.CommandId,
                         out var terminatedConsequence)
                     && terminatedConsequence.IsTerminal
-                    && !HasActiveAccident(
-                        accidentCoordinator,
-                        consequenceAccident.InstanceId,
-                        (int)consequenceAccident.AccidentId),
+                    && (consequenceAccident.InstanceId == 0U
+                        ? !eventManager.IsInstanceActive(
+                            consequenceCommand.RuntimeInstanceId)
+                        : !HasActiveAccident(
+                            accidentCoordinator,
+                            consequenceAccident.InstanceId,
+                            (int)consequenceAccident.AccidentId)),
                 5f,
                 $"p1_minigame_consequence_cleanup_incomplete " +
                 $"command={consequenceCommand.CommandId}");
@@ -2039,6 +2102,24 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Validation
             }
 
             return false;
+        }
+
+        private static bool TryGetActiveEventForCommand(
+            EventManager eventManager,
+            in NetworkRunIncidentCommand command,
+            out EventBase activeEvent)
+        {
+            activeEvent = null;
+            if (eventManager == null
+                || command.ContentId != IncidentRequestContentContract.FireEventId)
+            {
+                return false;
+            }
+
+            activeEvent = eventManager.GetActiveEvent((EventId)command.ContentId);
+            return activeEvent != null
+                && activeEvent.InstanceId == command.RuntimeInstanceId
+                && activeEvent.State == EventState.InProgress;
         }
 
         private bool HasAvailableExternalMiniGameLocation(
@@ -4484,11 +4565,17 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Validation
                 yield break;
             }
 
-            SetPlayerPosition(
-                playerObject,
-                playerObject.transform.position
-                    + sellTrigger.bounds.center
-                    - heldPresentation.position);
+            var heldCollider = heldPresentation.GetComponentInChildren<Collider>();
+            if (heldCollider == null || !heldCollider.enabled)
+            {
+                Fail($"debris_sale_held_collider_missing item={itemId}");
+                yield break;
+            }
+
+            SetPlayerPosition(playerObject, sellTrigger.bounds.center);
+            heldPresentation.position = sellTrigger.bounds.center;
+            Physics.SyncTransforms();
+            yield return new WaitForFixedUpdate();
             yield return WaitFor(
                 () => wallet.Credits == creditsBefore + itemValue &&
                     string.IsNullOrEmpty(itemRecord.HeldItemId) &&

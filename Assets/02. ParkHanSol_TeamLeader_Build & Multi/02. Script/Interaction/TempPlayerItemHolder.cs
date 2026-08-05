@@ -655,7 +655,8 @@ namespace LastJumpCrew.ParkHanSol.Interaction
                 heldDebrisColliderStates[index] = heldDebrisColliders[index].enabled;
 
                 heldDebrisTriggerStates[index] = heldDebrisColliders[index].isTrigger;
-          
+
+                heldDebrisColliders[index].enabled = true;
                 heldDebrisColliders[index].isTrigger = true;
             }
         }
