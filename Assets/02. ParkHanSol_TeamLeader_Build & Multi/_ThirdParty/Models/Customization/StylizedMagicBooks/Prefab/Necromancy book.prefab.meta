@@ -1,14 +1,7 @@
 fileFormatVersion: 2
-guid: 0cb64da8b68eb7c4aa49f4cc02ca6db7
+guid: 0b225e14fefcd6d4593746f71876043f
 PrefabImporter:
   externalObjects: {}
   userData: 
   assetBundleName: 
   assetBundleVariant: 
-AssetOrigin:
-  serializedVersion: 1
-  productId: 346902
-  packageName: Stylized magic books
-  packageVersion: 1.0
-  assetPath: Assets/GreyratsLab/Stylized magic books/Prefab/Necromancy book.prefab
-  uploadId: 829010

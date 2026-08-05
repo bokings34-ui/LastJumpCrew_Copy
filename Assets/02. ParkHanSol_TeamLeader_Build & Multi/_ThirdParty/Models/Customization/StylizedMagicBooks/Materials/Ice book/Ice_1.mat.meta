@@ -1,15 +1,8 @@
 fileFormatVersion: 2
-guid: 74e7488517ab26047a8ace599bf53623
+guid: 0fe48bb65ee635d49b02b23c967d286c
 NativeFormatImporter:
   externalObjects: {}
-  mainObjectFileID: 2100000
+  mainObjectFileID: 0
   userData: 
   assetBundleName: 
   assetBundleVariant: 
-AssetOrigin:
-  serializedVersion: 1
-  productId: 346902
-  packageName: Stylized magic books
-  packageVersion: 1.0
-  assetPath: Assets/GreyratsLab/Stylized magic books/Materials/Ice book/Ice_1.mat
-  uploadId: 829010

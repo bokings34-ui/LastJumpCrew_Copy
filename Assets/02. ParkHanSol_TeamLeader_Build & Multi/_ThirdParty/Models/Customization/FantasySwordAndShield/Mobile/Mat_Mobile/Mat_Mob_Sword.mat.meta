@@ -1,16 +1,8 @@
 fileFormatVersion: 2
-guid: d1330fd56eef87544a786dde28941428
-timeCreated: 1508493943
-licenseType: Store
+guid: 2cb4b84b80287d9438807d91455cb0eb
 NativeFormatImporter:
-  mainObjectFileID: 2100000
+  externalObjects: {}
+  mainObjectFileID: 0
   userData: 
   assetBundleName: 
   assetBundleVariant: 
-AssetOrigin:
-  serializedVersion: 1
-  productId: 102952
-  packageName: Fantasy Sword and Shield
-  packageVersion: 1.0
-  assetPath: Assets/Fantasy_Sword_and_Shield/Mobile/Mat_Mobile/Mat_Mob_Sword.mat
-  uploadId: 208721

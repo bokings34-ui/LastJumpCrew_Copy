@@ -1,54 +1,15 @@
 fileFormatVersion: 2
-guid: bda619945f5d65248ae26667aa5b31d2
+guid: b0feecbbf7d49b446b17e8fe3f2ae1d7
 ModelImporter:
-  serializedVersion: 22200
+  serializedVersion: 24501
   internalIDToNameTable: []
-  externalObjects:
-  - first:
-      type: UnityEngine:Material
-      assembly: UnityEngine.CoreModule
-      name: Ice_1
-    second: {fileID: 2100000, guid: 74e7488517ab26047a8ace599bf53623, type: 2}
-  - first:
-      type: UnityEngine:Material
-      assembly: UnityEngine.CoreModule
-      name: Ice_2
-    second: {fileID: 2100000, guid: de9ae13f23059ee40bc2494611b61ecc, type: 2}
-  - first:
-      type: UnityEngine:Material
-      assembly: UnityEngine.CoreModule
-      name: Ice_3
-    second: {fileID: 2100000, guid: 151309229d8834d499b1030236887a1c, type: 2}
-  - first:
-      type: UnityEngine:Material
-      assembly: UnityEngine.CoreModule
-      name: Ice_4
-    second: {fileID: 2100000, guid: 843ff37bea7103748a1c1a93911deaf8, type: 2}
-  - first:
-      type: UnityEngine:Material
-      assembly: UnityEngine.CoreModule
-      name: Ice_5
-    second: {fileID: 2100000, guid: e9c76cc4fb548c24f90d1d4afc4674d0, type: 2}
-  - first:
-      type: UnityEngine:Material
-      assembly: UnityEngine.CoreModule
-      name: Ice_6
-    second: {fileID: 2100000, guid: 8c878e6c31a07044aa2d602092d68f03, type: 2}
-  - first:
-      type: UnityEngine:Material
-      assembly: UnityEngine.CoreModule
-      name: Ice_7
-    second: {fileID: 2100000, guid: 9046d061f1b177d4d83718a7bf1b096e, type: 2}
-  - first:
-      type: UnityEngine:Material
-      assembly: UnityEngine.CoreModule
-      name: Ice_8
-    second: {fileID: 2100000, guid: 2e89f12c74c9a83469fbaba626937401, type: 2}
+  externalObjects: {}
   materials:
     materialImportMode: 2
     materialName: 0
     materialSearch: 1
     materialLocation: 1
+    searchTexturesGlobally: 0
   animations:
     legacyGenerateAnimations: 4
     bakeSimulation: 0
@@ -56,8 +17,6 @@ ModelImporter:
     optimizeGameObjects: 0
     removeConstantScaleCurves: 0
     motionNodeName: 
-    rigImportErrors: 
-    rigImportWarnings: 
     animationImportErrors: 
     animationImportWarnings: 
     animationRetargetingWarnings: 
@@ -98,6 +57,11 @@ ModelImporter:
     maxBonesPerVertex: 4
     minBoneWeight: 0.001
     optimizeBones: 1
+    generateMeshLods: 0
+    meshLodGenerationFlags: 0
+    maximumMeshLod: -1
+    importUVs: -1
+    importVertexColors: 1
     meshOptimizationFlags: -1
     indexFormat: 0
     secondaryUVAngleDistortion: 8
@@ -117,6 +81,7 @@ ModelImporter:
     legacyComputeAllNormalsFromSmoothingGroupsWhenMeshHasBlendShapes: 0
     blendShapeNormalImportMode: 1
     normalSmoothingSource: 0
+    calculateBlendshapeNormalsDeltaFromImportedNormals: 0
   referencedClips: []
   importAnimation: 1
   humanDescription:
@@ -147,10 +112,3 @@ ModelImporter:
   userData: 
   assetBundleName: 
   assetBundleVariant: 
-AssetOrigin:
-  serializedVersion: 1
-  productId: 346902
-  packageName: Stylized magic books
-  packageVersion: 1.0
-  assetPath: Assets/GreyratsLab/Stylized magic books/Models/Ice book.fbx
-  uploadId: 829010

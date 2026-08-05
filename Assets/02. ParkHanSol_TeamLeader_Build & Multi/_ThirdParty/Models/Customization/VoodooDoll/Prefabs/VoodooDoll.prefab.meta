@@ -1,14 +1,7 @@
 fileFormatVersion: 2
-guid: ca072720e47db4f4c8eeebe1857c8473
+guid: 4b1fb657723e1e141abe5e513a232ee8
 PrefabImporter:
   externalObjects: {}
   userData: 
   assetBundleName: 
   assetBundleVariant: 
-AssetOrigin:
-  serializedVersion: 1
-  productId: 344328
-  packageName: "Voodoo Doll \u2013 Stylized 3D Prop"
-  packageVersion: 1.0
-  assetPath: "Assets/DarkDropStudio/Voodoo Doll \u2013 Stylized 3D Prop/Prefabs/VoodooDoll.prefab"
-  uploadId: 835676

@@ -1,15 +1,8 @@
 fileFormatVersion: 2
-guid: c5f21a83ec1b64143925a8bdccb1ec1f
+guid: e9f05f81c3a23f94fbab9f358e53ca51
 NativeFormatImporter:
   externalObjects: {}
-  mainObjectFileID: 2100000
+  mainObjectFileID: 0
   userData: 
   assetBundleName: 
   assetBundleVariant: 
-AssetOrigin:
-  serializedVersion: 1
-  productId: 346902
-  packageName: Stylized magic books
-  packageVersion: 1.0
-  assetPath: Assets/GreyratsLab/Stylized magic books/Materials/Air book/Air_2.mat
-  uploadId: 829010

@@ -1,15 +1,8 @@
 fileFormatVersion: 2
-guid: d0c0a3b5b3f9cef49ad6193dbd1da5c0
+guid: b56775524121fb948947624a223a9778
 NativeFormatImporter:
   externalObjects: {}
-  mainObjectFileID: 2100000
+  mainObjectFileID: 0
   userData: 
   assetBundleName: 
   assetBundleVariant: 
-AssetOrigin:
-  serializedVersion: 1
-  productId: 346902
-  packageName: Stylized magic books
-  packageVersion: 1.0
-  assetPath: Assets/GreyratsLab/Stylized magic books/Materials/Fire book/Fire_4.mat
-  uploadId: 829010

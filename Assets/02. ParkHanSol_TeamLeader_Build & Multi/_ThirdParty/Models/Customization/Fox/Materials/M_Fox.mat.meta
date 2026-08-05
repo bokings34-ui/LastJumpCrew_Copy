@@ -1,15 +1,8 @@
 fileFormatVersion: 2
-guid: 4ad23863efbf001479d8ebd01ef00654
+guid: 71d43a3270965ec42a837286108fcb57
 NativeFormatImporter:
   externalObjects: {}
   mainObjectFileID: 0
   userData: 
   assetBundleName: 
   assetBundleVariant: 
-AssetOrigin:
-  serializedVersion: 1
-  productId: 183005
-  packageName: Fox
-  packageVersion: 1.0
-  assetPath: Assets/Fox/Materials/M_Fox.mat
-  uploadId: 400888

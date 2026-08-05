@@ -1,15 +1,8 @@
 fileFormatVersion: 2
-guid: 61d5cebae6846f44c9774ff0423ddc80
+guid: 8c41b1f5823fe864fb6a4a238090b9ae
 NativeFormatImporter:
   externalObjects: {}
-  mainObjectFileID: 2100000
+  mainObjectFileID: 0
   userData: 
   assetBundleName: 
   assetBundleVariant: 
-AssetOrigin:
-  serializedVersion: 1
-  productId: 346902
-  packageName: Stylized magic books
-  packageVersion: 1.0
-  assetPath: Assets/GreyratsLab/Stylized magic books/Materials/Necromancy book/Nec_1.mat
-  uploadId: 829010

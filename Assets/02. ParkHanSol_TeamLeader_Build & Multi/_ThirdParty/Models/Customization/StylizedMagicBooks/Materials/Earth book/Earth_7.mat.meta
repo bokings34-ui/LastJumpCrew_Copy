@@ -1,15 +1,8 @@
 fileFormatVersion: 2
-guid: ce42d813726b8b1429fbd478423506d4
+guid: ff54534425f758b4d8ca6c52e69dd9d0
 NativeFormatImporter:
   externalObjects: {}
-  mainObjectFileID: 2100000
+  mainObjectFileID: 0
   userData: 
   assetBundleName: 
   assetBundleVariant: 
-AssetOrigin:
-  serializedVersion: 1
-  productId: 346902
-  packageName: Stylized magic books
-  packageVersion: 1.0
-  assetPath: Assets/GreyratsLab/Stylized magic books/Materials/Earth book/Earth_7.mat
-  uploadId: 829010

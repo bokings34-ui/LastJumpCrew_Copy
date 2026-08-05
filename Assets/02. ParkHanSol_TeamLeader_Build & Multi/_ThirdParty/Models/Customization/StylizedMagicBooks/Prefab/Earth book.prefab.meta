@@ -1,14 +1,7 @@
 fileFormatVersion: 2
-guid: 309f9e375ebaacd4292c46dae7db0583
+guid: 0c8101ccb15e752419ea314ec1f9353c
 PrefabImporter:
   externalObjects: {}
   userData: 
   assetBundleName: 
   assetBundleVariant: 
-AssetOrigin:
-  serializedVersion: 1
-  productId: 346902
-  packageName: Stylized magic books
-  packageVersion: 1.0
-  assetPath: Assets/GreyratsLab/Stylized magic books/Prefab/Earth book.prefab
-  uploadId: 829010

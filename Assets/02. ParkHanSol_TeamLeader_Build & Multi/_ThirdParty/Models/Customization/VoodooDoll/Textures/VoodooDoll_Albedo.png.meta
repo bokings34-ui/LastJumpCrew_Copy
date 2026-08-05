@@ -1,5 +1,5 @@
 fileFormatVersion: 2
-guid: 08336fbcdcec29249a25684814a824d0
+guid: a3a2ee31d3815544d9ba530f2f0eefb5
 TextureImporter:
   internalIDToNameTable: []
   externalObjects: {}
@@ -115,10 +115,3 @@ TextureImporter:
   userData: 
   assetBundleName: 
   assetBundleVariant: 
-AssetOrigin:
-  serializedVersion: 1
-  productId: 344328
-  packageName: "Voodoo Doll \u2013 Stylized 3D Prop"
-  packageVersion: 1.0
-  assetPath: "Assets/DarkDropStudio/Voodoo Doll \u2013 Stylized 3D Prop/Textures/VoodooDoll_Albedo.png"
-  uploadId: 835676
