@@ -32,6 +32,19 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Tutorial
                 return;
             }
 
+            var debrisItem = other.GetComponentInParent<
+                LastJumpCrew.ParkHanSol.Interaction.DebrisItem>();
+            if (debrisItem == null)
+            {
+                return;
+            }
+
+            if (string.IsNullOrWhiteSpace(expectedItemId))
+            {
+                CompleteObjective();
+                return;
+            }
+
             var itemObject = other.GetComponentInParent<UtilityItemObject>();
             var itemData = itemObject == null
                 ? null

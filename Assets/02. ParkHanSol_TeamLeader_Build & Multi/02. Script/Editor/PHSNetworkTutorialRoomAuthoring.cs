@@ -2035,12 +2035,8 @@ namespace LastJumpCrew.ParkHanSol.Editor
                     true),
                 CreateDropZoneObjective(
                     exterior.RecoveryTrigger,
-                    "debris_recovery_cargo",
-                    "debris_futuristic_cargo"),
-                CreateDropZoneObjective(
-                    exterior.RecoveryTrigger,
-                    "debris_recovery_camera",
-                    "debris_satellite_camera")
+                    "debris_recovery",
+                    string.Empty)
             };
             roomObjectives[7] = new MonoBehaviour[]
             {
