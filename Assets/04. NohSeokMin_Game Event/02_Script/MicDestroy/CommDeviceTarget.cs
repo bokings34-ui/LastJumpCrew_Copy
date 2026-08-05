@@ -89,10 +89,7 @@ namespace SM
             Unregister();
             SetVisualsAlive(false);
 
-            var room = RoomRegistry.Instance.GetRandomRoom();
-            EventScheduler.Instance.TriggerRandomEvent(room);
-
-            Debug.Log($"<color=orange>[CommDeviceTarget]</color> {name} 파괴됨 (공격자: {attacker?.name ?? "unknown"}) → 랜덤 사고 트리거");
+            Debug.Log($"<color=orange>[CommDeviceTarget]</color> {name} 파괴됨 (공격자: {attacker?.name ?? "unknown"})");
         }
 
         // 렌치 아이템이 Use()에서 직접 호출하는 진입점 (Fire/OxygenLeak과 동일 패턴)

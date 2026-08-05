@@ -121,7 +121,8 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Maps
             warpValueText.text = $"{Mathf.RoundToInt(warpCharge * 100f)}%";
             var shipHp = Mathf.Clamp01(presentation.ShipHpNormalized);
             shipHpFill.fillAmount = shipHp;
-            shipHpValueText.text = $"{Mathf.RoundToInt(shipHp * 100f)}%";
+            shipHpValueText.text =
+                $"{presentation.CurrentShipHp}/{presentation.MaximumShipHp}";
             RenderEvents(presentation.Events);
 
             EnsurePoolSize(markers.Count);

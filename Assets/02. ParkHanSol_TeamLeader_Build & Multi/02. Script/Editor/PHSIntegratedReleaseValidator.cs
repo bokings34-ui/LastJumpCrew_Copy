@@ -29,6 +29,10 @@ namespace LastJumpCrew.ParkHanSol.Editor
             "Assets/02. ParkHanSol_TeamLeader_Build & Multi/01. Scene/BEAVER_2026/PHS_ExteriorShopScene.unity";
         private const string PlayerPrefabPath =
             "Assets/02. ParkHanSol_TeamLeader_Build & Multi/03. Prefab/PlayerPrefab/PHS_CuteWhiteGhost_Player.prefab";
+        private const string HandheldMapPrefabPath =
+            "Assets/02. ParkHanSol_TeamLeader_Build & Multi/03. Prefab/UI/Maps/PHS_HandheldShipMap.prefab";
+        private const string MapProfileFolder =
+            "Assets/02. ParkHanSol_TeamLeader_Build & Multi/04. Data/Maps";
 
         private static readonly string[] BuildScenePaths =
         {
@@ -43,6 +47,8 @@ namespace LastJumpCrew.ParkHanSol.Editor
         {
             ValidateBuildSettings();
             ValidatePlayerPrefab();
+            ValidateHandheldMap();
+            ValidateMicDestroyProfiles();
             ValidateLobbyAndItems();
             ValidateSceneReferences();
             ValidateMapRuntime();
@@ -99,6 +105,87 @@ namespace LastJumpCrew.ParkHanSol.Editor
             var resultView = resultController.FindProperty("panelView")
                 .objectReferenceValue as NetworkRunResultPanelView;
             Require(resultView != null && resultView.HasRequiredReferences, "player_result_view_invalid");
+        }
+
+        private static void ValidateHandheldMap()
+        {
+            var prefab = AssetDatabase.LoadAssetAtPath<GameObject>(HandheldMapPrefabPath);
+            Require(prefab != null, "handheld_map_prefab_missing");
+            ValidateHandheldMapView(
+                prefab.GetComponentInChildren<PHSHandheldShipMapView>(true),
+                "standalone");
+
+            var player = AssetDatabase.LoadAssetAtPath<GameObject>(PlayerPrefabPath);
+            var playerViews = player == null
+                ? Array.Empty<PHSHandheldShipMapView>()
+                : player.GetComponentsInChildren<PHSHandheldShipMapView>(true);
+            Require(playerViews.Length == 2, $"player_handheld_map_view_count:{playerViews.Length}");
+            for (var index = 0; index < playerViews.Length; index++)
+            {
+                ValidateHandheldMapView(playerViews[index], $"player:{index}");
+            }
+        }
+
+        private static void ValidateHandheldMapView(
+            PHSHandheldShipMapView view,
+            string label)
+        {
+            Require(view != null, $"handheld_map_view_missing:{label}");
+            var root = view.transform;
+            var mapCanvas = FindChild(root, "MapCanvas")?.GetComponent<RectTransform>();
+            var title = FindChild(root, "Title")?.GetComponent<RectTransform>();
+            var actualMap = FindChild(root, "Actual Ship Map");
+            Require(mapCanvas != null && title != null, $"handheld_map_frame_missing:{label}");
+            Require(actualMap != null && !actualMap.gameObject.activeSelf,
+                $"handheld_raw_map_active:{label}");
+
+            var sectionNames = new[]
+            {
+                "ShipSection_Command",
+                "ShipSection_Bridge",
+                "ShipSection_MainHall",
+                "ShipSection_Port",
+                "ShipSection_Starboard",
+                "ShipSection_Aft"
+            };
+            var sections = sectionNames
+                .Select(name => FindChild(root, name)?.GetComponent<RectTransform>())
+                .ToArray();
+            Require(sections.All(section => section != null && section.gameObject.activeSelf),
+                $"handheld_block_section_invalid:{label}");
+            Require(
+                root.GetComponentsInChildren<Transform>(true)
+                    .Where(candidate => candidate.name.StartsWith("Grid", StringComparison.Ordinal))
+                    .All(candidate => !candidate.gameObject.activeSelf),
+                $"handheld_grid_active:{label}");
+
+            var canvasTop = mapCanvas.rect.height * 0.5f;
+            var titleTop = title.anchoredPosition.y + title.rect.height * 0.5f;
+            Require(titleTop <= canvasTop, $"handheld_title_clipped:{label}:{titleTop}>{canvasTop}");
+            Require(RectanglesTouch(sections[0], sections[1], 2f)
+                    && RectanglesTouch(sections[1], sections[2], 2f)
+                    && RectanglesTouch(sections[2], sections[3], 2f)
+                    && RectanglesTouch(sections[2], sections[4], 2f)
+                    && RectanglesTouch(sections[2], sections[5], 2f),
+                $"handheld_ship_silhouette_disconnected:{label}");
+        }
+
+        private static void ValidateMicDestroyProfiles()
+        {
+            for (var mapId = 8001; mapId <= 8004; mapId++)
+            {
+                var matches = AssetDatabase.FindAssets(
+                        $"t:{nameof(PHSMapProfileSO)}",
+                        new[] { MapProfileFolder })
+                    .Select(AssetDatabase.GUIDToAssetPath)
+                    .Select(AssetDatabase.LoadAssetAtPath<PHSMapProfileSO>)
+                    .Where(profile => profile != null && profile.MapId == mapId)
+                    .ToArray();
+                Require(matches.Length == 1, $"mic_destroy_profile_count:{mapId}:{matches.Length}");
+                Require(matches[0].ExternalThreatWeights.Any(
+                        entry => entry != null && entry.EventId == EventId.MicDestroy),
+                    $"mic_destroy_profile_weight_missing:{mapId}");
+            }
         }
 
         private static void ValidateLobbyAndItems()
@@ -309,6 +396,13 @@ namespace LastJumpCrew.ParkHanSol.Editor
             Require(
                 coordinatorData.FindProperty("eventScheduler").objectReferenceValue == scheduler,
                 "map_event_scheduler_mismatch");
+            var micPresenter = RequireOne<MicDestroyVoiceEffectPresenter>(
+                scene,
+                "map_mic_destroy_voice_presenter");
+            var micPresenterData = new SerializedObject(micPresenter);
+            Require(
+                micPresenterData.FindProperty("eventCoordinator")?.objectReferenceValue == coordinator,
+                "map_mic_destroy_coordinator_mismatch");
 
             var runtime = RequireOne<PHSMapRuntimeContext>(scene, "map_runtime_context");
             var consumer = RequireOne<PHSMapIncidentCommandConsumer>(scene, "map_incident_consumer");
@@ -342,6 +436,24 @@ namespace LastJumpCrew.ParkHanSol.Editor
             var layout = RequireOne<PHSShipIncidentLayout>(scene, "map_incident_layout");
             Require(layout.Locations.Count == 20, $"map_incident_location_count:{layout.Locations.Count}");
             Require(layout.Locations.All(location => location != null), "map_incident_location_null");
+            var externalRooms = layout.Locations
+                .Where(location => location.LocationId.StartsWith(
+                    "external_room_",
+                    StringComparison.Ordinal))
+                .ToArray();
+            Require(externalRooms.Length == 4, $"mic_destroy_room_count:{externalRooms.Length}");
+            foreach (var location in externalRooms)
+            {
+                var locationData = new SerializedObject(location);
+                Require(EnumArrayContains(
+                        locationData.FindProperty("supportedFamilies"),
+                        (int)NetworkRunIncidentFamily.Device),
+                    $"mic_destroy_room_family_missing:{location.LocationId}");
+                Require(IntArrayContains(
+                        locationData.FindProperty("supportedContentIds"),
+                        IncidentRequestContentContract.MicDestroyEventId),
+                    $"mic_destroy_room_content_missing:{location.LocationId}");
+            }
 
             var shipMap = RequireOne<PHSShipMapWorldLayout>(scene, "map_ship_layout");
             var shipMapData = new SerializedObject(shipMap);
@@ -366,6 +478,59 @@ namespace LastJumpCrew.ParkHanSol.Editor
             var matches = FindSceneComponents<T>(scene);
             Require(matches.Length == 1, $"{label}_count:{matches.Length}");
             return matches[0];
+        }
+
+        private static Transform FindChild(Transform root, string name)
+        {
+            if (root == null) return null;
+            if (string.Equals(root.name, name, StringComparison.Ordinal)) return root;
+            foreach (Transform child in root)
+            {
+                var match = FindChild(child, name);
+                if (match != null) return match;
+            }
+
+            return null;
+        }
+
+        private static bool RectanglesTouch(
+            RectTransform left,
+            RectTransform right,
+            float tolerance)
+        {
+            if (left == null || right == null) return false;
+            var leftRect = new Rect(
+                left.anchoredPosition - left.rect.size * 0.5f,
+                left.rect.size);
+            var rightRect = new Rect(
+                right.anchoredPosition - right.rect.size * 0.5f,
+                right.rect.size);
+            return leftRect.xMin <= rightRect.xMax + tolerance
+                && leftRect.xMax + tolerance >= rightRect.xMin
+                && leftRect.yMin <= rightRect.yMax + tolerance
+                && leftRect.yMax + tolerance >= rightRect.yMin;
+        }
+
+        private static bool EnumArrayContains(SerializedProperty property, int value)
+        {
+            if (property == null || !property.isArray) return false;
+            for (var index = 0; index < property.arraySize; index++)
+            {
+                if (property.GetArrayElementAtIndex(index).enumValueIndex == value) return true;
+            }
+
+            return false;
+        }
+
+        private static bool IntArrayContains(SerializedProperty property, int value)
+        {
+            if (property == null || !property.isArray) return false;
+            for (var index = 0; index < property.arraySize; index++)
+            {
+                if (property.GetArrayElementAtIndex(index).intValue == value) return true;
+            }
+
+            return false;
         }
 
         private static T[] FindSceneComponents<T>(Scene scene) where T : Component

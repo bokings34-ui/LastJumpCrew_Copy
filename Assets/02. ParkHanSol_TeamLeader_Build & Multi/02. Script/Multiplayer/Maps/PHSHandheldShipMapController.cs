@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using LastJumpCrew.ParkHanSol.Items;
 using LastJumpCrew.ParkHanSol.Multiplayer;
@@ -173,8 +174,6 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Maps
             AppendPlayerMarkers(layout);
             AppendEventMarkers(layout);
             AppendAccidentMarkers(layout);
-            AppendObjectMarkers(layout);
-            AppendFloorItemMarkers(layout);
 
             if (!TryBuildPresentation(out var presentation))
             {
@@ -263,6 +262,8 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Maps
                 ResolveRunPhase(runFlow.Phase),
                 runFlow.WarpChargeNormalized,
                 (float)shipSystems.CurrentShipHp / shipSystems.MaximumShipHp,
+                shipSystems.CurrentShipHp,
+                shipSystems.MaximumShipHp,
                 eventDetails);
             return true;
         }
@@ -332,7 +333,10 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Maps
                     continue;
                 }
 
-                var symbol = TryResolveEventSymbol(lifecycle.InstanceId, out var resolvedSymbol)
+                var hasWorldEffect = TryResolveEventSymbol(
+                    lifecycle.InstanceId,
+                    out var resolvedSymbol);
+                var symbol = hasWorldEffect
                     ? resolvedSymbol
                     : ResolveLifecycleEventSymbol(lifecycle.EventId);
                 eventDetails.Add(new ShipMapEventDetail(
@@ -341,6 +345,20 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Maps
                     ResolveLifecycleEventTitle(lifecycle.EventId),
                     $"{ResolveRoomName(lifecycle.RoomId.ToString())} · " +
                     ResolveEventState(lifecycle.State)));
+
+                if (!hasWorldEffect
+                    && !UsesPhysicalAccidentMarker(lifecycle.EventId)
+                    && TryResolveRoomWorldPosition(
+                        lifecycle.RoomId.ToString(),
+                        out var roomPosition)
+                    && layout.TryProject(roomPosition, out var mapPosition))
+                {
+                    markers.Add(new ShipMapMarker(
+                        ShipMapMarkerKind.Incident,
+                        mapPosition,
+                        symbol,
+                        ResolveLifecycleEventIcon(lifecycle.EventId)));
+                }
             }
 
             for (var index = 0; index < effectSnapshots.Count; index++)
@@ -351,7 +369,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Maps
                     markers.Add(new ShipMapMarker(
                         ShipMapMarkerKind.Incident,
                         position,
-                        string.Empty,
+                        ResolveEventSymbol(snapshot.Kind),
                         ResolveEventIcon(snapshot.Kind)));
                 }
             }
@@ -594,6 +612,44 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Maps
                     or EventId.PlanetZone => ShipMapIconId.None,
                 _ => throw new System.ArgumentOutOfRangeException(nameof(eventId), eventId, null)
             };
+        }
+
+        private static bool UsesPhysicalAccidentMarker(EventId eventId)
+        {
+            return eventId is EventId.Fire
+                or EventId.PowerOff
+                or EventId.OxygenLeak
+                or EventId.EngineBreak
+                or EventId.HullBreach
+                or EventId.SteamLeak
+                or EventId.OxygenGeneratorFailure
+                or EventId.GravityGeneratorFailure;
+        }
+
+        private static bool TryResolveRoomWorldPosition(
+            string roomId,
+            out Vector3 worldPosition)
+        {
+            if (!string.IsNullOrWhiteSpace(roomId))
+            {
+                var rooms = FindObjectsByType<ShipRoom>(FindObjectsInactive.Exclude);
+                for (var index = 0; index < rooms.Length; index++)
+                {
+                    var room = rooms[index];
+                    if (room != null
+                        && string.Equals(
+                            room.RoomId,
+                            roomId,
+                            StringComparison.Ordinal))
+                    {
+                        worldPosition = room.transform.position;
+                        return true;
+                    }
+                }
+            }
+
+            worldPosition = default;
+            return false;
         }
 
         private static string ResolveLifecycleEventTitle(EventId eventId)

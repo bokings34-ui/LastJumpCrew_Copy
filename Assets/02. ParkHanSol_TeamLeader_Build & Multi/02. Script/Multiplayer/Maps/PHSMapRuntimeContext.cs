@@ -761,6 +761,9 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Maps
                 case SM.EventId.EmpAttack:
                     family = NetworkRunIncidentFamily.EMP;
                     return true;
+                case SM.EventId.MicDestroy:
+                    family = NetworkRunIncidentFamily.Device;
+                    return true;
                 default:
                     family = NetworkRunIncidentFamily.None;
                     return false;
