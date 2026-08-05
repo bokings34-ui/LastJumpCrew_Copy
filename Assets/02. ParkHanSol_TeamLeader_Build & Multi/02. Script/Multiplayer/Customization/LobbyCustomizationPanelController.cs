@@ -106,9 +106,15 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Customization
 
         private void OpenPanel()
         {
-            if (!ResolveCustomization(true) || !customization.IsProfileReady)
+            if (!ResolveCustomization(true))
             {
                 SetStatus("프로필 동기화 대기 중");
+                return;
+            }
+
+            if (!customization.IsProfileReady)
+            {
+                SetProfileUnavailableStatus();
                 return;
             }
 
@@ -169,9 +175,15 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Customization
 
         private void RequestItemAction(CosmeticItemData item)
         {
-            if (!ResolveCustomization(true) || !customization.IsProfileReady)
+            if (!ResolveCustomization(true))
             {
                 SetStatus("프로필 동기화 대기 중");
+                return;
+            }
+
+            if (!customization.IsProfileReady)
+            {
+                SetProfileUnavailableStatus();
                 return;
             }
 
@@ -189,9 +201,15 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Customization
 
         private void RequestColor(Color32 color)
         {
-            if (!ResolveCustomization(true) || !customization.IsProfileReady)
+            if (!ResolveCustomization(true))
             {
                 SetStatus("프로필 동기화 대기 중");
+                return;
+            }
+
+            if (!customization.IsProfileReady)
+            {
+                SetProfileUnavailableStatus();
                 return;
             }
 
@@ -201,9 +219,15 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Customization
 
         private void RequestUnequip(CosmeticSlot slot)
         {
-            if (!ResolveCustomization(true) || !customization.IsProfileReady)
+            if (!ResolveCustomization(true))
             {
                 SetStatus("프로필 동기화 대기 중");
+                return;
+            }
+
+            if (!customization.IsProfileReady)
+            {
+                SetProfileUnavailableStatus();
                 return;
             }
 
@@ -221,7 +245,16 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Customization
             var ready = customization != null && customization.IsProfileReady;
             creditsLabel.text = ready
                 ? $"CUSTOM CREDITS  {customization.PersonalCreditsWallet.CurrentCredits}"
-                : "CUSTOM CREDITS  ---";
+                : customization != null && !string.IsNullOrWhiteSpace(customization.ProfileFailureReason)
+                    ? "CUSTOM PROFILE ERROR"
+                    : "CUSTOM CREDITS  ---";
+
+            if (!ready
+                && customization != null
+                && !string.IsNullOrWhiteSpace(customization.ProfileFailureReason))
+            {
+                SetProfileUnavailableStatus();
+            }
 
             for (var index = 0; index < itemRows.Length; index++)
             {
@@ -255,6 +288,19 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Customization
         private void SetStatus(string message)
         {
             statusLabel.text = message;
+        }
+
+        private void SetProfileUnavailableStatus()
+        {
+            if (string.IsNullOrWhiteSpace(customization.ProfileFailureReason))
+            {
+                SetStatus("프로필 동기화 대기 중");
+                return;
+            }
+
+            panelRoot.SetActive(true);
+            openButton.gameObject.SetActive(false);
+            SetStatus($"프로필 오류: {customization.ProfileFailureReason}");
         }
 
         private bool ValidateSetup()

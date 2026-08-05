@@ -12,6 +12,8 @@ namespace LastJumpCrew.ParkHanSol.Interaction
     [RequireComponent(typeof(NetworkObject))]
     public sealed class PurchaseDeliveryBox : NetworkBehaviour
     {
+        public static PurchaseDeliveryBox Instance { get; private set; }
+
         [SerializeField] private ShopCatalogSO catalog;
         [SerializeField] private UtilityToolBoxStorageSlotInteractable[] deliverySlots;
         [SerializeField] private Transform[] overflowDropPoints;
@@ -31,6 +33,26 @@ namespace LastJumpCrew.ParkHanSol.Interaction
             if (networkManager == null || !networkManager.IsListening)
             {
                 DeliverPendingItems();
+            }
+        }
+
+        private void Awake()
+        {
+            if (Instance != null && Instance != this)
+            {
+                Debug.LogError($"PHS_PURCHASE_DELIVERY_SETUP_FAILED reason=duplicate_delivery_box box={name}", this);
+                enabled = false;
+                return;
+            }
+
+            Instance = this;
+        }
+
+        private void OnDestroy()
+        {
+            if (Instance == this)
+            {
+                Instance = null;
             }
         }
 
@@ -81,6 +103,17 @@ namespace LastJumpCrew.ParkHanSol.Interaction
             deliveredItemIds.Add(new FixedString64Bytes(itemPrefabData.ItemId));
             appliedNetworkDeliveryCount = deliveredItemIds.Count;
             return true;
+        }
+
+        public void DeliverPendingItemsServer()
+        {
+            if (!IsSpawned || !IsServer)
+            {
+                Debug.LogError($"PHS_PURCHASE_DELIVERY_FAILED reason=server_required box={name}", this);
+                return;
+            }
+
+            DeliverNetworkLedgerItems();
         }
 
         private void DeliverPendingItems()
@@ -208,6 +241,24 @@ namespace LastJumpCrew.ParkHanSol.Interaction
 
         private bool TryApplyDelivery(UtilityItemDataSO itemPrefabData)
         {
+            var networkManager = NetworkManager.Singleton;
+            if (networkManager != null && networkManager.IsListening && !IsServer)
+            {
+                foreach (var slot in deliverySlots)
+                {
+                    if (slot != null && slot.IsNetworkManaged)
+                    {
+                        // The ToolBox NetworkList owns client slot presentation.
+                        return true;
+                    }
+                }
+
+                Debug.LogError(
+                    $"PHS_PURCHASE_DELIVERY_SYNC_FAILED reason=network_tool_box_missing box={name} item={itemPrefabData.ItemId}",
+                    this);
+                return false;
+            }
+
             foreach (var slot in deliverySlots)
             {
                 if (slot != null && slot.TryReceiveDelivery(itemPrefabData))

@@ -28,6 +28,8 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
         private RunIncidentScheduleDefinition definition;
         private uint nextExternalSlot = 1U;
         private uint nextInternalSlot = 1U;
+        private int previousExternalContentId;
+        private int previousInternalContentId;
         private double nextExternalDueServerTime;
         private double nextInternalDueServerTime;
         private bool setupValid;
@@ -189,6 +191,8 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
             definition = candidate;
             nextExternalSlot = 1U;
             nextInternalSlot = 1U;
+            previousExternalContentId = 0;
+            previousInternalContentId = 0;
             nextExternalDueServerTime = externalDue;
             nextInternalDueServerTime = internalDue;
             isConfigured = true;
@@ -419,6 +423,23 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
             var payloadKind = channel == NetworkRunIncidentChannel.External
                 ? NetworkRunIncidentPayloadKind.EventManagerEvent
                 : NetworkRunIncidentPayloadKind.ShipAccident;
+            if (!IncidentRequestContentContract.TryNormalize(
+                    channel,
+                    payloadKind,
+                    selectedEntry.ContentId,
+                    out payloadKind,
+                    out var normalizedContentId,
+                    out var normalizeReason))
+            {
+                schedulingEnabled = false;
+                readinessReason = normalizeReason;
+                Debug.LogError(
+                    $"PHS_INCIDENT_DIRECTOR_FAILED reason={normalizeReason} " +
+                    $"channel={channel} content={selectedEntry.ContentId}",
+                    this);
+                return;
+            }
+
             var request = new NetworkRunIncidentRequest(
                 requestId,
                 0UL,
@@ -427,7 +448,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
                 channel,
                 payloadKind,
                 selectedEntry.IncidentFamily,
-                selectedEntry.ContentId,
+                normalizedContentId,
                 NetworkRunIncidentSourceKind.Scheduled,
                 selectedEntry.PressureCost,
                 selectedEntry.WarpChargeMultiplier,
@@ -444,6 +465,8 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
                     this);
                 return;
             }
+
+            SetPreviousContentId(channel, selectedEntry.ContentId);
 
             Debug.Log(
                 $"PHS_INCIDENT_DIRECTOR_RESERVED request={requestId} " +
@@ -515,9 +538,26 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
             var entries = channel == NetworkRunIncidentChannel.External
                 ? candidate.ExternalEntries
                 : candidate.InternalEntries;
+            var previousContentId = GetPreviousContentId(channel);
+            var canAvoidPrevious = false;
+            for (var index = 0; index < entries.Count; index++)
+            {
+                if (entries[index].ContentId != previousContentId)
+                {
+                    canAvoidPrevious = true;
+                    break;
+                }
+            }
+
             var totalWeight = 0d;
             for (var index = 0; index < entries.Count; index++)
             {
+                if (canAvoidPrevious
+                    && entries[index].ContentId == previousContentId)
+                {
+                    continue;
+                }
+
                 totalWeight += entries[index].Weight;
             }
 
@@ -535,6 +575,12 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
             selectedEntry = entries[entries.Count - 1];
             for (var index = 0; index < entries.Count; index++)
             {
+                if (canAvoidPrevious
+                    && entries[index].ContentId == previousContentId)
+                {
+                    continue;
+                }
+
                 weightedRoll -= entries[index].Weight;
                 if (weightedRoll < 0d)
                 {
@@ -552,6 +598,25 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
             nextIntervalSeconds = RollRange(random, minimum, maximum);
             reason = null;
             return true;
+        }
+
+        private int GetPreviousContentId(
+            NetworkRunIncidentChannel channel) =>
+            channel == NetworkRunIncidentChannel.External
+                ? previousExternalContentId
+                : previousInternalContentId;
+
+        private void SetPreviousContentId(
+            NetworkRunIncidentChannel channel,
+            int contentId)
+        {
+            if (channel == NetworkRunIncidentChannel.External)
+            {
+                previousExternalContentId = contentId;
+                return;
+            }
+
+            previousInternalContentId = contentId;
         }
 
         private bool TryCreateRandomScope(

@@ -14,6 +14,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
         private readonly HashSet<ulong> playersInsideSafeVolume = new();
 
         public bool IsPlayerInside(ulong clientId) => playersInside.Contains(clientId);
+        public bool IsPlayerInsideSafeVolume(ulong clientId) => playersInsideSafeVolume.Contains(clientId);
 
         private void Awake()
         {
@@ -63,7 +64,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
 
             playersInside.Remove(player.OwnerClientId);
             playersInsideSafeVolume.Remove(player.OwnerClientId);
-            lifeState.CancelDeadZoneWarning();
+            lifeState.BeginDeadZoneWarning(deadZoneWarningSeconds);
             var coordinator = NetworkRunFlowCoordinator.Instance;
             if (coordinator == null)
             {

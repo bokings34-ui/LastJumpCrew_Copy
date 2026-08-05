@@ -15,7 +15,7 @@ namespace LastJumpCrew.ParkHanSol.Editor
     public static class PHSDirectSceneTestLauncher
     {
         private const string LobbyScenePath =
-            "Assets/01. MainGame/01. MainScene/Beta/ParkHanSol_LobbyScene.unity";
+            "Assets/02. ParkHanSol_TeamLeader_Build & Multi/01. Scene/BEAVER_2026/ParkHanSol_LobbyScene.unity";
         private const string FeatureInspectionScenePath =
             "Assets/02. ParkHanSol_TeamLeader_Build & Multi/01. Scene/test/PHS_FeatureInspectionScene.unity";
         private const string PlayMenuPath =
@@ -23,8 +23,8 @@ namespace LastJumpCrew.ParkHanSol.Editor
         private const string MainLoopValidationMenuPath =
             "Tools/ParkHanSol/Scene Test/Run Main Loop Validation";
         private const string PendingTargetSceneKey = "PHS.DirectSceneTest.PendingTargetScene";
-        private const string AutoLaunchQueuedKey = "PHS.DirectSceneTest.AutoLaunchQueued";
-        private const string AutoLaunchTargetSceneKey = "PHS.DirectSceneTest.AutoLaunchTargetScene";
+        private const string PendingEmbeddedPlayerKey =
+            "PHS.DirectSceneTest.PendingEmbeddedPlayer";
         private const string PreviousStartSceneKey = "PHS.DirectSceneTest.PreviousStartScene";
         private const string PreviousStartSceneStoredKey = "PHS.DirectSceneTest.PreviousStartSceneStored";
         private const double LaunchTimeoutSeconds = 20d;
@@ -39,6 +39,7 @@ namespace LastJumpCrew.ParkHanSol.Editor
 
         private static LaunchPhase launchPhase;
         private static string targetScenePath;
+        private static bool targetHasEmbeddedPlayer;
         private static double launchDeadline;
         private static NetworkManager networkManager;
 
@@ -47,8 +48,6 @@ namespace LastJumpCrew.ParkHanSol.Editor
             EditorApplication.playModeStateChanged -= HandlePlayModeStateChanged;
             EditorApplication.playModeStateChanged += HandlePlayModeStateChanged;
             EditorApplication.delayCall += ResumePendingLaunch;
-            EditorApplication.update -= ResumeFeatureInspectionAutoLaunch;
-            EditorApplication.update += ResumeFeatureInspectionAutoLaunch;
         }
 
         [MenuItem(PlayMenuPath)]
@@ -79,6 +78,9 @@ namespace LastJumpCrew.ParkHanSol.Editor
 
             StorePreviousPlayModeStartScene();
             SessionState.SetString(PendingTargetSceneKey, targetScene.path);
+            SessionState.SetBool(
+                PendingEmbeddedPlayerKey,
+                HasEmbeddedPlayer(targetScene));
             EditorSceneManager.playModeStartScene = lobbyScene;
 
             Debug.Log($"PHS_DIRECT_SCENE_TEST_QUEUED target={targetScene.path}");
@@ -213,8 +215,7 @@ namespace LastJumpCrew.ParkHanSol.Editor
         private static void QueueFeatureInspectionAutoLaunch()
         {
             if (!string.IsNullOrWhiteSpace(
-                    SessionState.GetString(PendingTargetSceneKey, string.Empty))
-                || SessionState.GetBool(AutoLaunchQueuedKey, false))
+                    SessionState.GetString(PendingTargetSceneKey, string.Empty)))
             {
                 return;
             }
@@ -228,48 +229,22 @@ namespace LastJumpCrew.ParkHanSol.Editor
                 return;
             }
 
-            SessionState.SetBool(AutoLaunchQueuedKey, true);
-            SessionState.SetString(AutoLaunchTargetSceneKey, activeScene.path);
-            Debug.Log(
-                $"PHS_FEATURE_INSPECTION_AUTO_BOOTSTRAP_QUEUED target={activeScene.path}");
-            EditorApplication.update -= ResumeFeatureInspectionAutoLaunch;
-            EditorApplication.update += ResumeFeatureInspectionAutoLaunch;
-            EditorApplication.isPlaying = false;
-        }
-
-        private static void ResumeFeatureInspectionAutoLaunch()
-        {
-            if (!SessionState.GetBool(AutoLaunchQueuedKey, false))
-            {
-                EditorApplication.update -= ResumeFeatureInspectionAutoLaunch;
-                return;
-            }
-
-            if (EditorApplication.isPlayingOrWillChangePlaymode)
-            {
-                return;
-            }
-
-            EditorApplication.update -= ResumeFeatureInspectionAutoLaunch;
-
-            var expectedTargetScene = SessionState.GetString(
-                AutoLaunchTargetSceneKey,
-                string.Empty);
-            SessionState.SetBool(AutoLaunchQueuedKey, false);
-            SessionState.SetString(AutoLaunchTargetSceneKey, string.Empty);
-
-            var activeScene = SceneManager.GetActiveScene();
-            if (!string.Equals(
-                    activeScene.path,
-                    expectedTargetScene,
-                    StringComparison.Ordinal))
+            var lobbyScene = AssetDatabase.LoadAssetAtPath<SceneAsset>(LobbyScenePath);
+            if (lobbyScene == null)
             {
                 Debug.LogError(
-                    $"PHS_FEATURE_INSPECTION_AUTO_BOOTSTRAP_FAILED reason=active_scene_changed expected={expectedTargetScene} actual={activeScene.path}");
+                    $"PHS_FEATURE_INSPECTION_AUTO_BOOTSTRAP_FAILED reason=lobby_scene_missing path={LobbyScenePath}");
                 return;
             }
 
-            PlayCurrentSceneAsLocalHost();
+            StorePreviousPlayModeStartScene();
+            SessionState.SetString(PendingTargetSceneKey, activeScene.path);
+            SessionState.SetBool(
+                PendingEmbeddedPlayerKey,
+                HasEmbeddedPlayer(activeScene));
+            EditorSceneManager.playModeStartScene = lobbyScene;
+            Debug.Log(
+                $"PHS_FEATURE_INSPECTION_AUTO_BOOTSTRAP_QUEUED target={activeScene.path}");
         }
 
         private static void ResumePendingLaunch()
@@ -293,6 +268,10 @@ namespace LastJumpCrew.ParkHanSol.Editor
             {
                 return;
             }
+
+            targetHasEmbeddedPlayer = SessionState.GetBool(
+                PendingEmbeddedPlayerKey,
+                false);
 
             StopLaunchTick();
             launchPhase = LaunchPhase.WaitingForLobbyBootstrap;
@@ -384,6 +363,14 @@ namespace LastJumpCrew.ParkHanSol.Editor
                 return;
             }
 
+            if (targetHasEmbeddedPlayer)
+            {
+                var bootstrapPlayer = networkManager.LocalClient.PlayerObject;
+                bootstrapPlayer.Despawn(true);
+                Debug.Log(
+                    $"PHS_DIRECT_SCENE_TEST_BOOTSTRAP_PLAYER_REMOVED target={targetScenePath}");
+            }
+
             var status = networkManager.SceneManager.LoadScene(targetScenePath, LoadSceneMode.Single);
             if (status != SceneEventProgressStatus.Started)
             {
@@ -403,9 +390,17 @@ namespace LastJumpCrew.ParkHanSol.Editor
                 return;
             }
 
-            var playerReady = networkManager != null
-                && networkManager.LocalClient != null
-                && networkManager.LocalClient.PlayerObject != null;
+            var player = targetHasEmbeddedPlayer
+                ? UnityEngine.Object.FindObjectsByType<NetworkPlayerController>(
+                        FindObjectsInactive.Include,
+                        FindObjectsSortMode.None)
+                    .FirstOrDefault(candidate =>
+                        candidate.gameObject.scene == activeScene
+                        && candidate.IsSpawned
+                        && candidate.IsOwner)
+                : networkManager?.LocalClient?.PlayerObject
+                    ?.GetComponent<NetworkPlayerController>();
+            var playerReady = player != null;
             if (!playerReady || GameplaySceneContext.FindForScene(activeScene) == null)
             {
                 return;
@@ -413,7 +408,7 @@ namespace LastJumpCrew.ParkHanSol.Editor
 
             Debug.Log(
                 $"PHS_DIRECT_SCENE_TEST_READY target={targetScenePath} " +
-                $"clientId={networkManager.LocalClientId} player={networkManager.LocalClient.PlayerObject.name}");
+                $"clientId={networkManager.LocalClientId} player={player.name}");
             ClearPendingLaunch();
             StopLaunchTick();
         }
@@ -439,7 +434,17 @@ namespace LastJumpCrew.ParkHanSol.Editor
         private static void ClearPendingLaunch()
         {
             targetScenePath = string.Empty;
+            targetHasEmbeddedPlayer = false;
             SessionState.SetString(PendingTargetSceneKey, string.Empty);
+            SessionState.SetBool(PendingEmbeddedPlayerKey, false);
+        }
+
+        private static bool HasEmbeddedPlayer(Scene scene)
+        {
+            return UnityEngine.Object.FindObjectsByType<NetworkPlayerController>(
+                    FindObjectsInactive.Include,
+                    FindObjectsSortMode.None)
+                .Any(player => player.gameObject.scene == scene);
         }
 
         private static void StorePreviousPlayModeStartScene()

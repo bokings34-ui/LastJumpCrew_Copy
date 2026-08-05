@@ -4,7 +4,6 @@ using Unity.Collections;
 using Unity.Netcode;
 using UnityEngine;
 using LastJumpCrew.ParkHanSol.Items;
-using LastJumpCrew.ParkHanSol.Multiplayer.Incidents.Fire;
 
 namespace LastJumpCrew.ParkHanSol.Multiplayer.ShipAccidents
 {
@@ -17,7 +16,6 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.ShipAccidents
         [Header("Inspector References")]
         [SerializeField] private PHSShipAccidentCatalogSO accidentCatalog;
         [SerializeField] private PHSShipAccidentAnchor[] anchors = Array.Empty<PHSShipAccidentAnchor>();
-        [SerializeField] private PHSNetworkFireCoordinator fireCoordinator;
 
         [Header("Server Validation")]
         [SerializeField, Min(0.1f)] private float maximumRepairDistance = 3f;
@@ -49,7 +47,6 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.ShipAccidents
         private NetworkShipSystemsState shipSystemsState;
 
         public int ActiveAccidentCount => activeAccidents.Count;
-        public PHSNetworkFireCoordinator FireCoordinator => fireCoordinator;
         public static PHSNetworkShipAccidentCoordinator Instance { get; private set; }
         public event Action ActiveAccidentsChanged;
         public event Action<uint, PHSShipAccidentId, bool> ServerAccidentFinished;
@@ -499,9 +496,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.ShipAccidents
                 return false;
             }
 
-            return accidentId != PHSShipAccidentId.Fire
-                || fireCoordinator == null
-                || !fireCoordinator.IsManagingAccident(accidentInstanceId);
+            return true;
         }
 
         public bool TrySetMaintenancePausedServer(bool paused, out string reason)
@@ -526,6 +521,12 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.ShipAccidents
             instanceId = 0U;
             if (!CanExecuteServerCommand(out reason))
             {
+                return false;
+            }
+
+            if (accidentId == PHSShipAccidentId.Fire)
+            {
+                reason = "fire_uses_event_manager_path";
                 return false;
             }
 
@@ -593,7 +594,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.ShipAccidents
 
             var itemId = itemRecord.HeldItemId;
             var itemRevision = itemRecord.Revision;
-            if (itemId != target.RequiredItemId || requestSequence == 0U)
+            if (string.IsNullOrWhiteSpace(itemId) || requestSequence == 0U)
             {
                 Debug.LogWarning(
                     $"PHS_SHIP_ACCIDENT_REPAIR_REQUEST_REJECTED reason=item_contract item={itemId} required={target.RequiredItemId} sequence={requestSequence}",
@@ -695,14 +696,13 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.ShipAccidents
                 || itemLifecycle == null
                 || itemRecord.OwnerClientId != senderClientId
                 || itemRecord.HeldItemId != expectedItemId
-                || itemRecord.Revision != expectedItemRevision
-                || expectedItemId != definition.RequiredItemId)
+                || itemRecord.Revision != expectedItemRevision)
             {
                 Debug.LogWarning($"PHS_SHIP_ACCIDENT_REPAIR_REJECTED reason=item_record_mismatch client={senderClientId} instance={accidentInstanceId}", this);
                 return false;
             }
 
-            if (!TryGetActionKind(
+            if (!UtilityItemRepairActionResolver.TryResolve(
                     definition.Id,
                     out var actionKind)
                 || !itemLifecycle.TryResolveHeldItemActionServer(
@@ -733,9 +733,18 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.ShipAccidents
                 return false;
             }
 
+            var appliedAmount =
+                UtilityItemRepairActionResolver.IsInstantCompleteItem(
+                    expectedItemId,
+                    actionKind)
+                    ? Mathf.Max(
+                        1,
+                        snapshot.RequiredRepairProgress
+                        - snapshot.RepairProgress)
+                    : actionProfile.Amount;
             var nextProgress = Mathf.Min(
                 snapshot.RequiredRepairProgress,
-                snapshot.RepairProgress + actionProfile.Amount);
+                snapshot.RepairProgress + appliedAmount);
             var completesRepair = nextProgress >= snapshot.RequiredRepairProgress;
             if (completesRepair)
             {
@@ -757,6 +766,11 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.ShipAccidents
                 }
 
                 repairRequestSequences[sequenceKey] = requestSequence;
+                var feedback =
+                    client.PlayerObject.GetComponent<PHSNetworkItemUseFeedbackController>();
+                feedback?.PublishConfirmedTargetImpactServer(
+                    actionKind,
+                    anchor.RepairPosition);
                 activeAccidents.RemoveAt(index);
                 nextDamageTimes.Remove(accidentInstanceId);
                 Debug.Log(
@@ -781,6 +795,11 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.ShipAccidents
             }
 
             repairRequestSequences[sequenceKey] = requestSequence;
+            var progressFeedback =
+                client.PlayerObject.GetComponent<PHSNetworkItemUseFeedbackController>();
+            progressFeedback?.PublishConfirmedTargetImpactServer(
+                actionKind,
+                anchor.RepairPosition);
             activeAccidents[index] = new NetworkShipAccidentSnapshot(
                 snapshot.InstanceId,
                 snapshot.AccidentId,
@@ -792,29 +811,6 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.ShipAccidents
                 $"PHS_ITEM_TARGET_REACTION item={expectedItemId} target={anchor.name} reaction=repair_progress result=accepted progress={snapshot.RepairProgress}->{nextProgress}/{snapshot.RequiredRepairProgress} instance={accidentInstanceId}",
                 anchor);
             return true;
-        }
-
-        private static bool TryGetActionKind(
-            PHSShipAccidentId accidentId,
-            out UtilityItemActionKind actionKind)
-        {
-            actionKind = accidentId switch
-            {
-                PHSShipAccidentId.PowerFailure =>
-                    UtilityItemActionKind.PowerRestore,
-                PHSShipAccidentId.DeviceFailure =>
-                    UtilityItemActionKind.DeviceRepair,
-                PHSShipAccidentId.HullBreach =>
-                    UtilityItemActionKind.HullBreachRepair,
-                PHSShipAccidentId.SteamLeak =>
-                    UtilityItemActionKind.SteamLeakRepair,
-                PHSShipAccidentId.OxygenFailure =>
-                    UtilityItemActionKind.OxygenGeneratorRepair,
-                PHSShipAccidentId.GravityGeneratorFailure =>
-                    UtilityItemActionKind.GravityGeneratorRepair,
-                _ => UtilityItemActionKind.None
-            };
-            return actionKind != UtilityItemActionKind.None;
         }
 
         private void ApplyPeriodicDamage()
@@ -837,14 +833,6 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.ShipAccidents
                 }
 
                 nextDamageTimes[snapshot.InstanceId] = currentTime + definition.DamageIntervalSeconds;
-                if (snapshot.AccidentId == PHSShipAccidentId.Fire
-                    && fireCoordinator != null
-                    && fireCoordinator.IsManagingAccident(snapshot.InstanceId)
-                    && !fireCoordinator.HasBurningPatch(snapshot.InstanceId))
-                {
-                    continue;
-                }
-
                 if (!TryApplyPeriodicImpact(definition, out var reason))
                 {
                     Debug.LogError($"PHS_SHIP_ACCIDENT_TICK_FAILED reason={reason} instance={snapshot.InstanceId}", this);

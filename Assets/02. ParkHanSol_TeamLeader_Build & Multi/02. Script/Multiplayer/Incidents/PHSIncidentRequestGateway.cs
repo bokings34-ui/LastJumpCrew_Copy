@@ -288,15 +288,26 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
                 return false;
             }
 
+            if (!IncidentRequestContentContract.TryNormalize(
+                    route.Channel,
+                    route.PayloadKind,
+                    route.ContentId,
+                    out var normalizedPayloadKind,
+                    out var normalizedContentId,
+                    out reason))
+            {
+                return false;
+            }
+
             var request = new NetworkRunIncidentRequest(
                 fixedRequestId,
                 parentCommandId,
                 snapshot.StageSequence,
                 snapshot.MapId,
                 route.Channel,
-                route.PayloadKind,
+                normalizedPayloadKind,
                 route.IncidentFamily,
-                route.ContentId,
+                normalizedContentId,
                 route.SourceKind,
                 route.PressureCost,
                 route.WarpChargeMultiplier,
@@ -509,15 +520,26 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
                 return false;
             }
 
+            if (!IncidentRequestContentContract.TryNormalize(
+                    NetworkRunIncidentChannel.Internal,
+                    NetworkRunIncidentPayloadKind.ShipAccident,
+                    entry.ContentId,
+                    out var normalizedPayloadKind,
+                    out var normalizedContentId,
+                    out reason))
+            {
+                return false;
+            }
+
             var request = new NetworkRunIncidentRequest(
                 fixedRequestId,
                 parentCommandId,
                 snapshot.StageSequence,
                 snapshot.MapId,
                 NetworkRunIncidentChannel.Internal,
-                NetworkRunIncidentPayloadKind.ShipAccident,
+                normalizedPayloadKind,
                 entry.IncidentFamily,
-                entry.ContentId,
+                normalizedContentId,
                 NetworkRunIncidentSourceKind.Consequence,
                 entry.PressureCost,
                 entry.WarpChargeMultiplier,

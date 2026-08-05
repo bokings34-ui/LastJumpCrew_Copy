@@ -6,11 +6,13 @@ namespace LastJumpCrew.ParkHanSol.Interaction
     public sealed class ExteriorTestTeleportInteractable : MonoBehaviour, IInteractable
     {
         [SerializeField] private Transform destination;
+        [SerializeField] private NetworkPlayerSector destinationSector = NetworkPlayerSector.Transition;
         [SerializeField] private string interactionPrompt = "Move To Exterior Test Zone";
         [SerializeField, Min(0.5f)] private float serverInteractionDistance = 4f;
 
         public string InteractionPrompt => interactionPrompt;
         public Transform Destination => destination;
+        public NetworkPlayerSector DestinationSector => destinationSector;
 
         public bool CanInteract(IItemHolder itemHolder)
         {
@@ -53,6 +55,12 @@ namespace LastJumpCrew.ParkHanSol.Interaction
             if (!isActiveAndEnabled || destination == null)
             {
                 reason = "portal_inactive_or_destination_missing";
+                return false;
+            }
+
+            if (destinationSector == NetworkPlayerSector.Transition)
+            {
+                reason = "destination_sector_invalid";
                 return false;
             }
 

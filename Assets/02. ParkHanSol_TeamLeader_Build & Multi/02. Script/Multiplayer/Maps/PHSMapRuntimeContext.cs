@@ -78,6 +78,16 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Maps
 
             if (runFlowCoordinator == null)
             {
+                var networkManager = NetworkManager.Singleton;
+                if (networkManager == null
+                    || !networkManager.IsListening
+                    || networkManager.ShutdownInProgress)
+                {
+                    bindStartedAt = Time.unscaledTime;
+                    bindErrorLogged = false;
+                    return;
+                }
+
                 TryBindRunFlow();
                 if (runFlowCoordinator == null
                     && !bindErrorLogged
@@ -326,6 +336,15 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Maps
                 return false;
             }
 
+            if (!debrisStream.ConfigureTargetDebrisCount(profile.DebrisAmount))
+            {
+                Debug.LogError(
+                    $"PHS_MAP_RUNTIME_APPLY_FAILED reason=debris_amount_rejected " +
+                    $"mapId={mapId} amount={profile.DebrisAmount}",
+                    this);
+                return false;
+            }
+
             debrisStream.SetSimulationEnabled(profile.AllowsDebrisGeneration);
             if (IsServer()
                 && !internalAccidentCoordinator.TrySetMaintenancePausedServer(
@@ -476,6 +495,20 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Maps
                     out var internalConfigureReason))
             {
                 reason = $"internal_accident_scheduler_configure_failed:{internalConfigureReason}";
+                return false;
+            }
+
+            var eventCoordinator = NetworkEventCoordinator.Instance;
+            var eventImpactReason = eventCoordinator == null
+                ? "coordinator_missing"
+                : null;
+            if (eventCoordinator == null
+                || !eventCoordinator.TryConfigureShipModuleImpactServer(
+                    profile.InternalModuleDamageMultiplier,
+                    profile.InternalShipDamageMultiplier,
+                    out eventImpactReason))
+            {
+                reason = $"event_module_impact_configure_failed:{eventImpactReason}";
                 return false;
             }
 

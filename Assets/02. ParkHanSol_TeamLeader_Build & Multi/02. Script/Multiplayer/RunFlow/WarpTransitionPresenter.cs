@@ -1,6 +1,7 @@
 using System.Collections;
 using LastJumpCrew.ParkHanSol.Multiplayer.Maps;
 using TMPro;
+using Unity.Netcode;
 using UnityEngine;
 
 namespace LastJumpCrew.ParkHanSol.Multiplayer
@@ -20,6 +21,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
         [SerializeField] private TMP_Text warpStatusText;
         [SerializeField] private GameObject safeZoneStatusRoot;
         [SerializeField] private TMP_Text safeZoneStatusText;
+        [SerializeField] private GameObject safeZoneShipWarpEffect;
         [SerializeField, Min(0.05f)] private float fadeSeconds = 0.35f;
 
         [Header("Environment")]
@@ -75,6 +77,16 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
                 return;
             }
 
+            var networkManager = NetworkManager.Singleton;
+            if (networkManager == null
+                || !networkManager.IsListening
+                || networkManager.ShutdownInProgress)
+            {
+                bindStartedAtTime = Time.unscaledTime;
+                bindErrorLogged = false;
+                return;
+            }
+
             if (Time.unscaledTime < nextBindAttemptTime)
             {
                 return;
@@ -96,6 +108,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
             transitionCanvasGroup.blocksRaycasts = true;
             transitionCanvasGroup.interactable = false;
             warpVisualRoot.SetActive(true);
+            SetSafeZoneShipWarpEffect(false);
             HideSafeZoneStatus();
             ShowWarpStatusCard("WARP IN PROGRESS");
             ApplySkybox(warpSkybox);
@@ -115,6 +128,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
             transitionCanvasGroup.blocksRaycasts = true;
             transitionCanvasGroup.interactable = false;
             warpVisualRoot.SetActive(true);
+            SetSafeZoneShipWarpEffect(false);
             HideSafeZoneStatus();
             ShowWarpStatusCard("ARRIVING");
             ApplySkybox(arrivalSkybox);
@@ -178,6 +192,16 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
         {
             if (runFlowCoordinator == null)
             {
+                var networkManager = NetworkManager.Singleton;
+                if (networkManager == null
+                    || !networkManager.IsListening
+                    || networkManager.ShutdownInProgress)
+                {
+                    bindStartedAtTime = Time.unscaledTime;
+                    bindErrorLogged = false;
+                    return;
+                }
+
                 runFlowCoordinator = NetworkRunFlowCoordinator.Instance;
             }
 
@@ -227,6 +251,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
         {
             yield return FadeCanvas(transitionCanvasGroup.alpha, 0f);
             warpVisualRoot.SetActive(false);
+            SetSafeZoneShipWarpEffect(false);
             HideWarpStatusCard();
             HideSafeZoneStatus();
             transitionCanvasGroup.blocksRaycasts = false;
@@ -258,6 +283,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
             transitionCanvasGroup.blocksRaycasts = false;
             transitionCanvasGroup.interactable = false;
             warpVisualRoot.SetActive(false);
+            SetSafeZoneShipWarpEffect(false);
             HideWarpStatusCard();
             ApplySkybox(normalSkybox);
             SetPlayerInputBlocked(false);
@@ -295,6 +321,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
             transitionCanvasGroup.blocksRaycasts = false;
             transitionCanvasGroup.interactable = false;
             warpVisualRoot.SetActive(false);
+            SetSafeZoneShipWarpEffect(true);
             HideWarpStatusCard();
             safeZoneStatusText.text = "안전구역";
             safeZoneStatusRoot.SetActive(true);
@@ -316,6 +343,14 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
         private void HideSafeZoneStatus()
         {
             safeZoneStatusRoot.SetActive(false);
+        }
+
+        private void SetSafeZoneShipWarpEffect(bool active)
+        {
+            if (safeZoneShipWarpEffect != null)
+            {
+                safeZoneShipWarpEffect.SetActive(active);
+            }
         }
 
         private bool RequireSetup(string operation)

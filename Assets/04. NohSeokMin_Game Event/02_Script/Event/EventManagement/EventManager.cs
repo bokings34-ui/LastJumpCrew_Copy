@@ -15,11 +15,6 @@ namespace SM
 
         private void Update()
         {
-            //foreach (var evt in _activeEvents.Values)
-            //{
-            //    evt.OnTick(Time.deltaTime);
-            //}
-
             _eventsToTickCache.Clear();
 
             foreach (var evt in _activeEvents.Values)
@@ -36,6 +31,12 @@ namespace SM
                     evt.OnTick(Time.deltaTime);
                 }
             }
+        }
+
+        public EventBase GetActiveEvent(EventId id)
+        {
+            _activeEvents.TryGetValue(id, out var evt);
+            return evt;
         }
 
         public bool IsActive(EventId id)

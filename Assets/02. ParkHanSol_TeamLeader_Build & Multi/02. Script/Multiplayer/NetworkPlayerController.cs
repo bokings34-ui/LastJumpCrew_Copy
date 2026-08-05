@@ -46,37 +46,27 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
         [Header("Comfort Zero Gravity")]
         [SerializeField, Range(0.1f, 1f)] private float zeroGravityPrecisionMultiplier = 0.45f;
         [Header("Zero Gravity Thruster Audio")]
-        [SerializeField] private AudioSource thrusterAudioSource;
-        [SerializeField] private AudioClip thrusterAudioClip;
-        [SerializeField, Range(0f, 1f)] private float thrusterAudioVolume = 0.65f;
-        [SerializeField, Min(0.1f)] private float thrusterAudioAttackSpeed = 12f;
-        [SerializeField, Min(0.1f)] private float thrusterAudioReleaseSpeed = 2.5f;
+        [SerializeField] private NetworkPlayerThrusterAudio thrusterAudio;
         [SerializeField] private ParkHanSolPlayHudMockPresenter playHudPresenter;
         [Header("Input")]
         [SerializeField] private PlayerControlInput playerControlInput;
-        public const string MouseSensitivityPreferenceKey = "PHS_MouseSensitivity";
+        public const string MouseSensitivityPreferenceKey = NetworkPlayerOptionsStore.MouseSensitivityPreferenceKey;
         public const float DefaultMouseSensitivity = 0.6f;
-        public const float MinimumMouseSensitivity = 0.05f;
-        public const float MaximumMouseSensitivity = 5f;
+        public const float MinimumMouseSensitivity = NetworkPlayerOptionsStore.MinimumMouseSensitivity;
+        public const float MaximumMouseSensitivity = NetworkPlayerOptionsStore.MaximumMouseSensitivity;
 
         [SerializeField, Range(MinimumMouseSensitivity, MaximumMouseSensitivity)] private float mouseSensitivity = DefaultMouseSensitivity;
         [SerializeField] private Transform cameraRoot;
         [SerializeField] private Camera playerCamera;
         [SerializeField] private AudioListener audioListener;
         [SerializeField] private Renderer[] localOwnerHiddenRenderers;
-        [Header("Knockback")]
-        [SerializeField, Min(0f)]
-        private float groundedKnockbackRecovery = 8f;
-
-        [SerializeField, Min(0f)]
-        private float zeroGravityKnockbackRecovery = 2f;
-
-        private Vector3 externalVelocity;
 
         private CharacterController characterController;
         private NetworkPlayerGrappleController grappleController;
         private NetworkPlayerUpgradeState upgradeState;
         private NetworkPlayerLifeState playerLifeState;
+        private StatusEffectController statusEffectController;
+        private NetworkPlayerSectorState playerSectorState;
         private Rigidbody attachedRigidbody;
         private IDebrisHolder debrisHolder;
         private float verticalVelocity;
@@ -91,11 +81,24 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
         private bool pauseInputBlocked;
         private bool lifeInputBlocked;
         private bool warpInputBlocked;
+        private bool resultInputBlocked;
         private bool autoMoveEnabled;
         private float autoMoveSeconds;
         private float autoMoveEndTime;
         private bool autoMoveStarted;
         private float nextPositionLogTime;
+        private bool inputDeviceProbeEnabled;
+        private float inputDeviceProbeSeconds;
+        private bool inputDeviceProbeStarted;
+        private bool inputDeviceProbeReported;
+        private bool inputDeviceProbeBlockedLogged;
+        private bool inputDeviceProbeSampleLogged;
+        private float inputDeviceProbeStartTime;
+        private Vector3 inputDeviceProbeStartPosition;
+        private float inputDeviceProbeStartYaw;
+        private float inputDeviceProbeStartPitch;
+        private float inputDeviceProbeMaximumMove;
+        private float inputDeviceProbeMaximumLook;
         private bool originalRigidbodyUseGravity;
         private bool originalRigidbodyIsKinematic;
         private readonly List<NetworkPlayerGravityArea> gravityAreas = new();
@@ -132,17 +135,12 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
 
         public static float GetSavedMouseSensitivity(float fallback = DefaultMouseSensitivity)
         {
-            return Mathf.Clamp(
-                PlayerPrefs.GetFloat(MouseSensitivityPreferenceKey, fallback),
-                MinimumMouseSensitivity,
-                MaximumMouseSensitivity);
+            return NetworkPlayerOptionsStore.Shared.GetMouseSensitivity(fallback);
         }
 
         public static void SaveMouseSensitivity(float value)
         {
-            PlayerPrefs.SetFloat(
-                MouseSensitivityPreferenceKey,
-                Mathf.Clamp(value, MinimumMouseSensitivity, MaximumMouseSensitivity));
+            NetworkPlayerOptionsStore.Shared.SetMouseSensitivity(value);
         }
 
         public void ApplyGravityState(GravityState gravityState)
@@ -229,7 +227,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
                 return;
             }
 
-            TeleportTo(targetPosition, targetRotation);
+            TryTeleportOnServer(targetPosition, targetRotation, "test");
         }
 
         public void RequestLocalPortalTeleport(string portalName)
@@ -240,15 +238,21 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
                 return;
             }
 
-            if (!IsSpawned || !IsOwner)
+            if (!IsSpawned)
             {
-                Debug.LogError($"PHS_LOCAL_PORTAL_FAILED reason=owner_required player={name}");
+                Debug.LogError($"PHS_LOCAL_PORTAL_FAILED reason=player_not_spawned player={name}");
                 return;
             }
 
             if (IsServer)
             {
                 TeleportThroughLocalPortal(portalName);
+                return;
+            }
+
+            if (!IsOwner)
+            {
+                Debug.LogError($"PHS_LOCAL_PORTAL_FAILED reason=owner_required player={name}");
                 return;
             }
 
@@ -394,37 +398,34 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
 
         public bool TryTeleportForWarp(Vector3 targetPosition, Quaternion targetRotation)
         {
-            if (!IsSpawned || !IsServer)
+            if (!TryRequireSectorState("warp", out var sectorState)
+                || !TryRequireLifeState("warp", out var lifeState))
             {
-                Debug.LogError($"PHS_WARP_TELEPORT_FAILED reason=server_required player={name}", this);
                 return false;
             }
 
-            var networkTransform = GetComponent<NetworkTransform>();
-            if (networkTransform == null)
+            if (!TryTeleportOnServer(targetPosition, targetRotation, "warp"))
             {
-                Debug.LogError($"PHS_WARP_TELEPORT_FAILED reason=network_transform_missing player={name}", this);
                 return false;
             }
 
-            ResetGravityTracking();
-            var wasEnabled = characterController != null && characterController.enabled;
-            if (characterController != null)
-            {
-                characterController.enabled = false;
-            }
-
-            networkTransform.Teleport(targetPosition, targetRotation, transform.localScale);
-            PlanarVelocity = Vector3.zero;
-            verticalVelocity = 0f;
-            zeroGravityVelocity = Vector3.zero;
-
-            if (characterController != null)
-            {
-                characterController.enabled = wasEnabled;
-            }
-
+            sectorState.ResetToInteriorServer("warp_teleport");
+            lifeState.CancelDeadZoneWarning();
             Debug.Log($"PHS_WARP_TELEPORT_OK player={name} pos={targetPosition}", this);
+            return true;
+        }
+
+        public bool TryTeleportForRespawn(Vector3 targetPosition, Quaternion targetRotation)
+        {
+            if (!TryRequireSectorState("respawn", out var sectorState)
+                || !TryRequireLifeState("respawn", out var lifeState)
+                || !TryTeleportOnServer(targetPosition, targetRotation, "respawn"))
+            {
+                return false;
+            }
+
+            sectorState.ResetToInteriorServer("respawn");
+            lifeState.CancelDeadZoneWarning();
             return true;
         }
 
@@ -502,8 +503,50 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
                 return;
             }
 
-            TeleportTo(destinationPosition, destinationRotation);
-            Debug.Log($"PHS_LOCAL_PORTAL_OK portal={portalName} clientId={OwnerClientId}");
+            if (!TryRequireSectorState("local_portal", out var sectorState))
+            {
+                return;
+            }
+
+            var destinationSector = matchingPortals[0].DestinationSector;
+            if (destinationSector == NetworkPlayerSector.Interior && playerLifeState == null)
+            {
+                Debug.LogError(
+                    $"PHS_LOCAL_PORTAL_FAILED reason=life_state_missing portal={portalName} clientId={OwnerClientId}",
+                    this);
+                return;
+            }
+
+            if (!sectorState.TryBeginTransitionServer(destinationSector, out var transitionReason))
+            {
+                Debug.LogError(
+                    $"PHS_LOCAL_PORTAL_FAILED reason={transitionReason} portal={portalName} clientId={OwnerClientId}",
+                    this);
+                return;
+            }
+
+            if (!TryTeleportOnServer(destinationPosition, destinationRotation, "local_portal"))
+            {
+                sectorState.CancelTransitionServer("teleport_failed");
+                return;
+            }
+
+            if (!sectorState.TryCompleteTransitionServer(out transitionReason))
+            {
+                Debug.LogError(
+                    $"PHS_LOCAL_PORTAL_FAILED reason={transitionReason} portal={portalName} clientId={OwnerClientId}",
+                    this);
+                sectorState.CancelTransitionServer("completion_failed");
+                return;
+            }
+
+            if (destinationSector == NetworkPlayerSector.Interior)
+            {
+                playerLifeState.CancelDeadZoneWarning();
+            }
+
+            Debug.Log(
+                $"PHS_LOCAL_PORTAL_OK portal={portalName} clientId={OwnerClientId} sector={destinationSector}");
         }
 
         public override void OnNetworkSpawn()
@@ -512,12 +555,19 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
             grappleController = GetComponent<NetworkPlayerGrappleController>();
             upgradeState = GetComponent<NetworkPlayerUpgradeState>();
             playerLifeState = GetComponent<NetworkPlayerLifeState>();
+            statusEffectController = GetComponent<StatusEffectController>();
+            playerSectorState = GetComponent<NetworkPlayerSectorState>();
             ConfigureNetworkRigidbody(true);
+            if (playerSectorState == null)
+            {
+                Debug.LogError($"PHS_PLAYER_SECTOR_SETUP_FAILED reason=sector_state_missing player={name}", this);
+            }
             if (IsServer)
             {
                 thrusterFuel.Value = EffectiveThrusterFuelCapacity;
             }
 
+            SetLocalOwnerVisualsVisible(!IsOwner);
             RefreshForActiveScene();
         }
 
@@ -535,6 +585,8 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
             grappleController = GetComponent<NetworkPlayerGrappleController>();
             upgradeState = GetComponent<NetworkPlayerUpgradeState>();
             playerLifeState = GetComponent<NetworkPlayerLifeState>();
+            statusEffectController = GetComponent<StatusEffectController>();
+            playerSectorState = GetComponent<NetworkPlayerSectorState>();
             attachedRigidbody = GetComponent<Rigidbody>();
             debrisHolder = GetComponent<IDebrisHolder>();
             if (playerControlInput == null)
@@ -560,34 +612,92 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
             ConfigureCommandLineAutomation();
         }
 
+        private void Start()
+        {
+            if (!IsSpawned)
+            {
+                RefreshForActiveScene();
+            }
+        }
+
         private void OnEnable()
         {
             SceneManager.activeSceneChanged += HandleActiveSceneChanged;
+            if (statusEffectController != null)
+            {
+                statusEffectController.StatusEffectStarted += HandleStatusEffectStarted;
+            }
         }
 
         private void OnDisable()
         {
             SceneManager.activeSceneChanged -= HandleActiveSceneChanged;
+            if (statusEffectController != null)
+            {
+                statusEffectController.StatusEffectStarted -= HandleStatusEffectStarted;
+            }
             SetLocalOwnerVisualsVisible(true);
-            StopThrusterAudio();
+            StopThrusterFeedback();
+        }
+
+        private void HandleStatusEffectStarted(StatusEffectType effectType)
+        {
+            if (effectType != StatusEffectType.ElectricShok)
+            {
+                return;
+            }
+
+            // The remote owner stops submitting movement as soon as the replicated
+            // status arrives. Clear the server's last accepted velocity here so that
+            // stale input cannot continue moving the shocked player.
+            if (IsSpawned && !IsServer)
+            {
+                return;
+            }
+
+            StopMovementForShock();
+            Debug.Log(
+                $"PHS_SHOCK_RESTRAINT_APPLIED player={name} " +
+                $"ownerClientId={OwnerClientId} server={IsServer}",
+                this);
         }
 
         private void Update()
         {
-            if (!CanProcessLocalInput())
+            var canProcessLocalInput = CanProcessLocalInput();
+            if (inputDeviceProbeEnabled && IsOwner && !canProcessLocalInput)
+            {
+                var blockedMove = ReadMove();
+                var blockedLook = ReadLook();
+                if (!inputDeviceProbeBlockedLogged
+                    && (blockedMove.sqrMagnitude > 0.01f || blockedLook.sqrMagnitude > 0.01f))
+                {
+                    inputDeviceProbeBlockedLogged = true;
+                    Debug.Log(
+                        $"PHS_INPUT_DEVICE_BLOCKED ownerClientId={OwnerClientId} " +
+                        $"rawMove={blockedMove.magnitude:F2} rawLook={blockedLook.magnitude:F2} " +
+                        $"gameplay={gameplayInputEnabled} pause={pauseInputBlocked} life={lifeInputBlocked} " +
+                        $"warp={warpInputBlocked} result={resultInputBlocked} " +
+                        $"restart={(NetworkRunRestartCoordinator.Instance != null && NetworkRunRestartCoordinator.Instance.BlocksRun)}",
+                        this);
+                }
+            }
+
+            if (!canProcessLocalInput)
             {
                 return;
             }
 
             RefreshThrusterGauge();
             var move = ReadMove();
+            var look = ReadLook();
+            CaptureLocalInputDeviceProbe(move, look);
             if (autoMoveEnabled && Time.time < autoMoveEndTime)
             {
                 move.y = 1f;
             }
 
             var verticalMove = ReadVerticalMove();
-            var look = ReadLook();
             if (playerControlInput == null)
             {
                 return;
@@ -612,11 +722,27 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
 
             if (!IsSpawned || IsServer)
             {
-                MoveOnServer(move, verticalMove, look.x, cameraPitch, jump, ascend, sprint, deltaTime);
+                MoveOnServer(
+                    move,
+                    verticalMove,
+                    look.x * GetMouseLookDegrees(),
+                    cameraPitch,
+                    jump,
+                    ascend,
+                    sprint,
+                    deltaTime);
             }
             else
             {
-                SubmitInputServerRpc(move, verticalMove, look.x, cameraPitch, jump, ascend, sprint, deltaTime);
+                SubmitInputServerRpc(
+                    move,
+                    verticalMove,
+                    look.x * GetMouseLookDegrees(),
+                    cameraPitch,
+                    jump,
+                    ascend,
+                    sprint,
+                    deltaTime);
             }
         }
 
@@ -761,6 +887,8 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
 
         private void LateUpdate()
         {
+            UpdateRemoteInputDeviceProbe();
+
             if (!autoMoveEnabled || Time.time < nextPositionLogTime)
             {
                 return;
@@ -772,6 +900,8 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
 
         private void ConfigureCommandLineAutomation()
         {
+            inputDeviceProbeSeconds = GetCommandLineFloat("-phsInputDeviceProbeSeconds");
+            inputDeviceProbeEnabled = inputDeviceProbeSeconds > 0f;
             autoMoveSeconds = GetCommandLineFloat("-phsAutoMoveSeconds");
             if (autoMoveSeconds <= 0f)
             {
@@ -780,6 +910,100 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
 
             autoMoveEnabled = true;
             nextPositionLogTime = Time.time + 1f;
+        }
+
+        private void CaptureLocalInputDeviceProbe(Vector2 move, Vector2 look)
+        {
+            if (!inputDeviceProbeEnabled || !IsOwner || !gameplayInputEnabled || inputDeviceProbeReported
+                || SceneManager.GetActiveScene().name != "PHS_Map_ver1")
+            {
+                return;
+            }
+
+            inputDeviceProbeMaximumMove = Mathf.Max(inputDeviceProbeMaximumMove, move.magnitude);
+            inputDeviceProbeMaximumLook = Mathf.Max(inputDeviceProbeMaximumLook, look.magnitude);
+            if (!inputDeviceProbeSampleLogged
+                && (move.sqrMagnitude > 0.01f || look.sqrMagnitude > 0.01f))
+            {
+                inputDeviceProbeSampleLogged = true;
+                Debug.Log(
+                    $"PHS_INPUT_DEVICE_SAMPLE ownerClientId={OwnerClientId} " +
+                    $"rawMove={move.magnitude:F2} rawLook={look.magnitude:F2}",
+                    this);
+            }
+
+            if (!inputDeviceProbeStarted)
+            {
+                if (inputDeviceProbeMaximumMove < 0.5f || inputDeviceProbeMaximumLook < 0.1f)
+                {
+                    return;
+                }
+
+                inputDeviceProbeStarted = true;
+                inputDeviceProbeStartTime = Time.unscaledTime;
+                inputDeviceProbeStartPosition = transform.position;
+                inputDeviceProbeStartYaw = transform.eulerAngles.y;
+                inputDeviceProbeStartPitch = cameraPitch;
+                if (!IsServer)
+                {
+                    BeginInputDeviceRemoteProbeServerRpc();
+                }
+            }
+            if (Time.unscaledTime < inputDeviceProbeStartTime + inputDeviceProbeSeconds)
+            {
+                return;
+            }
+
+            inputDeviceProbeReported = true;
+            var positionDelta = Vector3.Distance(inputDeviceProbeStartPosition, transform.position);
+            var yawDelta = Mathf.Abs(Mathf.DeltaAngle(inputDeviceProbeStartYaw, transform.eulerAngles.y));
+            var pitchDelta = Mathf.Abs(cameraPitch - inputDeviceProbeStartPitch);
+            var passed = inputDeviceProbeMaximumMove >= 0.5f
+                && inputDeviceProbeMaximumLook >= 0.1f
+                && positionDelta >= 0.5f
+                && (yawDelta >= 1f || pitchDelta >= 1f);
+            Debug.Log(
+                $"PHS_INPUT_DEVICE_PROBE ownerClientId={OwnerClientId} pass={passed} " +
+                $"rawMove={inputDeviceProbeMaximumMove:F2} rawLook={inputDeviceProbeMaximumLook:F2} " +
+                $"positionDelta={positionDelta:F2} yawDelta={yawDelta:F2} pitchDelta={pitchDelta:F2}",
+                this);
+        }
+
+        private void UpdateRemoteInputDeviceProbe()
+        {
+            if (!inputDeviceProbeEnabled || !IsServer || IsOwner || !IsSpawned || inputDeviceProbeReported
+                || SceneManager.GetActiveScene().name != "PHS_Map_ver1")
+            {
+                return;
+            }
+
+            if (!inputDeviceProbeStarted || Time.unscaledTime < inputDeviceProbeStartTime + inputDeviceProbeSeconds)
+            {
+                return;
+            }
+
+            inputDeviceProbeReported = true;
+            var positionDelta = Vector3.Distance(inputDeviceProbeStartPosition, transform.position);
+            var yawDelta = Mathf.Abs(Mathf.DeltaAngle(inputDeviceProbeStartYaw, transform.eulerAngles.y));
+            var passed = positionDelta >= 0.5f && yawDelta >= 1f;
+            Debug.Log(
+                $"PHS_INPUT_REMOTE_SYNC ownerClientId={OwnerClientId} pass={passed} " +
+                $"positionDelta={positionDelta:F2} yawDelta={yawDelta:F2}",
+                this);
+        }
+
+        [ServerRpc]
+        private void BeginInputDeviceRemoteProbeServerRpc()
+        {
+            if (!inputDeviceProbeEnabled || !IsServer || IsOwner || inputDeviceProbeStarted)
+            {
+                return;
+            }
+
+            inputDeviceProbeStarted = true;
+            inputDeviceProbeStartTime = Time.unscaledTime;
+            inputDeviceProbeStartPosition = transform.position;
+            inputDeviceProbeStartYaw = transform.eulerAngles.y;
         }
 
         private static float GetCommandLineFloat(string key)
@@ -798,9 +1022,9 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
         }
 
         [ServerRpc]
-        private void SubmitInputServerRpc(Vector2 move, float verticalMove, float yawInput, float lookPitch, bool jump, bool ascend, bool sprint, float deltaTime)
+        private void SubmitInputServerRpc(Vector2 move, float verticalMove, float yawDegrees, float lookPitch, bool jump, bool ascend, bool sprint, float deltaTime)
         {
-            MoveOnServer(move, verticalMove, yawInput, lookPitch, jump, ascend, sprint, Mathf.Clamp(deltaTime, 0f, 0.05f));
+            MoveOnServer(move, verticalMove, yawDegrees, lookPitch, jump, ascend, sprint, Mathf.Clamp(deltaTime, 0f, 0.05f));
         }
 
         public void SetLifeInputBlocked(bool blocked)
@@ -877,7 +1101,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
             }
 
             playHudPresenter.SetHazardWarning(
-                $"?∞ÎìúÏ°?- {Mathf.CeilToInt(Mathf.Max(0f, remainingSeconds))}Ï¥????¨Îßù");
+                $"Îç∞ÎìúÏ°¥ - {Mathf.CeilToInt(Mathf.Max(0f, remainingSeconds))}Ï¥à ÌõÑ ÏÇ¨Îßù");
         }
 
         public void ClearDeadZoneWarning()
@@ -906,19 +1130,16 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
             }
         }
 
-        private void MoveOnServer(Vector2 move, float verticalMove, float yawInput, float lookPitch, bool jump, bool ascend, bool sprint, float deltaTime)
+        private void MoveOnServer(Vector2 move, float verticalMove, float yawDegrees, float lookPitch, bool jump, bool ascend, bool sprint, float deltaTime)
         {
-            if (playerLifeState != null && !playerLifeState.IsAlive)
+            if ((playerLifeState != null && !playerLifeState.IsAlive)
+                || (statusEffectController != null && statusEffectController.IsShocked))
             {
-                HasMoveInput = false;
-                IsRunning = false;
-                PlanarVelocity = Vector3.zero;
-                verticalVelocity = 0f;
-                zeroGravityVelocity = Vector3.zero;
+                StopMovementForShock();
                 return;
             }
 
-            RotatePlayer(yawInput, deltaTime);
+            RotatePlayer(yawDegrees, deltaTime);
             RecoverThrusterFuel(deltaTime);
 
             if (gravityMode != NetworkPlayerGravityMode.ShipGravity)
@@ -965,18 +1186,17 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
             grappleController?.ApplyServerPull(deltaTime);
             var velocity = PlanarVelocity;
             velocity.y = verticalVelocity;
-
-
-           
-            var finalVelocity = velocity + externalVelocity; //∞»±‚, ¥ﬁ∏Æ±‚, ¡°«¡ º”µµø° ø‹∫Œ ≥ÀπÈ º”µµ +
-
-
-            characterController.Move(finalVelocity * deltaTime);
-
-            externalVelocity = Vector3.MoveTowards(externalVelocity, Vector3.zero, groundedKnockbackRecovery * deltaTime);
-
             characterController.Move(velocity * deltaTime);
+        }
 
+        private void StopMovementForShock()
+        {
+            HasMoveInput = false;
+            IsRunning = false;
+            PlanarVelocity = Vector3.zero;
+            verticalVelocity = 0f;
+            zeroGravityVelocity = Vector3.zero;
+            UpdateLocalThrusterFeedback(false);
         }
 
         private void MoveZeroGravity(Vector2 move, float verticalMove, float lookPitch, bool ascend, bool precision, float deltaTime)
@@ -1010,16 +1230,8 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
             grappleController?.ApplyServerPull(deltaTime);
             PlanarVelocity = new Vector3(zeroGravityVelocity.x, 0f, zeroGravityVelocity.z);
 
-
-            var finalVelocity = zeroGravityVelocity + externalVelocity; //π´¡ﬂ∑¬ ¿Ãµø º”µµøÕ ø‹∫Œ ≥ÀπÈ º”µµ + 
-            characterController.Move(zeroGravityVelocity * deltaTime);
-
-            externalVelocity = Vector3.MoveTowards(externalVelocity, Vector3.zero, zeroGravityKnockbackRecovery * deltaTime); //¿œπ› ∫∏¥Ÿ ¡ﬂ∑¬ ªÛ≈¬∫∏¥Ÿ ≥ÀπÈ¿Ã √µ√µ¿Ã ¡ŸæÓµÎ
-
             var collisionFlags = characterController.Move(zeroGravityVelocity * deltaTime);
             grappleController?.StopGrappleForBlockedPlayerMovement(collisionFlags);
-
-
         }
 
         private (Vector3 Forward, Vector3 Right, Vector3 Up) GetZeroGravityMoveBasis(float lookPitch)
@@ -1215,30 +1427,37 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
                 return false;
             }
 
-            var networkTransform = GetComponent<NetworkTransform>();
-            if (networkTransform == null)
+            if (!TryRequireSectorState("gameplay_spawn", out var sectorState))
             {
-                Debug.LogError($"PHS_SPAWN_POINT_FAILED reason=network_transform_missing player={name}", this);
                 return false;
             }
 
-            var wasEnabled = characterController != null && characterController.enabled;
-            if (characterController != null)
+            if (!TryTeleportOnServer(spawnPoint.position, spawnPoint.rotation, "gameplay_spawn"))
             {
-                characterController.enabled = false;
+                return false;
             }
 
-            networkTransform.Teleport(spawnPoint.position, spawnPoint.rotation, transform.localScale);
-            verticalVelocity = 0f;
+            sectorState.ResetToInteriorServer("gameplay_spawn");
             initializedGameplaySceneHandle = activeScene.handle.GetRawData();
-
-            if (characterController != null)
-            {
-                characterController.enabled = wasEnabled;
-            }
 
             Debug.Log($"PHS_PLAYER_SPAWN_POINT ownerClientId={OwnerClientId} pos={transform.position}");
             return true;
+        }
+
+        public void SetResultInputBlocked(bool blocked)
+        {
+            if (IsSpawned && !IsOwner)
+            {
+                return;
+            }
+
+            resultInputBlocked = blocked;
+            if (blocked)
+            {
+                HasMoveInput = false;
+                IsRunning = false;
+                UpdateLocalThrusterFeedback(false);
+            }
         }
 
         [ServerRpc]
@@ -1375,6 +1594,94 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
                 this);
         }
 
+        private bool TryRequireSectorState(string operation, out NetworkPlayerSectorState sectorState)
+        {
+            sectorState = playerSectorState;
+            if (!IsSpawned || !IsServer)
+            {
+                Debug.LogError(
+                    $"PHS_PLAYER_SECTOR_REQUIRED_FAILED reason=server_required operation={operation} player={name}",
+                    this);
+                return false;
+            }
+
+            if (sectorState != null)
+            {
+                return true;
+            }
+
+            Debug.LogError(
+                $"PHS_PLAYER_SECTOR_REQUIRED_FAILED reason=sector_state_missing operation={operation} player={name}",
+                this);
+            return false;
+        }
+
+        private bool TryRequireLifeState(string operation, out NetworkPlayerLifeState lifeState)
+        {
+            lifeState = playerLifeState;
+            if (lifeState != null)
+            {
+                return true;
+            }
+
+            Debug.LogError(
+                $"PHS_PLAYER_LIFE_REQUIRED_FAILED reason=life_state_missing operation={operation} player={name}",
+                this);
+            return false;
+        }
+
+        private bool TryTeleportOnServer(
+            Vector3 targetPosition,
+            Quaternion targetRotation,
+            string operation)
+        {
+            if (!IsSpawned || !IsServer)
+            {
+                Debug.LogError(
+                    $"PHS_PLAYER_TELEPORT_FAILED reason=server_required operation={operation} player={name}",
+                    this);
+                return false;
+            }
+
+            var networkTransform = GetComponent<NetworkTransform>();
+            if (networkTransform == null || characterController == null || grappleController == null)
+            {
+                Debug.LogError(
+                    $"PHS_PLAYER_TELEPORT_FAILED reason=contract_missing operation={operation} player={name} " +
+                    $"networkTransform={networkTransform != null} characterController={characterController != null} " +
+                    $"grapple={grappleController != null}",
+                    this);
+                return false;
+            }
+
+            if (!grappleController.CancelForTeleport())
+            {
+                Debug.LogError(
+                    $"PHS_PLAYER_TELEPORT_FAILED reason=grapple_cancel_failed operation={operation} player={name}",
+                    this);
+                return false;
+            }
+
+            ResetGravityTracking();
+            var wasEnabled = characterController.enabled;
+            characterController.enabled = false;
+            try
+            {
+                networkTransform.Teleport(targetPosition, targetRotation, transform.localScale);
+                ResetMovementForRespawn();
+                targetYaw = targetRotation.eulerAngles.y;
+            }
+            finally
+            {
+                characterController.enabled = wasEnabled;
+            }
+
+            Debug.Log(
+                $"PHS_PLAYER_TELEPORT_OK operation={operation} player={name} pos={targetPosition}",
+                this);
+            return true;
+        }
+
         private void TeleportTo(Vector3 targetPosition, Quaternion targetRotation)
         {
             ResetGravityTracking();
@@ -1452,9 +1759,9 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
                 * zeroGravityCollisionRestitution;
         }
 
-        private void RotatePlayer(float yawInput, float deltaTime)
+        private void RotatePlayer(float yawDegrees, float deltaTime)
         {
-            targetYaw += yawInput * GetMouseLookDegrees();
+            targetYaw += yawDegrees;
             var nextYaw = Mathf.SmoothDampAngle(
                 transform.eulerAngles.y,
                 targetYaw,
@@ -1476,41 +1783,22 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
                 && gravityMode != NetworkPlayerGravityMode.ShipGravity
                 && GetThrusterFuel() > 0f;
 
-            if (thrusterAudioSource == null || thrusterAudioClip == null)
+            if (thrusterAudio == null)
             {
                 if (!thrusterAudioReferenceErrorLogged)
                 {
                     thrusterAudioReferenceErrorLogged = true;
-                    Debug.LogError($"PHS_THRUSTER_AUDIO_SETUP_FAILED reason=audio_reference_missing player={name}");
+                    Debug.LogError(
+                        $"PHS_THRUSTER_AUDIO_SETUP_FAILED reason=thruster_audio_missing player={name}",
+                        this);
                 }
 
                 return;
             }
 
-            thrusterAudioSource.clip = thrusterAudioClip;
-            thrusterAudioSource.loop = true;
-            thrusterAudioSource.spatialBlend = 0f;
-            if (isLocalThrusterActive && !thrusterAudioSource.isPlaying)
-            {
-                thrusterAudioSource.volume = 0f;
-                thrusterAudioSource.Play();
-            }
-
-            var targetVolume = isLocalThrusterActive ? thrusterAudioVolume : 0f;
-            var fadeSpeed = isLocalThrusterActive
-                ? thrusterAudioAttackSpeed
-                : thrusterAudioReleaseSpeed;
-            thrusterAudioSource.volume = Mathf.MoveTowards(
-                thrusterAudioSource.volume,
-                targetVolume,
-                fadeSpeed * Time.deltaTime);
-
-            if (!isLocalThrusterActive
-                && thrusterAudioSource.isPlaying
-                && thrusterAudioSource.volume <= 0.001f)
-            {
-                thrusterAudioSource.Stop();
-            }
+            thrusterAudio.SetThrusterActive(
+                isLocalThrusterActive,
+                Time.deltaTime);
         }
 
         private float GetThrusterCameraShake()
@@ -1524,12 +1812,12 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
                 * zeroGravityCameraShakeDegrees;
         }
 
-        private void StopThrusterAudio()
+        private void StopThrusterFeedback()
         {
             isLocalThrusterActive = false;
-            if (thrusterAudioSource != null && thrusterAudioSource.isPlaying)
+            if (thrusterAudio != null)
             {
-                thrusterAudioSource.Stop();
+                thrusterAudio.StopImmediate();
             }
         }
 
@@ -1542,16 +1830,28 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
 
         private bool CanProcessLocalInput()
         {
+            if (NetworkRunRestartCoordinator.Instance != null
+                && NetworkRunRestartCoordinator.Instance.BlocksRun)
+            {
+                return false;
+            }
+
             if (!IsSpawned)
             {
-                return !pauseInputBlocked && !lifeInputBlocked && !warpInputBlocked;
+                return !pauseInputBlocked
+                    && !lifeInputBlocked
+                    && !warpInputBlocked
+                    && !resultInputBlocked
+                    && (statusEffectController == null || !statusEffectController.IsShocked);
             }
 
             return IsOwner
                 && gameplayInputEnabled
                 && !pauseInputBlocked
                 && !lifeInputBlocked
-                && !warpInputBlocked;
+                && !warpInputBlocked
+                && !resultInputBlocked
+                && (statusEffectController == null || !statusEffectController.IsShocked);
         }
 
         private float ReadVerticalMove()
@@ -1593,12 +1893,13 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
 
         private void CacheLocalOwnerHiddenRenderers()
         {
-            if (localOwnerHiddenRenderers != null && localOwnerHiddenRenderers.Length > 0)
+            if (localOwnerHiddenRenderers != null
+                && Array.Exists(localOwnerHiddenRenderers, targetRenderer => targetRenderer != null))
             {
                 return;
             }
 
-            localOwnerHiddenRenderers = GetComponentsInChildren<Renderer>(true);
+            localOwnerHiddenRenderers = GetComponentsInChildren<SkinnedMeshRenderer>(true);
         }
 
         private void SetLocalOwnerVisualsVisible(bool isVisible)

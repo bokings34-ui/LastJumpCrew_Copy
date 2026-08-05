@@ -1,5 +1,6 @@
 using System.Collections.Generic;
 using LastJumpCrew.ParkHanSol.Multiplayer;
+using LastJumpCrew.ParkHanSol.Multiplayer.Audio;
 using LastJumpCrew.ParkHanSol.Multiplayer.ShipAccidents;
 using LastJumpCrew.ParkHanSol.Items;
 using Unity.Collections;
@@ -19,8 +20,9 @@ namespace LastJumpCrew.ParkHanSol.Interaction
     {
         [Header("Battery")]
         [SerializeField] private string requiredItemId = "battery_pack";
-        [SerializeField] private string interactionPrompt = "Insert Battery";
+        [SerializeField] private string interactionPrompt = "배터리 장착";
         [SerializeField] private GameObject installedBatteryVisual;
+        [SerializeField] private Transform feedbackPoint;
 
         // Kept for existing prefab serialization. Network installation always consumes the held battery.
         [SerializeField] private bool destroyInsertedBattery = true;
@@ -47,6 +49,12 @@ namespace LastJumpCrew.ParkHanSol.Interaction
             if (installedBatteryVisual == null)
             {
                 Debug.LogError($"PHS_BATTERY_SOCKET_SETUP_FAILED reason=installedBatteryVisual_missing target={name}", this);
+                return;
+            }
+
+            if (feedbackPoint == null)
+            {
+                Debug.LogError($"PHS_BATTERY_SOCKET_SETUP_FAILED reason=feedbackPoint_missing target={name}", this);
                 return;
             }
 
@@ -93,8 +101,9 @@ namespace LastJumpCrew.ParkHanSol.Interaction
 
         public bool CanInteract(IItemHolder itemHolder)
         {
-            if (itemHolder == null || itemHolder.CurrentItemPrefabData == null
-                || itemHolder.CurrentItemPrefabData.ItemId != requiredItemId)
+            if (itemHolder == null
+                || !HasBatteryFamilyPowerProfile(
+                    itemHolder.CurrentItemPrefabData))
             {
                 return false;
             }
@@ -128,7 +137,14 @@ namespace LastJumpCrew.ParkHanSol.Interaction
 
         public bool CanUseBattery(CommonInteraction.IItemHolder user)
         {
-            if (user == null || user.CurrentItem == null || user.CurrentItem.ItemId != requiredItemId)
+            if (user == null
+                || user.CurrentItem == null
+                || user is not TempPlayerItemHolder phsHolder
+                || phsHolder.CurrentItemPrefabData == null
+                || phsHolder.CurrentItemPrefabData.ItemId
+                    != user.CurrentItem.ItemId
+                || !HasBatteryFamilyPowerProfile(
+                    phsHolder.CurrentItemPrefabData))
             {
                 return false;
             }
@@ -170,7 +186,10 @@ namespace LastJumpCrew.ParkHanSol.Interaction
             var itemRecord = holderComponent.GetComponent<NetworkPlayerItemRecord>();
             return player != null && player.IsSpawned && player.IsOwner
                 && itemRecord != null && itemRecord.IsSpawned && itemRecord.IsOwner
-                && itemRecord.HeldItemId == requiredItemId;
+                && TryResolveBatteryFamilyItem(
+                    holderComponent,
+                    itemRecord.HeldItemId,
+                    out _);
         }
 
         private bool TryRequestBatteryInstall(Component holderComponent)
@@ -186,7 +205,7 @@ namespace LastJumpCrew.ParkHanSol.Interaction
             }
 
             requestPending = true;
-            var itemId = new FixedString64Bytes(requiredItemId);
+            var itemId = new FixedString64Bytes(itemRecord.HeldItemId);
             var expectedRevision = itemRecord.Revision;
             if (IsServer)
             {
@@ -244,12 +263,6 @@ namespace LastJumpCrew.ParkHanSol.Interaction
             if (!IsServerRequestInRange(client.PlayerObject.transform.position))
             {
                 reason = "player_too_far";
-                return false;
-            }
-
-            if (itemId != requiredItemId)
-            {
-                reason = "wrong_item";
                 return false;
             }
 
@@ -338,10 +351,62 @@ namespace LastJumpCrew.ParkHanSol.Interaction
                 return false;
             }
 
+            var nohPowerOffEvent = SM.EventManager.Instance
+                .GetActiveEvent(SM.EventId.PowerOff) as SM.PowerOffEvent;
+            nohPowerOffEvent?.NotifyPowerRestored();
+
+            if (!TryResolveBatteryFamilyItem(
+                    client.PlayerObject,
+                    itemId,
+                    out _))
+            {
+                reason = "battery_family_profile_mismatch";
+                return false;
+            }
+
+            var feedback =
+                client.PlayerObject.GetComponent<PHSNetworkItemUseFeedbackController>();
+            feedback?.PublishConfirmedTargetImpactServer(
+                UtilityItemActionKind.PowerRestore,
+                feedbackPoint.position);
+            client.PlayerObject
+                .GetComponent<PHSNetworkItemInteractionAudioRelay>()
+                ?.TryBroadcastConfirmedServer(
+                    NetworkAudioCue.BatteryInstall,
+                    expectedRevision);
+
             Debug.Log(
                 $"PHS_BATTERY_INSTALLED target={name} clientId={senderClientId} item={itemId} amount={powerRestoreProfile.Amount} durabilityCost={powerRestoreProfile.DurabilityCost} accidentInstance={powerFailureInstanceId} shipRevision={shipState.Revision}",
                 this);
             return true;
+        }
+
+        private static bool HasBatteryFamilyPowerProfile(
+            CommonInteraction.UtilityItemDataSO itemData)
+        {
+            return itemData != null
+                && itemData.TryGetActionProfile(
+                    UtilityItemActionKind.PowerRestore,
+                    out _);
+        }
+
+        private static bool TryResolveBatteryFamilyItem(
+            Component holderComponent,
+            string itemId,
+            out CommonInteraction.UtilityItemDataSO itemData)
+        {
+            itemData = null;
+            if (holderComponent == null || string.IsNullOrWhiteSpace(itemId))
+            {
+                return false;
+            }
+
+            var lifecycle = holderComponent.GetComponent<
+                NetworkPlayerItemLifecycle>();
+            return lifecycle != null
+                && lifecycle.ItemCatalog != null
+                && lifecycle.ItemCatalog.TryGetById(itemId, out itemData)
+                && HasBatteryFamilyPowerProfile(itemData);
         }
 
         private void SendResult(

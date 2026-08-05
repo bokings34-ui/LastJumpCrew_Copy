@@ -22,7 +22,7 @@ namespace LastJumpCrew.ParkHanSol.Editor
     public static class PHS0719IncidentLocationAuthoring
     {
         private const string MapScenePath =
-            "Assets/01. MainGame/01. MainScene/Beta/PHS_Map_ver1.unity";
+            "Assets/02. ParkHanSol_TeamLeader_Build & Multi/01. Scene/BEAVER_2026/PHS_Map_ver1.unity";
         private const string RuntimeRootName = "PHS_Map_Runtime";
         private const string LayoutRootName = "PHS_IncidentLayout";
         private const float ZoneHeight = 2.5f;
@@ -371,6 +371,7 @@ namespace LastJumpCrew.ParkHanSol.Editor
             ConfigureConsumer(
                 mapScene,
                 layout,
+                accidentCoordinator,
                 fireCoordinator);
             ConfigureRequestGateway(mapScene, runtimeRoot);
 
@@ -998,13 +999,13 @@ namespace LastJumpCrew.ParkHanSol.Editor
                 serializedFireZone,
                 "maximumHeatGrowthPerTick",
                 22);
-            SetFloat(serializedFireZone, "spreadTickSeconds", 1.35f);
-            SetInt(serializedFireZone, "spreadAttemptsPerTick", 3);
+            SetFloat(serializedFireZone, "spreadTickSeconds", 2.5f);
+            SetInt(serializedFireZone, "spreadAttemptsPerTick", 2);
             SetInt(
                 serializedFireZone,
                 "maximumNewIgnitionsPerTick",
-                2);
-            SetFloat(serializedFireZone, "baseSpreadChance", 0.52f);
+                1);
+            SetFloat(serializedFireZone, "baseSpreadChance", 0.45f);
             SetFloat(serializedFireZone, "damageTickSeconds", 1f);
             SetInt(serializedFireZone, "baseDamagePerTick", 2);
             SetInt(serializedFireZone, "damageableLayers", ~0);
@@ -1224,6 +1225,7 @@ namespace LastJumpCrew.ParkHanSol.Editor
         private static void ConfigureConsumer(
             Scene mapScene,
             PHSShipIncidentLayout layout,
+            PHSNetworkShipAccidentCoordinator accidentCoordinator,
             PHSNetworkFireCoordinator fireCoordinator)
         {
             var consumers =
@@ -1239,6 +1241,10 @@ namespace LastJumpCrew.ParkHanSol.Editor
             var consumer = consumers[0];
             var serializedConsumer = new SerializedObject(consumer);
             SetObject(serializedConsumer, "incidentLayout", layout);
+            SetObject(
+                serializedConsumer,
+                "accidentCoordinator",
+                accidentCoordinator);
             SetObject(
                 serializedConsumer,
                 "fireCoordinator",
@@ -1909,7 +1915,6 @@ namespace LastJumpCrew.ParkHanSol.Editor
                 FindSceneComponents<PHSMapIncidentCommandConsumer>(mapScene);
             if (consumers.Length != 1
                 || consumers[0].IncidentLayout != layout
-                || consumers[0].FireCoordinator != fireCoordinator
                 || consumers[0].AccidentCoordinator
                     != accidentCoordinators[0])
             {

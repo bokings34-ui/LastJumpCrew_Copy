@@ -4,17 +4,17 @@ using UnityEngine;
 
 namespace LastJumpCrew.ParkHanSol.Shop
 {
-    public sealed class ShopDisplaySlot : MonoBehaviour
+    public sealed class ShopDisplaySlot : MonoBehaviour, IShopStockPresentation
     {
         [SerializeField] private Transform itemSpawnPoint;
+        [SerializeField] private NetworkShopStockRegistry stockRegistry;
         [SerializeField] private TMP_Text productLabel;
         [SerializeField] private TMP_Text productNameText;
         [SerializeField] private TMP_Text priceText;
-        [SerializeField, Min(0.01f)] private float displayScaleMultiplier = 0.75f;
-
-        private GameObject displayedItem;
 
         public ShopProductData CurrentProduct { get; private set; }
+        public Transform PresentationAnchor => itemSpawnPoint;
+        public bool IsInStock { get; private set; }
 
         public bool TryPresent(ShopProductData product)
         {
@@ -31,59 +31,78 @@ namespace LastJumpCrew.ParkHanSol.Shop
                 return false;
             }
 
-            var itemData = product.ItemPrefabData;
-            if (!itemData.HasHandPrefab)
+            if (stockRegistry == null)
             {
-                Debug.LogError($"PHS_SHOP_DISPLAY_FAILED reason=local_prefab_missing slot={name} offer={product.OfferId}", product);
-                return false;
-            }
-
-            displayedItem = Instantiate(itemData.HandPrefab, itemSpawnPoint.position, itemSpawnPoint.rotation);
-            displayedItem.transform.localScale *= displayScaleMultiplier;
-            displayedItem.name = $"PHS_ShopDisplay_{product.OfferId}";
-            if (!displayedItem.TryGetComponent<UtilityItemObject>(out var itemObject) || itemObject.ItemPrefabData != itemData)
-            {
-                Debug.LogError($"PHS_SHOP_DISPLAY_FAILED reason=item_prefab_data_mismatch slot={name} offer={product.OfferId}", displayedItem);
-                Destroy(displayedItem);
-                displayedItem = null;
+                Debug.LogError($"PHS_SHOP_DISPLAY_FAILED reason=stock_registry_missing slot={name}", this);
                 return false;
             }
 
             CurrentProduct = product;
+            IsInStock = false;
             RefreshLabels(product);
+            if (!stockRegistry.TryPresent(this, product))
+            {
+                CurrentProduct = null;
+                RefreshLabels(null);
+                return false;
+            }
+
             return true;
         }
 
         public void Clear()
         {
+            stockRegistry?.Clear(this);
             CurrentProduct = null;
-            if (displayedItem != null)
-            {
-                Destroy(displayedItem);
-                displayedItem = null;
-            }
-
+            IsInStock = false;
             RefreshLabels(null);
+        }
+
+        public void ApplyStockAvailability(bool isAvailable)
+        {
+            IsInStock = CurrentProduct != null && isAvailable;
+            RefreshLabelVisibility();
         }
 
         private void RefreshLabels(ShopProductData product)
         {
-            if (productLabel != null)
+            if (productLabel == null)
             {
-                productLabel.text = product == null
-                    ? string.Empty
-                    : $"{product.ItemPrefabData.DisplayName}\n{product.PurchasePrice} CR";
+                Debug.LogError(
+                    $"PHS_SHOP_PRICE_TAG_FAILED reason=product_label_missing slot={name}",
+                    this);
+                enabled = false;
+                return;
             }
+
+            productLabel.text = product == null
+                ? string.Empty
+                : $"${product.PurchasePrice}";
 
             if (productNameText != null)
             {
-                productNameText.text = product == null ? string.Empty : product.ItemPrefabData.DisplayName;
+                productNameText.text = string.Empty;
+                productNameText.gameObject.SetActive(false);
             }
 
-            if (priceText != null)
+            if (priceText != null && priceText != productLabel)
             {
-                priceText.text = product == null ? string.Empty : $"{product.PurchasePrice} CR";
+                priceText.text = string.Empty;
+                priceText.gameObject.SetActive(false);
             }
+
+            RefreshLabelVisibility();
+        }
+
+        private void RefreshLabelVisibility()
+        {
+            if (productLabel == null)
+            {
+                return;
+            }
+
+            productLabel.gameObject.SetActive(
+                CurrentProduct != null && IsInStock);
         }
     }
 }

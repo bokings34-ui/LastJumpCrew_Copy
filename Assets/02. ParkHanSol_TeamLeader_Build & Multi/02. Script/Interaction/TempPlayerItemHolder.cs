@@ -69,7 +69,8 @@ namespace LastJumpCrew.ParkHanSol.Interaction
         private Collider[] heldDebrisColliders;
         private bool[] heldDebrisColliderStates;
         private bool[] heldDebrisTriggerStates;
-
+        private NetworkObject heldDebrisNetworkObject;
+        private bool heldDebrisAutoObjectParentSync;
         private NetworkObject networkObject;
         private NetworkPlayerItemRecord networkItemRecord;
         private NetworkPlayerItemLifecycle networkItemLifecycle;
@@ -80,15 +81,21 @@ namespace LastJumpCrew.ParkHanSol.Interaction
         public DebrisItem HeldDebris => heldDebris;
      
         public float HeldDebrisMass => heldDebris == null ? 0f : heldDebris.Mass;
-
-        public Transform HeldPresentationTransform => heldItemInstance == null ? null : heldItemInstance.transform;
-
-        LastJumpCrew.Common.IHoldableItem
-            LastJumpCrew.Common.IItemHolder.CurrentItem => currentItemObject;
-
-        public bool HasItem =>
-            IsNetworkSessionActive() && networkItemRecord != null && networkItemRecord.IsSpawned? !string.IsNullOrEmpty(networkItemRecord.HeldItemId) : currentItemPrefabData != null;
-
+        public Transform HeldPresentationTransform => heldItemInstance == null
+            ? null
+            : heldItemInstance.transform;
+        public Vector3 DropPosition
+        {
+            get
+            {
+                var source = dropPoint == null ? transform : dropPoint;
+                return source.TransformPoint(droppedLocalOffset);
+            }
+        }
+        LastJumpCrew.Common.IHoldableItem LastJumpCrew.Common.IItemHolder.CurrentItem => currentItemObject;
+        public bool HasItem => IsNetworkSessionActive() && networkItemRecord != null && networkItemRecord.IsSpawned
+            ? !string.IsNullOrEmpty(networkItemRecord.HeldItemId)
+            : currentItemPrefabData != null;
 
         private Transform ActiveHoldPoint => ShouldUseFirstPersonHoldPoint() ? holdPoint : visibleHandHoldPoint;
 
@@ -160,13 +167,27 @@ namespace LastJumpCrew.ParkHanSol.Interaction
                 return false;
             }
 
-            if (IsNetworkSessionActive() && networkItemRecord != null && networkItemRecord.IsSpawned && !string.IsNullOrEmpty(networkItemRecord.HeldItemId))
+            if (IsNetworkSessionActive()
+                && networkItemRecord != null
+                && networkItemRecord.IsSpawned
+                && !string.IsNullOrEmpty(networkItemRecord.HeldItemId)
+                && (networkObject == null
+                    || networkObject.NetworkManager == null
+                    || !networkObject.NetworkManager.IsServer))
             {
+                // 월드 아이템 획득은 INetworkItemPickupRequester RPC 경로가 교체를 처리한다.
+                // 직접 ReplaceHeldItem을 호출하는 자판기/툴박스는 서버 권한 경로가 없으므로 클라이언트 로컬 교체를 열지 않는다.
                 return false;
             }
             return true;
         }
-        // 변경: UtilityItemPrefabData → UtilityItemDataSO
+        public void GetDropPose(out Vector3 position, out Quaternion rotation)
+        {
+            var source = dropPoint == null ? transform : dropPoint;
+            position = source.TransformPoint(droppedLocalOffset);
+            rotation = source.rotation;
+        }
+
         public void ReplaceHeldItem(UtilityItemDataSO itemPrefabData, Transform interactionSource)
         {
             if (!CanReplaceHeldItem(itemPrefabData))
@@ -302,11 +323,19 @@ namespace LastJumpCrew.ParkHanSol.Interaction
             heldDebrisWorldScale = debrisItem.transform.lossyScale;
 
             CacheAndPrepareHeldDebrisColliders();
+            heldDebrisNetworkObject = debrisItem.GetComponent<NetworkObject>();
+            if (!IsNetworkSessionActive() && heldDebrisNetworkObject != null)
+            {
+                heldDebrisAutoObjectParentSync =
+                    heldDebrisNetworkObject.AutoObjectParentSync;
+                heldDebrisNetworkObject.AutoObjectParentSync = false;
+            }
 
             heldItemInstance.transform.SetParent(activeHoldPoint, false);
 
             if (!TryApplyHeldItemPose(heldItemInstance.transform, currentItemPrefabData, activeHoldPoint, heldDebrisWorldScale))
             {
+                heldItemInstance.transform.SetParent(null, true);
                 RestoreHeldDebrisColliders();
                 ClearHeldDebrisState();
 
@@ -438,7 +467,7 @@ namespace LastJumpCrew.ParkHanSol.Interaction
             ReportHeldItemRecord();
             RefreshHeldItemHud();
 
-            Debug.Log($"PHS_TEMP_ITEM_CONSUMED " + $"player={name} " + $"item={itemId}");
+            Debug.Log($"PHS_TEMP_ITEM_CONSUMED player={name} item={itemId}");
             return true;
         }
 
@@ -509,6 +538,18 @@ namespace LastJumpCrew.ParkHanSol.Interaction
                 Destroy(droppedItemInstance);
                 return false;
             }
+
+            Debug.Log($"PHS_TEMP_ITEM_PLACED player={name} item={currentItemPrefabData.ItemId}");
+            if (heldItemInstance != null)
+            {
+                Destroy(heldItemInstance);
+            }
+
+            heldItemInstance = null;
+            currentItemObject = null;
+            currentItemPrefabData = null;
+            ReportHeldItemRecord();
+            RefreshHeldItemHud();
             return true;
         }
 
@@ -628,11 +669,19 @@ namespace LastJumpCrew.ParkHanSol.Interaction
 
         private void ClearHeldDebrisState()
         {
+            if (heldDebrisNetworkObject != null)
+            {
+                heldDebrisNetworkObject.AutoObjectParentSync =
+                    heldDebrisAutoObjectParentSync;
+            }
+
             heldDebris = null;
             heldDebrisWorldScale = Vector3.one;
             heldDebrisColliders = null;
             heldDebrisColliderStates = null;
             heldDebrisTriggerStates = null;
+            heldDebrisNetworkObject = null;
+            heldDebrisAutoObjectParentSync = false;
         }
 
         private void HandleNetworkHeldItemChanged(string itemId)

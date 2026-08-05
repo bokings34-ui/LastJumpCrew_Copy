@@ -1,6 +1,8 @@
 using LastJumpCrew.Common;
+using LastJumpCrew.ParkHanSol.Items;
 using SM;
 using UnityEngine;
+using PHSItemHolder = LastJumpCrew.ParkHanSol.Interaction.IItemHolder;
 
 namespace LastJumpCrew.ParkHanSol.Multiplayer.Events
 {
@@ -44,11 +46,19 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Events
         public bool CanInteract(IItemHolder itemHolder)
         {
             return snapshot.IsActive
-                && !string.IsNullOrEmpty(RequiredItemId)
                 && itemHolder != null
                 && itemHolder.HasItem
                 && itemHolder.CurrentItem != null
-                && itemHolder.CurrentItem.ItemId == RequiredItemId;
+                && itemHolder is PHSItemHolder phsItemHolder
+                && phsItemHolder.CurrentItemPrefabData != null
+                && phsItemHolder.CurrentItemPrefabData.ItemId
+                    == itemHolder.CurrentItem.ItemId
+                && UtilityItemRepairActionResolver.TryResolve(
+                    snapshot.Kind,
+                    out var actionKind)
+                && phsItemHolder.CurrentItemPrefabData.TryGetActionProfile(
+                    actionKind,
+                    out _);
         }
 
         public void Interact(IItemHolder itemHolder)

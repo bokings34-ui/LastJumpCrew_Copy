@@ -24,9 +24,9 @@ namespace LastJumpCrew.ParkHanSol.EditorTools
 
         private static readonly string[] ScenePaths =
         {
-            "Assets/01. MainGame/01. MainScene/Beta/ParkHanSol_LobbyScene.unity",
-            "Assets/01. MainGame/01. MainScene/Beta/PHS_Map_ver1.unity",
-            "Assets/01. MainGame/01. MainScene/Beta/PHS_ExteriorShopScene.unity",
+            "Assets/02. ParkHanSol_TeamLeader_Build & Multi/01. Scene/BEAVER_2026/ParkHanSol_LobbyScene.unity",
+            "Assets/02. ParkHanSol_TeamLeader_Build & Multi/01. Scene/BEAVER_2026/PHS_Map_ver1.unity",
+            "Assets/02. ParkHanSol_TeamLeader_Build & Multi/01. Scene/BEAVER_2026/PHS_ExteriorShopScene.unity",
             "Assets/02. ParkHanSol_TeamLeader_Build & Multi/01. Scene/test/PHS_FeatureInspectionScene.unity"
         };
 

@@ -3,11 +3,12 @@ using System.Collections;
 using UnityEngine;
 using UnityEngine.AI;
 using LastJumpCrew.Common;
+using LastJumpCrew.ParkHanSol.Multiplayer;
 
 namespace SM
 {
     [RequireComponent(typeof(NavMeshAgent))]
-    public abstract class EnemyBase : MonoBehaviour, IDamageable, IStatusEffectReceiver, IKnockbackable
+    public abstract class EnemyBase : MonoBehaviour, IDamageable, IKnockbackable
     {
         public event Action<EnemyBase> OnDeath;
 
@@ -17,6 +18,10 @@ namespace SM
         [SerializeField] private float attackDamage = 1f;
         [SerializeField] private float attackCooldown = 1f;
 
+        [Header("사운드")]
+        [SerializeField] private AudioSource audioSource;
+        [SerializeField] private AudioClip attackSound;
+
         protected float _currentHealth;
         private GameObject _enemyPrefab;
         private Collider[] _colliders;
@@ -25,14 +30,19 @@ namespace SM
         public float MaxHealth => maxHealth;
         public float CurrentHealth => _currentHealth;
 
-        private Coroutine _electricShockRoutine;
         private Coroutine _knockbackRoutine;
+        private StatusEffectController _statusEffectController;
 
         public bool IsAlive { get { return StateMachine.CurrentType != EnemyStateType.Dead; } }
-        public bool IsShocked { get; private set; }
+        public bool IsShocked
+        {
+            get { return _statusEffectController != null && _statusEffectController.IsShocked; }
+        }
 
         public NavMeshAgent Agent { get; private set; }
         public EnemyStateMachine StateMachine { get; private set; }
+        public Animator Anim { get; private set; }
+
         public float AttackRange { get { return attackRange; } }
         public float AttackDamage { get { return attackDamage; } }
         public float AttackCooldown { get { return attackCooldown; } }
@@ -41,6 +51,9 @@ namespace SM
         {
             Agent = GetComponent<NavMeshAgent>();
             _colliders = GetComponentsInChildren<Collider>();
+
+            Anim = GetComponentInChildren<Animator>();
+            _statusEffectController = GetComponent<StatusEffectController>();
 
             StateMachine = new EnemyStateMachine();
             StateMachine.Register(EnemyStateType.Chase, new EnemyChaseState());
@@ -53,10 +66,11 @@ namespace SM
             _enemyPrefab = sourcePrefab;
             _currentHealth = maxHealth;
             _cachedTarget = null;
-            IsShocked = false;
 
             Agent.enabled = true;
             gameObject.SetActive(true);
+
+            if (Anim != null) Anim.Play(EnemyAnimData.Spawn, -1, 0f);
 
             GetTarget();
             StateMachine.ChangeState(this, EnemyStateType.Chase);
@@ -66,11 +80,14 @@ namespace SM
         {
             _cachedTarget = null;
 
-            if (_electricShockRoutine != null) 
-            { 
-                StopCoroutine(_electricShockRoutine); 
-                _electricShockRoutine = null;
+            if (_statusEffectController != null
+                && _statusEffectController.CanReceiveStatusEffect(
+                    StatusEffectType.ElectricShok))
+            {
+                _statusEffectController.RemoveStatusEffect(
+                    StatusEffectType.ElectricShok);
             }
+
             if (_knockbackRoutine != null) 
             { 
                 StopCoroutine(_knockbackRoutine); 
@@ -82,8 +99,27 @@ namespace SM
 
         public void Tick(float deltaTime)
         {
-            if (IsShocked) return;
+            if (IsShocked)
+            {
+                if (Agent.enabled) Agent.isStopped = true;
+                return;
+            }
+
+            if (Agent.enabled) Agent.isStopped = false;
             StateMachine.Tick(this, deltaTime);
+        }
+
+        public void RotateTowards(Vector3 targetPosition, float deltaTime, float turnSpeed = 12f)
+        {
+            Vector3 direction = (targetPosition - transform.position);
+            direction.y = 0f;
+
+            if (direction.sqrMagnitude > 0.001f)
+            {
+                Quaternion targetRotation = Quaternion.LookRotation(direction);
+
+                transform.rotation = Quaternion.Slerp(transform.rotation, targetRotation, turnSpeed * deltaTime);
+            }
         }
 
         // ________ IDamageable __________
@@ -98,53 +134,10 @@ namespace SM
             {
                 StateMachine.ChangeState(this, EnemyStateType.Dead);
             }
-        }
-
-        // __________ IStatusEffectReceiver __________
-
-        public bool CanReceiveStatusEffect(StatusEffectType effectType)
-        {
-            return IsAlive;
-        }
-
-        public void ApplyStatusEffect(StatusEffectType effectType, float duration, GameObject source)
-        {
-            if (!CanReceiveStatusEffect(effectType)) return;
-
-            switch (effectType)
+            else
             {
-                case StatusEffectType.ElectricShok:
-                    if (_electricShockRoutine != null) StopCoroutine(_electricShockRoutine);
-                    _electricShockRoutine = StartCoroutine(ElectricShockRoutine(duration));
-                    break;
+                if (Anim != null) Anim.Play(EnemyAnimData.TakeDamage, -1, 0f);
             }
-        }
-
-        public void RemoveStatusEffect(StatusEffectType effectType)
-        {
-            if (effectType == StatusEffectType.ElectricShok && _electricShockRoutine != null)
-            {
-                StopCoroutine(_electricShockRoutine);
-                _electricShockRoutine = null;
-                EndElectricShock();
-            }
-        }
-
-        private IEnumerator ElectricShockRoutine(float duration)
-        {
-            IsShocked = true;
-            Agent.isStopped = true;
-
-            yield return new WaitForSeconds(duration);
-
-            EndElectricShock();
-        }
-
-        private void EndElectricShock()
-        {
-            IsShocked = false;
-            if (Agent.enabled) Agent.isStopped = false;
-            _electricShockRoutine = null;
         }
 
         // ________ IKnockbackable _________
@@ -238,6 +231,25 @@ namespace SM
         public void ForceReturnToPool()
         {
             EnemyPool.Instance.Return(_enemyPrefab, this);
+        }
+
+        public void PlayAttackSound()
+        {
+            if (audioSource != null && attackSound != null)
+            {
+                audioSource.PlayOneShot(attackSound);
+            }
+        }
+
+        public void OnAttackHitFrame()
+        {
+            var target = GetTarget();
+            if (target == null) return;
+
+            if (GetDistanceToTarget(target) > AttackRange * 1.5f) return;
+
+            PerformAttack(target);
+            PlayAttackSound();
         }
 
         protected virtual void OnDrawGizmosSelected()

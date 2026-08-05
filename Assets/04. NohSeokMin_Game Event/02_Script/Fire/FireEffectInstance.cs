@@ -12,12 +12,15 @@ namespace SM
         IInteractable,
         IRequireHeldItem,
         IEventRepairableEffect,
-        IUtilityAttackTarget
+        IUtilityAttackTarget,
+        IRepairable
     {
         private const string FireExtinguisherItemId = "fire_extinguisher";
 
         [Header("데미지 틱 설정")]
         [SerializeField] private float tickInterval = 1f;
+
+        [SerializeField] private AudioSource audioSource;
 
         private float _damagePerSecond;
         private float _maxRepairProgress;
@@ -43,6 +46,10 @@ namespace SM
             IsRepaired = false;
             _timer = 0f;
             gameObject.SetActive(true);
+            if (audioSource != null)
+            {
+                audioSource.Play();
+            }
         }
 
         public void Deactivate()
@@ -50,6 +57,10 @@ namespace SM
             UnbindRepairTarget();
             _targetsInRange.Clear();
             gameObject.SetActive(false);
+            if (audioSource != null)
+            {
+                audioSource.Stop();
+            }
         }
 
         public bool BindRepairTarget(
@@ -200,6 +211,20 @@ namespace SM
             }
 
             ApplyRepair(amount);
+            return true;
+        }
+
+        // _____ IRepairable _____
+        public bool CanRepair => !IsRepaired;
+
+        public float CurrentIntegrity => _repairProgress;
+
+        public float MaxIntegrity => _maxRepairProgress;
+
+        public bool ApplyRepair(float amount, GameObject repairer)
+        {
+            if (!CanRepair) return false;
+            ApplyRepair(amount); // 기존 ApplyRepair(float) 재사용
             return true;
         }
     }

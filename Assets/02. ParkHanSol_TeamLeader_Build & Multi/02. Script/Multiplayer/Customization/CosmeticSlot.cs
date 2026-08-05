@@ -5,6 +5,8 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Customization
     public enum CosmeticSlot
     {
         Head,
-        Back
+        Back,
+        Pet,
+        Front
     }
 }

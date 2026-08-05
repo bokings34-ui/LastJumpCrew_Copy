@@ -27,15 +27,35 @@ namespace LastJumpCrew.ParkHanSol.Shop
     }
 
     [RequireComponent(typeof(NetworkObject))]
-    public sealed class ShopPurchaseService : NetworkBehaviour, IShopPurchaseService
+    public sealed class ShopPurchaseService :
+        NetworkBehaviour,
+        IShopPurchaseService,
+        INetworkShopPurchaseReceiptService
     {
         private const int MaximumItemsPerPurchase = 16;
+
+        private readonly struct CompletedPurchaseReceipt
+        {
+            public CompletedPurchaseReceipt(
+                ulong purchaserClientId,
+                ShopProductData product)
+            {
+                PurchaserClientId = purchaserClientId;
+                Product = product;
+            }
+
+            public ulong PurchaserClientId { get; }
+            public ShopProductData Product { get; }
+        }
 
         [SerializeField] private ShopCatalogSO catalog;
         [SerializeField] private MonoBehaviour walletSource;
         [SerializeField] private MonoBehaviour deliverySource;
 
         private readonly HashSet<string> completedPurchaseIds = new(StringComparer.Ordinal);
+        private readonly Dictionary<string, CompletedPurchaseReceipt> completedPurchaseReceipts =
+            new(StringComparer.Ordinal);
+        private readonly HashSet<string> claimedPurchaseReceiptIds = new(StringComparer.Ordinal);
         private readonly HashSet<string> soldOnePerVisitOfferIds = new(StringComparer.Ordinal);
         private readonly Dictionary<string, Action<ShopPurchaseResult>> pendingClientRequests =
             new(StringComparer.Ordinal);
@@ -250,6 +270,11 @@ namespace LastJumpCrew.ParkHanSol.Shop
             foreach (var request in requests)
             {
                 completedPurchaseIds.Add(request.PurchaseId);
+                completedPurchaseReceipts.Add(
+                    request.PurchaseId,
+                    new CompletedPurchaseReceipt(
+                        purchaserClientId,
+                        request.Product));
                 if (request.Product.StockPolicy == ShopStockPolicy.OnePerVisit)
                 {
                     soldOnePerVisitOfferIds.Add(request.Product.OfferId);
@@ -261,6 +286,98 @@ namespace LastJumpCrew.ParkHanSol.Shop
             result = new ShopPurchaseResult(true, null, totalPrice, requests.Count);
             Debug.Log(
                 $"PHS_SHOP_PURCHASE_COMPLETED service={name} totalPrice={totalPrice} itemCount={requests.Count} pendingDelivery={deliveryService.PendingCount}");
+            return true;
+        }
+
+        public bool TryCommitCheckoutPurchaseServer(
+            ulong purchaserClientId,
+            IReadOnlyList<string> purchaseIds,
+            IReadOnlyList<ShopProductData> products,
+            out ShopPurchaseResult result)
+        {
+            result = default;
+            if (!IsSpawned || !IsServer)
+            {
+                return Fail("server_required", 0, out result);
+            }
+
+            if (purchaseIds == null
+                || products == null
+                || purchaseIds.Count == 0
+                || purchaseIds.Count > MaximumItemsPerPurchase
+                || purchaseIds.Count != products.Count)
+            {
+                return Fail("receipt_count_invalid", 0, out result);
+            }
+
+            var requests = new List<ShopPurchaseRequest>(purchaseIds.Count);
+            var receiptKeys = new string[purchaseIds.Count];
+            var requestReceiptKeys = new HashSet<string>(StringComparer.Ordinal);
+            for (var index = 0; index < purchaseIds.Count; index++)
+            {
+                var purchaseId = purchaseIds[index];
+                var product = products[index];
+                if (string.IsNullOrWhiteSpace(purchaseId) || product == null)
+                {
+                    return Fail("receipt_request_invalid", 0, out result);
+                }
+
+                var receiptKey = GetReceiptKey(purchaserClientId, purchaseId);
+                if (!requestReceiptKeys.Add(receiptKey))
+                {
+                    return Fail(
+                        "receipt_duplicate_in_request",
+                        0,
+                        out result);
+                }
+
+                if (claimedPurchaseReceiptIds.Contains(receiptKey))
+                {
+                    return Fail("receipt_already_claimed", 0, out result);
+                }
+
+                receiptKeys[index] = receiptKey;
+                requests.Add(new ShopPurchaseRequest(receiptKey, product));
+            }
+
+            if (!TryPurchaseForClient(
+                    requests,
+                    purchaserClientId,
+                    out result))
+            {
+                return false;
+            }
+
+            for (var index = 0; index < receiptKeys.Length; index++)
+            {
+                var receiptKey = receiptKeys[index];
+                var product = products[index];
+                if (!completedPurchaseIds.Contains(receiptKey)
+                    || !completedPurchaseReceipts.TryGetValue(
+                        receiptKey,
+                        out var receipt)
+                    || receipt.PurchaserClientId != purchaserClientId
+                    || receipt.Product != product)
+                {
+                    Debug.LogError(
+                        $"PHS_SHOP_PURCHASE_INVARIANT_FAILED reason=receipt_commit_mismatch service={name} purchaser={purchaserClientId} receipt={receiptKey}",
+                        this);
+                    result = CreateFailure(
+                        "receipt_commit_mismatch",
+                        result.TotalPrice);
+                    return false;
+                }
+
+            }
+
+            foreach (var receiptKey in receiptKeys)
+            {
+                claimedPurchaseReceiptIds.Add(receiptKey);
+            }
+
+            Debug.Log(
+                $"PHS_SHOP_PURCHASE_RECEIPTS_CLAIMED service={name} purchaser={purchaserClientId} count={receiptKeys.Length}",
+                this);
             return true;
         }
 
@@ -392,6 +509,15 @@ namespace LastJumpCrew.ParkHanSol.Shop
                 : string.IsNullOrWhiteSpace(reason)
                     ? "purchase_transaction_rejected"
                     : reason;
+        }
+
+        private static string GetReceiptKey(
+            ulong purchaserClientId,
+            string purchaseId)
+        {
+            return purchaserClientId == NetworkManager.ServerClientId
+                ? purchaseId
+                : $"client:{purchaserClientId}:{purchaseId}";
         }
 
         private static bool IsNetworkSessionActive()

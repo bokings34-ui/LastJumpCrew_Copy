@@ -108,6 +108,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Events
                     TryBindCoordinator();
                 }
 
+                UpdateMapInput();
                 return;
             }
 
@@ -188,7 +189,12 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Events
         {
             if (profile != null)
             {
-                eventHudView.ShowCurrentMap(profile.DisplayName, currentMapMessageSeconds);
+                eventHudView.ShowCurrentMap(
+                    profile.DisplayName,
+                    profile.DebrisAmount,
+                    profile.DebrisAmountLabel,
+                    profile.DifficultyLabel,
+                    currentMapMessageSeconds);
             }
         }
 
@@ -231,7 +237,8 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Events
             eventHudView.Apply(new PHSNetworkEventHudViewModel(
                 alertText,
                 activeSnapshots.Count,
-                roomViewModels));
+                roomViewModels,
+                activeSnapshots.Select(snapshot => snapshot.EventId).Distinct().ToArray()));
         }
 
         private void BuildRoomViewModels()

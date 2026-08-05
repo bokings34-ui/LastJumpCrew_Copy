@@ -10,6 +10,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
         [Header("References")]
         [SerializeField] private RectTransform gaugeRoot;
         [SerializeField] private Image fillImage;
+        [SerializeField] private Image changeImage;
         [SerializeField] private TMP_Text valueText;
         [SerializeField] private RectTransform fullGlowRoot;
         [SerializeField] private CanvasGroup fullGlowGroup;
@@ -18,6 +19,12 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
         [SerializeField] private Color emptyValueColor = new(0.05f, 0.16f, 0.42f, 1f);
         [SerializeField] private Color fullValueColor = new(0.12f, 0.72f, 1f, 1f);
         [SerializeField, Min(0.01f)] private float fullFlashDuration = 0.42f;
+        [SerializeField, Min(0.01f)] private float increaseFillDuration = 0.28f;
+        [SerializeField, Min(0.01f)] private float decreaseFillDuration = 0.18f;
+        [SerializeField, Min(0f)] private float changeHoldDuration = 0.16f;
+        [SerializeField, Min(0.01f)] private float changeCatchupDuration = 0.34f;
+        [SerializeField] private Color damageChangeColor = new(1f, 0.12f, 0.08f, 0.9f);
+        [SerializeField] private Color recoveryChangeColor = new(0.28f, 1f, 0.43f, 0.78f);
 
         [Header("Feedback")]
         [SerializeField, Min(0.01f)] private float punchDuration = 0.16f;
@@ -26,6 +33,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
 
         private float currentValue;
         private bool isInitialized;
+        private Sequence changeSequence;
 
         public void SetValue(float normalizedValue)
         {
@@ -35,12 +43,42 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
                 return;
             }
 
-            currentValue = Mathf.Clamp01(normalizedValue);
-            fillImage.fillAmount = currentValue;
+            var targetValue = Mathf.Clamp01(normalizedValue);
+            var displayedValue = fillImage.fillAmount;
+            var changed = isInitialized && !Mathf.Approximately(currentValue, targetValue);
+            currentValue = targetValue;
+
+            fillImage.DOKill();
+            changeImage?.DOKill();
+            changeSequence?.Kill();
+            changeSequence = null;
+            var targetColor = Color.Lerp(emptyValueColor, fullValueColor, currentValue);
+            if (changed)
+            {
+                var duration = targetValue > displayedValue ? increaseFillDuration : decreaseFillDuration;
+                PlayChangeTrail(displayedValue, targetValue);
+                fillImage.DOFillAmount(targetValue, duration)
+                    .SetEase(targetValue > displayedValue ? Ease.OutCubic : Ease.OutQuad)
+                    .SetUpdate(true)
+                    .SetLink(gameObject);
+                fillImage.DOColor(targetColor, duration)
+                    .SetEase(Ease.OutQuad)
+                    .SetUpdate(true)
+                    .SetLink(gameObject);
+            }
+            else
+            {
+                fillImage.fillAmount = targetValue;
+                fillImage.color = targetColor;
+                if (changeImage != null)
+                {
+                    changeImage.fillAmount = targetValue;
+                    changeImage.color = Color.clear;
+                }
+            }
+
             if (currentValue < 1f)
             {
-                fillImage.DOKill();
-                fillImage.color = Color.Lerp(emptyValueColor, fullValueColor, currentValue);
                 StopFullGlow();
             }
 
@@ -125,12 +163,41 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
                 .SetLink(gameObject);
         }
 
+        private void PlayChangeTrail(float previousValue, float targetValue)
+        {
+            if (changeImage == null)
+            {
+                return;
+            }
+
+            changeImage.DOKill();
+            var isRecovery = targetValue > previousValue;
+            changeImage.fillAmount = isRecovery ? targetValue : previousValue;
+            changeImage.color = isRecovery ? recoveryChangeColor : damageChangeColor;
+
+            changeSequence = DOTween.Sequence().SetUpdate(true).SetLink(gameObject);
+            changeSequence.AppendInterval(changeHoldDuration);
+            if (isRecovery)
+            {
+                changeSequence.Append(changeImage.DOColor(Color.clear, changeCatchupDuration));
+            }
+            else
+            {
+                changeSequence.Append(changeImage.DOFillAmount(targetValue, changeCatchupDuration)
+                    .SetEase(Ease.OutCubic));
+                changeSequence.Join(changeImage.DOColor(Color.clear, changeCatchupDuration));
+            }
+        }
+
         private void OnDestroy()
         {
             if (gaugeRoot != null)
             {
                 gaugeRoot.DOKill();
             }
+
+            changeImage?.DOKill();
+            changeSequence?.Kill();
 
             StopFullGlow();
         }

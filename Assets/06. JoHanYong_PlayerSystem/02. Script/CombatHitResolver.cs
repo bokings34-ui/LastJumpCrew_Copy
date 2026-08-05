@@ -19,6 +19,12 @@ namespace LastJumpCrew.ParkHanSol.Combat
                 return utilityTargetComponent.gameObject;
             }
 
+            var repairable = hitObject.GetComponentInParent<IRepairable>();
+            if (repairable is Component repairableComponent)
+            {
+                return repairableComponent.gameObject;
+            }
+
             var damageable = hitObject.GetComponentInParent<IDamageable>();
             if (damageable is Component damageableComponent)
             {

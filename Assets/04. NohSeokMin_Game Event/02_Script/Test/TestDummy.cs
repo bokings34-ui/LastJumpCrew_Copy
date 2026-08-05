@@ -25,7 +25,7 @@ namespace SM
 
             _currentHealth = Mathf.Max(0, _currentHealth - amount);
 
-            //Debug.Log($"<color=orange>[TestDummy]</color> {name}이(가) {attacker.name}에게 {amount} 데미지를 받음! (현재 체력: {_currentHealth}/{maxHealth})");
+            Debug.Log($"<color=orange>[TestDummy]</color> {name}이(가) {attacker.name}에게 {amount} 데미지를 받음! (현재 체력: {_currentHealth}/{maxHealth})");
 
             if (_currentHealth <= 0)
             {

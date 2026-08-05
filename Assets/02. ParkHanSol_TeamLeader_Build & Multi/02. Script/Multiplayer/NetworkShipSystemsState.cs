@@ -202,9 +202,46 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
 
             if (previousHp > 0 && synchronizedCurrentShipHp.Value == 0)
             {
-                ReportShipDestroyed();
+                ReportGameOver(GameOverReason.ShipDestroyed);
             }
 
+            return true;
+        }
+
+        public bool TryDestroyShip(
+            GameOverReason gameOverReason,
+            string cause,
+            out string reason)
+        {
+            if (!RequireServer(out reason))
+            {
+                return false;
+            }
+
+            if (gameOverReason == GameOverReason.None)
+            {
+                reason = "game_over_reason_required";
+                return false;
+            }
+
+            if (!IsShipAlive)
+            {
+                reason = "ship_destroyed";
+                return false;
+            }
+
+            var previousHp = synchronizedCurrentShipHp.Value;
+            var normalizedCause = NormalizeDamageCause(cause);
+            synchronizedCurrentShipHp.Value = 0;
+            synchronizedPowerEnabled.Value = false;
+            synchronizedGravityEnabled.Value = false;
+            synchronizedLastDamageCause.Value = normalizedCause;
+            IncrementRevision();
+            reason = null;
+            Debug.Log(
+                $"PHS_SHIP_DESTROYED cause={normalizedCause} previousHp={previousHp} gameOverReason={gameOverReason} revision={Revision}",
+                this);
+            ReportGameOver(gameOverReason);
             return true;
         }
 
@@ -690,7 +727,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
             }
         }
 
-        private void ReportShipDestroyed()
+        private void ReportGameOver(GameOverReason gameOverReason)
         {
             var gameCore = GameCore.Instance;
             if (gameCore == null || gameCore.Services == null
@@ -700,8 +737,8 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
                 return;
             }
 
-            commands.ReportGameOver(GameOverReason.ShipDestroyed);
-            Debug.Log("PHS_SHIP_DESTROYED_REPORTED", this);
+            commands.ReportGameOver(gameOverReason);
+            Debug.Log($"PHS_SHIP_DESTROYED_REPORTED reason={gameOverReason}", this);
         }
 
         private void TryRegisterWithGameCore()

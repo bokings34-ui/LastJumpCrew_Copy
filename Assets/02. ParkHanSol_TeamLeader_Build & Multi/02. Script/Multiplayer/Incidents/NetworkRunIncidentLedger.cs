@@ -1150,10 +1150,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
 
             if ((request.Channel == NetworkRunIncidentChannel.External
                     && request.PayloadKind
-                        != NetworkRunIncidentPayloadKind.EventManagerEvent)
-                || (request.Channel == NetworkRunIncidentChannel.Internal
-                    && request.PayloadKind
-                        != NetworkRunIncidentPayloadKind.ShipAccident))
+                        != NetworkRunIncidentPayloadKind.EventManagerEvent))
             {
                 reason =
                     $"incident_channel_payload_mismatch:" +

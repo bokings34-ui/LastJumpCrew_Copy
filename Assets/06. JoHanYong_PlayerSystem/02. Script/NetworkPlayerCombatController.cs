@@ -24,6 +24,9 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
         [SerializeField]
         private Transform wrenchAttackPoint;
 
+        [SerializeField, Min(0.1f)]
+        private float wrenchRepairRadius = 2.4f;
+
         [Header("Fire Extinguisher Spray")]
         [SerializeField]
         private Transform extinguisherSprayOrigin; //분사 시작위치
@@ -244,8 +247,12 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
             //변경 오버랩 스피어 범위를 SO 데이터 값을 읽게 수정
             
 
-            bool successfulUse = false; 
-            var hits = Physics.OverlapSphere(wrenchAttackPoint.position, itemData.AttackRadius, itemData.TargetLayers, QueryTriggerInteraction.Collide);
+            bool successfulUse = false;
+            var hits = Physics.OverlapSphere(
+                wrenchAttackPoint.position,
+                Mathf.Max(itemData.AttackRadius, wrenchRepairRadius),
+                itemData.TargetLayers,
+                QueryTriggerInteraction.Collide);
 
             processedTargets.Clear();
             itemFeedbackTargetPositions.Clear();
@@ -281,25 +288,35 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
                 }
 
                 var requestSequence = NextUtilityAttackSequence();
-               
-
-                bool utilityAccepted = CombatHitResolver.TryResolveUtilityAttack(targetObject, gameObject, itemData.ItemId, requestSequence);
-
-                if (utilityAccepted)
+                var hitDistance = Vector3.Distance(
+                    wrenchAttackPoint.position,
+                    hit.ClosestPoint(wrenchAttackPoint.position));
+                if (hitDistance <= wrenchRepairRadius)
                 {
-                    bool repairApplied = RepairResolver.TryRepair(itemData, targetObject, gameObject);
-                    //기존 상조작용에서 ItemId 조건 통과 후 아이템 SO에 수리량 대상에게 전달
-
+                    bool utilityAccepted = CombatHitResolver.TryResolveUtilityAttack(
+                        targetObject,
+                        gameObject,
+                        itemData.ItemId,
+                        requestSequence);
+                    bool repairApplied = utilityAccepted
+                        || RepairResolver.TryRepair(itemData, targetObject, gameObject);
                     if (repairApplied)
                     {
-                        successfulUse = true; 
-
-                        RecordAcceptedItemTarget(itemData.ItemId, targetObject, "utility_repair",hit.ClosestPoint(wrenchAttackPoint.position), requestSequence);
+                        successfulUse = true;
+                        RecordAcceptedItemTarget(
+                            itemData.ItemId,
+                            targetObject,
+                            "utility_repair",
+                            hit.ClosestPoint(wrenchAttackPoint.position),
+                            requestSequence);
+                        continue;
                     }
+                }
 
+                if (hitDistance > itemData.AttackRadius)
+                {
                     continue;
                 }
-                
 
                 // 상호작용 대상이 아니라면 전투 대상을 검사한다.
                 var damageable = targetObject.GetComponentInParent<IDamageable>();
@@ -328,7 +345,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
 
                 successfulUse = true;
 
-                RecordAcceptedItemTarget(itemData.ItemId, targetObject, "dmage_or_knockback", hit.ClosestPoint(wrenchAttackPoint.position), requestSequence);
+                RecordAcceptedItemTarget(itemData.ItemId, targetObject, "damage_or_knockback", hit.ClosestPoint(wrenchAttackPoint.position), requestSequence);
             }
             if (successfulUse)
             {
@@ -712,16 +729,12 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
                 // 먼저 화재, 산소 누출 등의 상호작용 대상을 검사한다.
                 bool utilityAccepted = CombatHitResolver.TryResolveUtilityAttack(targetObject, gameObject, itemData.ItemId, requestSequence);
 
-                if (utilityAccepted)
+                bool repairApplied = utilityAccepted
+                    || RepairResolver.TryRepair(itemData, targetObject, gameObject);
+                if (repairApplied)
                 {
-                    bool repairApplied = RepairResolver.TryRepair(itemData, targetObject, gameObject);
-                    //소화기 SO의 수리량을 사고 대상에게 전달
-                    if (repairApplied)
-                    {
-                        successfulUse = true; //추가 : 실제 수리 성공
-                        RecordAcceptedItemTarget(itemData.ItemId, targetObject, "fire_suppression", feedbackPosition, requestSequence);
-                    }
-
+                    successfulUse = true;
+                    RecordAcceptedItemTarget(itemData.ItemId, targetObject, "fire_suppression", feedbackPosition, requestSequence);
                     continue;
                 }
 

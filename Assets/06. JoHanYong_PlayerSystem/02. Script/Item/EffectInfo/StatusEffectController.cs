@@ -27,7 +27,10 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
         private Light[] electricShockLights = Array.Empty<Light>();
         private Coroutine electricShockRoutine;
 
-        public bool IsShocked => electricShockActive.Value;
+        public bool IsShocked => IsSpawned
+            ? electricShockActive.Value
+            : electricShockEffectRoot != null
+                && electricShockEffectRoot.activeSelf;
 
         public event Action<StatusEffectType> StatusEffectStarted;
         public event Action<StatusEffectType> StatusEffectEnded;
@@ -238,18 +241,22 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
                 }
             }
 
-            foreach(Light effectLight in electricShockLights)
+            foreach (var effectLight in electricShockLights)
             {
-                if(effectLight != null)
+                if (effectLight != null)
                 {
                     effectLight.enabled = active;
                 }
             }
-            
         }
+
         private void OnDisable()
         {
             StopElectricShockRoutine();
+            if (IsSpawned && IsServer && electricShockActive.Value)
+            {
+                electricShockActive.Value = false;
+            }
             ApplyElectricShockPresentation(false);
         }
     }

@@ -12,6 +12,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
 {
     [RequireComponent(typeof(NetworkObject))]
     [RequireComponent(typeof(NetworkRunStageClock))]
+    [RequireComponent(typeof(NetworkGameOverSequenceCoordinator))]
     public sealed class NetworkRunFlowCoordinator : NetworkBehaviour, IRunFlowStatus
     {
         [Header("Run Rules")]
@@ -74,6 +75,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
         private readonly HashSet<ulong> warpRevivePlayerIds = new();
         private IGameStateProvider gameState;
         private IGameCommands gameCommands;
+        private NetworkGameOverSequenceCoordinator gameOverSequence;
         private float chargeElapsed;
         private float rearmElapsed;
         private float nextBindAttemptTime;
@@ -105,6 +107,27 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
         public event Action<NetworkRunPhase, NetworkRunPhase> PhaseChanged;
         public event Action<int, int> ActiveMapChanged;
         public event Action<int> ActiveMapCommitted;
+
+        public bool TryResolveInitialMapScene(
+            out string sceneName,
+            out string reason)
+        {
+            if (mapCatalog == null)
+            {
+                sceneName = null;
+                reason = "map_catalog_missing";
+                return false;
+            }
+
+            if (!TryResolveMapScene(initialMapId, out _, out sceneName))
+            {
+                reason = $"initial_map_scene_unresolved:{initialMapId}";
+                return false;
+            }
+
+            reason = null;
+            return true;
+        }
 
         public bool TryConfigureRuntimeValidationTimings(float chargeSeconds)
         {
@@ -200,6 +223,16 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
             }
 
             Instance = this;
+            gameOverSequence = GetComponent<NetworkGameOverSequenceCoordinator>();
+            if (gameOverSequence == null)
+            {
+                Debug.LogError(
+                    $"PHS_RUN_FLOW_SETUP_FAILED reason=game_over_sequence_missing coordinator={name}",
+                    this);
+                enabled = false;
+                return;
+            }
+
             if (!ValidateStageClockReference() || !ValidateMapCatalog())
             {
                 enabled = false;
@@ -524,6 +557,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
                     break;
                 case GamePhase.GameOver:
                     TryStopStageClockServer("game_over");
+                    TryBeginGameOverSequenceServer();
                     SetPhase(NetworkRunPhase.GameOver);
                     break;
             }
@@ -714,6 +748,13 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
             synchronizedWarpCharge.Value = 0f;
             MirrorGameState();
 
+            if (gameState.Phase == GamePhase.ZoneSelect
+                || gameState.Phase == GamePhase.Shop
+                || gameState.Phase == GamePhase.GameClear)
+            {
+                TryAwardMapClearRewardServer();
+            }
+
             switch (gameState.Phase)
             {
                 case GamePhase.ZoneSelect:
@@ -753,6 +794,48 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
             }
 
             Debug.Log($"PHS_RUN_FLOW_WARP_COMPLETED cleared={gameState.ClearedZoneCount} phase={gameState.Phase}");
+        }
+
+        private void TryAwardMapClearRewardServer()
+        {
+            if (!IsServer
+                || mapCatalog == null
+                || !mapCatalog.TryResolve(ActiveMapId, out var profile)
+                || profile.ClearRewardCredits <= 0)
+            {
+                return;
+            }
+
+            var economy = NetworkRunSessionRoot.Instance?.Economy;
+            if (economy == null || !economy.IsSpawned || !economy.IsServer)
+            {
+                Debug.LogError(
+                    $"PHS_MAP_CLEAR_REWARD_FAILED reason=economy_not_ready " +
+                    $"map={ActiveMapId} sequence={stageClock.StageSequence}",
+                    this);
+                return;
+            }
+
+            var transactionId =
+                $"map_clear:{stageClock.StageSequence}:{ActiveMapId}";
+            if (!economy.TryAddCreditsServer(
+                    transactionId,
+                    profile.ClearRewardCredits,
+                    NetworkRunEconomyTransactionKind.RewardCredit,
+                    NetworkManager.ServerClientId,
+                    out var reason))
+            {
+                Debug.LogWarning(
+                    $"PHS_MAP_CLEAR_REWARD_SKIPPED transaction={transactionId} " +
+                    $"amount={profile.ClearRewardCredits} reason={reason}",
+                    this);
+                return;
+            }
+
+            Debug.Log(
+                $"PHS_MAP_CLEAR_REWARD_COMMITTED transaction={transactionId} " +
+                $"amount={profile.ClearRewardCredits} tier={profile.DifficultyTier}",
+                this);
         }
 
         private bool TryTeleportConnectedPlayersToSafeZone()
@@ -1033,6 +1116,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
                 if (gameState != null && gameState.Phase == GamePhase.GameOver)
                 {
                     TryStopStageClockServer("game_state_changed_game_over");
+                    TryBeginGameOverSequenceServer();
                     SetPhase(NetworkRunPhase.GameOver);
                 }
             }
@@ -1067,10 +1151,13 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
             var shipSystems = NetworkShipSystemsState.Instance;
             var damageReason = "ship_systems_missing";
             if (shipSystems != null
-                && shipSystems.TryApplyShipDamage(999, "stage_timeout", out damageReason))
+                && shipSystems.TryDestroyShip(
+                    GameOverReason.TimeOver,
+                    "stage_timeout",
+                    out damageReason))
             {
                 Debug.Log(
-                    $"PHS_STAGE_CLOCK_TIMEOUT_DAMAGE_APPLIED map={expiredSnapshot.MapId} sequence={expiredSnapshot.StageSequence} hp={shipSystems.CurrentShipHp}",
+                    $"PHS_STAGE_CLOCK_TIMEOUT_SHIP_DESTROYED map={expiredSnapshot.MapId} sequence={expiredSnapshot.StageSequence} hp={shipSystems.CurrentShipHp}",
                     this);
             }
             else
@@ -1090,6 +1177,25 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
             Debug.Log(
                 $"PHS_STAGE_CLOCK_TIMEOUT_RESOLVED map={expiredSnapshot.MapId} sequence={expiredSnapshot.StageSequence} gameOver={gameState.Phase}",
                 this);
+        }
+
+        private void TryBeginGameOverSequenceServer()
+        {
+            if (!IsServer
+                || gameState == null
+                || gameState.Phase != GamePhase.GameOver
+                || gameOverSequence == null
+                || gameOverSequence.State != NetworkGameOverSequenceState.Idle)
+            {
+                return;
+            }
+
+            if (!gameOverSequence.TryBeginServer(gameState.LastGameOverReason, out var reason))
+            {
+                Debug.LogError(
+                    $"PHS_GAME_OVER_SEQUENCE_START_FAILED reason={reason} gameOverReason={gameState.LastGameOverReason}",
+                    this);
+            }
         }
 
         private bool TryStopStageClockServer(string context)

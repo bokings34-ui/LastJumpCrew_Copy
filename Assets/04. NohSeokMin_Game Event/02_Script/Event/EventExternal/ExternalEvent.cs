@@ -5,7 +5,7 @@ namespace SM
 {
     public abstract class ExternalEvent : EventBase, IMiniGameTarget
     {
-        private const float MiniGameTimeLimit = 50f;
+        private const float MiniGameTimeLimit = 30f;
 
         protected IRoom TargetRoom { get { return Context?.Room; } }
         protected IEventSpawner Spawner { get { return Context?.Spawner; } }

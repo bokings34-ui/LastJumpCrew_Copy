@@ -12,7 +12,8 @@ namespace SM
         IInteractable,
         IRequireHeldItem,
         IEventRepairableEffect,
-        IUtilityAttackTarget
+        IUtilityAttackTarget,
+        IRepairable
     {
         private const string WrenchItemId = "wrench";
 
@@ -21,6 +22,8 @@ namespace SM
 
         [Header("흡입력 감소 설정")]
         [SerializeField] private float pullActiveDuration = 5f;
+
+        [SerializeField] private AudioSource audioSource;
 
         private float _outerPullRadius;
         private float _innerDamageRadius;
@@ -70,6 +73,10 @@ namespace SM
             IsSealed = false;
 
             gameObject.SetActive(true);
+            if (audioSource != null)
+            {
+                audioSource.Play();
+            }
         }
 
         public void Deactivate()
@@ -78,6 +85,10 @@ namespace SM
             _targetsInRange.Clear();
             _hazardHandledExternally = false;
             gameObject.SetActive(false);
+            if (audioSource != null)
+            {
+                audioSource.Stop();
+            }
         }
 
         public bool BindRepairTarget(
@@ -289,6 +300,20 @@ namespace SM
             }
 
             ApplyRepair(amount);
+            return true;
+        }
+
+        // ____ IRepairable ____
+        public bool CanRepair => !IsSealed;
+
+        public float CurrentIntegrity => _repairProgress;
+
+        public float MaxIntegrity => _maxRepairProgress;
+
+        public bool ApplyRepair(float amount, GameObject repairer)
+        {
+            if (!CanRepair) return false;
+            ApplyRepair(amount); // 기존 ApplyRepair(float) 재사용
             return true;
         }
 

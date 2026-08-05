@@ -421,14 +421,20 @@ namespace LastJumpCrew.ParkHanSol.Interaction
 
         private bool TryResolveDebrisForSale(Collider other, out DebrisItem debrisItem)
         {
-            if (TryGetDebrisItem(other, out debrisItem))
+            if (!TryGetDebrisItem(other, out debrisItem))
             {
-                return true;
+                return false;
             }
 
-            var holder = other == null ? null : other.GetComponentInParent<TempPlayerItemHolder>();
-            debrisItem = holder == null ? null : holder.HeldDebris;
-            return debrisItem != null && debrisItem.CompareTag(debrisTag) && ValidateSetup();
+            var itemObject = debrisItem.GetComponentInParent<UtilityItemObject>();
+            if (itemObject == null)
+            {
+                Debug.LogError(
+                    $"PHS_DEBRIS_SELL_FAILED reason=utility_item_missing zone={name} debris={debrisItem.name}");
+                return false;
+            }
+
+            return true;
         }
 
         private bool TryConsumeHeldDebris(DebrisItem debrisItem, out bool isHeldDebris)

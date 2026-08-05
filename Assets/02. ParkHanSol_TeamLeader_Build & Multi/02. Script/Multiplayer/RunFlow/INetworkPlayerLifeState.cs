@@ -8,6 +8,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
         float RespawnRemainingSeconds { get; }
         void BeginDeadZoneWarning(float warningSeconds);
         void CancelDeadZoneWarning();
+        void KillForContainmentBreach();
         void KillForWarp();
         bool TryReviveAfterWarp();
     }

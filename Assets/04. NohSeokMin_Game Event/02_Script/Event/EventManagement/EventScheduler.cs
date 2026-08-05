@@ -1,6 +1,7 @@
 using System;
 using System.Collections;
 using System.Collections.Generic;
+using LastJumpCrew.ParkHanSol.Multiplayer.Events;
 using UnityEngine;
 
 namespace SM
@@ -14,14 +15,19 @@ namespace SM
             EventId.Fire,
             EventId.EnemySpawn,
             EventId.OxygenLeak,
-
-            // TODO :: PowerOff, EngineBreak, MicDestroy 구현 완료 후 추가
+            EventId.PowerOff,
+            EventId.EngineBreak,
+            EventId.MicDestroy,
+            EventId.HullBreach,
+            EventId.SteamLeak,
+            EventId.OxygenGeneratorFailure,
+            EventId.GravityGeneratorFailure
         };
 
         private const float TotalTime = 300f;
-        private const float SpawnInterval = 30f;
+        private const float SpawnInterval = 15f;
         private const float DoubleSpawnTime = 150f;
-        private const int MaxActiveEvents = 2;
+        private const int MaxActiveEvents = 3;
         private const float RequeueDelay = 5f;
 
         private float _runningTime;
@@ -38,6 +44,9 @@ namespace SM
 
         private readonly Queue<WaitEvent> _waitQueue = new Queue<WaitEvent>();
 
+        public bool IsRunning => _isRunning;
+        public float RunningTime => _runningTime;
+
         public void StartScheduler()
         {
             _runningTime = 0f;
@@ -52,7 +61,6 @@ namespace SM
             _isRunning = false;
         }
 
-        // 스테이지 종료 시 GameManager가 호출할 것 (스케줄러 정지, 진행 중이던 모든 사고 강제 종료)
         public void ForceClearAll()
         {
             _isRunning = false;
@@ -84,9 +92,15 @@ namespace SM
             {
                 _spawnTimer = 0f;
 
-                int spawnCount = _runningTime >= DoubleSpawnTime ? 2 : 1;
+                int spawnCount = GetSpawnCountForCurrentTime(_runningTime);
                 StartCoroutine(SpawnEventSequence(spawnCount));
             }
+        }
+
+        // 순수 판단 함수 - 입력(시간)만으로 결과가 결정됨. 네트워크에서 서버 시간을 넣어 그대로 재사용 가능.
+        public static int GetSpawnCountForCurrentTime(float runningTime)
+        {
+            return runningTime >= DoubleSpawnTime ? 2 : 1;
         }
 
         private IEnumerator SpawnEventSequence(int count)
@@ -108,6 +122,18 @@ namespace SM
             if (eventId == null) return;
 
             TrySpawnEvent(eventId.Value, null);
+        }
+
+        public void TriggerRandomEvent(IRoom room = null)
+        {
+            var eventId = GetRandomEventId();
+            if (eventId == null)
+            {
+                Debug.Log("<color=lime>[EventScheduler]</color> 발생 가능한 이벤트가 없어 트리거를 건너뜁니다.");
+                return;
+            }
+
+            TrySpawnEvent(eventId.Value, room);
         }
 
         public void TrySpawnEvent(EventId eventId, IRoom room)
@@ -146,7 +172,6 @@ namespace SM
             sb.Append("<color=lime>[EventScheduler]</color> 현재 대기열: ");
 
             int index = 1;
-
             foreach (var item in _waitQueue)
             {
                 sb.Append($"({index}) {item.EventId}  ");
@@ -166,7 +191,16 @@ namespace SM
                 return;
             }
 
-            EventManager.Instance.SpawnEvent(eventId, targetRoom, HandleEventFinished);
+            if (!EventManager.Instance.TrySpawnEvent(
+                    eventId,
+                    targetRoom,
+                    HandleEventFinished,
+                    out _))
+            {
+                Debug.LogError($"PHS_EVENT_SCHEDULER_SPAWN_FAILED event={eventId}");
+                return;
+            }
+
             _activeEventCount++;
 
             Debug.Log($"<color=lime>[EventScheduler]</color> {eventId} 발생!");
@@ -174,7 +208,7 @@ namespace SM
 
         private void HandleEventFinished(EventBase evt, bool success)
         {
-            _activeEventCount--;
+            _activeEventCount = Mathf.Max(0, _activeEventCount - 1);
             TryProcessQueue();
         }
 

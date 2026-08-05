@@ -14,8 +14,20 @@ namespace SM
                     return new EnemySpawnEvent();
                 case EventId.OxygenLeak:
                     return new OxygenLeakEvent();
-
-                // TODO :: PowerOff, EngineBreak, MicDestroy 구현 후 추가
+                case EventId.MicDestroy:
+                    return new MicDestroyEvent();
+                case EventId.PowerOff:
+                    return new PowerOffEvent();
+                case EventId.EngineBreak:
+                    return new EngineBreakEvent();
+                case EventId.HullBreach:
+                    return new HullBreachEvent();
+                case EventId.SteamLeak:
+                    return new SteamLeakEvent();
+                case EventId.OxygenGeneratorFailure:
+                    return new OxygenGeneratorFailureEvent();
+                case EventId.GravityGeneratorFailure:
+                    return new GravityGeneratorFailureEvent();
 
                 case EventId.MeteorAttack:
                     return new MeteorAttackEvent();

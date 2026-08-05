@@ -10,6 +10,9 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
     [RequireComponent(typeof(NetworkPlayerController))]
     public sealed class NetworkPlayerGrappleController : NetworkBehaviour
     {
+        public bool IsGrappleActive => IsGrappleActiveInternal();
+        public event Action<Collider> GrappleLatched;
+
         private enum GrappleMotionState
         {
             Idle,
@@ -19,9 +22,17 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
 
         [SerializeField] private Camera aimCamera;
         [SerializeField] private Transform ropeOrigin;
-        [SerializeField] private LineRenderer ropeRenderer;
         [SerializeField] private Transform hookVisual;
         [SerializeField] private GrappleClawVisual clawVisual;
+        [SerializeField] private Transform ropeAttachPoint;
+        [SerializeField] private Transform clawTipPoint;
+        [Header("Robotic Arm Visual")]
+        [SerializeField] private Transform armVisual;
+        [SerializeField] private Transform armSegment;
+        [SerializeField] private Transform armEndJoint;
+        [SerializeField] private GrappleTelescopicArmVisual telescopicArmVisual;
+        [SerializeField, Range(0.02f, 0.12f)]
+        private float armThickness = 0.05f;
         [SerializeField] private Transform aimMarker;
         [SerializeField] private Transform aimReticle;
         [SerializeField] private Renderer aimReticleRenderer;
@@ -32,7 +43,6 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
         [SerializeField] private MonoBehaviour itemHolderBehaviour;
         [SerializeField] private Transform itemCollectionPoint;
         [SerializeField, Min(0.1f)] private float itemCollectionDistance = 1.5f;
-        [SerializeField, Min(0.005f)] private float ropeWidth = 0.045f;
         [SerializeField] private LayerMask grappleLayers = ~0;
         [SerializeField, Min(1f)] private float maximumDistance = 24f;
         [SerializeField, Min(1f)] private float hookLaunchSpeed = 50f;
@@ -74,17 +84,8 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
             upgradeState = GetComponent<NetworkPlayerUpgradeState>();
             itemHolder = itemHolderBehaviour as IItemHolder;
             ValidateSetup();
-            if (ropeRenderer != null)
-            {
-                ropeRenderer.startWidth = ropeWidth;
-                ropeRenderer.endWidth = ropeWidth;
-                ropeRenderer.useWorldSpace = true;
-                ropeRenderer.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
-                ropeRenderer.receiveShadows = false;
-            }
-
-            SetRopeVisible(false);
             SetHookVisible(false);
+            SetArmVisible(false);
             if (clawVisual != null)
             {
                 clawVisual.SetPhase(GrappleClawPhase.Hidden);
@@ -105,6 +106,13 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
                 return;
             }
 
+            // Release must be observed even while a tutorial popup blocks gameplay input.
+            if (playerControlInput != null
+                && playerControlInput.GrappleReleasedThisFrame)
+            {
+                RequestStopGrapple();
+            }
+
             if (playerController.CanAcceptLocalInput)
             {
                 HandleLocalInput();
@@ -117,7 +125,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
                 AdvanceHookFlight(Time.deltaTime);
             }
 
-            RefreshRope();
+            RefreshGrappleVisual();
         }
 
         public void ApplyServerPull(float deltaTime)
@@ -188,11 +196,29 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
             StopGrapple();
         }
 
+        public bool CancelForTeleport()
+        {
+            if (IsSpawned && !IsServer)
+            {
+                Debug.LogError($"PHS_GRAPPLE_TELEPORT_CANCEL_FAILED reason=server_required player={name}", this);
+                return false;
+            }
+
+            var wasActive = IsGrappleActiveInternal();
+            StopGrapple();
+            if (wasActive)
+            {
+                Debug.Log($"PHS_GRAPPLE_TELEPORT_CANCELLED player={name}", this);
+            }
+
+            return true;
+        }
+
         private void OnDisable()
         {
             lastLaunchTime = float.NegativeInfinity;
-            SetRopeVisible(false);
             SetHookVisible(false);
+            SetArmVisible(false);
             if (clawVisual != null)
             {
                 clawVisual.SetPhase(GrappleClawPhase.Hidden);
@@ -213,17 +239,11 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
                 HandleHookPressed();
             }
 
-            // Grapple input is hold-to-use. Release must always detach the server-owned grapple state.
-            if (playerControlInput.GrappleReleasedThisFrame)
-            {
-                RequestStopGrapple();
-            }
-
         }
 
         private void HandleHookPressed()
         {
-            if (IsGrappleActive())
+            if (IsGrappleActiveInternal())
             {
                 RequestStopGrapple();
                 return;
@@ -447,6 +467,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
         {
             motionState = GrappleMotionState.Latched;
             SetGrappleVisualPhase(GrappleClawPhase.Latched);
+            GrappleLatched?.Invoke(collider);
             activeTarget = collider.GetComponentInParent<IGrappleTarget>();
             activeCollectible = collider.GetComponentInParent<IGrappleCollectible>();
             activeCollectibleIsDebris = activeCollectible != null && HasDebrisTag(collider.transform);
@@ -545,7 +566,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
 
         private void SetPullRequested(bool requested)
         {
-            if (requested && !IsGrappleActive())
+            if (requested && !IsGrappleActiveInternal())
             {
                 Debug.LogWarning($"PHS_GRAPPLE_PULL_IGNORED reason=not_latched player={name}");
                 return;
@@ -684,7 +705,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
             standaloneVisualPhase = visualPhase;
         }
 
-        private bool IsGrappleActive()
+        private bool IsGrappleActiveInternal()
         {
             return IsSpawned ? grappleActive.Value : standaloneActive;
         }
@@ -699,11 +720,11 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
             return IsSpawned ? grappleVisualPhase.Value : standaloneVisualPhase;
         }
 
-        private void RefreshRope()
+        private void RefreshGrappleVisual()
         {
-            var active = IsGrappleActive();
-            SetRopeVisible(active);
+            var active = IsGrappleActiveInternal();
             SetHookVisible(active);
+            SetArmVisible(active);
             clawVisual.SetPhase(GetGrappleVisualPhase());
             if (!active)
             {
@@ -711,19 +732,20 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
             }
 
             var grapplePoint = GetGrapplePosition();
-            ropeRenderer.SetPosition(0, ropeOrigin.position);
-            ropeRenderer.SetPosition(1, grapplePoint);
             hookVisual.position = grapplePoint;
             var hookDirection = grapplePoint - ropeOrigin.position;
             if (hookDirection.sqrMagnitude > 0.001f)
             {
                 hookVisual.rotation = Quaternion.LookRotation(hookDirection.normalized, transform.up);
             }
+
+            hookVisual.position += grapplePoint - clawTipPoint.position;
+            RefreshRoboticArmVisual(ropeAttachPoint.position);
         }
 
         private void RefreshAimMarker()
         {
-            if (!playerController.CanAcceptLocalInput || IsGrappleActive())
+            if (!playerController.CanAcceptLocalInput || IsGrappleActiveInternal())
             {
                 SetAimMarkerVisible(false);
                 SetAimReticleState(false, false);
@@ -748,17 +770,6 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
             SetAimReticleState(true, true);
         }
 
-        private void SetRopeVisible(bool visible)
-        {
-            if (ropeRenderer == null)
-            {
-                return;
-            }
-
-            ropeRenderer.positionCount = 2;
-            ropeRenderer.enabled = visible;
-        }
-
         private void SetHookVisible(bool visible)
         {
             if (hookVisual == null)
@@ -767,6 +778,40 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
             }
 
             hookVisual.gameObject.SetActive(visible);
+        }
+
+        private void SetArmVisible(bool visible)
+        {
+            if (armVisual == null)
+            {
+                return;
+            }
+
+            armVisual.gameObject.SetActive(visible);
+        }
+
+        private void RefreshRoboticArmVisual(Vector3 grapplePoint)
+        {
+            if (armVisual == null
+                || armSegment == null
+                || armEndJoint == null
+                || telescopicArmVisual == null
+                || !telescopicArmVisual.IsConfigured)
+            {
+                return;
+            }
+
+            var direction = grapplePoint - ropeOrigin.position;
+            var length = direction.magnitude;
+            if (length <= 0.01f)
+            {
+                return;
+            }
+
+            armVisual.SetPositionAndRotation(
+                ropeOrigin.position,
+                Quaternion.FromToRotation(Vector3.up, direction));
+            telescopicArmVisual.SetLength(length, armThickness);
         }
 
         private void SetAimMarkerVisible(bool visible)
@@ -807,9 +852,15 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
                 && playerControlInput != null
                 && aimCamera != null
                 && ropeOrigin != null
-                && ropeRenderer != null
                 && hookVisual != null
                 && clawVisual != null
+                && ropeAttachPoint != null
+                && clawTipPoint != null
+                && armVisual != null
+                && armSegment != null
+                && armEndJoint != null
+                && telescopicArmVisual != null
+                && telescopicArmVisual.IsConfigured
                 && aimMarker != null
                 && aimReticle != null
                 && aimReticleRenderer != null
@@ -822,7 +873,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
             if (!setupErrorLogged)
             {
                 setupErrorLogged = true;
-                Debug.LogError($"PHS_GRAPPLE_SETUP_FAILED player={name} controller={playerController != null} input={playerControlInput != null} camera={aimCamera != null} ropeOrigin={ropeOrigin != null} ropeRenderer={ropeRenderer != null} hookVisual={hookVisual != null} clawVisual={clawVisual != null} aimMarker={aimMarker != null} aimReticle={aimReticle != null} aimReticleRenderer={aimReticleRenderer != null} itemHolder={itemHolder != null} itemCollectionPoint={itemCollectionPoint != null}");
+                Debug.LogError($"PHS_GRAPPLE_SETUP_FAILED player={name} controller={playerController != null} input={playerControlInput != null} camera={aimCamera != null} ropeOrigin={ropeOrigin != null} hookVisual={hookVisual != null} clawVisual={clawVisual != null} ropeAttachPoint={ropeAttachPoint != null} clawTipPoint={clawTipPoint != null} armVisual={armVisual != null} armSegment={armSegment != null} armEndJoint={armEndJoint != null} telescopicArmVisual={telescopicArmVisual != null} telescopicArmConfigured={telescopicArmVisual != null && telescopicArmVisual.IsConfigured} aimMarker={aimMarker != null} aimReticle={aimReticle != null} itemHolder={itemHolder != null} itemCollectionPoint={itemCollectionPoint != null}");
             }
 
             return false;

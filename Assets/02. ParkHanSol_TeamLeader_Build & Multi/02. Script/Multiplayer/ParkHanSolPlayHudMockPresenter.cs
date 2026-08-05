@@ -29,6 +29,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
         [SerializeField] private PHSHudFeedbackController hudFeedbackController;
 
         private readonly List<SpeakingPlayerView> speakingPlayerViews = new();
+        private NetworkPartyCreditsHudBinding networkPartyCreditsBinding;
         private float speakingPlayerHideTime;
 
         private void Awake()
@@ -38,7 +39,18 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
                 hudFeedbackController = GetComponent<PHSHudFeedbackController>();
             }
 
+            networkPartyCreditsBinding = new NetworkPartyCreditsHudBinding(this);
             ResetPlaceholders();
+        }
+
+        private void OnEnable()
+        {
+            networkPartyCreditsBinding.Enable();
+        }
+
+        private void OnDisable()
+        {
+            networkPartyCreditsBinding.Disable();
         }
 
         private void Update()
@@ -61,6 +73,17 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
 
             SetText(healthText, $"+{health}<size=26>/{maxHealth}</size>");
             SetText(staminaText, $"ST {stamina}<size=24>/{maxStamina}</size>");
+        }
+
+        public void SetHealth(int health, int maxHealth)
+        {
+            if (hudFeedbackController != null)
+            {
+                hudFeedbackController.SetHealth(health, maxHealth);
+                return;
+            }
+
+            SetText(healthText, $"+{health}/{Mathf.Max(1, maxHealth)}");
         }
 
         public void SetThrusterFuel(int currentFuel, int maxFuel)
@@ -300,7 +323,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
                 heldItemDurabilityText,
                 itemPrefabData.UsesDurability
                     ? $"DUR {currentDurability}/{itemPrefabData.MaxDurability}"
-                    : "DUR ∞");
+                    : "DUR MAX");
         }
 
         private void RebuildSpeakingPlayerViews(IReadOnlyList<string> playerNames)
