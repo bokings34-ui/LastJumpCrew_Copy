@@ -25,8 +25,6 @@ namespace LastJumpCrew.ParkHanSol.Editor
         private const string FoamHeldPrefabPath =
             "Assets/02. ParkHanSol_TeamLeader_Build & Multi/03. Prefab/Props/Prefabs/Items/Held/ParkHanSol_FoamSealantGun_Held.prefab";
         private const string ActiveNetworkPrefabsPath =
-            "Assets/01. MainGame/02. Final_Prefab/01. Prefab_ParkHanSol_TeamLeader/Prefab/DefaultNetworkPrefabs.asset";
-        private const string InactiveNetworkPrefabsPath =
             "Assets/DefaultNetworkPrefabs.asset";
         private const string FoamBlobPrefabPath =
             "Assets/02. ParkHanSol_TeamLeader_Build & Multi/03. Prefab/Items/Foam/PHS_NetworkFoamBlob.prefab";
@@ -348,29 +346,6 @@ namespace LastJumpCrew.ParkHanSol.Editor
                 errors.Add($"reason=network_prefab_registration_count count={count}");
             }
 
-            var inactiveList = AssetDatabase.LoadAssetAtPath<NetworkPrefabsList>(
-                InactiveNetworkPrefabsPath);
-            if (inactiveList == null)
-            {
-                errors.Add(
-                    $"reason=inactive_network_prefabs_missing path={InactiveNetworkPrefabsPath}");
-                return;
-            }
-
-            var inactiveCount = 0;
-            foreach (var entry in inactiveList.PrefabList)
-            {
-                if (entry != null && entry.Prefab == foamBlob)
-                {
-                    inactiveCount++;
-                }
-            }
-
-            if (inactiveCount != 0)
-            {
-                Debug.LogWarning(
-                    $"PHS_FOAM_GLOO_VALIDATION_WARNING reason=inactive_default_list_contains_foam count={inactiveCount}");
-            }
         }
 
         private static void ValidateDependencies(List<string> errors)

@@ -78,6 +78,8 @@ namespace LastJumpCrew.ParkHanSol.Interaction
         // 변수 이름은 기존 코드를 최대한 유지하기 위해 그대로 두고, 반환 타입만 UtilityItemDataSO로 변경
         public UtilityItemDataSO CurrentItemPrefabData => currentItemPrefabData;
 
+        public ItemDropMotionProfile DropMotionProfile => dropMotionProfile;
+
         public DebrisItem HeldDebris => heldDebris;
      
         public float HeldDebrisMass => heldDebris == null ? 0f : heldDebris.Mass;
@@ -529,9 +531,25 @@ namespace LastJumpCrew.ParkHanSol.Interaction
                 return false;
             }
 
-            droppedItemObject.OnDropped(position);
+            if (!dropMotionProfile.TryResolveFloorPlacement(
+                    droppedRigidbody,
+                    position,
+                    source.rotation,
+                    transform.root,
+                    out var resolvedPosition,
+                    out var resolvedRotation))
+            {
+                Debug.LogError($"PHS_TEMP_ITEM_PLACE_FAILED " + $"reason=floor_placement_rejected " + $"item={currentItemPrefabData.ItemId}");
+                Destroy(droppedItemInstance);
+                return false;
+            }
 
-            if (!dropMotionProfile.TryApply(droppedRigidbody, source.rotation))
+            droppedItemInstance.transform.SetPositionAndRotation(
+                resolvedPosition,
+                resolvedRotation);
+            droppedItemObject.OnDropped(resolvedPosition);
+
+            if (!dropMotionProfile.TryApply(droppedRigidbody, resolvedRotation))
             {
                 Debug.LogError($"PHS_TEMP_ITEM_PLACE_FAILED " + $"reason=drop_motion_rejected " + $"item={currentItemPrefabData.ItemId}");
 
@@ -581,17 +599,31 @@ namespace LastJumpCrew.ParkHanSol.Interaction
 
             heldItemInstance.transform.SetParent(null, true);
 
-            heldItemInstance.transform.SetPositionAndRotation(position, source.rotation);
-
             heldItemInstance.transform.localScale = heldDebrisWorldScale;
       
             RestoreHeldDebrisColliders();
 
-            currentItemObject.OnDropped(position);
+            if (!dropMotionProfile.TryResolveFloorPlacement(
+                    debrisRigidbody,
+                    position,
+                    source.rotation,
+                    transform.root,
+                    out var resolvedPosition,
+                    out var resolvedRotation))
+            {
+                Debug.LogError($"PHS_DEBRIS_PLACE_FAILED " + $"reason=floor_placement_rejected " + $"player={name} " + $"debris={debrisName}");
+                return false;
+            }
+
+            heldItemInstance.transform.SetPositionAndRotation(
+                resolvedPosition,
+                resolvedRotation);
+
+            currentItemObject.OnDropped(resolvedPosition);
 
             if (!dropMotionProfile.TryApply(
                     debrisRigidbody,
-                    source.rotation))
+                    resolvedRotation))
             {
                 Debug.LogError($"PHS_DEBRIS_PLACE_FAILED " + $"reason=drop_motion_rejected " + $"player={name} " + $"debris={debrisName}");
 

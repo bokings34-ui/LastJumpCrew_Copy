@@ -360,10 +360,9 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
                 return false;
             }
 
-            var droppedRigidbody = droppedItem.GetComponent<Rigidbody>();
-            if (droppedRigidbody == null
-                || !dropMotionProfile.TryApply(
-                    droppedRigidbody,
+            if (!TryResolveAndApplyDroppedItemMotion(
+                    droppedItem,
+                    dropPosition,
                     normalizedDropRotation))
             {
                 TryCleanupSpawnedItemServer(
@@ -626,10 +625,9 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
                 return false;
             }
 
-            var droppedRigidbody = droppedPreviousItem.GetComponent<Rigidbody>();
-            if (droppedRigidbody == null
-                || !dropMotionProfile.TryApply(
-                    droppedRigidbody,
+            if (!TryResolveAndApplyDroppedItemMotion(
+                    droppedPreviousItem,
+                    dropPosition,
                     normalizedDropRotation))
             {
                 TryCleanupSpawnedItemServer(
@@ -700,6 +698,39 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
                 $"PHS_NETWORK_ITEM_ASSIGN_ROLLED_BACK player={name} replacementItem={replacementItemId} previousItem={transaction.PreviousItemId}",
                 this);
             return true;
+        }
+
+        private bool TryResolveAndApplyDroppedItemMotion(
+            NetworkObject droppedItem,
+            Vector3 requestedPosition,
+            Quaternion requestedRotation)
+        {
+            if (droppedItem == null
+                || dropMotionProfile == null
+                || !droppedItem.TryGetComponent<Rigidbody>(out var droppedRigidbody)
+                || !dropMotionProfile.TryResolveFloorPlacement(
+                    droppedRigidbody,
+                    requestedPosition,
+                    requestedRotation,
+                    transform.root,
+                    out var resolvedPosition,
+                    out var resolvedRotation))
+            {
+                return false;
+            }
+
+            droppedItem.transform.SetPositionAndRotation(
+                resolvedPosition,
+                resolvedRotation);
+
+            var itemObject = droppedItem.GetComponent<UtilityItemObject>();
+            if (itemObject == null)
+            {
+                return false;
+            }
+
+            itemObject.OnDropped(resolvedPosition);
+            return dropMotionProfile.TryApply(droppedRigidbody, resolvedRotation);
         }
 
         private bool TryCleanupSpawnedItemServer(
@@ -892,8 +923,10 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
                 return RejectPlace("spawn_failed", senderClientId);
             }
 
-            var droppedRigidbody = spawnedItem.GetComponent<Rigidbody>();
-            if (!dropMotionProfile.TryApply(droppedRigidbody, normalizedRotation))
+            if (!TryResolveAndApplyDroppedItemMotion(
+                    spawnedItem,
+                    requestedPosition,
+                    normalizedRotation))
             {
                 if (spawnedItem.IsSpawned)
                 {
