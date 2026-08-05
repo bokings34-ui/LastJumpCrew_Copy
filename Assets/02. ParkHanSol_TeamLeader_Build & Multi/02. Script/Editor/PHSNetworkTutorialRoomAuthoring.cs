@@ -203,7 +203,6 @@ namespace LastJumpCrew.ParkHanSol.Editor
                 new[]
                 {
                     TutorialActionKind.Thruster,
-                    TutorialActionKind.Drop,
                     TutorialActionKind.Drop
                 },
                 170f,
@@ -212,8 +211,7 @@ namespace LastJumpCrew.ParkHanSol.Editor
                 new[]
                 {
                     "[WASD] 이동  ·  [SHIFT] 위  ·  [CTRL] 아래",
-                    "[F] 화물 줍기  ·  [RMB] 패드에 놓기",
-                    "[F] 카메라 줍기  ·  [RMB] 패드에 놓기"
+                    "[F] 데브리 줍기  ·  [RMB] 패드에 놓기"
                 },
                 "PHS_Tutorial_Thruster.png"),
             new(
@@ -242,7 +240,7 @@ namespace LastJumpCrew.ParkHanSol.Editor
             new[] { "렌치", "배터리" },
             new[] { "렌치", "소화기" },
             new[] { "1번 단말기", "2번 단말기" },
-            new[] { "외부 진입", "화물 회수", "카메라 회수" },
+            new[] { "외부 진입", "데브리 회수" },
             new[] { "함선 앞", "함선 문" }
         };
 
