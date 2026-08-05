@@ -922,8 +922,8 @@ namespace LastJumpCrew.ParkHanSol.Editor
             var background = CreateUiImage(
                 "PosterBackground",
                 canvasObject.transform,
-                new Vector2(0.02f, 0.06f),
-                new Vector2(0.82f, 0.19f));
+                new Vector2(0.10f, 0.06f),
+                new Vector2(0.90f, 0.19f));
             background.color = new Color(0.004f, 0.005f, 0.006f, 0.90f);
             var backgroundOutline =
                 background.gameObject.AddComponent<Outline>();
