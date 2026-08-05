@@ -469,11 +469,6 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
             {
                 return;
             }
-            if (itemHolder.DropMotionProfile == null)
-            {
-                Debug.LogError($"PHS_ITEM_THROW_FAILED " + $"reason=drop_motion_profile_missing " + $"player={name}");
-                return;
-            }
             var direction = requestedDirection.sqrMagnitude > 0.001f ? requestedDirection.normalized : transform.forward;
             var throwPosition = requestedPosition;
 
@@ -537,8 +532,6 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
 
             //카메라 방향으로 계산된 힘 만큼 날린다.
             body.linearVelocity = direction * throwForce;
-            itemHolder.DropMotionProfile.TryApplyAngularVelocity(body, body.rotation);
-
             var impact = thrownItem.GetComponent<ThrownItemImpact>();
             if (impact != null)
             {
@@ -575,13 +568,6 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
                 Debug.LogWarning($"PHS_BATTERY_THROW_FAILED " + $"reason=battery_not_held " + $"player={name} " + $"actual=" + $"{itemHolder.CurrentItemPrefabData?.ItemId ?? "none"}");
                 return;
             }
-            if (itemHolder.DropMotionProfile == null)
-            {
-                Debug.LogError($"PHS_BATTERY_THROW_FAILED " + $"reason=drop_motion_profile_missing " + $"player={name}");
-                return;
-            }
-
-
             if(!TryGetHeldItemData(ItemUseType.Throwable, out var batteryItemData))
             {
                 Debug.LogWarning($"PHS_BATTERY_THROW_FAILED " + $"reason=item_data_or_use_type_invalid " + $"player={name}");
@@ -629,8 +615,6 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
             var throwVelocity = direction * batteryItemData.ThrowForce + Vector3.up * batteryItemData.UpwardForce;
 
             body.linearVelocity = throwVelocity;
-            itemHolder.DropMotionProfile.TryApplyAngularVelocity(body, body.rotation);
-
             Debug.Log($"PHS_BATTERY_THROW_EXECUTED " + $"player={name} " + $"battery={batteryInstance.name} " + $"item={batteryItemData.ItemId} " + $"throwForce={batteryItemData.ThrowForce:F2} " +
               $"upwardForce={batteryItemData.UpwardForce:F2} " + $"rangeFeedback=on_first_impact", this);
         }

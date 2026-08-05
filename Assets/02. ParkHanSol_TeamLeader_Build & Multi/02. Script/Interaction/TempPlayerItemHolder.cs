@@ -965,6 +965,11 @@ namespace LastJumpCrew.ParkHanSol.Interaction
         {
             thrownItemInstance = null;
             actionAmount = 0;
+            if (dropMotionProfile == null)
+            {
+                Debug.LogError($"PHS_TEMP_ITEM_THROW_FAILED reason=drop_motion_profile_missing player={name}", this);
+                return false;
+            }
 
             if (IsNetworkSessionActive())
             {
@@ -1021,6 +1026,7 @@ namespace LastJumpCrew.ParkHanSol.Interaction
 
                 thrownItemInstance =
                     spawnedItem.gameObject;
+                ApplyThrowSpin(thrownItemInstance);
 
                 Debug.Log($"PHS_TEMP_ITEM_THROW_CREATED " + $"player={name} " + $"item={networkItemId} " + $"networkObjectId={spawnedItem.NetworkObjectId} " + $"position={spawnPosition}");
 
@@ -1101,6 +1107,7 @@ namespace LastJumpCrew.ParkHanSol.Interaction
             }
 
             thrownItemObject.OnDropped(spawnPosition);
+            ApplyThrowSpin(thrownItemInstance);
 
             if (networkSessionActive && !thrownNetworkObject.IsSpawned)
             {
@@ -1124,6 +1131,18 @@ namespace LastJumpCrew.ParkHanSol.Interaction
             Debug.Log($"PHS_TEMP_ITEM_THROW_CREATED " + $"player={name} " + $"item={thrownItemId} " + $"position={spawnPosition}");
 
             return true;
+        }
+
+        private void ApplyThrowSpin(GameObject thrownItem)
+        {
+            var body = thrownItem.GetComponent<Rigidbody>();
+            if (body == null)
+            {
+                Debug.LogError($"PHS_TEMP_ITEM_THROW_FAILED reason=rigidbody_missing item={thrownItem.name}", thrownItem);
+                return;
+            }
+
+            dropMotionProfile.TryApplyAngularVelocity(body, body.rotation);
         }
 
         private bool TryReleaseHeldDebrisForThrow(Vector3 spawnPosition, Quaternion spawnRotation, bool networkSessionActive, out GameObject thrownItemInstance)

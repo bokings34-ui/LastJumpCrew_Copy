@@ -27,14 +27,12 @@ namespace LastJumpCrew.ParkHanSol.Editor
                 string name,
                 string heldFile,
                 string droppedFile,
-                string economyFile,
                 string legacyPath)
             {
                 Name = name;
                 HeldPath = $"{ItemRoot}/Imported/{heldFile}";
                 DroppedPath = $"{ItemRoot}/Imported/{droppedFile}";
                 VisualPath = $"{ItemRoot}/Visual/ParkHanSol_{name}_Visual.prefab";
-                EconomyPath = $"Assets/03. SeoBoGyeong_Game Economy/04. Data/Items/{economyFile}";
                 LegacyPath = legacyPath;
             }
 
@@ -42,7 +40,6 @@ namespace LastJumpCrew.ParkHanSol.Editor
             public string HeldPath { get; }
             public string DroppedPath { get; }
             public string VisualPath { get; }
-            public string EconomyPath { get; }
             public string LegacyPath { get; }
         }
 
@@ -52,19 +49,16 @@ namespace LastJumpCrew.ParkHanSol.Editor
                 "Wrench",
                 "ParkHanSol_Wrench_Held.prefab",
                 "ParkHanSol_Wrench_Dropped.prefab",
-                "UtilityItem_Wrench.asset",
                 $"{ItemRoot}/ParkHanSol_Wrench.prefab"),
             new(
                 "FireExtinguisher",
                 "ParkHanSol_FireExtinguisher_Held.prefab",
                 "ParkHanSol_FireExtinguisher_Dropped.prefab",
-                "UtilityItem_FireExtinguisher.asset",
                 $"{ItemRoot}/ParkHanSol_FireExtinguisher.prefab"),
             new(
                 "BatteryPack",
                 "ParkHanSol_BatteryPack_Held.prefab",
                 "ParkHanSol_BatteryPack_Dropped.prefab",
-                "UtilityItem_BatteryPack.asset",
                 $"{ItemRoot}/ParkHanSol_FuturisticBatteryPack.prefab")
         };
 
@@ -82,7 +76,6 @@ namespace LastJumpCrew.ParkHanSol.Editor
                 BuildVisualPrefab(spec);
                 ReplaceWrapperVisual(spec.HeldPath, spec.VisualPath);
                 ReplaceWrapperVisual(spec.DroppedPath, spec.VisualPath);
-                UpdateEconomyData(spec);
             }
 
             ReplaceLegacySceneInstances(
@@ -101,7 +94,7 @@ namespace LastJumpCrew.ParkHanSol.Editor
 
             AssetDatabase.SaveAssets();
             AssetDatabase.Refresh();
-            Debug.Log("PHS_UTILITY_ITEM_VISUAL_TRUTH_BUILD_PASSED items=3 wrappers=6 economy=3 scenes=2");
+            Debug.Log("PHS_UTILITY_ITEM_VISUAL_TRUTH_BUILD_PASSED items=3 wrappers=6 scenes=2");
         }
 
         [MenuItem("Tools/ParkHanSol/BEAVER/Reconcile Canonical Utility Item Scene Instances")]
@@ -367,28 +360,6 @@ namespace LastJumpCrew.ParkHanSol.Editor
             }
 
             return candidates[0];
-        }
-
-        private static void UpdateEconomyData(ItemSpec spec)
-        {
-            var economyData = AssetDatabase.LoadMainAssetAtPath(spec.EconomyPath);
-            if (economyData == null)
-            {
-                throw new InvalidOperationException($"Economy item data missing. path={spec.EconomyPath}");
-            }
-
-            var serialized = new SerializedObject(economyData);
-            var heldProperty = serialized.FindProperty("heldPrefab");
-            var droppedProperty = serialized.FindProperty("droppedPrefab");
-            if (heldProperty == null || droppedProperty == null)
-            {
-                throw new InvalidOperationException($"Economy prefab fields missing. path={spec.EconomyPath}");
-            }
-
-            heldProperty.objectReferenceValue = RequirePrefab(spec.HeldPath);
-            droppedProperty.objectReferenceValue = RequirePrefab(spec.DroppedPath);
-            serialized.ApplyModifiedPropertiesWithoutUndo();
-            EditorUtility.SetDirty(economyData);
         }
 
         private static void ReplaceLegacySceneInstances(

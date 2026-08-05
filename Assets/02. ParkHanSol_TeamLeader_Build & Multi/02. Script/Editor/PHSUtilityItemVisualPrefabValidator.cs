@@ -16,13 +16,20 @@ namespace LastJumpCrew.ParkHanSol.Editor
     {
         private const string ItemRoot =
             "Assets/02. ParkHanSol_TeamLeader_Build & Multi/03. Prefab/Props/Prefabs/Items";
+        private const string RuntimeDataRoot =
+            "Assets/02. ParkHanSol_TeamLeader_Build & Multi/04. Data/UtilityItems/";
+        private const string UtilityCatalogPath =
+            "Assets/02. ParkHanSol_TeamLeader_Build & Multi/04. Data/UtilityItems/PHS_UtilityItemCatalog_0717.asset";
+        private const string ShopCatalogPath =
+            "Assets/02. ParkHanSol_TeamLeader_Build & Multi/04. Data/ShopProducts/PHS_ShopCatalog_0715.asset";
+        private const string PlayerPrefabPath =
+            "Assets/02. ParkHanSol_TeamLeader_Build & Multi/03. Prefab/PlayerPrefab/PHS_CuteWhiteGhost_Player.prefab";
 
         private sealed class ItemSpec
         {
             public ItemSpec(
                 string name,
                 string dataFile,
-                string economyFile,
                 string legacyPath,
                 bool requiresCanonicalVisual = true,
                 bool requiresBatteryImpact = false)
@@ -30,7 +37,6 @@ namespace LastJumpCrew.ParkHanSol.Editor
                 Name = name;
                 VisualPath = $"{ItemRoot}/Visual/ParkHanSol_{name}_Visual.prefab";
                 DataPath = $"Assets/02. ParkHanSol_TeamLeader_Build & Multi/04. Data/UtilityItems/{dataFile}";
-                EconomyPath = $"Assets/03. SeoBoGyeong_Game Economy/04. Data/Items/{economyFile}";
                 LegacyPath = legacyPath;
                 RequiresCanonicalVisual = requiresCanonicalVisual;
                 RequiresBatteryImpact = requiresBatteryImpact;
@@ -41,7 +47,6 @@ namespace LastJumpCrew.ParkHanSol.Editor
             public string DroppedPath => ResolvePrefabPath(item => item.DroppedPrefab);
             public string VisualPath { get; }
             public string DataPath { get; }
-            public string EconomyPath { get; }
             public string LegacyPath { get; }
             public bool RequiresCanonicalVisual { get; }
             public bool RequiresBatteryImpact { get; }
@@ -59,17 +64,14 @@ namespace LastJumpCrew.ParkHanSol.Editor
             new(
                 "Wrench",
                 "ParkHanSol_WrenchItemPrefabData.asset",
-                "UtilityItem_Wrench.asset",
                 $"{ItemRoot}/ParkHanSol_Wrench.prefab"),
             new(
                 "FireExtinguisher",
                 "ParkHanSol_FireExtinguisherItemPrefabData.asset",
-                "UtilityItem_FireExtinguisher.asset",
                 $"{ItemRoot}/ParkHanSol_FireExtinguisher.prefab"),
             new(
                 "BatteryPack",
                 "ParkHanSol_BatteryItemPrefabData.asset",
-                "UtilityItem_BatteryPack.asset",
                 $"{ItemRoot}/ParkHanSol_FuturisticBatteryPack.prefab",
                 requiresCanonicalVisual: false,
                 requiresBatteryImpact: true)
@@ -83,6 +85,7 @@ namespace LastJumpCrew.ParkHanSol.Editor
             {
                 ValidateSpec(spec, errors);
             }
+            ValidateBuildRuntimeSources(errors);
 
             ValidateScene(
                 "Assets/02. ParkHanSol_TeamLeader_Build & Multi/01. Scene/test/PHS_FeatureInspectionScene.unity",
@@ -112,7 +115,7 @@ namespace LastJumpCrew.ParkHanSol.Editor
                     string.Join("\n", errors));
             }
 
-            Debug.Log("PHS_UTILITY_ITEM_VISUAL_TRUTH_VALIDATION_PASSED items=3 wrappers=6 economy=3 scenes=2");
+            Debug.Log("PHS_UTILITY_ITEM_VISUAL_TRUTH_VALIDATION_PASSED items=3 wrappers=6 buildRuntime=4 scenes=2");
         }
 
         private static void ValidateSpec(ItemSpec spec, ICollection<string> errors)
@@ -359,22 +362,53 @@ namespace LastJumpCrew.ParkHanSol.Editor
                 Require(itemData.DroppedPrefab == dropped, $"item_data_dropped_mismatch path={spec.DataPath}", errors);
             }
 
-            var economyData = AssetDatabase.LoadMainAssetAtPath(spec.EconomyPath);
-            Require(economyData != null, $"economy_data_missing path={spec.EconomyPath}", errors);
-            if (economyData == null)
-            {
-                return;
-            }
+        }
 
-            var serialized = new SerializedObject(economyData);
+        private static void ValidateBuildRuntimeSources(ICollection<string> errors)
+        {
+            var buildScenes = EditorBuildSettings.scenes
+                .Where(scene => scene.enabled)
+                .Select(scene => scene.path)
+                .ToArray();
+            Require(buildScenes.Length == 4, $"build_scene_count actual={buildScenes.Length}", errors);
+
+            ValidateRuntimeDependencies(PlayerPrefabPath, true, false, errors);
+            foreach (var scenePath in buildScenes)
+            {
+                var isMainMap = scenePath.EndsWith("/PHS_Map_ver1.unity", StringComparison.Ordinal);
+                var isShop = scenePath.EndsWith("/PHS_ExteriorShopScene.unity", StringComparison.Ordinal);
+                ValidateRuntimeDependencies(scenePath, isMainMap, isMainMap || isShop, errors);
+            }
+        }
+
+        private static void ValidateRuntimeDependencies(
+            string ownerPath,
+            bool requiresUtilityCatalog,
+            bool requiresShopCatalog,
+            ICollection<string> errors)
+        {
+            var dependencies = AssetDatabase.GetDependencies(ownerPath, true);
             Require(
-                serialized.FindProperty("heldPrefab")?.objectReferenceValue == held,
-                $"economy_held_mismatch path={spec.EconomyPath}",
+                !requiresUtilityCatalog || dependencies.Contains(UtilityCatalogPath),
+                $"runtime_utility_catalog_missing owner={ownerPath}",
                 errors);
             Require(
-                serialized.FindProperty("droppedPrefab")?.objectReferenceValue == dropped,
-                $"economy_dropped_mismatch path={spec.EconomyPath}",
+                !requiresShopCatalog || dependencies.Contains(ShopCatalogPath),
+                $"runtime_shop_catalog_missing owner={ownerPath}",
                 errors);
+
+            foreach (var dependency in dependencies)
+            {
+                Require(
+                    AssetDatabase.LoadAssetAtPath<UtilityItemPrefabData>(dependency) == null,
+                    $"runtime_legacy_item_data owner={ownerPath} dependency={dependency}",
+                    errors);
+                var itemData = AssetDatabase.LoadAssetAtPath<UtilityItemDataSO>(dependency);
+                Require(
+                    itemData == null || dependency.StartsWith(RuntimeDataRoot, StringComparison.Ordinal),
+                    $"runtime_item_data_outside_canonical_root owner={ownerPath} dependency={dependency}",
+                    errors);
+            }
         }
 
         private static void ValidateScene(
