@@ -207,8 +207,8 @@ namespace LastJumpCrew.ParkHanSol.Editor
                 "wrench",
                 ItemUseType.Melee,
                 "Assets/06. JoHanYong_PlayerSystem/03. Prefab/Item/Wrench/ParHanSol_WrenchItem_00.prefab",
-                "Assets/06. JoHanYong_PlayerSystem/03. Prefab/Item/Wrench/ParHanSol_WrenchItem_00_Hand.prefab",
-                "Assets/06. JoHanYong_PlayerSystem/03. Prefab/Item/Wrench/ParHanSol_WrenchItem_00_Dropped.prefab");
+                "Assets/02. ParkHanSol_TeamLeader_Build & Multi/03. Prefab/Props/Prefabs/Items/Imported/ParkHanSol_Wrench_Held.prefab",
+                "Assets/02. ParkHanSol_TeamLeader_Build & Multi/03. Prefab/Props/Prefabs/Items/Imported/ParkHanSol_Wrench_Dropped.prefab");
             ValidateItem(
                 networkManager,
                 "Assets/02. ParkHanSol_TeamLeader_Build & Multi/04. Data/UtilityItems/ParkHanSol_BatteryItemPrefabData.asset",
@@ -223,8 +223,8 @@ namespace LastJumpCrew.ParkHanSol.Editor
                 "fire_extinguisher",
                 ItemUseType.Spray,
                 "Assets/06. JoHanYong_PlayerSystem/03. Prefab/Item/FireExtinguisher/ParkHanSol_FireExtinguisherItem_00.prefab",
-                "Assets/06. JoHanYong_PlayerSystem/03. Prefab/Item/FireExtinguisher/ParkHanSol_FireExtinguisherItem_00_Hand.prefab",
-                "Assets/06. JoHanYong_PlayerSystem/03. Prefab/Item/FireExtinguisher/ParkHanSol_FireExtinguisherItem_00_Dropped.prefab");
+                "Assets/02. ParkHanSol_TeamLeader_Build & Multi/03. Prefab/Props/Prefabs/Items/Imported/ParkHanSol_FireExtinguisher_Held.prefab",
+                "Assets/02. ParkHanSol_TeamLeader_Build & Multi/03. Prefab/Props/Prefabs/Items/Imported/ParkHanSol_FireExtinguisher_Dropped.prefab");
         }
 
         private static void ValidateItem(
