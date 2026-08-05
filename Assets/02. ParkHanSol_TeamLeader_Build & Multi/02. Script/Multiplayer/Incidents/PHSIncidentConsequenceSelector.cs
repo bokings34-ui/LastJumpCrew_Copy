@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using LastJumpCrew.ParkHanSol.Multiplayer.Events;
 using LastJumpCrew.ParkHanSol.Multiplayer.ShipAccidents;
 using UnityEngine;
 
@@ -51,12 +52,15 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
             var ledger = root == null ? null : root.Incidents;
             var director = root == null ? null : root.IncidentDirector;
             var randomLedger = root == null ? null : root.Rng;
+            var eventCoordinator = NetworkEventCoordinator.Instance;
             if (root == null
                 || !root.IsSpawned
                 || !root.IsServer
                 || ledger == null
                 || director == null
                 || randomLedger == null
+                || eventCoordinator == null
+                || !eventCoordinator.IsAuthoritative
                 || director.Definition == null)
             {
                 reason = "run_incident_services_not_ready";
@@ -81,10 +85,18 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
             foreach (var entry in director.Definition.InternalEntries)
             {
                 var accidentId = (PHSShipAccidentId)(ushort)entry.ContentId;
+                if (!IncidentRequestContentContract.TryMapLegacyAccidentToEvent(
+                        entry.ContentId,
+                        out var mappedEventId)
+                    || eventCoordinator.IsEventActive((SM.EventId)mappedEventId))
+                {
+                    continue;
+                }
+
                 if (accidentCoordinator.TryCopyAvailableCompatibleAnchorIdsServer(
-                        accidentId,
-                        compatibleAnchorIds,
-                        out _))
+                    accidentId,
+                    compatibleAnchorIds,
+                    out _))
                 {
                     eligibleEntries.Add(entry);
                 }
@@ -244,6 +256,15 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
 
                 latestCommandId = command.CommandId;
                 contentId = command.ContentId;
+                if (command.PayloadKind
+                        == NetworkRunIncidentPayloadKind.EventManagerEvent
+                    && IncidentRequestContentContract
+                        .TryMapEventToLegacyAccident(
+                            command.ContentId,
+                            out var legacyAccidentId))
+                {
+                    contentId = legacyAccidentId;
+                }
             }
 
             return contentId;

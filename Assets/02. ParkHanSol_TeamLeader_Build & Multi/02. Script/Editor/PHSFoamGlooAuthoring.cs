@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using LastJumpCrew.Common;
 using LastJumpCrew.ParkHanSol.Items;
 using LastJumpCrew.ParkHanSol.Multiplayer;
 using Unity.Netcode;
@@ -24,7 +25,7 @@ namespace LastJumpCrew.ParkHanSol.Editor
         private const string FoamHeldPrefabPath =
             "Assets/02. ParkHanSol_TeamLeader_Build & Multi/03. Prefab/Props/Prefabs/Items/Held/ParkHanSol_FoamSealantGun_Held.prefab";
         private const string ActiveNetworkPrefabsPath =
-            "Assets/01. MainGame/02. Final_Prefab/01. Prefab_ParkHanSol_TeamLeader/Prefab/DefaultNetworkPrefabs.asset";
+            "Assets/DefaultNetworkPrefabs.asset";
         private const string FoamAssetFolder =
             "Assets/02. ParkHanSol_TeamLeader_Build & Multi/03. Prefab/Items/Foam";
         private const string FoamBlobPrefabPath =
@@ -39,7 +40,7 @@ namespace LastJumpCrew.ParkHanSol.Editor
             RequireAsset<GameObject>(PlayerPrefabPath);
             RequireAsset<GameObject>(TutorialPlayerPrefabPath);
             RequireAsset<GameObject>(RunRootPrefabPath);
-            RequireAsset<UtilityItemPrefabData>(FoamItemDataPath);
+            RequireAsset<UtilityItemDataSO>(FoamItemDataPath);
             RequireAsset<NetworkPrefabsList>(ActiveNetworkPrefabsPath);
 
             EnsureFolder(FoamAssetFolder);
@@ -48,13 +49,12 @@ namespace LastJumpCrew.ParkHanSol.Editor
             ConfigureRunRoot(foamBlobPrefab);
             ConfigurePlayer(PlayerPrefabPath);
             ConfigurePlayer(TutorialPlayerPrefabPath);
-            ConfigureFoamItemData();
             ConfigureFoamItemPrefabs();
             RegisterNetworkPrefab(foamBlobPrefab);
 
             AssetDatabase.SaveAssets();
             Debug.Log(
-                "PHS_FOAM_GLOO_AUTHORING_COMPLETE thresholds=fire:4,hull:6,surface:3 hold=2.00 dissolve=0.45 network_prefab=active_list");
+                "PHS_FOAM_GLOO_AUTHORING_COMPLETE thresholds=fire:1,hull:1,surface:3 hold=2.00 dissolve=0.45 network_prefab=active_list");
         }
 
         [MenuItem("Tools/ParkHanSol/BEAVER/Author Foam Dropped Item Contract")]
@@ -65,7 +65,7 @@ namespace LastJumpCrew.ParkHanSol.Editor
             ConfigureFoamItemPrefabs();
             AssetDatabase.SaveAssets();
             Debug.Log(
-                "PHS_FOAM_DROPPED_ITEM_AUTHORING_COMPLETE dropped_durability=1 held_durability=0");
+                "PHS_FOAM_DROPPED_ITEM_AUTHORING_COMPLETE dropped_durability=0 held_durability=0");
         }
 
         private static Material ConfigureMaterial()
@@ -238,6 +238,9 @@ namespace LastJumpCrew.ParkHanSol.Editor
                 var itemRecord = RequireSingle<NetworkPlayerItemRecord>(
                     root,
                     path);
+                var itemLifecycle = RequireSingle<NetworkPlayerItemLifecycle>(
+                    root,
+                    path);
                 var lifeState = RequireSingle<NetworkPlayerLifeState>(
                     root,
                     path);
@@ -275,6 +278,8 @@ namespace LastJumpCrew.ParkHanSol.Editor
                     origin;
                 serialized.FindProperty("itemRecord").objectReferenceValue =
                     itemRecord;
+                serialized.FindProperty("itemLifecycle").objectReferenceValue =
+                    itemLifecycle;
                 serialized.FindProperty("lifeState").objectReferenceValue =
                     lifeState;
                 serialized.FindProperty("actionController").objectReferenceValue =
@@ -292,43 +297,32 @@ namespace LastJumpCrew.ParkHanSol.Editor
             });
         }
 
-        private static void ConfigureFoamItemData()
-        {
-            var itemData = RequireAsset<UtilityItemPrefabData>(FoamItemDataPath);
-            var serialized = new SerializedObject(itemData);
-            serialized.FindProperty("hasDurability").boolValue = true;
-            serialized.FindProperty("maxDurability").intValue = 100;
-            serialized.FindProperty("upgradeEffect").intValue =
-                (int)UtilityItemUpgradeEffect.None;
-            serialized.FindProperty("upgradeAmount").floatValue = 0f;
-            var profiles = serialized.FindProperty("actionProfiles");
-            profiles.arraySize = 2;
-            ConfigureProfile(
-                profiles.GetArrayElementAtIndex(0),
-                UtilityItemActionKind.FireSuppression,
-                200,
-                1);
-            ConfigureProfile(
-                profiles.GetArrayElementAtIndex(1),
-                UtilityItemActionKind.HullBreachRepair,
-                100,
-                1);
-            serialized.ApplyModifiedPropertiesWithoutUndo();
-            EditorUtility.SetDirty(itemData);
-        }
-
         private static void ConfigureFoamItemPrefabs()
         {
+            var itemData = RequireAsset<UtilityItemDataSO>(FoamItemDataPath);
             EditPrefab(FoamDroppedPrefabPath, root =>
             {
+                if (!itemData.UsesDurability)
+                {
+                    foreach (var durabilityState in root.GetComponentsInChildren<
+                                 NetworkUtilityItemDurabilityState>(true))
+                    {
+                        UnityEngine.Object.DestroyImmediate(
+                            durabilityState,
+                            true);
+                    }
+
+                    return;
+                }
+
                 var itemObject = RequireSingle<UtilityItemObject>(
                     root,
                     FoamDroppedPrefabPath);
-                var durabilityState = RequireSingleOrAdd<
+                var configuredDurabilityState = RequireSingleOrAdd<
                     NetworkUtilityItemDurabilityState>(
                     root,
                     FoamDroppedPrefabPath);
-                var serialized = new SerializedObject(durabilityState);
+                var serialized = new SerializedObject(configuredDurabilityState);
                 serialized.FindProperty("itemObject").objectReferenceValue =
                     itemObject;
                 serialized.ApplyModifiedPropertiesWithoutUndo();
@@ -389,18 +383,6 @@ namespace LastJumpCrew.ParkHanSol.Editor
             }
 
             EditorUtility.SetDirty(list);
-        }
-
-        private static void ConfigureProfile(
-            SerializedProperty property,
-            UtilityItemActionKind kind,
-            int amount,
-            int durabilityCost)
-        {
-            property.FindPropertyRelative("actionKind").intValue = (int)kind;
-            property.FindPropertyRelative("amount").intValue = amount;
-            property.FindPropertyRelative("durabilityCost").intValue =
-                durabilityCost;
         }
 
         private static T RequireSingle<T>(GameObject root, string path)

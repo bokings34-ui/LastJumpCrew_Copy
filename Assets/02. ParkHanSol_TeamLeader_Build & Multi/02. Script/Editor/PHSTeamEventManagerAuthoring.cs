@@ -18,6 +18,8 @@ namespace LastJumpCrew.ParkHanSol.Editor
             "Assets/02. ParkHanSol_TeamLeader_Build & Multi/01. Scene/BEAVER_2026/PHS_Map_ver1.unity";
         private const string TeamIntegrationPrefabPath =
             "Assets/02. ParkHanSol_TeamLeader_Build & Multi/03. Prefab/LegacyMigrated/Prefab/Integration0716/PHS_EventRuntimeSystem.prefab";
+        private const string RunSessionRootPrefabPath =
+            "Assets/02. ParkHanSol_TeamLeader_Build & Multi/03. Prefab/Integration/PHS_NetworkRunSessionRoot.prefab";
 
         [MenuItem("Tools/ParkHanSol/BEAVER/Team Integration/Author Network Event Manager")]
         public static void Author()
@@ -81,12 +83,40 @@ namespace LastJumpCrew.ParkHanSol.Editor
             var rooms = FindSceneComponents<ShipRoom>(scene)
                 .OrderBy(room => room.RoomId, StringComparer.Ordinal)
                 .ToArray();
+            var enemyDeviceTargets = FindSceneComponents<EnemyDeviceTarget>(scene);
 
             Require(rooms.Length == 4, $"room_count:{rooms.Length}");
+            Require(enemyDeviceTargets.Length > 0,
+                "enemy_device_target_count:0");
+            foreach (var enemyDeviceTarget in enemyDeviceTargets)
+            {
+                Require(enemyDeviceTarget.GetComponent<NetworkObject>() != null,
+                    $"enemy_device_target_network_object_missing:{enemyDeviceTarget.name}");
+                var targetData = new SerializedObject(enemyDeviceTarget);
+                Require(targetData.FindProperty("maximumHealth")?.intValue > 0,
+                    $"enemy_device_target_health_invalid:{enemyDeviceTarget.name}");
+                Require(targetData.FindProperty("visualRoot")?.objectReferenceValue != null,
+                    $"enemy_device_target_visual_missing:{enemyDeviceTarget.name}");
+                Require(targetData.FindProperty("destructionAccident")?.enumValueIndex > 0,
+                    $"enemy_device_target_accident_missing:{enemyDeviceTarget.name}");
+                Require(!string.IsNullOrWhiteSpace(
+                        targetData.FindProperty("requestedAnchorId")?.stringValue),
+                    $"enemy_device_target_anchor_missing:{enemyDeviceTarget.name}");
+            }
             Require(coordinator.GetComponent<NetworkObject>() != null,
                 "coordinator_network_object_missing");
             Require(presenter.ValidateConfiguration(),
                 "effect_presenter_invalid");
+            var runSessionRootPrefab = AssetDatabase.LoadAssetAtPath<GameObject>(
+                RunSessionRootPrefabPath);
+            Require(runSessionRootPrefab != null,
+                $"run_session_root_prefab_missing:{RunSessionRootPrefabPath}");
+            var impactAdapter = runSessionRootPrefab.GetComponent<PHSShipEventImpactAdapter>();
+            Require(impactAdapter != null,
+                "ship_event_impact_adapter_missing");
+            Require(impactAdapter.GetComponent<NetworkShipSystemsState>() != null,
+                "ship_event_impact_adapter_owner_invalid");
+            ValidateFailureConsequenceMappings();
 
             RequireReference(eventManager, "registry");
             RequireReference(scheduler, "coordinator", coordinator);
@@ -123,7 +153,27 @@ namespace LastJumpCrew.ParkHanSol.Editor
             Debug.Log(
                 "PHS_TEAM_EVENT_MANAGER_VALIDATION_OK "
                 + "networked=true managers=1 schedulers=1 coordinators=1 rooms=4 "
-                + "missingScripts=0");
+                + $"enemyDeviceTargets={enemyDeviceTargets.Length} "
+                + "failureConsequences=3 missingScripts=0");
+        }
+
+        private static void ValidateFailureConsequenceMappings()
+        {
+            RequireFailureConsequence(EventId.EmpAttack, EventId.Fire);
+            RequireFailureConsequence(EventId.MeteorAttack, EventId.OxygenLeak);
+            RequireFailureConsequence(EventId.EnemyScout, EventId.EnemySpawn);
+        }
+
+        private static void RequireFailureConsequence(
+            EventId sourceEventId,
+            EventId expectedConsequenceEventId)
+        {
+            Require(
+                PHSShipEventImpactAdapter.TryGetFailureConsequence(
+                    sourceEventId,
+                    out var actualConsequenceEventId)
+                && actualConsequenceEventId == expectedConsequenceEventId,
+                $"failure_consequence_mismatch:{sourceEventId}:{actualConsequenceEventId}");
         }
 
         private static void WireNetworkRuntime(Scene scene)

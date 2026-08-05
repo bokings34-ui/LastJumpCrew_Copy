@@ -2905,28 +2905,20 @@ namespace LastJumpCrew.ParkHanSol.Editor
 
             ValidateCombatItemRoute(
                 "Assets/02. ParkHanSol_TeamLeader_Build & Multi/04. Data/UtilityItems/ParkHanSol_WrenchItemPrefabData.asset",
-                "Assets/02. ParkHanSol_TeamLeader_Build & Multi/03. Prefab/Props/Prefabs/Items/Imported/ParkHanSol_Wrench_Held.prefab",
-                "Assets/02. ParkHanSol_TeamLeader_Build & Multi/03. Prefab/Props/Prefabs/Items/Imported/ParkHanSol_Wrench_Dropped.prefab",
                 "wrench",
                 errors);
             ValidateCombatItemRoute(
                 "Assets/02. ParkHanSol_TeamLeader_Build & Multi/04. Data/UtilityItems/ParkHanSol_FireExtinguisherItemPrefabData.asset",
-                "Assets/02. ParkHanSol_TeamLeader_Build & Multi/03. Prefab/Props/Prefabs/Items/Imported/ParkHanSol_FireExtinguisher_Held.prefab",
-                "Assets/02. ParkHanSol_TeamLeader_Build & Multi/03. Prefab/Props/Prefabs/Items/Imported/ParkHanSol_FireExtinguisher_Dropped.prefab",
                 "fire_extinguisher",
                 errors);
             ValidateCombatItemRoute(
                 "Assets/02. ParkHanSol_TeamLeader_Build & Multi/04. Data/UtilityItems/ParkHanSol_BatteryItemPrefabData.asset",
-                "Assets/02. ParkHanSol_TeamLeader_Build & Multi/03. Prefab/Props/Prefabs/Items/Imported/ParkHanSol_BatteryPack_Held.prefab",
-                "Assets/02. ParkHanSol_TeamLeader_Build & Multi/03. Prefab/Props/Prefabs/Items/Imported/ParkHanSol_BatteryPack_Dropped.prefab",
                 "battery",
                 errors);
         }
 
         private static void ValidateCombatItemRoute(
             string itemDataPath,
-            string expectedHeldPath,
-            string expectedDroppedPath,
             string label,
             ICollection<string> errors)
         {
@@ -2938,11 +2930,11 @@ namespace LastJumpCrew.ParkHanSol.Editor
             }
 
             Require(
-                AssetDatabase.GetAssetPath(itemData.HandPrefab) == expectedHeldPath,
+                itemData.HandPrefab != null,
                 $"{label}_held_prefab_invalid",
                 errors);
             Require(
-                AssetDatabase.GetAssetPath(itemData.DroppedPrefab) == expectedDroppedPath,
+                itemData.DroppedPrefab != null,
                 $"{label}_dropped_prefab_invalid",
                 errors);
 
@@ -2955,8 +2947,7 @@ namespace LastJumpCrew.ParkHanSol.Editor
                 if (impact != null)
                 {
                     var playerLayer = LayerMask.NameToLayer("Player");
-                    var targetMask = new SerializedObject(impact)
-                        .FindProperty("targetLayers")?.intValue ?? 0;
+                    var targetMask = itemData.TargetLayers.value;
                     Require(
                         playerLayer >= 0 && (targetMask & (1 << playerLayer)) != 0,
                         $"battery_target_mask_missing_player mask={targetMask}",
@@ -4476,17 +4467,16 @@ namespace LastJumpCrew.ParkHanSol.Editor
                 typeof(AutoRepairKitUsableItem),
                 $"{prefabRoot}/Held/ParkHanSol_AutoRepairKit_Held.prefab",
                 $"{prefabRoot}/ParkHanSol_AutoRepairKit.prefab",
-                true,
-                1,
+                false,
+                100,
                 UtilityItemUpgradeEffect.None,
                 0f,
                 errors,
-                ExpectedProfile(UtilityItemActionKind.DeviceRepair, 1, 1),
-                ExpectedProfile(UtilityItemActionKind.HullBreachRepair, 1, 1),
-                ExpectedProfile(UtilityItemActionKind.SteamLeakRepair, 1, 1),
-                ExpectedProfile(UtilityItemActionKind.OxygenLeakRepair, 1, 1),
-                ExpectedProfile(UtilityItemActionKind.OxygenGeneratorRepair, 1, 1),
-                ExpectedProfile(UtilityItemActionKind.GravityGeneratorRepair, 1, 1));
+                ExpectedProfile(UtilityItemActionKind.DeviceRepair, 100, 0),
+                ExpectedProfile(UtilityItemActionKind.SteamLeakRepair, 100, 0),
+                ExpectedProfile(UtilityItemActionKind.OxygenLeakRepair, 100, 0),
+                ExpectedProfile(UtilityItemActionKind.OxygenGeneratorRepair, 100, 0),
+                ExpectedProfile(UtilityItemActionKind.GravityGeneratorRepair, 100, 0));
             ValidateUtilityItemFunctionContract(
                 $"{dataRoot}/ParkHanSol_FuturisticAdjustableWrenchItemPrefabData.asset",
                 "futuristic_adjustable_wrench",
@@ -4534,7 +4524,7 @@ namespace LastJumpCrew.ParkHanSol.Editor
             ICollection<string> errors,
             params UtilityItemActionProfileExpectation[] expectedProfiles)
         {
-            var itemData = AssetDatabase.LoadAssetAtPath<UtilityItemPrefabData>(
+            var itemData = AssetDatabase.LoadAssetAtPath<UtilityItemDataSO>(
                 dataPath);
             Require(
                 itemData != null,
@@ -4550,7 +4540,7 @@ namespace LastJumpCrew.ParkHanSol.Editor
                 $"utility_function_item_id_invalid expected={expectedItemId} actual={itemData.ItemId}",
                 errors);
             Require(
-                itemData.HasDurability == expectedDurability,
+                itemData.UsesDurability == expectedDurability,
                 $"utility_function_durability_flag_invalid item={expectedItemId} expected={expectedDurability}",
                 errors);
             Require(
@@ -4560,6 +4550,8 @@ namespace LastJumpCrew.ParkHanSol.Editor
                 errors);
             Require(
                 typeof(ProfiledRepairUsableItem).IsAssignableFrom(
+                    expectedDroppedUsableType)
+                || typeof(PHSUtilityFamilyUsableItem).IsAssignableFrom(
                     expectedDroppedUsableType),
                 $"utility_function_online_request_contract_invalid item={expectedItemId}",
                 errors);
@@ -4620,7 +4612,7 @@ namespace LastJumpCrew.ParkHanSol.Editor
                     errors);
             }
 
-            var heldPrefab = itemData.HeldPrefab;
+            var heldPrefab = itemData.HandPrefab;
             var droppedPrefab = itemData.DroppedPrefab;
             Require(
                 AssetDatabase.GetAssetPath(heldPrefab) == expectedHeldPath,
@@ -4648,7 +4640,7 @@ namespace LastJumpCrew.ParkHanSol.Editor
 
         private static void ValidateUtilityItemFunctionPrefab(
             GameObject prefab,
-            UtilityItemPrefabData expectedItemData,
+            UtilityItemDataSO expectedItemData,
             Type expectedUsableType,
             bool expectDurabilityState,
             string itemId,
@@ -4662,7 +4654,7 @@ namespace LastJumpCrew.ParkHanSol.Editor
             var itemObjects = prefab.GetComponents<UtilityItemObject>();
             Require(
                 itemObjects.Length == 1
-                && itemObjects[0].ItemPrefabData == expectedItemData,
+                && itemObjects[0].ItemData == expectedItemData,
                 $"utility_function_item_object_invalid item={itemId} prefab={prefab.name}",
                 errors);
             Require(

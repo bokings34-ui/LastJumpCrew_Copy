@@ -19,7 +19,7 @@ namespace LastJumpCrew.ParkHanSol.Items
         [SerializeField, Min(0.01f)] private float lightningBallScale = 0.35f;
         [SerializeField, Min(0.01f)] private float lightningRingScale = 1.25f;
         [SerializeField, Min(0.05f)] private float impactEffectLifetime = 0.8f;
-        [SerializeField] private float destroyDelay = 3f;
+        [SerializeField, Min(0f)] private float destroyDelay = 3f;
 
         private GameObject attacker;
         private UtilityItemDataSO itemData; //투척 당시 배터리 SO 저장
@@ -191,6 +191,28 @@ namespace LastJumpCrew.ParkHanSol.Items
             StartCoroutine(DestroyAfterDelay());
         }
 
+        private IEnumerator DestroyAfterDelay()
+        {
+            if (destroyDelay > 0f)
+            {
+                yield return new WaitForSeconds(destroyDelay);
+            }
+
+            if (NetworkObject != null && NetworkObject.IsSpawned)
+            {
+                if (!IsServer)
+                {
+                    Debug.LogError($"PHS_BATTERY_DESTROY_FAILED reason=server_required battery={name}", this);
+                    yield break;
+                }
+
+                NetworkObject.Despawn(true);
+                yield break;
+            }
+
+            Destroy(gameObject);
+        }
+
         [ClientRpc]
         private void PlayImpactEffectClientRpc(Vector3 center)
         {
@@ -304,24 +326,6 @@ namespace LastJumpCrew.ParkHanSol.Items
             Debug.Log($"PHS_BATTERY_TARGET_REACTED " + $"item={itemData.ItemId} " + $"target={target.name} " + $"reaction={reaction}", target);
             return true;
 
-        }
-        private IEnumerator DestroyAfterDelay()
-        {
-            yield return new WaitForSeconds(destroyDelay);
-
-            if (!IsServer)
-            {
-                yield break;
-            }
-
-            if(NetworkObject != null && NetworkObject.IsSpawned)
-            {
-                NetworkObject.Despawn(true);
-            }
-            else
-            {
-                Destroy(gameObject);
-            }
         }
 
         private void OnDrawGizmosSelected()

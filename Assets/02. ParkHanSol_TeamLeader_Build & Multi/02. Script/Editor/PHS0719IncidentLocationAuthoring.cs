@@ -371,8 +371,7 @@ namespace LastJumpCrew.ParkHanSol.Editor
             ConfigureConsumer(
                 mapScene,
                 layout,
-                accidentCoordinator,
-                fireCoordinator);
+                accidentCoordinator);
             ConfigureRequestGateway(mapScene, runtimeRoot);
 
             return new AuthoringResult(
@@ -1225,8 +1224,7 @@ namespace LastJumpCrew.ParkHanSol.Editor
         private static void ConfigureConsumer(
             Scene mapScene,
             PHSShipIncidentLayout layout,
-            PHSNetworkShipAccidentCoordinator accidentCoordinator,
-            PHSNetworkFireCoordinator fireCoordinator)
+            PHSNetworkShipAccidentCoordinator accidentCoordinator)
         {
             var consumers =
                 FindSceneComponents<PHSMapIncidentCommandConsumer>(mapScene);
@@ -1245,10 +1243,6 @@ namespace LastJumpCrew.ParkHanSol.Editor
                 serializedConsumer,
                 "accidentCoordinator",
                 accidentCoordinator);
-            SetObject(
-                serializedConsumer,
-                "fireCoordinator",
-                fireCoordinator);
             SetBool(
                 serializedConsumer,
                 "allowLegacyLocationFallback",
@@ -1345,15 +1339,6 @@ namespace LastJumpCrew.ParkHanSol.Editor
                 serializedFireCoordinator,
                 fireCoordinator);
 
-            var serializedAccidentCoordinator =
-                new SerializedObject(accidentCoordinator);
-            SetObject(
-                serializedAccidentCoordinator,
-                "fireCoordinator",
-                fireCoordinator);
-            ApplyAndRecord(
-                serializedAccidentCoordinator,
-                accidentCoordinator);
             return fireCoordinator;
         }
 
@@ -1790,16 +1775,6 @@ namespace LastJumpCrew.ParkHanSol.Editor
             if (!registeredFireZoneSet.SetEquals(fireZones))
             {
                 reason = "fire_registered_zone_set_mismatch";
-                return false;
-            }
-
-            if (RequireProperty(
-                    serializedAccidentCoordinator,
-                    "fireCoordinator").objectReferenceValue
-                    != fireCoordinator)
-            {
-                reason =
-                    "ship_accident_fire_coordinator_reference_invalid";
                 return false;
             }
 

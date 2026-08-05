@@ -734,6 +734,11 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
             }
             else
             {
+                if (gravityMode == NetworkPlayerGravityMode.ShipGravity)
+                {
+                    RotatePlayer(look.x * GetMouseLookDegrees(), deltaTime);
+                }
+
                 SubmitInputServerRpc(
                     move,
                     verticalMove,
@@ -1720,13 +1725,21 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
 
             if (cameraRoot != null)
             {
-                currentCameraPitch = Mathf.SmoothDampAngle(
-                    currentCameraPitch,
-                    cameraPitch,
-                    ref cameraPitchVelocity,
-                    cameraRotationSmoothTime,
-                    cameraMaxRotationSpeed,
-                    Time.deltaTime);
+                if (gravityMode == NetworkPlayerGravityMode.ShipGravity)
+                {
+                    currentCameraPitch = cameraPitch;
+                    cameraPitchVelocity = 0f;
+                }
+                else
+                {
+                    currentCameraPitch = Mathf.SmoothDampAngle(
+                        currentCameraPitch,
+                        cameraPitch,
+                        ref cameraPitchVelocity,
+                        cameraRotationSmoothTime,
+                        cameraMaxRotationSpeed,
+                        Time.deltaTime);
+                }
 
                 var shake = GetThrusterCameraShake();
                 cameraRoot.localRotation = Quaternion.Euler(
@@ -1762,6 +1775,13 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
         private void RotatePlayer(float yawDegrees, float deltaTime)
         {
             targetYaw += yawDegrees;
+            if (gravityMode == NetworkPlayerGravityMode.ShipGravity)
+            {
+                yawVelocity = 0f;
+                transform.rotation = Quaternion.Euler(0f, targetYaw, 0f);
+                return;
+            }
+
             var nextYaw = Mathf.SmoothDampAngle(
                 transform.eulerAngles.y,
                 targetYaw,

@@ -20,22 +20,6 @@ namespace LastJumpCrew.ParkHanSol.Editor
         public static void Author()
         {
             RequireAssets();
-            ConfigureFamilyData(
-                "ParkHanSol_WrenchItemPrefabData.asset",
-                PHSUtilityFamilyActionKind.Wrench);
-            ConfigureFamilyData(
-                "ParkHanSol_FuturisticAdjustableWrenchItemPrefabData.asset",
-                PHSUtilityFamilyActionKind.Wrench);
-            ConfigureFamilyData(
-                "ParkHanSol_FireExtinguisherItemPrefabData.asset",
-                PHSUtilityFamilyActionKind.FireExtinguisher);
-            ConfigureFamilyData(
-                "ParkHanSol_TripoFireExtinguisherItemPrefabData.asset",
-                PHSUtilityFamilyActionKind.FireExtinguisher);
-            ConfigureFamilyData(
-                "ParkHanSol_BatteryItemPrefabData.asset",
-                PHSUtilityFamilyActionKind.Battery);
-
             ConfigureHeld<PHSWrenchFamilyUsableItem>(
                 $"{ItemRoot}/Imported/ParkHanSol_Wrench_Held.prefab",
                 typeof(PHSAnimatedWrenchItemUse),
@@ -82,11 +66,6 @@ namespace LastJumpCrew.ParkHanSol.Editor
         {
             var paths = new[]
             {
-                "Assets/02. ParkHanSol_TeamLeader_Build & Multi/04. Data/UtilityItems/ParkHanSol_WrenchItemPrefabData.asset",
-                "Assets/02. ParkHanSol_TeamLeader_Build & Multi/04. Data/UtilityItems/ParkHanSol_FuturisticAdjustableWrenchItemPrefabData.asset",
-                "Assets/02. ParkHanSol_TeamLeader_Build & Multi/04. Data/UtilityItems/ParkHanSol_FireExtinguisherItemPrefabData.asset",
-                "Assets/02. ParkHanSol_TeamLeader_Build & Multi/04. Data/UtilityItems/ParkHanSol_TripoFireExtinguisherItemPrefabData.asset",
-                "Assets/02. ParkHanSol_TeamLeader_Build & Multi/04. Data/UtilityItems/ParkHanSol_BatteryItemPrefabData.asset",
                 $"{ItemRoot}/Imported/ParkHanSol_Wrench_Held.prefab",
                 $"{ItemRoot}/Held/ParkHanSol_FuturisticAdjustableWrench_Held.prefab",
                 $"{ItemRoot}/Imported/ParkHanSol_FireExtinguisher_Held.prefab",
@@ -103,28 +82,6 @@ namespace LastJumpCrew.ParkHanSol.Editor
                         $"PHS_UTILITY_FAMILY_AUTHORING_FAILED reason=asset_missing path={path}");
                 }
             }
-        }
-
-        private static void ConfigureFamilyData(
-            string fileName,
-            PHSUtilityFamilyActionKind familyKind)
-        {
-            var path =
-                "Assets/02. ParkHanSol_TeamLeader_Build & Multi/04. Data/UtilityItems/" +
-                fileName;
-            var itemData = AssetDatabase.LoadAssetAtPath<
-                UtilityItemPrefabData>(path);
-            if (itemData == null)
-            {
-                throw new InvalidOperationException(
-                    $"PHS_UTILITY_FAMILY_AUTHORING_FAILED reason=data_missing path={path}");
-            }
-
-            var serialized = new SerializedObject(itemData);
-            serialized.FindProperty("utilityFamily").intValue =
-                (int)familyKind;
-            serialized.ApplyModifiedPropertiesWithoutUndo();
-            EditorUtility.SetDirty(itemData);
         }
 
         private static void ConfigureHeld<TFamily>(
