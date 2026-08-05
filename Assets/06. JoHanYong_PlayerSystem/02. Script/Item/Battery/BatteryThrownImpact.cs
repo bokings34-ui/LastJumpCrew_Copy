@@ -1,6 +1,7 @@
 using LastJumpCrew.Common;
 using LastJumpCrew.ParkHanSol.Combat;
 using LastJumpCrew.ParkHanSol.Multiplayer;
+using System.Collections;
 using System.Collections.Generic;
 using Unity.Netcode;
 using UnityEngine;
@@ -18,6 +19,7 @@ namespace LastJumpCrew.ParkHanSol.Items
         [SerializeField, Min(0.01f)] private float lightningBallScale = 0.35f;
         [SerializeField, Min(0.01f)] private float lightningRingScale = 1.25f;
         [SerializeField, Min(0.05f)] private float impactEffectLifetime = 0.8f;
+        [SerializeField] private float destroyDelay = 3f;
 
         private GameObject attacker;
         private UtilityItemDataSO itemData; //투척 당시 배터리 SO 저장
@@ -185,6 +187,8 @@ namespace LastJumpCrew.ParkHanSol.Items
 
             Debug.Log($"PHS_BATTERY_EXPLODED " + $"battery={name} " + $"item={itemData.ItemId} " + $"radius={itemData.AttackRadius:F2} " +
                 $"candidates={processedTargets.Count} " + $"acceptedTargets={acceptedTargetPositions.Count}", this);
+
+            StartCoroutine(DestroyAfterDelay());
         }
 
         [ClientRpc]
@@ -300,6 +304,24 @@ namespace LastJumpCrew.ParkHanSol.Items
             Debug.Log($"PHS_BATTERY_TARGET_REACTED " + $"item={itemData.ItemId} " + $"target={target.name} " + $"reaction={reaction}", target);
             return true;
 
+        }
+        private IEnumerator DestroyAfterDelay()
+        {
+            yield return new WaitForSeconds(destroyDelay);
+
+            if (!IsServer)
+            {
+                yield break;
+            }
+
+            if(NetworkObject != null && NetworkObject.IsSpawned)
+            {
+                NetworkObject.Despawn(true);
+            }
+            else
+            {
+                Destroy(gameObject);
+            }
         }
 
         private void OnDrawGizmosSelected()

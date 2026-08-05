@@ -67,6 +67,14 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
         [SerializeField] private ParticleSystem wrenchUseEffect;
         [SerializeField] private ParticleSystem batteryUseEffect;
 
+        [Header("Broken Item Ejection")]
+        [SerializeField, Min(0f)]
+        private float brokenItemThrowForce = 2.5f;
+        [SerializeField, Min(0f)]
+        private float brokenItemUpwardForce = 0.5f;
+        [SerializeField, Min(0f)]
+        private float brokenItemDespawnDelay = 5f;
+
         private float nextGeneralThrowTime;
 
         public Transform GeneralThrowOrigin => generalThrowOrigin;
@@ -480,20 +488,10 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
 
                 return;
             }
-            var isBatteryThrow = thrownItemData.ItemId == batteryItemId;
+
             GameObject thrownItem;
-        
-            var created = isBatteryThrow
-                ? itemHolder.TryCreateThrownItem(
-                    throwPosition,
-                    Quaternion.LookRotation(direction),
-                    UtilityItemActionKind.BatteryDischarge,
-                    out thrownItem,
-                    out _)
-                : itemHolder.TryCreateThrownItem(
-                    throwPosition,
-                    Quaternion.LookRotation(direction),
-                    out thrownItem);
+
+            var created = itemHolder.TryCreateThrownItem(throwPosition, Quaternion.LookRotation(direction), out thrownItem);
             if (!created) //현재 손 아이템의 DroppedPrefab을 생성
             {
                 return;
@@ -509,22 +507,6 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
             }
             body.isKinematic = false;
             body.detectCollisions = true;
-
-            if (isBatteryThrow)
-            {
-                var batteryImpact = thrownItem.GetComponent<BatteryThrownImpact>();
-                if (batteryImpact == null)
-                {
-                    Debug.LogError(
-                        $"PHS_BATTERY_THROW_FAILED reason=impact_missing item={thrownItem.name}",
-                        thrownItem);
-                    RemoveFailedThrownObject(thrownItem);
-                    return;
-                }
-
-                batteryImpact.InitializeAttackThrow(gameObject, thrownItemData);
-            }
-
             //카메라 방향으로 계산된 힘 만큼 날린다.
             body.linearVelocity = direction * throwForce;
 
@@ -1100,7 +1082,20 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
 
                 return false;
             }
-            return itemRecord.TrySpendHeldItemDurabilityServer(itemData.ItemId,expectedRevision,cost);
+            bool durabilitySpent = itemRecord.TrySpendHeldItemDurabilityServer(itemData.ItemId, expectedRevision, cost);
+
+            if (!durabilitySpent)
+            {
+                return false;
+            }
+            if(itemRecord.CurrentDurability <= 0) //내구도 0 이면 파손 아이템으로 자동 배출
+            {
+                if (!TryEjectBrokenHeldItem(itemData))
+                {
+                    Debug.LogError($"PHS_BROKEN_ITEM_PROCESS_FAILED " + $"player={name} " + $"item={itemData.ItemId}", this);
+                }
+            }
+            return true;
         }
         private bool CanUseHeldItemDurabiliy(UtilityItemDataSO itemData, out uint expectedRevision)
         {
@@ -1132,6 +1127,78 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
             expectedRevision = itemRecord.Revision;
 
             return itemRecord.CanSpendHeldItemDurabilityServer(itemData.ItemId, expectedRevision, itemData.DurabilityCostPerUse);
+        }
+        private bool TryEjectBrokenHeldItem(UtilityItemDataSO itemData)
+        {
+            if(itemData == null)
+            {
+                return false;   
+            }
+            if(IsSpawned && !IsServer)
+            {
+                Debug.LogError($"PHS_BROKEN_ITEM_EJECT_FAILED " + $"reason=server_required player={name} " + $"item={itemData.ItemId}", this);
+                return false;
+            }
+            if(itemHolder == null)
+            {
+                Debug.LogError($"PHS_BROKEN_ITEM_EJECT_FAILED " + $"reason=item_holder_missing player={name} " +
+                     $"item={itemData.ItemId}", this);
+
+                return false;
+            }
+            var throwOrigin = generalThrowOrigin != null ? generalThrowOrigin: transform;
+
+            var direction = throwOrigin.forward;
+
+            if(direction.sqrMagnitude <= 0.001f)
+            {
+                direction = transform.forward;
+            }
+            direction.Normalize();
+
+            var spawnPosition = throwOrigin.position + direction * 0.25f;
+
+            if(!itemHolder.TryCreateThrownItem(spawnPosition, Quaternion.LookRotation(direction), out var brokenItem))
+            {
+                Debug.LogError($"PHS_BROKEN_ITEM_EJECT_FAILED " + $"reason=create_failed player={name} " + $"item={itemData.ItemId}", this);
+
+                return false;
+            }
+            var body = brokenItem.GetComponent<Rigidbody>();
+
+            if(body == null)
+            {
+                Debug.LogError($"PHS_BROKEN_ITEM_EJECT_FAILED " + $"reason=rigidbody_missing player={name} " + $"item={brokenItem.name}", brokenItem);
+
+                RemoveFailedThrownObject(brokenItem);
+                return false;
+            }
+
+            body.isKinematic = false;
+            body.detectCollisions = true;
+
+            body.linearVelocity = direction * brokenItemThrowForce + Vector3.up * brokenItemUpwardForce;
+
+            var thrownImpact = brokenItem.GetComponent<ThrownItemImpact>();
+
+            if(thrownImpact != null)
+            {
+                thrownImpact.InitializeThrow(gameObject);
+            }
+            var autoDespawn = brokenItem.GetComponent<BrokenItemAutoDespawn>();
+
+            if(autoDespawn == null)
+            {
+                Debug.LogError($"PHS_BROKEN_ITEM_EJECT_FAILED " + $"reason=auto_despawn_missing " + $"item={brokenItem.name}", brokenItem);
+
+                RemoveFailedThrownObject(brokenItem);
+                return false;
+            }
+            autoDespawn.ArmServer(brokenItemDespawnDelay);
+
+            Debug.Log($"PHS_BROKEN_ITEM_EJECTED " + $"player={name} " + $"item={itemData.ItemId} "
+                + $"delay={brokenItemDespawnDelay:F2}", brokenItem);
+            return true;
         }
     }
 }
