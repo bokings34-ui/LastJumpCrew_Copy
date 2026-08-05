@@ -244,6 +244,15 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
 
                 latestCommandId = command.CommandId;
                 contentId = command.ContentId;
+                if (command.PayloadKind
+                        == NetworkRunIncidentPayloadKind.EventManagerEvent
+                    && IncidentRequestContentContract
+                        .TryMapEventToLegacyAccident(
+                            command.ContentId,
+                            out var legacyAccidentId))
+                {
+                    contentId = legacyAccidentId;
+                }
             }
 
             return contentId;

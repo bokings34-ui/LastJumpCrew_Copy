@@ -1812,6 +1812,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Validation
                 yield break;
             }
 
+            NetworkShipAccidentSnapshot consequenceAccident = default;
             yield return WaitFor(
                 () => incidentLedger.TryGetCommand(
                         parentCommand.CommandId,
@@ -1825,10 +1826,10 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Validation
                     && consequence.State
                         == NetworkRunIncidentCommandState.Active
                     && consequence.RuntimeInstanceId != 0UL
-                    && HasActiveAccident(
+                    && TryGetActiveAccidentForEvent(
                         accidentCoordinator,
-                        consequence.RuntimeInstanceId,
-                        consequence.ContentId),
+                        consequence.ContentId,
+                        out consequenceAccident),
                 DefaultStepTimeout,
                 $"p1_minigame_consequence_not_active " +
                 $"parent={parentCommand.CommandId}");
@@ -1889,7 +1890,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Validation
             if (scenarioFinished) yield break;
 
             if (!accidentCoordinator.TryTerminateAccidentServer(
-                    (uint)consequenceCommand.RuntimeInstanceId,
+                    consequenceAccident.InstanceId,
                     "p1_minigame_consequence_cleanup",
                     out var terminateReason))
             {
@@ -1907,8 +1908,8 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Validation
                     && terminatedConsequence.IsTerminal
                     && !HasActiveAccident(
                         accidentCoordinator,
-                        consequenceCommand.RuntimeInstanceId,
-                        consequenceCommand.ContentId),
+                        consequenceAccident.InstanceId,
+                        (int)consequenceAccident.AccidentId),
                 5f,
                 $"p1_minigame_consequence_cleanup_incomplete " +
                 $"command={consequenceCommand.CommandId}");
@@ -2004,6 +2005,37 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Validation
                 {
                     return true;
                 }
+            }
+
+            return false;
+        }
+
+        private static bool TryGetActiveAccidentForEvent(
+            PHSNetworkShipAccidentCoordinator coordinator,
+            int eventContentId,
+            out NetworkShipAccidentSnapshot activeAccident)
+        {
+            activeAccident = default;
+            if (coordinator == null
+                || !IncidentRequestContentContract.TryMapEventToLegacyAccident(
+                    eventContentId,
+                    out var legacyAccidentId))
+            {
+                return false;
+            }
+
+            var expectedAccidentId =
+                (PHSShipAccidentId)(ushort)legacyAccidentId;
+            for (var index = 0; index < coordinator.ActiveAccidentCount; index++)
+            {
+                var accident = coordinator.GetActiveAccidentAt(index);
+                if (accident.AccidentId != expectedAccidentId)
+                {
+                    continue;
+                }
+
+                activeAccident = accident;
+                return true;
             }
 
             return false;
@@ -3823,6 +3855,17 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Validation
                 yield break;
             }
 
+            var remoteController =
+                remotePlayer.GetComponent<NetworkPlayerController>();
+            if (remoteController == null
+                || !remoteController.TryTeleportForRespawn(
+                    expectedSpawnPoint.position,
+                    expectedSpawnPoint.rotation))
+            {
+                Fail($"remote_item_server_spawn_reset_failed client={remoteClientId}");
+                yield break;
+            }
+
             yield return WaitFor(
                 () => Vector3.Distance(remotePlayer.transform.position, expectedSpawnPoint.position) <= 1f,
                 10f,
@@ -4434,7 +4477,18 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Validation
             if (scenarioFinished) yield break;
 
             var saleRevision = itemRecord.Revision;
-            SetPlayerPosition(playerObject, sellTrigger.bounds.center);
+            var heldPresentation = holder.HeldPresentationTransform;
+            if (heldPresentation == null)
+            {
+                Fail($"debris_sale_held_presentation_missing item={itemId}");
+                yield break;
+            }
+
+            SetPlayerPosition(
+                playerObject,
+                playerObject.transform.position
+                    + sellTrigger.bounds.center
+                    - heldPresentation.position);
             yield return WaitFor(
                 () => wallet.Credits == creditsBefore + itemValue &&
                     string.IsNullOrEmpty(itemRecord.HeldItemId) &&

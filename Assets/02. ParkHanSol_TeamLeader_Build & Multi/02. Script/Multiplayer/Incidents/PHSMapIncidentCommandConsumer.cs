@@ -402,6 +402,14 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
                     out roomReason);
             if (!roomResolved)
             {
+                if (command.SourceKind
+                        == NetworkRunIncidentSourceKind.Consequence
+                    && roomReason
+                        == "compatible_layout_location_unavailable")
+                {
+                    return;
+                }
+
                 Debug.LogWarning(
                     $"PHS_INCIDENT_CONSUME_FAILED command={command.CommandId} " +
                     $"reason=target_unavailable detail={roomReason}",
