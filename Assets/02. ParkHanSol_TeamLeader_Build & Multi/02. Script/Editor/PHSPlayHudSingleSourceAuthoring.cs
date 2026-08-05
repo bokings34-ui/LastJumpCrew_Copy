@@ -222,6 +222,27 @@ namespace LastJumpCrew.ParkHanSol.Editor
 
             var controller = prefab.GetComponentInChildren<PHSHudFeedbackController>(true);
             Require(controller != null, "feedback_controller_missing", errors);
+            var presenter = prefab.GetComponentInChildren<ParkHanSolPlayHudMockPresenter>(true);
+            var durabilitySegments = prefab.GetComponentInChildren<ParkHanSolHeldItemDurabilitySegments>(true);
+            Require(presenter != null, "play_hud_presenter_missing", errors);
+            Require(durabilitySegments != null, "held_item_durability_segments_missing", errors);
+            if (presenter != null && durabilitySegments != null)
+            {
+                var presenterData = new SerializedObject(presenter);
+                var segmentData = new SerializedObject(durabilitySegments);
+                Require(
+                    presenterData.FindProperty("heldItemDurabilitySegments")?.objectReferenceValue == durabilitySegments,
+                    "held_item_durability_segments_reference_missing",
+                    errors);
+                Require(segmentData.FindProperty("segmentContainer")?.objectReferenceValue != null,
+                    "held_item_durability_container_missing", errors);
+                Require(segmentData.FindProperty("segmentGrid")?.objectReferenceValue != null,
+                    "held_item_durability_grid_missing", errors);
+                Require(segmentData.FindProperty("segmentTemplate")?.objectReferenceValue != null,
+                    "held_item_durability_template_missing", errors);
+                Require(segmentData.FindProperty("valueText")?.objectReferenceValue != null,
+                    "held_item_durability_value_text_missing", errors);
+            }
             var gauges = prefab.GetComponentsInChildren<ParkHanSolHudGaugeMotion>(true);
             Require(gauges.Length == 2, $"gauge_count actual={gauges.Length}", errors);
             foreach (var gauge in gauges)
