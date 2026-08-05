@@ -1,4 +1,5 @@
 using UnityEngine;
+using UnityEngine.InputSystem;
 
 namespace LastJumpCrew.ParkHanSol.Testing
 {
@@ -7,6 +8,8 @@ namespace LastJumpCrew.ParkHanSol.Testing
         [SerializeField] private Camera firstPersonCamera;
         [SerializeField] private AudioListener firstPersonAudioListener;
         [SerializeField] private Transform playerVisualRoot;
+        [SerializeField] private PlayerInput playerInput;
+        [SerializeField] private string playerActionMapName = "Player";
 
         private Renderer[] playerRenderers;
 
@@ -14,7 +17,8 @@ namespace LastJumpCrew.ParkHanSol.Testing
         {
             if (firstPersonCamera == null ||
                 firstPersonAudioListener == null ||
-                playerVisualRoot == null)
+                playerVisualRoot == null ||
+                playerInput == null)
             {
                 Debug.LogError($"PHS_TEST_OBSERVER_SETUP_FAILED observer={name}", this);
                 enabled = false;
@@ -23,6 +27,12 @@ namespace LastJumpCrew.ParkHanSol.Testing
 
             playerRenderers = playerVisualRoot.GetComponentsInChildren<Renderer>(true);
             ApplyThirdPersonPresentation();
+        }
+
+        private void Start()
+        {
+            playerInput.ActivateInput();
+            playerInput.SwitchCurrentActionMap(playerActionMapName);
         }
 
         private void LateUpdate()
