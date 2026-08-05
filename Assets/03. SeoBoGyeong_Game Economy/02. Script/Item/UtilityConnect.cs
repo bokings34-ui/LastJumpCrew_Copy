@@ -8,7 +8,7 @@ namespace LastJumpCrew.SeoBoGyeong.item
     // 경제 계층(int id)과 실제 아이템 오브젝트(UtilityItemObject, string id)를 이어주는 조회 브릿지.
     // 별도 저장 없이 기존 데이터(GameCore.Data.Tools = DataRepository<UtilityItemData>)에서 해석한다.
     //  - int  조회: UtilityItemData.Id 로 데이터/프리팹을 찾는다.
-    //  - string 조회: UtilityItemObject.ItemId(= UtilityItemPrefabData.ItemId) 로 경제 데이터를 역매핑한다.
+    //  - string 조회: UtilityItemObject.ItemId(= UtilityItemDataSO.ItemId) 로 경제 데이터를 역매핑한다.
     // string→int 인덱스는 첫 사용 시 한 번 만들어 캐싱한다(정적 데이터라 이후 불변).
     // 이 스크립트는 "조회"만 담당한다. 소환/배송 등 생성 책임은 별도 컴포넌트가 맡는다.
     public class UtilityConnect : MonoBehaviour

@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using LastJumpCrew.Common;
 using LastJumpCrew.ParkHanSol.Items;
 using UnityEditor;
 using UnityEditor.SceneManagement;
@@ -17,6 +18,8 @@ namespace LastJumpCrew.ParkHanSol.Editor
             "Assets/02. ParkHanSol_TeamLeader_Build & Multi/01. Scene/test/PHS_FeatureInspectionScene.unity";
         private const string NetworkTutorialScene =
             "Assets/02. ParkHanSol_TeamLeader_Build & Multi/01. Scene/BEAVER_2026/Tutorial/PHS_NetworkTutorialScene.unity";
+        private const string UtilityItemDataRoot =
+            "Assets/02. ParkHanSol_TeamLeader_Build & Multi/04. Data/UtilityItems";
 
         private sealed class ItemSpec
         {
@@ -99,6 +102,63 @@ namespace LastJumpCrew.ParkHanSol.Editor
             AssetDatabase.SaveAssets();
             AssetDatabase.Refresh();
             Debug.Log("PHS_UTILITY_ITEM_VISUAL_TRUTH_BUILD_PASSED items=3 wrappers=6 economy=3 scenes=2");
+        }
+
+        [MenuItem("Tools/ParkHanSol/BEAVER/Reconcile Canonical Utility Item Scene Instances")]
+        public static void ReconcileCanonicalSceneInstances()
+        {
+            if (EditorApplication.isPlayingOrWillChangePlaymode)
+            {
+                throw new InvalidOperationException("Stop Play Mode before reconciling utility item scenes.");
+            }
+
+            var wrench = RequireItemData("ParkHanSol_WrenchItemPrefabData.asset");
+            var battery = RequireItemData("ParkHanSol_BatteryItemPrefabData.asset");
+
+            ReplaceLegacySceneInstances(
+                FeatureInspectionScene,
+                CreateReplacements((Specs[2].HeldPath, battery.HandPrefab)));
+            ReplaceLegacySceneInstances(
+                NetworkTutorialScene,
+                CreateReplacements(
+                    (Specs[0].LegacyPath, wrench.DroppedPrefab),
+                    (Specs[2].LegacyPath, battery.DroppedPrefab),
+                    (Specs[0].DroppedPath, wrench.DroppedPrefab),
+                    (Specs[2].DroppedPath, battery.DroppedPrefab)));
+
+            AssetDatabase.SaveAssets();
+            Debug.Log("PHS_UTILITY_ITEM_SCENE_RECONCILE_PASSED scenes=2 items=2");
+        }
+
+        private static UtilityItemDataSO RequireItemData(string fileName)
+        {
+            var path = $"{UtilityItemDataRoot}/{fileName}";
+            var itemData = AssetDatabase.LoadAssetAtPath<UtilityItemDataSO>(path);
+            if (itemData == null || itemData.HandPrefab == null || itemData.DroppedPrefab == null)
+            {
+                throw new InvalidOperationException(
+                    $"Utility item data contract missing. path={path}");
+            }
+
+            return itemData;
+        }
+
+        private static Dictionary<string, string> CreateReplacements(
+            params (string sourcePath, GameObject targetPrefab)[] replacements)
+        {
+            var result = new Dictionary<string, string>();
+            foreach (var (sourcePath, targetPrefab) in replacements)
+            {
+                var targetPath = AssetDatabase.GetAssetPath(targetPrefab);
+                if (!string.IsNullOrEmpty(sourcePath)
+                    && !string.IsNullOrEmpty(targetPath)
+                    && sourcePath != targetPath)
+                {
+                    result[sourcePath] = targetPath;
+                }
+            }
+
+            return result;
         }
 
         private static void BuildVisualPrefab(ItemSpec spec)

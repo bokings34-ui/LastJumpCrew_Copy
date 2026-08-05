@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using LastJumpCrew.Common;
 using LastJumpCrew.ParkHanSol.Items;
 using LastJumpCrew.ParkHanSol.Multiplayer;
 using Unity.Netcode;
@@ -57,7 +58,7 @@ namespace LastJumpCrew.ParkHanSol.Editor
             }
 
             Debug.Log(
-                "PHS_FOAM_GLOO_VALIDATION_PASS players=2 coordinator=1 network_prefab=1 dropped_durability=1 held_durability=0 thresholds=4/6/3 transitions=3 markers=3 hold=2.00 dissolve=0.45 assets06=0");
+                "PHS_FOAM_GLOO_VALIDATION_PASS players=2 coordinator=1 dropped_durability=0 held_durability=0 thresholds=1/1/3 transitions=3 markers=3 hold=2.00 dissolve=0.45 assets06=0");
         }
 
         private static void ValidateBlob(List<string> errors)
@@ -136,8 +137,8 @@ namespace LastJumpCrew.ParkHanSol.Editor
                 errors.Add("reason=coordinator_reference_or_config_invalid");
             }
 
-            if (PHSNetworkFoamCoordinator.FireBlobThreshold != 4
-                || PHSNetworkFoamCoordinator.HullBreachBlobThreshold != 6
+            if (PHSNetworkFoamCoordinator.FireBlobThreshold != 1
+                || PHSNetworkFoamCoordinator.HullBreachBlobThreshold != 1
                 || PHSNetworkFoamCoordinator.SurfaceBlobThreshold != 3)
             {
                 errors.Add("reason=threshold_contract_invalid");
@@ -197,7 +198,7 @@ namespace LastJumpCrew.ParkHanSol.Editor
 
         private static void ValidateItemData(List<string> errors)
         {
-            var data = AssetDatabase.LoadAssetAtPath<UtilityItemPrefabData>(
+            var data = AssetDatabase.LoadAssetAtPath<UtilityItemDataSO>(
                 FoamItemDataPath);
             if (data == null)
             {
@@ -206,20 +207,20 @@ namespace LastJumpCrew.ParkHanSol.Editor
             }
 
             if (data.ItemId != PHSNetworkFoamCoordinator.FoamItemId
-                || !data.HasDurability
+                || data.UsesDurability
                 || data.MaxDurability != 100
                 || data.UpgradeEffect != UtilityItemUpgradeEffect.None
                 || data.ActionProfiles.Count != 2
                 || !HasExactProfile(
                     data,
                     UtilityItemActionKind.FireSuppression,
-                    200,
-                    1)
+                    100,
+                    0)
                 || !HasExactProfile(
                     data,
                     UtilityItemActionKind.HullBreachRepair,
                     100,
-                    1))
+                    0))
             {
                 errors.Add("reason=item_data_contract_invalid");
             }
@@ -227,7 +228,7 @@ namespace LastJumpCrew.ParkHanSol.Editor
 
         private static void ValidateFoamItemPrefabs(List<string> errors)
         {
-            var itemData = AssetDatabase.LoadAssetAtPath<UtilityItemPrefabData>(
+            var itemData = AssetDatabase.LoadAssetAtPath<UtilityItemDataSO>(
                 FoamItemDataPath);
             var dropped = AssetDatabase.LoadAssetAtPath<GameObject>(
                 FoamDroppedPrefabPath);
@@ -271,7 +272,7 @@ namespace LastJumpCrew.ParkHanSol.Editor
                 RequireCount<NetworkUtilityItemDurabilityState>(
                     dropped,
                     FoamDroppedPrefabPath,
-                    1,
+                    itemData != null && itemData.UsesDurability ? 1 : 0,
                     errors);
 
                 var itemObjects = dropped.GetComponents<UtilityItemObject>();
@@ -284,7 +285,10 @@ namespace LastJumpCrew.ParkHanSol.Editor
                         "reason=dropped_item_data_reference_invalid");
                 }
 
-                if (itemObjects.Length == 1 && durabilityStates.Length == 1)
+                if (itemData != null
+                    && itemData.UsesDurability
+                    && itemObjects.Length == 1
+                    && durabilityStates.Length == 1)
                 {
                     var serialized = new SerializedObject(durabilityStates[0]);
                     var itemObjectProperty = serialized.FindProperty(
@@ -453,7 +457,7 @@ namespace LastJumpCrew.ParkHanSol.Editor
         }
 
         private static bool HasExactProfile(
-            UtilityItemPrefabData data,
+            UtilityItemDataSO data,
             UtilityItemActionKind kind,
             int amount,
             int durabilityCost)

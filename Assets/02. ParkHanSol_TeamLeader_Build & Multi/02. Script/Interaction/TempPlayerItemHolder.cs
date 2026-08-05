@@ -61,7 +61,7 @@ namespace LastJumpCrew.ParkHanSol.Interaction
         private UtilityItemObject currentItemObject;
 
         // 현재 아이템의 데이터 캐시다. 빈손이면 null이다.
-        // 변경: UtilityItemPrefabData → UtilityItemDataSO
+        // 통합 아이템 데이터
         private UtilityItemDataSO currentItemPrefabData;
 
         private DebrisItem heldDebris;
@@ -140,7 +140,7 @@ namespace LastJumpCrew.ParkHanSol.Interaction
             }
         }
 
-        // 변경: UtilityItemPrefabData → UtilityItemDataSO
+        // 통합 아이템 데이터
         public bool CanReplaceHeldItem(UtilityItemDataSO itemPrefabData)
         {
             // 손 위치, 아이템 데이터, HandPrefab 참조만 검사한다.
@@ -917,7 +917,7 @@ namespace LastJumpCrew.ParkHanSol.Interaction
         
         }
 
-        // 변경: UtilityItemPrefabData → UtilityItemDataSO
+        // 통합 아이템 데이터
         private bool TryApplyHeldItemPose(Transform itemTransform, UtilityItemDataSO itemData, Transform activeHoldPoint, Vector3 sourceScale)
         {
             var firstPerson = ShouldUseFirstPersonHoldPoint();
