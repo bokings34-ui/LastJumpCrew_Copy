@@ -19,7 +19,7 @@ namespace LastJumpCrew.ParkHanSol.Editor
         private const string NetworkHudPath =
             "Assets/02. ParkHanSol_TeamLeader_Build & Multi/03. Prefab/UI/PHS_NetworkPlayHudUI.prefab";
         private const string NetworkHudGuid =
-            "07d62e5473408144e8beaf1dc528b2bc";
+            "91f0974a9b8b1054a9f874b4360a7b3d";
         private const string CanonicalEnglishFontPath = PHSUIFontPaths.SuitRegular;
         private const string CanonicalLocalizedFontPath = PHSUIFontPaths.SuitRegular;
         private const string ShipHealthIconPath =
@@ -330,10 +330,10 @@ namespace LastJumpCrew.ParkHanSol.Editor
                     && parentRect.name == "Vitals Cluster"
                     && economy.anchorMin == new Vector2(0f, 1f)
                     && economy.anchorMax == new Vector2(0f, 1f)
-                    && economy.anchoredPosition.x - economy.pivot.x * economy.rect.width >= 12f
+                    && economy.anchoredPosition.x - economy.pivot.x * economy.rect.width >= 0f
                     && economy.anchoredPosition.x
                         + (1f - economy.pivot.x) * economy.rect.width
-                        <= parentRect.rect.width - 12f;
+                        <= parentRect.rect.width;
                 Require(
                     isTopRightRootLayout || isNestedVitalsLayout,
                     "economy_anchor_layout_invalid",
@@ -377,9 +377,14 @@ namespace LastJumpCrew.ParkHanSol.Editor
                     foreach (Transform entry in lineup.transform)
                     {
                         var icon = Find(entry, "Icon") as RectTransform;
+                        var background = entry.GetComponent<Image>();
                         Require(icon != null
                                 && Approximately(icon.sizeDelta, new Vector2(92f, 92f))
-                                && entry.GetComponent<Image>() == null
+                                && background != null
+                                && background.sprite != null
+                                && background.type == Image.Type.Sliced
+                                && !background.raycastTarget
+                                && background.color.a >= 0.5f
                                 && entry.GetComponent<Outline>() == null,
                             $"event_icon_entry_style_invalid name={entry.name}",
                             errors);

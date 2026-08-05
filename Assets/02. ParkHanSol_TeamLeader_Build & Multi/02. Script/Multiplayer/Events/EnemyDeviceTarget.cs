@@ -7,7 +7,8 @@ using UnityEngine;
 namespace LastJumpCrew.ParkHanSol.Multiplayer.Events
 {
     [DisallowMultipleComponent]
-    public sealed class EnemyDeviceTarget : MonoBehaviour, IDevice, IDamageable
+    [RequireComponent(typeof(NetworkObject))]
+    public sealed class EnemyDeviceTarget : NetworkBehaviour, IDevice, IDamageable
     {
         [SerializeField, Min(1)] private int maximumHealth = 10;
         [SerializeField] private Transform visualRoot;
@@ -16,13 +17,19 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Events
 
         private Renderer[] renderers;
         private bool[] initialRendererStates;
-        private int currentHealth;
+        private int localCurrentHealth;
         private bool isRegistered;
         private PHSNetworkShipAccidentCoordinator boundAccidentCoordinator;
         private uint activeBreakdownAccidentInstanceId;
+        private readonly NetworkVariable<int> synchronizedHealth = new(
+            0,
+            NetworkVariableReadPermission.Everyone,
+            NetworkVariableWritePermission.Server);
 
         public Transform Transform => transform;
-        public bool IsAlive => currentHealth > 0;
+        public bool IsAlive => IsSpawned
+            ? synchronizedHealth.Value > 0
+            : localCurrentHealth > 0;
         public bool IsBroken => !IsAlive;
 
         private void Awake()
@@ -42,16 +49,45 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Events
 
         private void OnEnable()
         {
-            currentHealth = maximumHealth;
+            localCurrentHealth = maximumHealth;
             SetVisualsAlive(true);
-            DeviceRegistry.Instance.Register(this);
-            isRegistered = true;
+            if (NetworkManager.Singleton == null
+                || !NetworkManager.Singleton.IsListening)
+            {
+                RegisterTarget();
+            }
         }
 
         private void OnDisable()
         {
             UnbindAccidentCoordinator();
             Unregister();
+        }
+
+        public override void OnNetworkSpawn()
+        {
+            base.OnNetworkSpawn();
+            synchronizedHealth.OnValueChanged += HandleHealthChanged;
+            if (IsServer)
+            {
+                synchronizedHealth.Value = maximumHealth;
+                localCurrentHealth = maximumHealth;
+                RegisterTarget();
+            }
+            else
+            {
+                Unregister();
+            }
+
+            SetVisualsAlive(synchronizedHealth.Value > 0);
+        }
+
+        public override void OnNetworkDespawn()
+        {
+            synchronizedHealth.OnValueChanged -= HandleHealthChanged;
+            UnbindAccidentCoordinator();
+            Unregister();
+            base.OnNetworkDespawn();
         }
 
         public void ApplyDamage(int amount, GameObject attacker)
@@ -67,8 +103,23 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Events
                 return;
             }
 
-            currentHealth = Mathf.Max(0, currentHealth - amount);
-            if (currentHealth > 0)
+            var networked = IsSpawned
+                && NetworkManager != null
+                && NetworkManager.IsListening;
+            var remainingHealth = Mathf.Max(
+                0,
+                (networked ? synchronizedHealth.Value : localCurrentHealth) - amount);
+            localCurrentHealth = remainingHealth;
+            if (networked)
+            {
+                synchronizedHealth.Value = remainingHealth;
+            }
+            else
+            {
+                SetVisualsAlive(remainingHealth > 0);
+            }
+
+            if (remainingHealth > 0)
             {
                 return;
             }
@@ -155,12 +206,19 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Events
                 return;
             }
 
-            currentHealth = maximumHealth;
-            SetVisualsAlive(true);
-            if (isActiveAndEnabled && !isRegistered)
+            localCurrentHealth = maximumHealth;
+            if (IsSpawned && IsServer)
             {
-                DeviceRegistry.Instance.Register(this);
-                isRegistered = true;
+                synchronizedHealth.Value = maximumHealth;
+            }
+            else
+            {
+                SetVisualsAlive(true);
+            }
+
+            if (isActiveAndEnabled)
+            {
+                RegisterTarget();
             }
 
             Debug.Log(
@@ -177,6 +235,23 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Events
 
             DeviceRegistry.Peek()?.Unregister(this);
             isRegistered = false;
+        }
+
+        private void RegisterTarget()
+        {
+            if (isRegistered || !isActiveAndEnabled || IsBroken)
+            {
+                return;
+            }
+
+            DeviceRegistry.Instance.Register(this);
+            isRegistered = true;
+        }
+
+        private void HandleHealthChanged(int previousHealth, int currentHealth)
+        {
+            localCurrentHealth = currentHealth;
+            SetVisualsAlive(currentHealth > 0);
         }
 
         private void SetVisualsAlive(bool alive)

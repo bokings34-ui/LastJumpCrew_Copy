@@ -21,7 +21,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Doors
             public Collider SolidBlocker;
             public NavMeshObstacle NavMeshBlocker;
             public PHSShipDoorTarget Target;
-            public PHSShipDoorLockButton Button;
+            public PHSShipDoorLockButton[] Buttons;
             public Vector3 LeftClosedLocalPosition;
             public Vector3 RightClosedLocalPosition;
             public Vector3 OpenDirection;
@@ -93,7 +93,16 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Doors
                 }
 
                 binding.Target?.Initialize(this, i);
-                binding.Button?.Initialize(this, i);
+                if (binding.Buttons == null)
+                {
+                    continue;
+                }
+                for (var buttonIndex = 0;
+                    buttonIndex < binding.Buttons.Length; buttonIndex++)
+                {
+                    binding.Buttons[buttonIndex]?.Initialize(this, i,
+                        buttonIndex);
+                }
             }
         }
 
@@ -179,7 +188,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Doors
             SetState(doorIndex, state);
         }
 
-        public void RequestToggleLock(int doorIndex)
+        public void RequestToggleLock(int doorIndex, int buttonIndex)
         {
             if (!IsSpawned)
             {
@@ -193,22 +202,23 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Doors
             }
             else
             {
-                ToggleLockServerRpc(doorIndex);
+                ToggleLockServerRpc(doorIndex, buttonIndex);
             }
         }
 
         [ServerRpc(RequireOwnership = false)]
-        private void ToggleLockServerRpc(int doorIndex, ServerRpcParams rpcParams = default)
+        private void ToggleLockServerRpc(int doorIndex, int buttonIndex,
+            ServerRpcParams rpcParams = default)
         {
-            if (!IsValidDoor(doorIndex)
+            if (!TryGetButton(doorIndex, buttonIndex, out var button)
                 || NetworkManager == null
                 || !NetworkManager.ConnectedClients.TryGetValue(
                     rpcParams.Receive.SenderClientId, out var client)
                 || client.PlayerObject == null
                 || Vector3.Distance(client.PlayerObject.transform.position,
-                    doors[doorIndex].Button.transform.position) > buttonInteractionDistance)
+                    button.transform.position) > buttonInteractionDistance)
             {
-                Debug.LogWarning($"PHS_SHIP_DOOR_LOCK_REJECTED index={doorIndex} client={rpcParams.Receive.SenderClientId}", this);
+                Debug.LogWarning($"PHS_SHIP_DOOR_LOCK_REJECTED index={doorIndex} button={buttonIndex} client={rpcParams.Receive.SenderClientId}", this);
                 return;
             }
 
@@ -355,14 +365,38 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Doors
             {
                 binding.NavMeshBlocker.enabled = blocked;
             }
-            binding.Button?.SetState(state.Locked, state.Destroyed);
+            if (binding.Buttons != null)
+            {
+                foreach (var button in binding.Buttons)
+                {
+                    button?.SetState(state.Locked, state.Destroyed);
+                }
+            }
         }
 
         private bool IsValidDoor(int doorIndex)
         {
             return doorIndex >= 0 && doorIndex < doors.Length
                 && doors[doorIndex].Target != null
-                && doors[doorIndex].Button != null;
+                && doors[doorIndex].Buttons != null
+                && doors[doorIndex].Buttons.Length == 2
+                && doors[doorIndex].Buttons[0] != null
+                && doors[doorIndex].Buttons[1] != null;
+        }
+
+        private bool TryGetButton(int doorIndex, int buttonIndex,
+            out PHSShipDoorLockButton button)
+        {
+            button = null;
+            if (!IsValidDoor(doorIndex)
+                || buttonIndex < 0
+                || buttonIndex >= doors[doorIndex].Buttons.Length)
+            {
+                return false;
+            }
+
+            button = doors[doorIndex].Buttons[buttonIndex];
+            return button != null;
         }
 
         private void SetState(int doorIndex, DoorState state)

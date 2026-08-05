@@ -15,6 +15,8 @@ namespace LastJumpCrew.ParkHanSol.EditorTools
     public static class PHSShipDoorAuthoring
     {
         private const string RootName = "PHS_NetworkShipDoors";
+        private const string ButtonPrefabPath =
+            "Assets/02. ParkHanSol_TeamLeader_Build & Multi/03. Prefab/Props/PHS_DoorLockButton.prefab";
 
         [MenuItem("Tools/ParkHanSol/Doors/Author Main Map Doors")]
         public static void AuthorMainMapDoors()
@@ -42,6 +44,8 @@ namespace LastJumpCrew.ParkHanSol.EditorTools
                     $"PHS_SHIP_DOOR_AUTHORING_FAILED reason=door_count expected=20 actual={legacyDoors.Length}");
             }
 
+            var buttonPrefab = EnsureButtonPrefab();
+
             var oldRoot = GameObject.Find(RootName);
             if (oldRoot != null)
             {
@@ -58,7 +62,7 @@ namespace LastJumpCrew.ParkHanSol.EditorTools
             for (var i = 0; i < legacyDoors.Length; i++)
             {
                 bindings.Add(CreateDoorBinding(root.transform,
-                    coordinator, legacyDoors[i], i));
+                    coordinator, buttonPrefab, legacyDoors[i], i));
             }
 
             coordinator.EditorConfigure(bindings.ToArray());
@@ -90,7 +94,7 @@ namespace LastJumpCrew.ParkHanSol.EditorTools
             {
                 errors.Add($"target_count actual={targets.Length}");
             }
-            if (buttons.Length != 20)
+            if (buttons.Length != 40)
             {
                 errors.Add($"button_count actual={buttons.Length}");
             }
@@ -106,6 +110,22 @@ namespace LastJumpCrew.ParkHanSol.EditorTools
                 {
                     errors.Add($"navmesh_obstacle target={target.name}");
                 }
+                var targetButtons = target.GetComponentsInChildren<
+                    PHSShipDoorLockButton>(true);
+                if (targetButtons.Length != 2)
+                {
+                    errors.Add($"target_button_count target={target.name} actual={targetButtons.Length}");
+                }
+                foreach (var button in targetButtons)
+                {
+                    var source = PrefabUtility
+                        .GetCorrespondingObjectFromSource(button.gameObject);
+                    if (source == null || AssetDatabase.GetAssetPath(source)
+                        != ButtonPrefabPath)
+                    {
+                        errors.Add($"button_prefab target={target.name} button={button.name}");
+                    }
+                }
             }
 
             if (errors.Count > 0)
@@ -120,6 +140,7 @@ namespace LastJumpCrew.ParkHanSol.EditorTools
         private static PHSNetworkShipDoorCoordinator.DoorBinding CreateDoorBinding(
             Transform parent,
             PHSNetworkShipDoorCoordinator coordinator,
+            GameObject buttonPrefab,
             DoorDoubleSlide door,
             int index)
         {
@@ -157,17 +178,10 @@ namespace LastJumpCrew.ParkHanSol.EditorTools
                 Mathf.Max(repairCollider.size.y, 2.5f),
                 Mathf.Max(repairCollider.size.z + 4f, 5f));
 
-            var buttonObject = GameObject.CreatePrimitive(PrimitiveType.Cube);
-            buttonObject.name = "LockButton";
-            buttonObject.transform.SetParent(gameplayRoot.transform, false);
-            buttonObject.transform.localScale = new Vector3(0.35f, 0.45f, 0.15f);
-            buttonObject.transform.position = bounds.center
-                + door.transform.right
-                * (Mathf.Max(bounds.extents.x, bounds.extents.z) + 0.45f);
-            var button = buttonObject.AddComponent<PHSShipDoorLockButton>();
+            var buttons = CreateButtons(gameplayRoot.transform, coordinator,
+                buttonPrefab, door, index);
 
             target.Initialize(coordinator, index);
-            button.Initialize(coordinator, index);
             return new PHSNetworkShipDoorCoordinator.DoorBinding
             {
                 LegacyDoor = door,
@@ -177,7 +191,7 @@ namespace LastJumpCrew.ParkHanSol.EditorTools
                 SolidBlocker = blocker,
                 NavMeshBlocker = obstacle,
                 Target = target,
-                Button = button,
+                Buttons = buttons,
                 LeftClosedLocalPosition = door.doorL.localPosition,
                 RightClosedLocalPosition = door.doorR.localPosition,
                 OpenDirection = door.directionType switch
@@ -189,6 +203,95 @@ namespace LastJumpCrew.ParkHanSol.EditorTools
                 },
                 OpenDistance = door.openDistance
             };
+        }
+
+        private static PHSShipDoorLockButton[] CreateButtons(
+            Transform parent,
+            PHSNetworkShipDoorCoordinator coordinator,
+            GameObject buttonPrefab,
+            DoorDoubleSlide door,
+            int doorIndex)
+        {
+            var localBounds = GetDoorLocalBounds(door);
+            var normalLocal = localBounds.size.x <= localBounds.size.z
+                ? Vector3.right
+                : Vector3.forward;
+            var tangentLocal = normalLocal == Vector3.right
+                ? Vector3.forward
+                : Vector3.right;
+            var normalExtent = normalLocal == Vector3.right
+                ? localBounds.extents.x
+                : localBounds.extents.z;
+            var tangentExtent = tangentLocal == Vector3.right
+                ? localBounds.extents.x
+                : localBounds.extents.z;
+            var localPosition = localBounds.center;
+            localPosition.y = localBounds.min.y
+                + Mathf.Min(1.2f, localBounds.size.y * 0.55f);
+            localPosition += tangentLocal * (tangentExtent + 0.22f);
+
+            var result = new PHSShipDoorLockButton[2];
+            for (var sideIndex = 0; sideIndex < result.Length; sideIndex++)
+            {
+                var sideSign = sideIndex == 0 ? 1f : -1f;
+                var instance = (GameObject)PrefabUtility.InstantiatePrefab(
+                    buttonPrefab, parent);
+                instance.name = sideIndex == 0
+                    ? "LockButton_SideA"
+                    : "LockButton_SideB";
+                instance.transform.position = door.transform.TransformPoint(
+                    localPosition + normalLocal
+                    * sideSign * (normalExtent + 0.08f));
+                var outward = door.transform.TransformDirection(
+                    normalLocal * sideSign);
+                instance.transform.rotation = Quaternion.LookRotation(
+                    outward, Vector3.up);
+                result[sideIndex] = instance
+                    .GetComponent<PHSShipDoorLockButton>();
+                result[sideIndex].Initialize(coordinator, doorIndex, sideIndex);
+            }
+
+            return result;
+        }
+
+        private static GameObject EnsureButtonPrefab()
+        {
+            var existing = AssetDatabase.LoadAssetAtPath<GameObject>(
+                ButtonPrefabPath);
+            if (existing != null)
+            {
+                return existing;
+            }
+
+            var root = new GameObject("PHS_DoorLockButton",
+                typeof(BoxCollider), typeof(PHSShipDoorLockButton));
+            var collider = root.GetComponent<BoxCollider>();
+            collider.size = new Vector3(0.34f, 0.46f, 0.14f);
+
+            var housing = GameObject.CreatePrimitive(PrimitiveType.Cube);
+            housing.name = "Housing";
+            housing.transform.SetParent(root.transform, false);
+            housing.transform.localScale = new Vector3(0.34f, 0.46f, 0.12f);
+            UnityEngine.Object.DestroyImmediate(housing.GetComponent<Collider>());
+
+            var indicator = GameObject.CreatePrimitive(PrimitiveType.Cube);
+            indicator.name = "StateIndicator";
+            indicator.transform.SetParent(root.transform, false);
+            indicator.transform.localPosition = new Vector3(0f, 0f, 0.075f);
+            indicator.transform.localScale = new Vector3(0.22f, 0.22f, 0.03f);
+            UnityEngine.Object.DestroyImmediate(indicator.GetComponent<Collider>());
+            root.GetComponent<PHSShipDoorLockButton>()
+                .EditorConfigureRenderer(indicator.GetComponent<Renderer>());
+
+            var prefab = PrefabUtility.SaveAsPrefabAsset(root,
+                ButtonPrefabPath);
+            UnityEngine.Object.DestroyImmediate(root);
+            if (prefab == null)
+            {
+                throw new InvalidOperationException(
+                    "PHS_SHIP_DOOR_AUTHORING_FAILED reason=button_prefab_save");
+            }
+            return prefab;
         }
 
         private static Bounds GetDoorBounds(DoorDoubleSlide door)
@@ -208,6 +311,42 @@ namespace LastJumpCrew.ParkHanSol.EditorTools
                 bounds.Encapsulate(renderers[i].bounds);
             }
             return bounds;
+        }
+
+        private static Bounds GetDoorLocalBounds(DoorDoubleSlide door)
+        {
+            var renderers = door.doorL.GetComponentsInChildren<Renderer>(true)
+                .Concat(door.doorR.GetComponentsInChildren<Renderer>(true))
+                .ToArray();
+            var initialized = false;
+            var localBounds = new Bounds();
+            foreach (var renderer in renderers)
+            {
+                var bounds = renderer.bounds;
+                for (var x = -1; x <= 1; x += 2)
+                {
+                    for (var y = -1; y <= 1; y += 2)
+                    {
+                        for (var z = -1; z <= 1; z += 2)
+                        {
+                            var worldCorner = bounds.center + Vector3.Scale(
+                                bounds.extents, new Vector3(x, y, z));
+                            var localCorner = door.transform.InverseTransformPoint(
+                                worldCorner);
+                            if (!initialized)
+                            {
+                                localBounds = new Bounds(localCorner, Vector3.zero);
+                                initialized = true;
+                            }
+                            else
+                            {
+                                localBounds.Encapsulate(localCorner);
+                            }
+                        }
+                    }
+                }
+            }
+            return localBounds;
         }
 
         private static Vector3 ClampDoorSize(Vector3 source)

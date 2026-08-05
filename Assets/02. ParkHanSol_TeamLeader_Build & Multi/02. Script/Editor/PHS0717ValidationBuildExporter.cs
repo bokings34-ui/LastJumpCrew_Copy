@@ -15,7 +15,7 @@ namespace LastJumpCrew.ParkHanSol.Editor
         [MenuItem("Tools/ParkHanSol/Build 0717 P0 Validation Player")]
         public static void BuildValidationPlayer()
         {
-            PHS0715IntegrationValidator.ValidateOrThrow();
+            PHSIntegratedReleaseValidator.Validate();
 
             var scenes = EditorBuildSettings.scenes
                 .Where(scene => scene.enabled)

@@ -29,8 +29,8 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Validation
         private const string InputOnlyScenarioFlag = "-phsInputOnlyScenario";
         private const string MapSceneName = "PHS_Map_ver1";
         private const string ShopSceneName = "PHS_ExteriorShopScene";
-        private const string LocalDebrisEntryPortalName = "PHS_DebrisCollectionPortal_0715";
-        private const string LocalDebrisReturnPortalName = "PHS_DebrisCollectionReturnPortal_0715";
+        private const string LocalDebrisEntryPortalName = "PHS_ExteriorDoorAutoPortal";
+        private const string LocalDebrisReturnPortalName = "PHS_DebrisCollectionPortal_0715";
         private const float DefaultStepTimeout = 90f;
 
         [Header("P2 Runtime Validation")]

@@ -8,6 +8,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Doors
     {
         [SerializeField] private PHSNetworkShipDoorCoordinator coordinator;
         [SerializeField] private int doorIndex = -1;
+        [SerializeField] private int buttonIndex = -1;
         [SerializeField] private Renderer stateRenderer;
         [SerializeField] private Color unlockedColor = new(0.1f, 0.9f, 0.25f);
         [SerializeField] private Color lockedColor = new(1f, 0.15f, 0.05f);
@@ -30,19 +31,28 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Doors
         {
             if (CanInteract(itemHolder))
             {
-                coordinator.RequestToggleLock(doorIndex);
+                coordinator.RequestToggleLock(doorIndex, buttonIndex);
             }
         }
 
-        public void Initialize(PHSNetworkShipDoorCoordinator owner, int index)
+        public void Initialize(PHSNetworkShipDoorCoordinator owner, int index,
+            int interactionButtonIndex)
         {
             coordinator = owner;
             doorIndex = index;
+            buttonIndex = interactionButtonIndex;
             if (stateRenderer == null)
             {
                 stateRenderer = GetComponent<Renderer>();
             }
         }
+
+#if UNITY_EDITOR
+        public void EditorConfigureRenderer(Renderer renderer)
+        {
+            stateRenderer = renderer;
+        }
+#endif
 
         public void SetState(bool locked, bool destroyed)
         {

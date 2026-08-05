@@ -47,6 +47,21 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.ShipAccidents
         private NetworkShipSystemsState shipSystemsState;
 
         public int ActiveAccidentCount => activeAccidents.Count;
+
+        public bool TryGetAccidentSnapshot(
+            uint instanceId,
+            out NetworkShipAccidentSnapshot snapshot)
+        {
+            var index = FindSnapshotIndex(instanceId);
+            if (index < 0)
+            {
+                snapshot = default;
+                return false;
+            }
+
+            snapshot = activeAccidents[index];
+            return true;
+        }
         public static PHSNetworkShipAccidentCoordinator Instance { get; private set; }
         public event Action ActiveAccidentsChanged;
         public event Action<uint, PHSShipAccidentId, bool> ServerAccidentFinished;
