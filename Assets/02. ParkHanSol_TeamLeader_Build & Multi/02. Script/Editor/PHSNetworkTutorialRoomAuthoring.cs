@@ -21,6 +21,7 @@ namespace LastJumpCrew.ParkHanSol.Editor
 {
     public static class PHSNetworkTutorialRoomAuthoring
     {
+        private const bool TutorialAuthoringLocked = true;
         private const string ScenePath =
             "Assets/02. ParkHanSol_TeamLeader_Build & Multi/01. Scene/BEAVER_2026/Tutorial/PHS_NetworkTutorialScene.unity";
         private const string SequenceRootName =
@@ -203,7 +204,6 @@ namespace LastJumpCrew.ParkHanSol.Editor
                 new[]
                 {
                     TutorialActionKind.Thruster,
-                    TutorialActionKind.Drop,
                     TutorialActionKind.Drop
                 },
                 170f,
@@ -212,8 +212,7 @@ namespace LastJumpCrew.ParkHanSol.Editor
                 new[]
                 {
                     "[WASD] 이동  ·  [SHIFT] 위  ·  [CTRL] 아래",
-                    "[F] 화물 줍기  ·  [RMB] 패드에 놓기",
-                    "[F] 카메라 줍기  ·  [RMB] 패드에 놓기"
+                    "[F] 데브리 줍기  ·  [RMB] 패드에 놓기"
                 },
                 "PHS_Tutorial_Thruster.png"),
             new(
@@ -242,13 +241,20 @@ namespace LastJumpCrew.ParkHanSol.Editor
             new[] { "렌치", "배터리" },
             new[] { "렌치", "소화기" },
             new[] { "1번 단말기", "2번 단말기" },
-            new[] { "외부 진입", "화물 회수", "카메라 회수" },
+            new[] { "외부 진입", "데브리 회수" },
             new[] { "함선 앞", "함선 문" }
         };
 
         [MenuItem("Tools/ParkHanSol/BEAVER/Author Network Tutorial Rooms")]
         public static void Author()
         {
+            if (TutorialAuthoringLocked)
+            {
+                Debug.LogError(
+                    "PHS_NETWORK_TUTORIAL_AUTHORING_LOCKED reason=approved_scene_frozen");
+                return;
+            }
+
             RequireAssets();
             ImportInstructionSprites();
             var previousActive = SceneManager.GetActiveScene();
@@ -922,8 +928,8 @@ namespace LastJumpCrew.ParkHanSol.Editor
             var background = CreateUiImage(
                 "PosterBackground",
                 canvasObject.transform,
-                new Vector2(0.10f, 0.18f),
-                new Vector2(0.90f, 0.31f));
+                new Vector2(0.10f, 0.06f),
+                new Vector2(0.90f, 0.19f));
             background.color = new Color(0.004f, 0.005f, 0.006f, 0.90f);
             var backgroundOutline =
                 background.gameObject.AddComponent<Outline>();
@@ -2035,12 +2041,8 @@ namespace LastJumpCrew.ParkHanSol.Editor
                     true),
                 CreateDropZoneObjective(
                     exterior.RecoveryTrigger,
-                    "debris_recovery_cargo",
-                    "debris_futuristic_cargo"),
-                CreateDropZoneObjective(
-                    exterior.RecoveryTrigger,
-                    "debris_recovery_camera",
-                    "debris_satellite_camera")
+                    "debris_recovery",
+                    string.Empty)
             };
             roomObjectives[7] = new MonoBehaviour[]
             {
