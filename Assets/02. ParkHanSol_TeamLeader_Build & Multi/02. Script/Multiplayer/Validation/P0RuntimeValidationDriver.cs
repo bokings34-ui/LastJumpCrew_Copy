@@ -634,7 +634,9 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Validation
                 "first_zone_clear_not_recorded");
             if (scenarioFinished) yield break;
 
-            for (var expectedClearedZones = 2; expectedClearedZones <= 9; expectedClearedZones++)
+            for (var expectedClearedZones = 2;
+                 expectedClearedZones <= GameLoopState.TOTAL_ZONES;
+                 expectedClearedZones++)
             {
                 if (!TryAcquireMapSceneReferences(out coordinator, out _))
                 {
@@ -700,7 +702,13 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Validation
                 }
             }
 
-            yield return ProbeRunFlowState(NetworkRunPhase.Clear, 9, 3, finalShopPending: false);
+            var expectedCompletedShopCycles =
+                GameLoopState.TOTAL_ZONES / GameLoopState.SHOP_INTERVAL + 1;
+            yield return ProbeRunFlowState(
+                NetworkRunPhase.Clear,
+                GameLoopState.TOTAL_ZONES,
+                expectedCompletedShopCycles,
+                finalShopPending: false);
             if (scenarioFinished) yield break;
 
             var gaugeValues = gaugeReports.Values.Select(report => report.Value).ToArray();
@@ -3176,7 +3184,9 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Validation
                 () => NetworkRunFlowCoordinator.Instance != null &&
                     NetworkRunFlowCoordinator.Instance.ClearedZoneCount == expectedClearedZones &&
                     NetworkRunFlowCoordinator.Instance.CompletedShopCycleCount ==
-                        (expectedShopPhase == NetworkRunPhase.FinalShop ? 3 : expectedShopCycles) &&
+                        (expectedShopPhase == NetworkRunPhase.FinalShop
+                            ? GameLoopState.TOTAL_ZONES / GameLoopState.SHOP_INTERVAL + 1
+                            : expectedShopCycles) &&
                     (expectedShopPhase == NetworkRunPhase.FinalShop
                         ? NetworkRunFlowCoordinator.Instance.Phase == NetworkRunPhase.Clear
                         : NetworkRunFlowCoordinator.Instance.Phase is NetworkRunPhase.Rearming or NetworkRunPhase.Charging),
