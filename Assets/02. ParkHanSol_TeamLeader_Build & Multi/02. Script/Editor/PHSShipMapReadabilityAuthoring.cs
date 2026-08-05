@@ -19,9 +19,10 @@ namespace LastJumpCrew.ParkHanSol.Editor
             new(StringComparer.Ordinal)
             {
                 ["Room A"] = (new Vector2(-360f, 20f), new Vector2(300f, 210f)),
-                ["Room B"] = (new Vector2(0f, 225f), new Vector2(260f, 170f)),
+                ["Room B"] = (new Vector2(0f, 175f), new Vector2(260f, 150f)),
                 ["Room C"] = (new Vector2(360f, 20f), new Vector2(300f, 210f)),
-                ["Center Corridor"] = (new Vector2(0f, 0f), new Vector2(300f, 250f))
+                ["Center Corridor"] = (new Vector2(0f, 20f), new Vector2(260f, 250f)),
+                ["중앙 복도"] = (new Vector2(0f, 20f), new Vector2(260f, 250f))
             };
 
         [MenuItem("Tools/ParkHanSol/BEAVER/Author Ship Map Readability")]
@@ -46,6 +47,8 @@ namespace LastJumpCrew.ParkHanSol.Editor
                     ?? throw new InvalidOperationException(
                         "PHS_SHIP_MAP_AUTHOR_FAILED reason=map_root_missing");
                 ConfigureMapFrame(shipMap.GetComponent<RectTransform>());
+                DisableLegacyVerticalSilhouette(shipMap.transform);
+                ConfigureHeader(shipMap.transform);
                 ConfigureRooms(viewData.FindProperty("roomViews"));
                 EnsureConnector(shipMap.transform, "Port Connector", new Vector2(-195f, 20f), new Vector2(90f, 32f));
                 EnsureConnector(shipMap.transform, "Starboard Connector", new Vector2(195f, 20f), new Vector2(90f, 32f));
@@ -88,6 +91,10 @@ namespace LastJumpCrew.ParkHanSol.Editor
             Require(shipMap != null, "map_root_missing");
             Require(shipMap.GetComponent<RectTransform>().sizeDelta == new Vector2(1180f, 720f),
                 "map_frame_size_invalid");
+            Require(Find(shipMap.transform, "Ship Hull Main Deck")?.gameObject.activeSelf == false &&
+                Find(shipMap.transform, "Deck Spine")?.gameObject.activeSelf == false &&
+                Find(shipMap.transform, "Ship Hull Aft")?.gameObject.activeSelf == false,
+                "legacy_vertical_silhouette_active");
             Require(Find(shipMap.transform, "Port Connector") != null &&
                 Find(shipMap.transform, "Starboard Connector") != null &&
                 Find(shipMap.transform, "Cockpit Connector") != null,
@@ -109,6 +116,56 @@ namespace LastJumpCrew.ParkHanSol.Editor
             outline.effectColor = new Color(0.18f, 0.8f, 1f, 0.9f);
             outline.effectDistance = new Vector2(4f, -4f);
             outline.useGraphicAlpha = false;
+        }
+
+        private static void DisableLegacyVerticalSilhouette(Transform parent)
+        {
+            SetActive(parent, "Center Passage", false);
+            SetActive(parent, "Deck Spine", false);
+            SetActive(parent, "Ship Hull Aft", false);
+            SetActive(parent, "Ship Hull Center Link", false);
+            SetActive(parent, "Ship Hull Main Deck", false);
+        }
+
+        private static void ConfigureHeader(Transform parent)
+        {
+            ConfigureHeaderLabel(
+                parent,
+                "PHS Ship Map Title",
+                new Vector2(0.5f, 1f),
+                new Vector2(0f, -36f),
+                new Vector2(700f, 44f),
+                TextAlignmentOptions.Center);
+            ConfigureHeaderLabel(
+                parent,
+                "PHS Current Zone Text",
+                new Vector2(0.5f, 1f),
+                new Vector2(0f, -84f),
+                new Vector2(520f, 36f),
+                TextAlignmentOptions.Center);
+        }
+
+        private static void ConfigureHeaderLabel(
+            Transform parent,
+            string name,
+            Vector2 anchor,
+            Vector2 position,
+            Vector2 size,
+            TextAlignmentOptions alignment)
+        {
+            var label = Find(parent, name)?.GetComponent<TextMeshProUGUI>();
+            if (label == null)
+            {
+                throw new InvalidOperationException(
+                    $"PHS_SHIP_MAP_AUTHOR_FAILED reason=header_missing header={name}");
+            }
+
+            var rect = label.rectTransform;
+            rect.anchorMin = rect.anchorMax = anchor;
+            rect.pivot = new Vector2(0.5f, 0.5f);
+            rect.anchoredPosition = position;
+            rect.sizeDelta = size;
+            label.alignment = alignment;
         }
 
         private static void ConfigureRooms(SerializedProperty rooms)
@@ -201,6 +258,18 @@ namespace LastJumpCrew.ParkHanSol.Editor
             }
 
             return null;
+        }
+
+        private static void SetActive(Transform root, string name, bool active)
+        {
+            var target = Find(root, name);
+            if (target == null)
+            {
+                throw new InvalidOperationException(
+                    $"PHS_SHIP_MAP_AUTHOR_FAILED reason=silhouette_part_missing part={name}");
+            }
+
+            target.gameObject.SetActive(active);
         }
 
         private static void Require(bool condition, string reason)

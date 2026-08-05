@@ -1,7 +1,6 @@
 using System;
 using System.Collections.Generic;
 using LastJumpCrew.ParkHanSol.Multiplayer.Events;
-using LastJumpCrew.ParkHanSol.Multiplayer.Incidents.Fire;
 using LastJumpCrew.ParkHanSol.Multiplayer.Incidents.Locations;
 using LastJumpCrew.ParkHanSol.Multiplayer.ShipAccidents;
 using SM;
@@ -24,7 +23,6 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
         [Header("Inspector References")]
         [SerializeField] private NetworkEventCoordinator eventCoordinator;
         [SerializeField] private PHSNetworkShipAccidentCoordinator accidentCoordinator;
-        [SerializeField] private PHSNetworkFireCoordinator fireCoordinator;
         [SerializeField] private PHSShipIncidentLayout incidentLayout;
         [SerializeField] private PHSIncidentConsequenceSelector consequenceSelector;
         [Tooltip("Migration only. Disable after the authored Incident Layout is wired.")]
@@ -100,7 +98,6 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
 
         public NetworkEventCoordinator EventCoordinator => eventCoordinator;
         public PHSNetworkShipAccidentCoordinator AccidentCoordinator => accidentCoordinator;
-        public PHSNetworkFireCoordinator FireCoordinator => fireCoordinator;
         public PHSShipIncidentLayout IncidentLayout => incidentLayout;
         public bool AllowLegacyLocationFallback => allowLegacyLocationFallback;
         public int ConfiguredRoomCount => configuredRooms.Length;
@@ -696,29 +693,6 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
                     claimed.CommandId,
                     "activate_failed",
                     "incident_activate_failed");
-
-                return;
-            }
-
-            if (accidentId == PHSShipAccidentId.Fire
-                && !fireCoordinator.TryStartFireServer(
-                    runtimeInstanceId,
-                    managedLocationId,
-                    claimed.CommandId,
-                    out var fireStartReason))
-            {
-                Debug.LogError(
-                    $"PHS_INCIDENT_CONSUME_FAILED " +
-                    $"command={claimed.CommandId} " +
-                    $"reason=fire_runtime_start_failed " +
-                    $"detail={fireStartReason}",
-                    this);
-                RollbackSpawnedAccident(
-                    runtimeInstanceId,
-                    accidentId,
-                    claimed.CommandId,
-                    "fire_runtime_start_failed",
-                    "fire_runtime_start_failed");
 
                 return;
             }
@@ -1515,6 +1489,19 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
                 return false;
             }
 
+            // The layout can legitimately have no free compatible anchor while
+            // another incident is occupying every candidate.  Do not advance the
+            // deterministic random stream with an empty range: NextInt(0) throws
+            // and aborts the whole internal-incident consumer update.
+            if (compatibleAnchorIds.Count == 0)
+            {
+                anchorId = null;
+                resolvedTargetId = null;
+                managedLocationId = null;
+                reason = "compatible_anchor_unavailable";
+                return false;
+            }
+
             anchorId =
                 compatibleAnchorIds[random.NextInt(compatibleAnchorIds.Count)];
             resolvedTargetId = anchorId;
@@ -1855,15 +1842,6 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
                 return false;
             }
 
-            if (fireCoordinator == null)
-            {
-                Debug.LogError(
-                    "PHS_INCIDENT_CONSUMER_SETUP_FAILED " +
-                    "reason=fire_coordinator_missing",
-                    this);
-                return false;
-            }
-
             if (consequenceSelector == null)
             {
                 Debug.LogError(
@@ -1880,16 +1858,6 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
                     $"PHS_INCIDENT_CONSUMER_SETUP_FAILED " +
                     $"reason=consequence_selector_invalid " +
                     $"detail={consequenceReason}",
-                    this);
-                return false;
-            }
-
-            if (accidentCoordinator.FireCoordinator
-                != fireCoordinator)
-            {
-                Debug.LogError(
-                    "PHS_INCIDENT_CONSUMER_SETUP_FAILED " +
-                    "reason=fire_coordinator_mismatch",
                     this);
                 return false;
             }

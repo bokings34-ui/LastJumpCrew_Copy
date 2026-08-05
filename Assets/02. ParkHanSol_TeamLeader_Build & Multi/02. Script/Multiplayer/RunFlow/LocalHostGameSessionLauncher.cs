@@ -50,7 +50,28 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.RunFlow
                 return;
             }
 
-            launchRoutine = StartCoroutine(LaunchRoutine());
+            // This component normally lives on the persistent lobby root. Keep
+            // a safe handoff for an older scene/prefab instance that still owns
+            // it from a hidden customization UI object.
+            MonoBehaviour coroutineHost = isActiveAndEnabled
+                ? this
+                : NetworkManager.Singleton;
+            if (coroutineHost == null || !coroutineHost.isActiveAndEnabled)
+            {
+                Debug.LogError(
+                    $"PHS_SINGLE_PLAY_FAILED reason=coroutine_host_inactive launcher={name}",
+                    this);
+                return;
+            }
+
+            if (!ReferenceEquals(coroutineHost, this))
+            {
+                Debug.LogWarning(
+                    $"PHS_SINGLE_PLAY_COROUTINE_HANDOFF launcher={name} host={coroutineHost.name}",
+                    this);
+            }
+
+            launchRoutine = coroutineHost.StartCoroutine(LaunchRoutine());
         }
 
         private IEnumerator LaunchRoutine()

@@ -9,10 +9,12 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Validation
     public sealed class PHS_NetworkCustomizationValidationDriver : MonoBehaviour
     {
         private const string ScenarioFlag = "-phsNetworkCustomizationValidation";
-        private const string OwnedItemsPreferenceKey = "PHS_CosmeticOwnedItems_v1";
-        private const string HeadPreferenceKey = "PHS_CosmeticHead_v1";
-        private const string BackPreferenceKey = "PHS_CosmeticBack_v1";
-        private const string ColorPreferenceKey = "PHS_CosmeticColor_v1";
+        private const string OwnedItemsPreferenceKey = "PHS_CosmeticOwnedItems_v2";
+        private const string HeadPreferenceKey = "PHS_CosmeticHead_v2";
+        private const string BackPreferenceKey = "PHS_CosmeticBack_v2";
+        private const string PetPreferenceKey = "PHS_CosmeticPet_v2";
+        private const string FrontPreferenceKey = "PHS_CosmeticFront_v2";
+        private const string ColorPreferenceKey = "PHS_CosmeticColor_v2";
         private const string CreditsPreferenceKey = "PHS_PersonalLobbyCustomizationCredits_v1";
         private const float StepTimeoutSeconds = 20f;
         private static readonly Color32 DefaultBodyColor = new(255, 255, 255, 255);
@@ -53,6 +55,8 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Validation
                 PlayerPrefs.DeleteKey(OwnedItemsPreferenceKey);
                 PlayerPrefs.DeleteKey(HeadPreferenceKey);
                 PlayerPrefs.DeleteKey(BackPreferenceKey);
+                PlayerPrefs.DeleteKey(PetPreferenceKey);
+                PlayerPrefs.DeleteKey(FrontPreferenceKey);
                 PlayerPrefs.DeleteKey(ColorPreferenceKey);
                 PlayerPrefs.DeleteKey(CreditsPreferenceKey);
             }

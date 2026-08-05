@@ -1,5 +1,4 @@
 using LastJumpCrew.ParkHanSol.Interaction;
-using LastJumpCrew.ParkHanSol.Multiplayer;
 using UnityEngine;
 using CommonIInteractable = LastJumpCrew.Common.IInteractable;
 using CommonIItemHolder = LastJumpCrew.Common.IItemHolder;
@@ -15,8 +14,7 @@ namespace LastJumpCrew.ParkHanSol.Items
             CommonIItemHolder holder,
             CommonIInteractable target)
         {
-            if (holder is not Component holderComponent
-                || holder is not TempPlayerItemHolder phsHolder
+            if (holder is not TempPlayerItemHolder phsHolder
                 || !holder.HasItem
                 || holder.CurrentItem == null
                 || phsHolder.CurrentItemPrefabData == null
@@ -24,42 +22,31 @@ namespace LastJumpCrew.ParkHanSol.Items
                     != holder.CurrentItem.ItemId
                 || !phsHolder.CurrentItemPrefabData.TryGetActionProfile(
                     UtilityItemActionKind.PowerRestore,
-                    out _))
+                    out _)
+                || target is not IBatteryUseTarget batteryUseTarget
+                || !batteryUseTarget.CanUseBattery(holder))
             {
                 return false;
             }
 
-            return holderComponent.GetComponent<
-                       PHSNetworkItemUseActionController>() != null;
+            return true;
         }
 
         public void Use(
             CommonIItemHolder holder,
             CommonIInteractable target)
         {
-            if (!CanUse(holder, target)
-                || holder is not Component holderComponent
-                || holder is not TempPlayerItemHolder phsHolder)
+            if (!CanUse(holder, target))
             {
                 return;
             }
 
-            var action = holderComponent.GetComponent<
-                PHSNetworkItemUseActionController>();
-            if (action == null)
+            if (target is not IBatteryUseTarget batteryUseTarget)
             {
                 return;
             }
 
-            if (!action.TryBeginImpactAction(
-                    PHSItemUseActionKind.Battery,
-                    () =>
-                    {
-                        holder.Drop();
-                    }))
-            {
-                return;
-            }
+            batteryUseTarget.TryUseBattery(holder);
         }
     }
 }

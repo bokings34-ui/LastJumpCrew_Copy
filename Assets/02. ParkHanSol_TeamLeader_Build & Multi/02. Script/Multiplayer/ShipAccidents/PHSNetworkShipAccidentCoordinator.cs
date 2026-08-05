@@ -4,7 +4,6 @@ using Unity.Collections;
 using Unity.Netcode;
 using UnityEngine;
 using LastJumpCrew.ParkHanSol.Items;
-using LastJumpCrew.ParkHanSol.Multiplayer.Incidents.Fire;
 
 namespace LastJumpCrew.ParkHanSol.Multiplayer.ShipAccidents
 {
@@ -17,7 +16,6 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.ShipAccidents
         [Header("Inspector References")]
         [SerializeField] private PHSShipAccidentCatalogSO accidentCatalog;
         [SerializeField] private PHSShipAccidentAnchor[] anchors = Array.Empty<PHSShipAccidentAnchor>();
-        [SerializeField] private PHSNetworkFireCoordinator fireCoordinator;
 
         [Header("Server Validation")]
         [SerializeField, Min(0.1f)] private float maximumRepairDistance = 3f;
@@ -49,7 +47,6 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.ShipAccidents
         private NetworkShipSystemsState shipSystemsState;
 
         public int ActiveAccidentCount => activeAccidents.Count;
-        public PHSNetworkFireCoordinator FireCoordinator => fireCoordinator;
         public static PHSNetworkShipAccidentCoordinator Instance { get; private set; }
         public event Action ActiveAccidentsChanged;
         public event Action<uint, PHSShipAccidentId, bool> ServerAccidentFinished;
@@ -499,9 +496,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.ShipAccidents
                 return false;
             }
 
-            return accidentId != PHSShipAccidentId.Fire
-                || fireCoordinator == null
-                || !fireCoordinator.IsManagingAccident(accidentInstanceId);
+            return true;
         }
 
         public bool TrySetMaintenancePausedServer(bool paused, out string reason)
@@ -526,6 +521,12 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.ShipAccidents
             instanceId = 0U;
             if (!CanExecuteServerCommand(out reason))
             {
+                return false;
+            }
+
+            if (accidentId == PHSShipAccidentId.Fire)
+            {
+                reason = "fire_uses_event_manager_path";
                 return false;
             }
 
@@ -832,14 +833,6 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.ShipAccidents
                 }
 
                 nextDamageTimes[snapshot.InstanceId] = currentTime + definition.DamageIntervalSeconds;
-                if (snapshot.AccidentId == PHSShipAccidentId.Fire
-                    && fireCoordinator != null
-                    && fireCoordinator.IsManagingAccident(snapshot.InstanceId)
-                    && !fireCoordinator.HasBurningPatch(snapshot.InstanceId))
-                {
-                    continue;
-                }
-
                 if (!TryApplyPeriodicImpact(definition, out var reason))
                 {
                     Debug.LogError($"PHS_SHIP_ACCIDENT_TICK_FAILED reason={reason} instance={snapshot.InstanceId}", this);

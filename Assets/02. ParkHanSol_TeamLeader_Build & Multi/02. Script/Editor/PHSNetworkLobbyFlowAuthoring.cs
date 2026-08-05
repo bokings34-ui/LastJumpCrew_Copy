@@ -60,11 +60,21 @@ namespace LastJumpCrew.ParkHanSol.Editor
                     .objectReferenceValue = localService;
                 frontendSerialized.ApplyModifiedPropertiesWithoutUndo();
 
-                var launcher = frontend.GetComponent<
+                // The customization frontend can be hidden by the lobby UI.
+                // Keep the single-play launcher on the persistent lobby root so
+                // its launch coroutine remains valid when that happens.
+                var staleLauncher = frontend.GetComponent<
+                    LocalHostGameSessionLauncher>();
+                if (staleLauncher != null)
+                {
+                    UnityEngine.Object.DestroyImmediate(staleLauncher);
+                }
+
+                var launcher = root.GetComponent<
                     LocalHostGameSessionLauncher>();
                 if (launcher == null)
                 {
-                    launcher = frontend.gameObject.AddComponent<
+                    launcher = root.AddComponent<
                         LocalHostGameSessionLauncher>();
                 }
 
