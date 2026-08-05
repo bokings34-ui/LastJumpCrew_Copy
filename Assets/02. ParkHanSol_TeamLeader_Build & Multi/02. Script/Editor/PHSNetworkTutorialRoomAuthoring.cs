@@ -21,6 +21,7 @@ namespace LastJumpCrew.ParkHanSol.Editor
 {
     public static class PHSNetworkTutorialRoomAuthoring
     {
+        private const bool TutorialAuthoringLocked = true;
         private const string ScenePath =
             "Assets/02. ParkHanSol_TeamLeader_Build & Multi/01. Scene/BEAVER_2026/Tutorial/PHS_NetworkTutorialScene.unity";
         private const string SequenceRootName =
@@ -247,6 +248,13 @@ namespace LastJumpCrew.ParkHanSol.Editor
         [MenuItem("Tools/ParkHanSol/BEAVER/Author Network Tutorial Rooms")]
         public static void Author()
         {
+            if (TutorialAuthoringLocked)
+            {
+                Debug.LogError(
+                    "PHS_NETWORK_TUTORIAL_AUTHORING_LOCKED reason=approved_scene_frozen");
+                return;
+            }
+
             RequireAssets();
             ImportInstructionSprites();
             var previousActive = SceneManager.GetActiveScene();
