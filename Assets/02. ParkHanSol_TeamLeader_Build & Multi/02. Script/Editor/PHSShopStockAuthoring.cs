@@ -12,6 +12,8 @@ namespace LastJumpCrew.ParkHanSol.Editor
 {
     public static class PHSShopStockAuthoring
     {
+        private const int MinimumDisplayCount = 12;
+        private const int MaximumDisplayCount = 12;
         private const string HudPrefabPath =
             "Assets/02. ParkHanSol_TeamLeader_Build & Multi/03. Prefab/UI/ParkHanSol_PlayHudUI.prefab";
         private const string ShopScenePath =
@@ -82,6 +84,8 @@ namespace LastJumpCrew.ParkHanSol.Editor
                 }
 
                 SetArray(controllerData, "displaySlots", slots);
+                SetInt(controllerData, "minimumDisplayCount", MinimumDisplayCount);
+                SetInt(controllerData, "maximumDisplayCount", MaximumDisplayCount);
                 controllerData.ApplyModifiedPropertiesWithoutUndo();
                 EditorUtility.SetDirty(displayController);
                 var purchaseService = controllerData
@@ -118,6 +122,10 @@ namespace LastJumpCrew.ParkHanSol.Editor
 
         private static void ConfigureDisplayPriceTag(string prefabPath)
         {
+            var priceFont = AssetDatabase.LoadAssetAtPath<TMP_FontAsset>(
+                    PHSUIFontPaths.SuiteBold)
+                ?? throw new InvalidOperationException(
+                    "PHS_SHOP_PRICE_TAG_AUTHORING_FAILED reason=bold_font_missing");
             var root = PrefabUtility.LoadPrefabContents(prefabPath);
             try
             {
@@ -129,9 +137,15 @@ namespace LastJumpCrew.ParkHanSol.Editor
                         ?? throw new InvalidOperationException(
                             $"PHS_SHOP_PRICE_TAG_AUTHORING_FAILED reason=label_missing prefab={prefabPath} slot={slot.name}");
                     label.gameObject.name = "ItemPriceTag";
+                    if (label.GetComponent<ShopPriceTagBillboard>() == null)
+                    {
+                        label.gameObject.AddComponent<ShopPriceTagBillboard>();
+                    }
                     label.text = string.Empty;
                     label.fontSize = 0.42f;
-                    PHSUIFontPaths.Apply(label, PHSUIFontRole.Control);
+                    label.font = priceFont;
+                    label.fontSharedMaterial = priceFont.material;
+                    label.fontStyle = FontStyles.Bold;
                     label.color = new Color(0.12f, 1f, 0.32f, 1f);
                     label.alignment = TextAlignmentOptions.Center;
                     label.enableWordWrapping = false;
@@ -139,7 +153,7 @@ namespace LastJumpCrew.ParkHanSol.Editor
                     label.gameObject.SetActive(false);
                     var rect = label.rectTransform;
                     rect.SetParent(slot.PresentationAnchor, false);
-                    rect.anchoredPosition = new Vector2(0f, 0.82f);
+                    rect.anchoredPosition = new Vector2(0f, 0.35f);
                     rect.sizeDelta = new Vector2(3.2f, 0.8f);
                     rect.localScale = Vector3.one;
                     EditorUtility.SetDirty(label);
@@ -339,6 +353,8 @@ namespace LastJumpCrew.ParkHanSol.Editor
             string prefabPath,
             ICollection<string> errors)
         {
+            var priceFont = AssetDatabase.LoadAssetAtPath<TMP_FontAsset>(
+                PHSUIFontPaths.SuiteBold);
             var root = AssetDatabase.LoadAssetAtPath<GameObject>(prefabPath);
             Require(root != null, $"shop_display_prefab_missing path={prefabPath}", errors);
             if (root == null)
@@ -374,8 +390,20 @@ namespace LastJumpCrew.ParkHanSol.Editor
                     $"shop_price_tag_not_attached_to_item_anchor path={prefabPath} slot={slot.name}",
                     errors);
                 Require(
+                    label.GetComponent<ShopPriceTagBillboard>() != null,
+                    $"shop_price_tag_billboard_missing path={prefabPath} slot={slot.name}",
+                    errors);
+                Require(
                     label.fontSize <= 0.43f && label.color.g >= 0.95f,
                     $"shop_price_tag_style_invalid path={prefabPath} slot={slot.name}",
+                    errors);
+                Require(
+                    label.font == priceFont,
+                    $"shop_price_tag_font_invalid path={prefabPath} slot={slot.name}",
+                    errors);
+                Require(
+                    label.fontStyle == FontStyles.Bold,
+                    $"shop_price_tag_font_weight_invalid path={prefabPath} slot={slot.name}",
                     errors);
                 Require(
                     label.rectTransform.sizeDelta.x <= 3.21f,
@@ -533,6 +561,17 @@ namespace LastJumpCrew.ParkHanSol.Editor
                 ?? throw new InvalidOperationException(
                     $"PHS_SHOP_STOCK_AUTHORING_FAILED reason=property_missing property={propertyName}");
             property.objectReferenceValue = value;
+        }
+
+        private static void SetInt(
+            SerializedObject target,
+            string propertyName,
+            int value)
+        {
+            var property = target.FindProperty(propertyName)
+                ?? throw new InvalidOperationException(
+                    $"PHS_SHOP_STOCK_AUTHORING_FAILED reason=property_missing property={propertyName}");
+            property.intValue = value;
         }
 
         private static string GetHierarchyPath(Transform target)

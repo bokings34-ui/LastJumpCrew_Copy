@@ -7,7 +7,12 @@ param(
 
 $ErrorActionPreference = "Stop"
 $workspace = (Resolve-Path (Join-Path $PSScriptRoot "..\..")).Path
-$executable = (Resolve-Path (Join-Path $workspace $ExecutablePath)).Path
+$executable = if ([System.IO.Path]::IsPathRooted($ExecutablePath)) {
+    (Resolve-Path $ExecutablePath).Path
+}
+else {
+    (Resolve-Path (Join-Path $workspace $ExecutablePath)).Path
+}
 $logDirectory = Split-Path -Parent $executable
 $hostLog = Join-Path $logDirectory "input-host.log"
 $clientLog = Join-Path $logDirectory "input-client.log"

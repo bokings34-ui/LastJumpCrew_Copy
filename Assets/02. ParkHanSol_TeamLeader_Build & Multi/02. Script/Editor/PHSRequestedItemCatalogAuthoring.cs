@@ -45,6 +45,8 @@ namespace LastJumpCrew.ParkHanSol.Editor
         private static readonly string[] ProductNames =
         {
             "ParkHanSol_AutoRepairKitShopProductData.asset",
+            "ParkHanSol_BatteryPackShopProductData.asset",
+            "ParkHanSol_FireExtinguisherShopProductData.asset",
             "ParkHanSol_FoamSealantGunShopProductData.asset",
             "ParkHanSol_FuturisticAdjustableWrenchShopProductData.asset",
             "ParkHanSol_FuturisticCanisterShopProductData.asset",
@@ -121,12 +123,12 @@ namespace LastJumpCrew.ParkHanSol.Editor
 
             var shop = AssetDatabase.LoadAssetAtPath<ShopCatalogSO>(ShopCatalogPath);
             var expectedOffers = Specs.Select(spec => spec.Id)
-                .Concat(new[] { "ship_hp_restore", "ship_max_hp_upgrade", "hook_power_upgrade", "thruster_duration_upgrade", "player_max_hp_upgrade" })
+                .Concat(new[] { "battery_pack", "fire_extinguisher", "ship_hp_restore", "ship_max_hp_upgrade", "hook_power_upgrade", "thruster_duration_upgrade", "player_max_hp_upgrade" })
                 .OrderBy(id => id).ToArray();
             var actualOffers = shop == null ? Array.Empty<string>() : shop.Products.Select(product => product.OfferId).OrderBy(id => id).ToArray();
             if (!actualOffers.SequenceEqual(expectedOffers))
             {
-                errors.Add($"shop_catalog expected=10 actual={actualOffers.Length}");
+                errors.Add($"shop_catalog expected=12 actual={actualOffers.Length}");
             }
 
             var itemCatalog = AssetDatabase.LoadAssetAtPath<UtilityItemCatalogSO>(ItemCatalogPath);
@@ -141,7 +143,7 @@ namespace LastJumpCrew.ParkHanSol.Editor
                 throw new InvalidOperationException("PHS_REQUESTED_ITEM_VALIDATION_FAILED\n" + string.Join("\n", errors));
             }
 
-            Debug.Log("PHS_REQUESTED_ITEM_VALIDATION_PASS shop=10 utility=18 requested=5");
+            Debug.Log("PHS_REQUESTED_ITEM_VALIDATION_PASS shop=12 utility=18 requested=5");
         }
 
         private static void ConfigureItem(ItemSpec spec)

@@ -3097,7 +3097,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Validation
                     var first = shopStateReports.Values.First();
                     var countValid = expectedDisplayedCount >= 0
                         ? first.DisplayedCount == expectedDisplayedCount
-                        : first.DisplayedCount is >= 8 and <= 10;
+                        : first.DisplayedCount == 12;
                     if (countValid && first.GravityMode == NetworkPlayerGravityMode.ShipGravity &&
                         shopStateReports.Values.All(report =>
                             report.DisplayedCount == first.DisplayedCount &&
@@ -3941,6 +3941,22 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Validation
             if (remoteHeldItemReports.Values.Any(valid => !valid))
             {
                 Fail($"remote_item_held_peer_contract_invalid client={remoteClientId}");
+                yield break;
+            }
+
+            if (HasCommandLineFlag("-phsVisualCapture"))
+            {
+                Debug.Log($"PHS_VISUAL_CAPTURE_ITEM_HELD item={itemData.ItemId} duration=5", this);
+                yield return new WaitForSecondsRealtime(5f);
+                if (!remoteRecord.TryConsumeHeldItemServer(itemData.ItemId, remoteRecord.Revision))
+                {
+                    Fail($"visual_capture_item_release_failed item={itemData.ItemId}");
+                    yield break;
+                }
+
+                yield return new WaitForSecondsRealtime(0.25f);
+                activeRemoteItemClientId = ulong.MaxValue;
+                Debug.Log($"PHS_VISUAL_CAPTURE_ITEM_OK item={itemData.ItemId}", this);
                 yield break;
             }
 

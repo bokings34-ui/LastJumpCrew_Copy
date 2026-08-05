@@ -1915,7 +1915,6 @@ namespace LastJumpCrew.ParkHanSol.Editor
                 FindSceneComponents<PHSMapIncidentCommandConsumer>(mapScene);
             if (consumers.Length != 1
                 || consumers[0].IncidentLayout != layout
-                || consumers[0].FireCoordinator != fireCoordinator
                 || consumers[0].AccidentCoordinator
                     != accidentCoordinators[0])
             {

@@ -724,7 +724,9 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
             PlayerPrefs.SetFloat(MasterVolumeKey, masterVolumeSlider == null ? AudioListener.volume : Mathf.Clamp01(masterVolumeSlider.value));
             PlayerPrefs.SetFloat(EnvironmentVolumeKey, environmentVolumeSlider == null ? 1f : Mathf.Clamp01(environmentVolumeSlider.value));
             PlayerPrefs.SetFloat(EffectsVolumeKey, effectsVolumeSlider == null ? 1f : Mathf.Clamp01(effectsVolumeSlider.value));
-            PlayerPrefs.SetFloat(GameVoiceVolumeKey, gameVoiceVolumeSlider == null ? 1f : Mathf.Clamp01(gameVoiceVolumeSlider.value));
+            PlayerPrefs.SetFloat(GameVoiceVolumeKey, gameVoiceVolumeSlider == null
+                ? PlayerPrefs.GetFloat(GameVoiceVolumeKey, 1f)
+                : Mathf.Clamp01(gameVoiceVolumeSlider.value));
             PlayerPrefs.SetInt(MicVolumeKey, Mathf.RoundToInt(microphoneVolumeSlider == null ? 0 : microphoneVolumeSlider.value));
             PlayerPrefs.SetInt(PartyVolumeKey, Mathf.RoundToInt(partyVolumeSlider == null ? 0 : partyVolumeSlider.value));
             PlayerPrefs.SetInt(OutputVolumeKey, Mathf.RoundToInt(outputVolumeSlider == null ? 0 : outputVolumeSlider.value));
