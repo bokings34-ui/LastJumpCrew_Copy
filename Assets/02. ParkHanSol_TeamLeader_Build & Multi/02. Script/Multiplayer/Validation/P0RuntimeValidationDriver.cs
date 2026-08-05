@@ -3097,7 +3097,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Validation
                     var first = shopStateReports.Values.First();
                     var countValid = expectedDisplayedCount >= 0
                         ? first.DisplayedCount == expectedDisplayedCount
-                        : first.DisplayedCount is >= 8 and <= 10;
+                        : first.DisplayedCount == 12;
                     if (countValid && first.GravityMode == NetworkPlayerGravityMode.ShipGravity &&
                         shopStateReports.Values.All(report =>
                             report.DisplayedCount == first.DisplayedCount &&

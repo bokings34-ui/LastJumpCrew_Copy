@@ -23,7 +23,7 @@ namespace LastJumpCrew.SeoBoGyeong
     /// </summary>
     public class GameLoopState
     {
-        public const int SHOP_INTERVAL = 4;         // 4구역 클리어마다 상점
+        public const int SHOP_INTERVAL = 3;         // 3구역 클리어마다 상점
         public const int TOTAL_ZONES = 9;           // 9구역 클리어 시 게임 클리어
         public const float STAGE_TIME_LIMIT = 300f; // 스테이지 제한시간(고정, 초)
 
