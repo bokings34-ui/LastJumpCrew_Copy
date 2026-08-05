@@ -1,5 +1,9 @@
 fileFormatVersion: 2
+<<<<<<<< HEAD:Assets/05. TakHyunJae_Map & MiniGame/01. Scene/Ghost_Player.controller.meta
+guid: dfa2072d7ca20084c83c86afe1514a9f
+========
 guid: b61975e1bca8cb74787b19ebb0e41fee
+>>>>>>>> main:Assets/02. ParkHanSol_TeamLeader_Build & Multi/03. Prefab/PlayerPrefab/Animations/ScaleSafe/PHS_Ghost_Armature_Breath_Idle_ScaleSafe.anim.meta
 NativeFormatImporter:
   externalObjects: {}
   mainObjectFileID: 7400000
