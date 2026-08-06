@@ -16,7 +16,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
         [Header("Knockback")]
 
         [SerializeField, Min(0f)] //너무 강한 힘이 들어왔을 때 날아가는 최대 제한값
-        private float maximumKnockbackForce = 8f;
+        private float maximumKnockbackForce = 15f;
 
         public bool CanReceiveKnockback => playerController != null
             && (!IsSpawned || IsServer);
