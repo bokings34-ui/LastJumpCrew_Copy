@@ -162,6 +162,7 @@ namespace LastJumpCrew.SeoBoGyeong
         private bool hasJumpLandState;
         private bool hasZeroGravityState;
 
+        private bool isSuspended;
         /// <summary>점프 3단계를 "지금 어느 칸에 있는지" 기억하기 위한 표시.</summary>
         private enum AirPhase
         {
@@ -226,6 +227,11 @@ namespace LastJumpCrew.SeoBoGyeong
 
         private void Update()
         {
+            if (isSuspended)
+            {
+                return;
+            }
+
             var deltaTime = Time.deltaTime;
             if (deltaTime <= 0f)
             {
@@ -664,6 +670,15 @@ namespace LastJumpCrew.SeoBoGyeong
             }
 
             return false;
+        }
+
+        public void SetSuspended(bool suspended)
+        {
+            isSuspended = suspended;
+            if (!suspended)
+            {
+                currentStateHash = -1;
+            }
         }
     }
 }
