@@ -136,8 +136,8 @@ namespace LastJumpCrew.ParkHanSol.Editor
             var title = FindChild(root, "Title")?.GetComponent<RectTransform>();
             var actualMap = FindChild(root, "Actual Ship Map");
             Require(mapCanvas != null && title != null, $"handheld_map_frame_missing:{label}");
-            Require(actualMap != null && !actualMap.gameObject.activeSelf,
-                $"handheld_raw_map_active:{label}");
+            Require(actualMap != null && actualMap.gameObject.activeSelf,
+                $"handheld_raw_map_inactive:{label}");
 
             var sectionNames = new[]
             {
@@ -151,8 +151,8 @@ namespace LastJumpCrew.ParkHanSol.Editor
             var sections = sectionNames
                 .Select(name => FindChild(root, name)?.GetComponent<RectTransform>())
                 .ToArray();
-            Require(sections.All(section => section != null && section.gameObject.activeSelf),
-                $"handheld_block_section_invalid:{label}");
+            Require(sections.All(section => section == null),
+                $"handheld_legacy_section_present:{label}");
             Require(
                 root.GetComponentsInChildren<Transform>(true)
                     .Where(candidate => candidate.name.StartsWith("Grid", StringComparison.Ordinal))

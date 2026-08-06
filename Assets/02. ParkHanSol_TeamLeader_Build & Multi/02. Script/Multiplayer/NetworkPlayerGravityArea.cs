@@ -11,6 +11,18 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
         [SerializeField] private int priority;
 
         public int Priority => priority;
+
+        public bool ContainsPosition(Vector3 position)
+        {
+            var triggerCollider = GetComponent<Collider>();
+            if (triggerCollider == null || !triggerCollider.enabled || !gameObject.activeInHierarchy)
+            {
+                return false;
+            }
+
+            return (triggerCollider.ClosestPoint(position) - position).sqrMagnitude <= 0.0001f;
+        }
+
         public NetworkPlayerGravityMode EffectiveGravityMode
         {
             get

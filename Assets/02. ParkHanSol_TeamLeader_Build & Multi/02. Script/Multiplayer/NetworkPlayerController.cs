@@ -25,7 +25,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
         [SerializeField, Min(0.1f)] private float maximumFallSpeed = 14f;
         [Header("Cinematic Zero Gravity Thruster")]
         [SerializeField, Min(1f)] private float thrusterFuelCapacity = 100f;
-        [SerializeField, Min(0.1f)] private float thrusterFuelUsePerSecond = 7.5f;
+        [SerializeField, Min(0.1f)] private float thrusterFuelUsePerSecond = 3.75f;
         [SerializeField, Min(0f)] private float thrusterFuelRecoveryDelay = 1f;
         [SerializeField, Min(0.1f)] private float thrusterFuelRecoveryPerSecond = 18f;
         [SerializeField, Min(0.1f)] private float thrusterAcceleration = 7f;
@@ -1350,6 +1350,8 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
 
         private void ApplyGravityAreaMode()
         {
+            gravityAreas.RemoveAll(area => area == null || !area.ContainsPosition(transform.position));
+
             var nextMode = NetworkPlayerGravityMode.ShipGravity;
             var highestPriority = int.MinValue;
             foreach (var area in gravityAreas)
@@ -1681,6 +1683,8 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
                 characterController.enabled = wasEnabled;
             }
 
+            RefreshGravityTrackingAtCurrentPosition();
+
             Debug.Log(
                 $"PHS_PLAYER_TELEPORT_OK operation={operation} player={name} pos={targetPosition}",
                 this);
@@ -1706,6 +1710,8 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
                 characterController.enabled = wasEnabled;
             }
 
+            RefreshGravityTrackingAtCurrentPosition();
+
             Debug.Log($"PHS_PLAYER_TELEPORT_OK player={name} pos={targetPosition}");
         }
 
@@ -1717,6 +1723,22 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
             {
                 gravityReceiver.ResetGravitySources();
             }
+        }
+
+        private void RefreshGravityTrackingAtCurrentPosition()
+        {
+            gravityAreas.Clear();
+            foreach (var gravityArea in FindObjectsByType<NetworkPlayerGravityArea>(
+                         FindObjectsInactive.Exclude,
+                         FindObjectsSortMode.None))
+            {
+                if (gravityArea.ContainsPosition(transform.position))
+                {
+                    gravityAreas.Add(gravityArea);
+                }
+            }
+
+            ApplyGravityAreaMode();
         }
 
         private void ApplyLocalLook(Vector2 look)

@@ -5,6 +5,8 @@
 - 기능 커밋: `8603ab9c feat(release): finalize block map and event validation`
 - Pull Request: [#110](https://github.com/hyunje0609-sudo/LastJumpCrew/pull/110) (Draft)
 - Unity: `6000.5.2f1`
+- 상세 플레이·릴리스 문서: `Docs/PHS_PLAYTEST_FLOW_AND_RELEASE_GUIDE_2026-08-06.md`
+- 테스터 상세 설명서: Windows 빌드 폴더의 `TESTER_GUIDE_KR.md`
 
 ## 완료 내용
 

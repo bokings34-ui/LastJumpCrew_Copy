@@ -88,8 +88,6 @@ namespace LastJumpCrew.ParkHanSol.Shop
             productsByEconomyItemId = new Dictionary<int, ShopProductData>();
 
             var duplicateOfferIds = new HashSet<string>(StringComparer.Ordinal);
-            var duplicateItemData = new HashSet<UtilityItemDataSO>();
-            var duplicateEconomyItemIds = new HashSet<int>();
             var sortedProducts = new List<ShopProductData>(products?.Count ?? 0);
 
             if (products == null)
@@ -111,8 +109,8 @@ namespace LastJumpCrew.ParkHanSol.Shop
                 sortedProducts.Add(product);
                 ValidateProduct(product, index);
                 IndexOfferId(product, index, duplicateOfferIds);
-                IndexItemData(product, index, duplicateItemData);
-                IndexEconomyItemId(product, index, duplicateEconomyItemIds);
+                IndexItemData(product);
+                IndexEconomyItemId(product, index);
             }
 
             sortedProducts.Sort(CompareProducts);
@@ -186,10 +184,7 @@ namespace LastJumpCrew.ParkHanSol.Shop
                 this);
         }
 
-        private void IndexItemData(
-            ShopProductData product,
-            int index,
-            HashSet<UtilityItemDataSO> duplicateItemData)
+        private void IndexItemData(ShopProductData product)
         {
             var itemData = product.ItemPrefabData;
             if (itemData == null)
@@ -197,30 +192,12 @@ namespace LastJumpCrew.ParkHanSol.Shop
                 return;
             }
 
-            if (duplicateItemData.Contains(itemData))
-            {
-                Debug.LogError(
-                    $"PHS_SHOP_CATALOG_ITEM_DATA_DUPLICATE catalog={name} index={index} product={product.name} item={itemData.ItemId}",
-                    this);
-                return;
-            }
-
-            if (productsByItemData.TryAdd(itemData, product))
-            {
-                return;
-            }
-
-            productsByItemData.Remove(itemData);
-            duplicateItemData.Add(itemData);
-            Debug.LogError(
-                $"PHS_SHOP_CATALOG_ITEM_DATA_DUPLICATE catalog={name} index={index} product={product.name} item={itemData.ItemId}",
-                this);
+            // Checkout resolves a physical item by item data. Multiple shelf offers can
+            // intentionally share that data, so retain the first canonical checkout offer.
+            productsByItemData.TryAdd(itemData, product);
         }
 
-        private void IndexEconomyItemId(
-            ShopProductData product,
-            int index,
-            HashSet<int> duplicateEconomyItemIds)
+        private void IndexEconomyItemId(ShopProductData product, int index)
         {
             var economyItemId = product.EconomyItemId;
             if (economyItemId <= 0)
@@ -228,24 +205,21 @@ namespace LastJumpCrew.ParkHanSol.Shop
                 return;
             }
 
-            if (duplicateEconomyItemIds.Contains(economyItemId))
+            if (productsByEconomyItemId.TryGetValue(economyItemId, out var canonicalProduct))
             {
+                // Shelf variants can share one Economy item when they resolve to the same utility item.
+                if (canonicalProduct.ItemPrefabData == product.ItemPrefabData)
+                {
+                    return;
+                }
+
                 Debug.LogError(
                     $"PHS_SHOP_CATALOG_ECONOMY_ITEM_ID_DUPLICATE catalog={name} index={index} product={product.name} economyItemId={economyItemId}",
                     this);
                 return;
             }
 
-            if (productsByEconomyItemId.TryAdd(economyItemId, product))
-            {
-                return;
-            }
-
-            productsByEconomyItemId.Remove(economyItemId);
-            duplicateEconomyItemIds.Add(economyItemId);
-            Debug.LogError(
-                $"PHS_SHOP_CATALOG_ECONOMY_ITEM_ID_DUPLICATE catalog={name} index={index} product={product.name} economyItemId={economyItemId}",
-                this);
+            productsByEconomyItemId.Add(economyItemId, product);
         }
 
         private static int CompareProducts(ShopProductData left, ShopProductData right)

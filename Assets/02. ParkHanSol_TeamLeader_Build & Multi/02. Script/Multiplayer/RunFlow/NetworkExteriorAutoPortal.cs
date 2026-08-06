@@ -14,7 +14,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
         {
             if (portal == null || debrisCollectionZone == null)
             {
-                Debug.LogError($"PHS_EXTERIOR_AUTO_PORTAL_SETUP_FAILED portal={portal != null} debris_zone={debrisCollectionZone != null}", this);
+                Debug.LogError($"PHS_EXTERIOR_AUTO_PORTAL_SETUP_FAILED portal={portal != null} debrisZone={debrisCollectionZone != null}", this);
                 enabled = false;
             }
         }
@@ -31,15 +31,6 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
                 || !other.TryGetComponent(out NetworkPlayerController player)
                 || !player.IsSpawned)
             {
-                return;
-            }
-
-            // The exterior return portal is intentionally inside the debris safe volume.
-            // Only block automatic outward transfers there; otherwise the return portal is unreachable.
-            if (portal.DestinationSector == NetworkPlayerSector.AuthorizedExterior
-                && debrisCollectionZone.IsPlayerInsideSafeVolume(player.OwnerClientId))
-            {
-                Debug.Log($"PHS_EXTERIOR_AUTO_PORTAL_BLOCKED reason=debris_safe_zone player={player.OwnerClientId}", this);
                 return;
             }
 
