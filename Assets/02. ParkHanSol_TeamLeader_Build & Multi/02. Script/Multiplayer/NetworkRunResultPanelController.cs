@@ -1,5 +1,6 @@
 using Unity.Netcode;
 using UnityEngine;
+using UnityEngine.InputSystem;
 using LastJumpCrew.ParkHanSol.Multiplayer.Audio;
 
 namespace LastJumpCrew.ParkHanSol.Multiplayer
@@ -109,6 +110,21 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
             {
                 IsLocalResultVisible = false;
             }
+        }
+
+        private void Update()
+        {
+            if (!IsOwner
+                || !isShowing
+                || isExiting
+                || isRestarting
+                || Keyboard.current == null
+                || !Keyboard.current.escapeKey.wasPressedThisFrame)
+            {
+                return;
+            }
+
+            ReturnToLobby();
         }
 
         private void SubscribeRootAvailability()

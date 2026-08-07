@@ -213,6 +213,17 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
             zeroGravityVelocity = nextVelocity;
         }
 
+        public void StopZeroGravityMovement()
+        {
+            if (gravityMode == NetworkPlayerGravityMode.ShipGravity)
+            {
+                return;
+            }
+
+            zeroGravityVelocity = Vector3.zero;
+            PlanarVelocity = Vector3.zero;
+        }
+
         public void RequestTestTeleport(Vector3 targetPosition, Quaternion targetRotation)
         {
             if (!IsSpawned)
