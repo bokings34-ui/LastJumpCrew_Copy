@@ -207,19 +207,22 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
                         itemData.ItemId,
                         expectedRevision,
                         candidate.ActionKind,
-                        out _))
+                        out var actionProfile))
                 {
                     return false;
                 }
 
-                if (candidate.TryResolve(itemRecord, requestSequence, gameObject))
+                var resolvedCandidate = candidate;
+                resolvedCandidate.ActionAmount = actionProfile.Amount;
+
+                if (resolvedCandidate.TryResolve(itemRecord, requestSequence, gameObject))
                 {
                     if (familyKind == PHSUtilityFamilyActionKind.Wrench)
                     {
                         interactionAudio?.TryBroadcastConfirmedServer(
                             NetworkAudioCue.WrenchImpact,
                             requestSequence);
-                        if (candidate.IsRepairComplete)
+                        if (resolvedCandidate.IsRepairComplete)
                         {
                             interactionAudio?.TryBroadcastConfirmedServer(
                                 NetworkAudioCue.RepairComplete,
@@ -228,7 +231,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
                     }
                     else if (familyKind
                         == PHSUtilityFamilyActionKind.FireExtinguisher
-                        && candidate.IsRepairComplete)
+                        && resolvedCandidate.IsRepairComplete)
                     {
                         interactionAudio?.TryBroadcastConfirmedServer(
                             NetworkAudioCue.ExtinguishComplete,
@@ -356,6 +359,16 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
                         UtilityItemActionKind.FireSuppression);
                     return true;
                 }
+
+                if (familyKind == PHSUtilityFamilyActionKind.Wrench
+                    && component is SM.EnemyBase enemyTarget)
+                {
+                    candidate = TargetCandidate.ForEnemy(
+                        component,
+                        enemyTarget,
+                        UtilityItemActionKind.DeviceRepair);
+                    return true;
+                }
             }
 
             candidate = default;
@@ -481,9 +494,11 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
             private IEventRepairTargetHandle eventTarget;
             private IShipAccidentRepairTarget shipTarget;
             private IUtilityAttackTarget utilityTarget;
+            private IDamageable damageable;
 
             public Component Component;
             public UtilityItemActionKind ActionKind;
+            public int ActionAmount;
             public float Distance;
             public Vector3 AimPosition;
 
@@ -527,6 +542,17 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
                     ActionKind = actionKind
                 };
 
+            public static TargetCandidate ForEnemy(
+                Component component,
+                IDamageable target,
+                UtilityItemActionKind actionKind) =>
+                new()
+                {
+                    Component = component,
+                    damageable = target,
+                    ActionKind = actionKind
+                };
+
             public bool TryResolve(
                 NetworkPlayerItemRecord record,
                 uint sequence,
@@ -547,7 +573,20 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
                         && PHSNetworkShipAccidentCoordinator.Instance.RequestRepair(
                             shipTarget,
                             record,
-                            sequence);
+                        sequence);
+                }
+
+                if (damageable != null)
+                {
+                    if (!damageable.IsAlive)
+                    {
+                        return false;
+                    }
+
+                    damageable.ApplyDamage(
+                        Mathf.Max(1, ActionAmount),
+                        attacker);
+                    return true;
                 }
 
                 return utilityTarget != null

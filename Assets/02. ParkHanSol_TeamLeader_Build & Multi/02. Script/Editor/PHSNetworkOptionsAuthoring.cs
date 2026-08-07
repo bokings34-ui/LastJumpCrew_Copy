@@ -119,7 +119,6 @@ public static class PHSNetworkOptionsAuthoring
             StyleTexts(root, false);
             ConfigureDropdownTemplates(root);
             StretchNamedPanel(root, "Settings Panel_R");
-            StretchNamedPanel(root, "Controls Options Panel");
             PrefabUtility.SaveAsPrefabAsset(root, NetworkLobbyUi);
         }
         finally

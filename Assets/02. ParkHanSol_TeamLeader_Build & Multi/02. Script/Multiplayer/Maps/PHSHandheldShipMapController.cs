@@ -121,7 +121,9 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Maps
 
         private void HandleVisibilityChanged(bool previousValue, bool currentValue)
         {
-            ApplyVisibility(currentValue);
+            // The owner closes the held map immediately on key release. A delayed
+            // server echo must not reopen the local view after that release.
+            ApplyVisibility(IsOwner ? requestedVisible : currentValue);
         }
 
         private void ApplyVisibility(bool visible)

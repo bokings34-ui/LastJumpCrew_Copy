@@ -1,5 +1,6 @@
 using System.Collections.Generic;
 using UnityEngine;
+using UnityEngine.AI;
 
 namespace SM
 {
@@ -21,10 +22,38 @@ namespace SM
         {
             Transform closest = null;
             float closestDist = float.MaxValue;
+            if (!NavMesh.SamplePosition(
+                    fromPosition,
+                    out var sourceHit,
+                    3f,
+                    NavMesh.AllAreas))
+            {
+                return null;
+            }
+
+            var path = new NavMeshPath();
 
             foreach (var device in _devices)
             {
-                float dist = Vector3.Distance(fromPosition, device.Transform.position);
+                if (device == null
+                    || device.Transform == null
+                    || !device.Transform.gameObject.activeInHierarchy
+                    || !NavMesh.SamplePosition(
+                        device.Transform.position,
+                        out var targetHit,
+                        3f,
+                        NavMesh.AllAreas)
+                    || !NavMesh.CalculatePath(
+                        sourceHit.position,
+                        targetHit.position,
+                        NavMesh.AllAreas,
+                        path)
+                    || path.status != NavMeshPathStatus.PathComplete)
+                {
+                    continue;
+                }
+
+                float dist = GetPathLength(path);
                 if (dist < closestDist)
                 {
                     closestDist = dist;
@@ -33,6 +62,24 @@ namespace SM
             }
 
             return closest;
+        }
+
+        private static float GetPathLength(NavMeshPath path)
+        {
+            if (path == null || path.corners == null || path.corners.Length < 2)
+            {
+                return float.MaxValue;
+            }
+
+            var length = 0f;
+            for (var index = 1; index < path.corners.Length; index++)
+            {
+                length += Vector3.Distance(
+                    path.corners[index - 1],
+                    path.corners[index]);
+            }
+
+            return length;
         }
     }
 }

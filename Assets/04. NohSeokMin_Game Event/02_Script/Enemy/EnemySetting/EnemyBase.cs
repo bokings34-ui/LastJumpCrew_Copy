@@ -205,6 +205,11 @@ namespace SM
             return Vector3.Distance(transform.position, target.position);
         }
 
+        public virtual bool IsTargetWithinAttackRange(Transform target)
+        {
+            return target != null && GetDistanceToTarget(target) <= AttackRange;
+        }
+
         public Transform GetTarget()
         {
             if (!IsTargetValid(_cachedTarget))
@@ -246,7 +251,8 @@ namespace SM
             var target = GetTarget();
             if (target == null) return;
 
-            if (GetDistanceToTarget(target) > AttackRange * 1.5f) return;
+            if (GetDistanceToTarget(target) > AttackRange * 1.5f
+                && !IsTargetWithinAttackRange(target)) return;
 
             PerformAttack(target);
             PlayAttackSound();
