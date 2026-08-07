@@ -1,7 +1,6 @@
 using LastJumpCrew.Common;
+using LastJumpCrew.ParkHanSol.Multiplayer;
 using UnityEngine;
-using IBatteryUseTarget =
-    LastJumpCrew.ParkHanSol.Interaction.IBatteryUseTarget;
 
 namespace LastJumpCrew.ParkHanSol.Items
 {
@@ -9,10 +8,9 @@ namespace LastJumpCrew.ParkHanSol.Items
     {
         public bool CanUse(IItemHolder holder, IInteractable target)
         {
-            return holder != null
+            return holder is Component holderComponent
                 && holder.HasItem
-                && TryResolveBatteryTarget(target, out var batteryTarget)
-                && batteryTarget.CanUseBattery(holder);
+                && holderComponent.GetComponent<NetworkPlayerCombatController>() != null;
         }
 
         public void Use(IItemHolder holder, IInteractable target)
@@ -23,33 +21,22 @@ namespace LastJumpCrew.ParkHanSol.Items
                 return;
             }
 
-            if (!TryResolveBatteryTarget(target, out var batteryTarget)
-                || !batteryTarget.TryUseBattery(holder))
+            if (holder is not Component holderComponent)
             {
-                Debug.LogWarning("PHS_BATTERY_USE_FAILED reason=target_rejected");
+                Debug.LogError("PHS_BATTERY_ATTACK_FAILED reason=holder_component_missing");
                 return;
             }
 
-            Debug.Log("PHS_BATTERY_USE_SUCCEEDED");
-        }
-
-        private static bool TryResolveBatteryTarget(
-            IInteractable target,
-            out IBatteryUseTarget batteryTarget)
-        {
-            batteryTarget = target as IBatteryUseTarget;
-            if (batteryTarget != null)
+            var combatController =
+                holderComponent.GetComponent<NetworkPlayerCombatController>();
+            if (combatController == null)
             {
-                return true;
+                Debug.LogError(
+                    $"PHS_BATTERY_ATTACK_FAILED reason=combat_controller_missing holder={holderComponent.name}");
+                return;
             }
 
-            if (target is not Component targetComponent)
-            {
-                return false;
-            }
-
-            batteryTarget = targetComponent.GetComponentInParent<IBatteryUseTarget>();
-            return batteryTarget != null;
+            combatController.RequestBatteryThrow();
         }
     }
 }
