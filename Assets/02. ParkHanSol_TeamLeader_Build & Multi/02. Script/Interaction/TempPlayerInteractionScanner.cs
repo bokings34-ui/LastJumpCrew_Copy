@@ -57,6 +57,8 @@ namespace LastJumpCrew.ParkHanSol.Interaction
         private float rightButtonPressedTime;
         private bool isHoldingRightButton;
 
+        [SerializeField] private ItemUseAnimationController itemUseAnimationController;
+
         private void Awake()
         {
             itemHolder = GetComponent<IItemHolder>();
@@ -65,6 +67,7 @@ namespace LastJumpCrew.ParkHanSol.Interaction
             playerController = GetComponent<NetworkPlayerController>();
             combatController ??= GetComponent<NetworkPlayerCombatController>();
             interactionCuePlayer = interactionCuePlayerSource as INetworkAudioCuePlayer;
+            itemUseAnimationController ??= GetComponent<ItemUseAnimationController>();
             if (playerControlInput == null)
             {
                 Debug.LogError($"PHS_PLAYER_INPUT_SETUP_FAILED reason=control_input_reference_missing player={name}", this);
@@ -499,6 +502,7 @@ namespace LastJumpCrew.ParkHanSol.Interaction
             if (playerControlInput.UsePressedThisFrame)
             {
                 TryUseHeldItem();
+                itemUseAnimationController?.PlaySwing();
             }
         }
 
@@ -542,6 +546,7 @@ namespace LastJumpCrew.ParkHanSol.Interaction
                 return;
             }
 
+            itemUseAnimationController?.PlayThrow();
             combatController.RequestThrowHeldItem(heldDuration);
         }
         
