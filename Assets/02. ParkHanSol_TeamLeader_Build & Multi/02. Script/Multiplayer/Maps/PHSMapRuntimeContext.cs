@@ -336,6 +336,12 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Maps
                 return false;
             }
 
+            if (debrisStream == null)
+            {
+                Debug.LogError($"PHS_MAP_RUNTIME_APPLY_FAILED reason=debris_stream_missing mapId={mapId}", this);
+                return false;
+            }
+
             if (!debrisStream.ConfigureTargetDebrisCount(profile.DebrisAmount))
             {
                 Debug.LogError(
@@ -761,6 +767,9 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Maps
                 case SM.EventId.EmpAttack:
                     family = NetworkRunIncidentFamily.EMP;
                     return true;
+                case SM.EventId.MicDestroy:
+                    family = NetworkRunIncidentFamily.Device;
+                    return true;
                 default:
                     family = NetworkRunIncidentFamily.None;
                     return false;
@@ -928,12 +937,6 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Maps
                 Debug.LogError(
                     "PHS_MAP_RUNTIME_SETUP_FAILED reason=incident_command_consumer_missing",
                     this);
-                return false;
-            }
-
-            if (debrisStream == null)
-            {
-                Debug.LogError("PHS_MAP_RUNTIME_SETUP_FAILED reason=debris_stream_missing", this);
                 return false;
             }
 

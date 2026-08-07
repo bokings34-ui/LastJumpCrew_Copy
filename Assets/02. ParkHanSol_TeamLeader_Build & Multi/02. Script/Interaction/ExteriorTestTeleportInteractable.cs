@@ -5,18 +5,18 @@ namespace LastJumpCrew.ParkHanSol.Interaction
 {
     public sealed class ExteriorTestTeleportInteractable : MonoBehaviour, IInteractable
     {
-        [SerializeField] private Transform destination;
+        [SerializeField] private string destinationId;
         [SerializeField] private NetworkPlayerSector destinationSector = NetworkPlayerSector.Transition;
         [SerializeField] private string interactionPrompt = "Move To Exterior Test Zone";
         [SerializeField, Min(0.5f)] private float serverInteractionDistance = 4f;
 
         public string InteractionPrompt => interactionPrompt;
-        public Transform Destination => destination;
+        public Transform Destination => FindDestination()?.transform;
         public NetworkPlayerSector DestinationSector => destinationSector;
 
         public bool CanInteract(IItemHolder itemHolder)
         {
-            return destination != null && itemHolder is Component;
+            return !string.IsNullOrWhiteSpace(destinationId) && itemHolder is Component;
         }
 
         public void Interact(IItemHolder itemHolder)
@@ -52,9 +52,9 @@ namespace LastJumpCrew.ParkHanSol.Interaction
                 return false;
             }
 
-            if (!isActiveAndEnabled || destination == null)
+            if (!isActiveAndEnabled || string.IsNullOrWhiteSpace(destinationId))
             {
-                reason = "portal_inactive_or_destination_missing";
+                reason = "portal_inactive_or_destination_id_missing";
                 return false;
             }
 
@@ -64,21 +64,37 @@ namespace LastJumpCrew.ParkHanSol.Interaction
                 return false;
             }
 
-            if (gameObject.scene != player.gameObject.scene)
-            {
-                reason = "scene_mismatch";
-                return false;
-            }
-
             if (Vector3.Distance(player.transform.position, transform.position) > serverInteractionDistance)
             {
                 reason = "player_out_of_range";
                 return false;
             }
 
-            position = destination.position;
-            rotation = destination.rotation;
+            var destination = FindDestination();
+            if (destination == null)
+            {
+                reason = "destination_not_loaded";
+                return false;
+            }
+
+            position = destination.transform.position;
+            rotation = destination.transform.rotation;
             return true;
+        }
+
+        private NetworkExteriorPortalDestination FindDestination()
+        {
+            foreach (var candidate in FindObjectsByType<NetworkExteriorPortalDestination>(
+                         FindObjectsInactive.Exclude,
+                         FindObjectsSortMode.None))
+            {
+                if (candidate.DestinationId == destinationId)
+                {
+                    return candidate;
+                }
+            }
+
+            return null;
         }
     }
 }

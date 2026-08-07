@@ -13,6 +13,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Input
         IReadOnlyList<Vector2Int> GetSupportedResolutions();
         bool TryGetSavedResolution(out Vector2Int resolution);
         void SetResolution(Vector2Int resolution);
+        void PreviewVideoSettings(Vector2Int resolution, FullScreenMode mode);
         bool LoadBindingOverrides(InputActionAsset inputActions);
         void SaveBindingOverrides(InputActionAsset inputActions);
         void ResetBindingOverrides(InputActionAsset inputActions);

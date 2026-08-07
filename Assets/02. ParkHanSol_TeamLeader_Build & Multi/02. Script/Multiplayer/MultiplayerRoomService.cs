@@ -7,6 +7,7 @@ using Unity.Services.Authentication;
 using Unity.Services.Core;
 using Unity.Services.Multiplayer;
 using UnityEngine;
+using Unity.Profiling;
 
 namespace LastJumpCrew.ParkHanSol.Multiplayer
 {
@@ -16,6 +17,9 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
         private const string GameId = "LastJumpCrew";
         private const string SessionType = "LastJumpCrew.Room";
         private static readonly TimeSpan ServiceReadyTimeout = TimeSpan.FromSeconds(10);
+        private static readonly ProfilerMarker InitializeServicesMarker = new("PHS.Room.InitializeServices");
+        private static readonly ProfilerMarker CreateSessionMarker = new("PHS.Room.CreateSession");
+        private static readonly ProfilerMarker JoinSessionMarker = new("PHS.Room.JoinSession");
 
         [SerializeField] private NetworkManager networkManager;
         [SerializeField, Min(1)] private int roomQueryLimit = 100;
@@ -52,7 +56,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
 
             try
             {
-                return await InitializeServicesAsync();
+                return await InitializeServicesAsync("initialize");
             }
             finally
             {
@@ -69,7 +73,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
 
             try
             {
-                if (!await InitializeServicesAsync())
+                if (!await InitializeServicesAsync("refresh_rooms"))
                 {
                     return false;
                 }
@@ -118,7 +122,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
 
             try
             {
-                if (!await InitializeServicesAsync()
+                if (!await InitializeServicesAsync("create_room")
                     || !ValidateNetworkManager())
                 {
                     return false;
@@ -152,7 +156,11 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
                     },
                 }.WithRelayNetwork();
 
-                var session = await MultiplayerService.Instance.CreateSessionAsync(options);
+                var session = await AwaitSessionAsync(
+                    "create_room",
+                    "create_session",
+                    CreateSessionMarker,
+                    MultiplayerService.Instance.CreateSessionAsync(options));
                 SetActiveSession(session);
                 Debug.Log($"PHS_ROOM_CREATE_OK sessionId={session.Id} name={session.Name} players={session.PlayerCount}/{session.MaxPlayers} password={session.HasPassword}");
                 SessionJoined?.Invoke();
@@ -202,7 +210,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
                 }
 
                 if (!ValidatePassword(password)
-                    || !await InitializeServicesAsync()
+                    || !await InitializeServicesAsync("join_room")
                     || !ValidateNetworkManager())
                 {
                     return false;
@@ -213,9 +221,13 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
                     Type = SessionType,
                     Password = NormalizePassword(password),
                 };
-                var session = joinByCode
-                    ? await MultiplayerService.Instance.JoinSessionByCodeAsync(sessionIdentifier.Trim(), options)
-                    : await MultiplayerService.Instance.JoinSessionByIdAsync(sessionIdentifier.Trim(), options);
+                var session = await AwaitSessionAsync(
+                    "join_room",
+                    joinByCode ? "join_session_by_code" : "join_session_by_id",
+                    JoinSessionMarker,
+                    joinByCode
+                        ? MultiplayerService.Instance.JoinSessionByCodeAsync(sessionIdentifier.Trim(), options)
+                        : MultiplayerService.Instance.JoinSessionByIdAsync(sessionIdentifier.Trim(), options));
                 SetActiveSession(session);
                 Debug.Log($"PHS_ROOM_JOIN_OK sessionId={session.Id} name={session.Name} players={session.PlayerCount}/{session.MaxPlayers}");
                 SessionJoined?.Invoke();
@@ -274,13 +286,15 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
             }
         }
 
-        private async Task<bool> InitializeServicesAsync()
+        private async Task<bool> InitializeServicesAsync(string operation)
         {
             if (servicesReady)
             {
                 return true;
             }
 
+            var startedAt = Time.realtimeSinceStartupAsDouble;
+            InitializeServicesMarker.Begin();
             try
             {
                 if (UnityServices.State == ServicesInitializationState.Uninitialized)
@@ -323,6 +337,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
                     return false;
                 }
 
+                LogPhase(operation, "services_ready", startedAt);
                 Debug.Log($"PHS_ROOM_SERVICE_READY playerId={AuthenticationService.Instance.PlayerId}");
                 return true;
             }
@@ -330,6 +345,10 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
             {
                 ReportFailure("initialize", exception);
                 return false;
+            }
+            finally
+            {
+                InitializeServicesMarker.End();
             }
         }
 
@@ -353,6 +372,32 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
             }
 
             return AuthenticationService.Instance.IsSignedIn;
+        }
+
+        private static async Task<TSession> AwaitSessionAsync<TSession>(
+            string operation,
+            string phase,
+            ProfilerMarker marker,
+            Task<TSession> task)
+            where TSession : ISession
+        {
+            var startedAt = Time.realtimeSinceStartupAsDouble;
+            marker.Begin();
+            try
+            {
+                return await task;
+            }
+            finally
+            {
+                marker.End();
+                LogPhase(operation, phase, startedAt);
+            }
+        }
+
+        private static void LogPhase(string operation, string phase, double startedAt)
+        {
+            var elapsedMilliseconds = (Time.realtimeSinceStartupAsDouble - startedAt) * 1000d;
+            Debug.Log($"PHS_ROOM_PHASE operation={operation} phase={phase} elapsedMs={elapsedMilliseconds:F0}");
         }
 
         private bool ValidateCreateRequest(string roomName, int maxPlayers, string password)

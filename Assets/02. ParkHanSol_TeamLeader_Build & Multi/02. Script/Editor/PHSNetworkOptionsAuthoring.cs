@@ -117,6 +117,7 @@ public static class PHSNetworkOptionsAuthoring
             ConfigureCanvasScalers(root);
             StyleImages(root, false);
             StyleTexts(root, false);
+            ConfigureDropdownTemplates(root);
             StretchNamedPanel(root, "Settings Panel_R");
             StretchNamedPanel(root, "Controls Options Panel");
             PrefabUtility.SaveAsPrefabAsset(root, NetworkLobbyUi);
@@ -221,6 +222,7 @@ public static class PHSNetworkOptionsAuthoring
             SetObjectReference(pauseController, "optionsPanel", optionsPanel);
             SetObjectReference(pauseController, "optionsBackButton", backButton);
             SetObjectReference(pauseController, "sharedOptionsPanel", sharedController);
+            ConfigureDropdownTemplates(root);
             PrefabUtility.SaveAsPrefabAsset(root, hudPath);
         }
         finally
@@ -323,6 +325,7 @@ public static class PHSNetworkOptionsAuthoring
             SetObjectReference(pauseController, "exitGameButton", exitButton);
             SetObjectReference(pauseController, "sharedOptionsPanel", sharedOptions);
             SetObjectReference(host.GetComponent<NetworkOwnerUiRoot>(), "presentationRoot", presentation);
+            ConfigureDropdownTemplates(host);
             PrefabUtility.SaveAsPrefabAsset(host, NetworkOwnerPauseUi);
         }
         finally
@@ -391,6 +394,7 @@ public static class PHSNetworkOptionsAuthoring
         settingsPanel.name = "Settings Panel_R";
         leftMenu.gameObject.SetActive(true);
         settingsPanel.SetActive(true);
+        ConfigureDropdownTemplates(settingsPanel);
 
         var categoryController = leftMenu.GetComponent<
             ParkHanSolSettingsCategoryMenuController>();
@@ -616,6 +620,90 @@ public static class PHSNetworkOptionsAuthoring
         foreach (var text in root.GetComponentsInChildren<TMP_Text>(true))
         {
             if (force || text.color.b > text.color.r * 1.1f)
+            {
+                text.color = Cream;
+            }
+        }
+    }
+
+    private static void ConfigureDropdownTemplates(GameObject root)
+    {
+        foreach (var dropdown in root.GetComponentsInChildren<TMP_Dropdown>(true))
+        {
+            var template = dropdown.template;
+            if (template == null)
+            {
+                continue;
+            }
+
+            var viewport = FindTransform(template, "Viewport") as RectTransform;
+            var content = viewport == null
+                ? null
+                : FindTransform(viewport, "Content") as RectTransform;
+            var item = content == null ? null : FindTransform(content, "Item") as RectTransform;
+            if (viewport == null || content == null || item == null)
+            {
+                throw new InvalidOperationException(
+                    $"PHS_NETWORK_OPTIONS_AUTHOR_FAILED reason=dropdown_template_invalid dropdown={dropdown.name}");
+            }
+
+            template.sizeDelta = new Vector2(template.sizeDelta.x, 180f);
+            viewport.anchorMin = Vector2.zero;
+            viewport.anchorMax = Vector2.one;
+            viewport.offsetMin = new Vector2(4f, 4f);
+            viewport.offsetMax = new Vector2(-4f, -4f);
+            content.anchorMin = new Vector2(0f, 1f);
+            content.anchorMax = Vector2.one;
+            content.pivot = new Vector2(0.5f, 1f);
+            content.anchoredPosition = Vector2.zero;
+            item.anchorMin = new Vector2(0f, 1f);
+            item.anchorMax = new Vector2(1f, 1f);
+            item.pivot = new Vector2(0.5f, 1f);
+
+            var layout = content.GetComponent<VerticalLayoutGroup>()
+                ?? content.gameObject.AddComponent<VerticalLayoutGroup>();
+            layout.childControlWidth = true;
+            layout.childControlHeight = true;
+            layout.childForceExpandWidth = true;
+            layout.childForceExpandHeight = false;
+            layout.spacing = 0f;
+            layout.padding = new RectOffset();
+
+            var fitter = content.GetComponent<ContentSizeFitter>()
+                ?? content.gameObject.AddComponent<ContentSizeFitter>();
+            fitter.horizontalFit = ContentSizeFitter.FitMode.Unconstrained;
+            fitter.verticalFit = ContentSizeFitter.FitMode.PreferredSize;
+
+            var itemLayout = item.GetComponent<LayoutElement>()
+                ?? item.gameObject.AddComponent<LayoutElement>();
+            itemLayout.minHeight = 30f;
+            itemLayout.preferredHeight = 30f;
+            item.sizeDelta = new Vector2(item.sizeDelta.x, 30f);
+
+            var itemText = item.GetComponentInChildren<TextMeshProUGUI>(true);
+            if (itemText == null || dropdown.captionText == null)
+            {
+                throw new InvalidOperationException(
+                    $"PHS_NETWORK_OPTIONS_AUTHOR_FAILED reason=dropdown_item_text_missing dropdown={dropdown.name}");
+            }
+
+            var itemTextObject = itemText.gameObject;
+            UnityEngine.Object.DestroyImmediate(itemText);
+            itemText = itemTextObject.AddComponent<TextMeshProUGUI>();
+            itemText.font = dropdown.captionText.font;
+            itemText.fontSharedMaterial = dropdown.captionText.fontSharedMaterial;
+            itemText.fontSize = dropdown.captionText.fontSize;
+            itemText.alignment = TextAlignmentOptions.MidlineLeft;
+            itemText.color = Cream;
+            itemText.raycastTarget = false;
+            var itemTextRect = itemText.rectTransform;
+            itemTextRect.anchorMin = Vector2.zero;
+            itemTextRect.anchorMax = Vector2.one;
+            itemTextRect.offsetMin = new Vector2(10f, 0f);
+            itemTextRect.offsetMax = new Vector2(-10f, 0f);
+            dropdown.itemText = itemText;
+            itemText.transform.SetAsLastSibling();
+            foreach (var text in template.GetComponentsInChildren<TMP_Text>(true))
             {
                 text.color = Cream;
             }

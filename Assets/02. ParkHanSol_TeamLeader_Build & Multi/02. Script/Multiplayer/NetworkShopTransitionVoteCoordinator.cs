@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using System.Linq;
 using LastJumpCrew.ParkHanSol.Shop;
 using Unity.Collections;
 using Unity.Netcode;
@@ -15,6 +16,8 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
         IShopItemUsePolicy
     {
         private const string DefaultShopSceneName = "PHS_ExteriorShopScene";
+        private const string DefaultMapSceneName = "PHS_Map_ver1";
+        private const string ShipDoorArrivalDestinationId = "interior_arrival";
 
         [SerializeField, Min(5f)] private float voteDurationSeconds = 20f;
         [SerializeField, Min(1)] private int maximumRequiredAgreeCount = 4;
@@ -53,6 +56,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
         private readonly HashSet<ulong> agreeingClientIds = new();
         private readonly HashSet<ulong> decliningClientIds = new();
         private float voteDeadline;
+        private bool shipDoorArrivalPending;
 
         public static NetworkShopTransitionVoteCoordinator Instance { get; private set; }
 
@@ -106,10 +110,19 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
             }
 
             Instance = this;
+            if (IsServer && NetworkManager.SceneManager != null)
+            {
+                NetworkManager.SceneManager.OnLoadEventCompleted += HandleSceneLoadCompleted;
+            }
         }
 
         public override void OnNetworkDespawn()
         {
+            if (IsServer && NetworkManager.SceneManager != null)
+            {
+                NetworkManager.SceneManager.OnLoadEventCompleted -= HandleSceneLoadCompleted;
+            }
+
             if (Instance == this)
             {
                 Instance = null;
@@ -286,9 +299,12 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
                 return false;
             }
 
+            shipDoorArrivalPending = requestedMode == ShopSceneTransitionMode.CompleteShop
+                && requestedDestination == DefaultMapSceneName;
             var status = NetworkManager.SceneManager.LoadScene(requestedDestination, LoadSceneMode.Single);
             if (status != SceneEventProgressStatus.Started)
             {
+                shipDoorArrivalPending = false;
                 reason = $"scene_load_{status}";
                 RollbackShopEntryDrops(entryDropTransactions);
                 return false;
@@ -297,6 +313,48 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
             Debug.Log($"PHS_NETWORK_PORTAL_LOAD scene={requestedDestination}", this);
             reason = null;
             return true;
+        }
+
+        private void HandleSceneLoadCompleted(
+            string sceneName,
+            LoadSceneMode loadSceneMode,
+            List<ulong> clientsCompleted,
+            List<ulong> clientsTimedOut)
+        {
+            if (!shipDoorArrivalPending || sceneName != DefaultMapSceneName)
+            {
+                return;
+            }
+
+            shipDoorArrivalPending = false;
+            var destination = FindObjectsByType<NetworkExteriorPortalDestination>(
+                    FindObjectsInactive.Include,
+                    FindObjectsSortMode.None)
+                .FirstOrDefault(candidate => candidate.DestinationId == ShipDoorArrivalDestinationId);
+            if (destination == null)
+            {
+                Debug.LogError("PHS_SHOP_RETURN_FAILED reason=ship_door_arrival_missing", this);
+                return;
+            }
+
+            clientsCompleted.Sort();
+            foreach (var clientId in clientsCompleted)
+            {
+                if (!NetworkManager.ConnectedClients.TryGetValue(clientId, out var client)
+                    || client.PlayerObject == null)
+                {
+                    continue;
+                }
+
+                var player = client.PlayerObject.GetComponent<NetworkPlayerController>();
+                if (player == null
+                    || !player.TryTeleportForWarp(destination.transform.position, destination.transform.rotation))
+                {
+                    Debug.LogError($"PHS_SHOP_RETURN_FAILED reason=player_teleport_failed clientId={clientId}", this);
+                }
+            }
+
+            Debug.Log($"PHS_SHOP_RETURN_TO_SHIP_DOOR players={clientsCompleted.Count}", this);
         }
 
         public bool CanUseHeldItemServer(

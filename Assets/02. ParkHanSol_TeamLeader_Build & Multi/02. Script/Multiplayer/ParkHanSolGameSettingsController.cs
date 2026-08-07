@@ -1,6 +1,7 @@
 using System.Collections.Generic;
 using System.Linq;
 using TMPro;
+using LastJumpCrew.ParkHanSol.Multiplayer.Input;
 using UnityEngine;
 using UnityEngine.Audio;
 using UnityEngine.UI;
@@ -57,6 +58,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
         [SerializeField] private Button applyButton;
 
         private readonly List<Resolution> resolutions = new();
+        private readonly INetworkPlayerOptionsStore optionsStore = NetworkPlayerOptionsStore.Shared;
         private bool suppressEvents;
         private SettingsSnapshot savedSnapshot;
         private bool hasSnapshot;
@@ -292,8 +294,6 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
             var environmentVolume = Mathf.Clamp01(PlayerPrefs.GetFloat(EnvironmentVolumeKey, 1f));
             var effectsVolume = Mathf.Clamp01(PlayerPrefs.GetFloat(EffectsVolumeKey, 1f));
             ApplyGameAudioVolumes(masterVolume, environmentVolume, effectsVolume);
-            ApplySavedResolution();
-
             if (QualitySettings.names.Length > 0)
             {
                 QualitySettings.SetQualityLevel(Mathf.Clamp(PlayerPrefs.GetInt(QualityKey, QualitySettings.GetQualityLevel()), 0, QualitySettings.names.Length - 1));
@@ -333,7 +333,9 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
             }
 
             var resolution = resolutions[index];
-            Screen.SetResolution(resolution.width, resolution.height, Screen.fullScreenMode);
+            optionsStore.PreviewVideoSettings(
+                new Vector2Int(resolution.width, resolution.height),
+                Screen.fullScreenMode);
             SetStatus($"{resolution.width} x {resolution.height}");
         }
 
@@ -344,7 +346,9 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
                 return;
             }
 
-            Screen.fullScreenMode = active ? FullScreenMode.FullScreenWindow : FullScreenMode.Windowed;
+            optionsStore.PreviewVideoSettings(
+                new Vector2Int(Screen.width, Screen.height),
+                active ? FullScreenMode.FullScreenWindow : FullScreenMode.Windowed);
             SetStatus(active ? "FULLSCREEN" : "WINDOWED");
         }
 
@@ -557,14 +561,6 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
             return FindCurrentResolutionIndex();
         }
 
-        private void ApplySavedResolution()
-        {
-            var savedWidth = PlayerPrefs.GetInt(ResolutionWidthKey, Screen.width);
-            var savedHeight = PlayerPrefs.GetInt(ResolutionHeightKey, Screen.height);
-            var fullScreen = PlayerPrefs.GetInt(FullScreenKey, Screen.fullScreen ? 1 : 0) == 1;
-            Screen.SetResolution(savedWidth, savedHeight, fullScreen ? FullScreenMode.FullScreenWindow : FullScreenMode.Windowed);
-        }
-
         private int FindClosestResolutionIndex(int width, int height)
         {
             var closestIndex = 0;
@@ -675,19 +671,22 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
         {
             if (snapshot.ResolutionWidth > 0 && snapshot.ResolutionHeight > 0)
             {
-                Screen.SetResolution(
-                    snapshot.ResolutionWidth,
-                    snapshot.ResolutionHeight,
+                optionsStore.PreviewVideoSettings(
+                    new Vector2Int(snapshot.ResolutionWidth, snapshot.ResolutionHeight),
                     snapshot.FullScreen ? FullScreenMode.FullScreenWindow : FullScreenMode.Windowed);
             }
             else if (snapshot.ResolutionIndex >= 0 && snapshot.ResolutionIndex < resolutions.Count)
             {
                 var resolution = resolutions[snapshot.ResolutionIndex];
-                Screen.SetResolution(resolution.width, resolution.height, snapshot.FullScreen ? FullScreenMode.FullScreenWindow : FullScreenMode.Windowed);
+                optionsStore.PreviewVideoSettings(
+                    new Vector2Int(resolution.width, resolution.height),
+                    snapshot.FullScreen ? FullScreenMode.FullScreenWindow : FullScreenMode.Windowed);
             }
             else
             {
-                Screen.fullScreenMode = snapshot.FullScreen ? FullScreenMode.FullScreenWindow : FullScreenMode.Windowed;
+                optionsStore.PreviewVideoSettings(
+                    new Vector2Int(Screen.width, Screen.height),
+                    snapshot.FullScreen ? FullScreenMode.FullScreenWindow : FullScreenMode.Windowed);
             }
 
             ApplyGameAudioVolumes(

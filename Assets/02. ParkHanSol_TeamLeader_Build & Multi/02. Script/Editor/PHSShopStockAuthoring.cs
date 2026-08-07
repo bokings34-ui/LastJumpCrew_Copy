@@ -12,8 +12,8 @@ namespace LastJumpCrew.ParkHanSol.Editor
 {
     public static class PHSShopStockAuthoring
     {
-        private const int MinimumDisplayCount = 12;
-        private const int MaximumDisplayCount = 12;
+        private const int MinimumDisplayCount = 10;
+        private const int MaximumDisplayCount = 15;
         private const string HudPrefabPath =
             "Assets/02. ParkHanSol_TeamLeader_Build & Multi/03. Prefab/UI/ParkHanSol_PlayHudUI.prefab";
         private const string ShopScenePath =
@@ -77,7 +77,7 @@ namespace LastJumpCrew.ParkHanSol.Editor
                 var slots = FindAllInScene<ShopDisplaySlot>(scene)
                     .OrderBy(slot => GetHierarchyPath(slot.transform), StringComparer.Ordinal)
                     .ToArray();
-                if (slots.Length != 12)
+                if (slots.Length != 30)
                 {
                     throw new InvalidOperationException(
                         $"PHS_SHOP_STOCK_AUTHORING_FAILED reason=scene_display_slot_count_invalid actual={slots.Length}");
@@ -153,7 +153,7 @@ namespace LastJumpCrew.ParkHanSol.Editor
                     label.gameObject.SetActive(false);
                     var rect = label.rectTransform;
                     rect.SetParent(slot.PresentationAnchor, false);
-                    rect.anchoredPosition = new Vector2(0f, 0.35f);
+                    rect.anchoredPosition = Vector2.zero;
                     rect.sizeDelta = new Vector2(3.2f, 0.8f);
                     rect.localScale = Vector3.one;
                     EditorUtility.SetDirty(label);

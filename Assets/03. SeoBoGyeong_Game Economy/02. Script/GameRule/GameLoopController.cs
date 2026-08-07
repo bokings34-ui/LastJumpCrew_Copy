@@ -10,7 +10,7 @@ namespace LastJumpCrew.SeoBoGyeong
     ///
     /// 클리어: 플레이(Play) 단계에서 플레이어가 점프 버튼 -> TryJump()
     ///   (제한시간>0 && 함선 생존) 이면 클리어 수 +1 후 다음 단계 결정:
-    ///     - 9구역 클리어 -> GameClear
+    ///     - 4구역 클리어 -> GameClear
     ///     - 4구역마다     -> Shop -> (상점 종료 후) ZoneSelect
     ///     - 그 외          -> ZoneSelect
     /// 실패: 제한시간 초과(TickStageTimer) / 외부 보고(ForceGameOver) -> GameOver.

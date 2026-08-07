@@ -18,6 +18,10 @@ namespace LastJumpCrew.ParkHanSol.Interaction
         [SerializeField] private string debrisTag = "Debris";
         [SerializeField, Min(0.1f)] private float maximumSaleDistance = 6f;
         [SerializeField, Min(0.05f)] private float retrySeconds = 0.25f;
+        [Header("Sale Feedback")]
+        [SerializeField] private ParticleSystem saleVfx;
+        [SerializeField] private AudioSource saleAudioSource;
+        [SerializeField] private AudioClip saleAudioClip;
 
         private readonly HashSet<DebrisItem> pendingItems = new();
         private readonly HashSet<string> soldItemIds = new();
@@ -182,6 +186,7 @@ namespace LastJumpCrew.ParkHanSol.Interaction
             }
 
             Debug.Log($"PHS_DEBRIS_SOLD zone={name} debris={debrisItem.name} value={itemData.Price} method=thrown");
+            PlaySaleFeedbackClientRpc();
             var debrisNetworkObject = debrisItem.GetComponent<NetworkObject>();
             if (debrisNetworkObject != null && debrisNetworkObject.IsSpawned)
             {
@@ -285,6 +290,7 @@ namespace LastJumpCrew.ParkHanSol.Interaction
             Debug.Log(
                 $"PHS_DEBRIS_SOLD zone={name} owner={senderClientId} item={itemId} value={itemData.Price}",
                 this);
+            PlaySaleFeedbackClientRpc();
             return true;
         }
 
@@ -367,6 +373,20 @@ namespace LastJumpCrew.ParkHanSol.Interaction
                 Debug.LogError(
                     $"PHS_DEBRIS_SELL_CLIENT_APPLY_FAILED reason=held_item_consume_failed zone={name} item={itemId}",
                     this);
+            }
+        }
+
+        [ClientRpc]
+        private void PlaySaleFeedbackClientRpc()
+        {
+            if (saleVfx != null)
+            {
+                saleVfx.Play(true);
+            }
+
+            if (saleAudioSource != null && saleAudioClip != null)
+            {
+                saleAudioSource.PlayOneShot(saleAudioClip);
             }
         }
 
