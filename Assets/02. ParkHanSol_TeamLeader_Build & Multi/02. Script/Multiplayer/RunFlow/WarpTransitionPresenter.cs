@@ -169,7 +169,14 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
         {
             if (currentPhase == NetworkRunPhase.WarpSafe)
             {
-                EnterWarpMaintenance();
+                EnterSafeZone("안전구역");
+                return;
+            }
+
+            if (currentPhase == NetworkRunPhase.Shop
+                || currentPhase == NetworkRunPhase.FinalShop)
+            {
+                EnterSafeZone("상점 도착");
                 return;
             }
 
@@ -226,7 +233,12 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
             }
             else if (runFlowCoordinator.Phase == NetworkRunPhase.WarpSafe)
             {
-                EnterWarpMaintenance();
+                EnterSafeZone("안전구역");
+            }
+            else if (runFlowCoordinator.Phase == NetworkRunPhase.Shop
+                || runFlowCoordinator.Phase == NetworkRunPhase.FinalShop)
+            {
+                EnterSafeZone("상점 도착");
             }
             else if (runFlowCoordinator.Phase == NetworkRunPhase.WarpArrival)
             {
@@ -314,7 +326,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
             transitionRoutine = null;
         }
 
-        private void EnterWarpMaintenance()
+        private void EnterSafeZone(string statusText)
         {
             StopTransitionRoutine();
             transitionCanvasGroup.alpha = 1f;
@@ -323,7 +335,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
             warpVisualRoot.SetActive(false);
             SetSafeZoneShipWarpEffect(true);
             HideWarpStatusCard();
-            safeZoneStatusText.text = "안전구역";
+            safeZoneStatusText.text = statusText;
             safeZoneStatusRoot.SetActive(true);
             ApplySkybox(warpSkybox);
             SetPlayerInputBlocked(false);

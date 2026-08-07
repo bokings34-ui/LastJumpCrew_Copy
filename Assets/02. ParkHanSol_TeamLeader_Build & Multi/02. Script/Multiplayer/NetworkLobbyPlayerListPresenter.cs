@@ -29,36 +29,46 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
             Unsubscribe();
         }
 
-        private void Update()
-        {
-            Refresh();
-        }
-
         private void Subscribe()
         {
-            if (networkManager == null)
+            if (networkManager != null)
             {
-                return;
+                networkManager.OnClientConnectedCallback -= HandleClientChanged;
+                networkManager.OnClientDisconnectCallback -= HandleClientChanged;
+                networkManager.OnClientConnectedCallback += HandleClientChanged;
+                networkManager.OnClientDisconnectCallback += HandleClientChanged;
             }
 
-            networkManager.OnClientConnectedCallback -= HandleClientChanged;
-            networkManager.OnClientDisconnectCallback -= HandleClientChanged;
-            networkManager.OnClientConnectedCallback += HandleClientChanged;
-            networkManager.OnClientDisconnectCallback += HandleClientChanged;
+            if (roomService != null)
+            {
+                roomService.SessionJoined -= HandleSessionChanged;
+                roomService.SessionJoined += HandleSessionChanged;
+                roomService.UnexpectedSessionEnded -= HandleSessionChanged;
+                roomService.UnexpectedSessionEnded += HandleSessionChanged;
+            }
         }
 
         private void Unsubscribe()
         {
-            if (networkManager == null)
+            if (networkManager != null)
             {
-                return;
+                networkManager.OnClientConnectedCallback -= HandleClientChanged;
+                networkManager.OnClientDisconnectCallback -= HandleClientChanged;
             }
 
-            networkManager.OnClientConnectedCallback -= HandleClientChanged;
-            networkManager.OnClientDisconnectCallback -= HandleClientChanged;
+            if (roomService != null)
+            {
+                roomService.SessionJoined -= HandleSessionChanged;
+                roomService.UnexpectedSessionEnded -= HandleSessionChanged;
+            }
         }
 
         private void HandleClientChanged(ulong clientId)
+        {
+            Refresh();
+        }
+
+        private void HandleSessionChanged()
         {
             Refresh();
         }

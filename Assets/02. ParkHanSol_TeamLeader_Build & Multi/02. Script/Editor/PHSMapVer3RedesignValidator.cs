@@ -39,7 +39,7 @@ namespace LastJumpCrew.ParkHanSol.Editor
             Require(
                 Find(
                     scene,
-                    "PHS_Map_Runtime/ExteriorDebrisSector/GameplayCluster/PHS_ExteriorCollisionShell")
+                    "ExteriorDebrisSector/GameplayCluster/PHS_ExteriorCollisionShell")
                     ?.gameObject.activeInHierarchy == true,
                 "exterior_collision_shell_inactive",
                 errors);

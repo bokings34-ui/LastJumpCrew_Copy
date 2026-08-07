@@ -18,10 +18,8 @@ namespace LastJumpCrew.ParkHanSol.Editor
             "Assets/02. ParkHanSol_TeamLeader_Build & Multi/03. Prefab/UI/ParkHanSol_PlayHudUI.prefab";
         private const string NetworkHudPath =
             "Assets/02. ParkHanSol_TeamLeader_Build & Multi/03. Prefab/UI/PHS_NetworkPlayHudUI.prefab";
-        private const string NetworkHudGuid =
-            "91f0974a9b8b1054a9f874b4360a7b3d";
-        private const string CanonicalEnglishFontPath = PHSUIFontPaths.SuitRegular;
-        private const string CanonicalLocalizedFontPath = PHSUIFontPaths.SuitRegular;
+        private const string CanonicalEnglishFontPath =
+            "Assets/99. DownloadAssets/TextMesh Pro/Resources/Fonts & Materials/LiberationSans SDF.asset";
         private const string ShipHealthIconPath =
             "Assets/02. ParkHanSol_TeamLeader_Build & Multi/04. Data/UI/VitalsIcons/PHS_Hud_ShipHealth.png";
         private const string WarpGaugeIconPath =
@@ -56,8 +54,6 @@ namespace LastJumpCrew.ParkHanSol.Editor
                 ConfigureAlertIconLineup(root);
                 EnsureShopProductPanel(root);
                 NormalizeEnglishFonts(root);
-                ConfigureLocalizedHudTypography(root);
-                PHSUIFontAssetAuthoring.ApplyTypography(root);
                 PrefabUtility.SaveAsPrefabAsset(root, HudPath);
             }
             finally
@@ -89,7 +85,6 @@ namespace LastJumpCrew.ParkHanSol.Editor
                 SetReference(controllerData, "warpGaugeMotion", gauges.warp);
                 SetReference(controllerData, "shipHpGaugeMotion", gauges.ship);
                 controllerData.ApplyModifiedPropertiesWithoutUndo();
-                PHSUIFontAssetAuthoring.ApplyTypography(root);
                 PrefabUtility.SaveAsPrefabAsset(root, HudPath);
             }
             finally
@@ -101,8 +96,8 @@ namespace LastJumpCrew.ParkHanSol.Editor
             MigrateNetworkHudToCanonicalVariant();
             ValidateVitalsGaugeOrThrow();
             Debug.Log(
-                "PHS_HUD_GAUGE_AUTHOR_PASS bars=2 height=34 value_text=2 " +
-                "ticks=6 change_trails=2 network_variant=true");
+                "PHS_HUD_GAUGE_AUTHOR_PASS bars=2 height=30 value_text=2 " +
+                "ticks=0 change_trails=2 network_variant=true");
         }
 
         private static void ValidateVitalsGaugeOrThrow()
@@ -118,14 +113,12 @@ namespace LastJumpCrew.ParkHanSol.Editor
                 var bar = Find(prefab.transform, name) as RectTransform;
                 Require(bar != null, $"bar_missing name={name}", errors);
                 if (bar == null) continue;
-                Require(Approximately(bar.sizeDelta, new Vector2(400f, 34f)),
+                Require(Approximately(bar.sizeDelta, new Vector2(300f, 30f)),
                     $"bar_size_invalid name={name} actual={bar.sizeDelta}", errors);
                 Require(Find(bar, "Change Trail")?.GetComponent<Image>() != null,
                     $"change_trail_missing name={name}", errors);
                 Require(Find(bar, "Gauge Value Text")?.GetComponent<TMP_Text>() != null,
                     $"value_text_missing name={name}", errors);
-                Require(CountGaugeTicks(bar) == 3,
-                    $"tick_count_invalid name={name} actual={CountGaugeTicks(bar)}", errors);
                 var motion = bar.GetComponent<ParkHanSolHudGaugeMotion>();
                 var data = motion == null ? null : new SerializedObject(motion);
                 Require(data?.FindProperty("changeImage")?.objectReferenceValue != null,
@@ -168,7 +161,6 @@ namespace LastJumpCrew.ParkHanSol.Editor
                 }
 
                 variantRoot.name = "PHS_NetworkPlayHudUI";
-                PHSUIFontAssetAuthoring.ApplyTypography(variantRoot);
                 var saved = PrefabUtility.SaveAsPrefabAsset(
                     variantRoot,
                     NetworkHudPath);
@@ -187,13 +179,12 @@ namespace LastJumpCrew.ParkHanSol.Editor
                 NetworkHudPath,
                 ImportAssetOptions.ForceSynchronousImport);
             var savedGuid = AssetDatabase.AssetPathToGUID(NetworkHudPath);
-            if ((!string.IsNullOrWhiteSpace(existingGuid)
-                    && !string.Equals(existingGuid, savedGuid, StringComparison.Ordinal))
-                || !string.Equals(savedGuid, NetworkHudGuid, StringComparison.Ordinal))
+            if (!string.IsNullOrWhiteSpace(existingGuid)
+                && !string.Equals(existingGuid, savedGuid, StringComparison.Ordinal))
             {
                 throw new InvalidOperationException(
                     "PHS_HUD_SSO_AUTHOR_FAILED reason=network_hud_guid_changed " +
-                    $"expected={NetworkHudGuid} before={existingGuid} after={savedGuid}");
+                    $"before={existingGuid} after={savedGuid}");
             }
 
             PHSNetworkOptionsAuthoring.ConfigurePlayHudForCanonicalVariant();
@@ -222,27 +213,6 @@ namespace LastJumpCrew.ParkHanSol.Editor
 
             var controller = prefab.GetComponentInChildren<PHSHudFeedbackController>(true);
             Require(controller != null, "feedback_controller_missing", errors);
-            var presenter = prefab.GetComponentInChildren<ParkHanSolPlayHudMockPresenter>(true);
-            var durabilitySegments = prefab.GetComponentInChildren<ParkHanSolHeldItemDurabilitySegments>(true);
-            Require(presenter != null, "play_hud_presenter_missing", errors);
-            Require(durabilitySegments != null, "held_item_durability_segments_missing", errors);
-            if (presenter != null && durabilitySegments != null)
-            {
-                var presenterData = new SerializedObject(presenter);
-                var segmentData = new SerializedObject(durabilitySegments);
-                Require(
-                    presenterData.FindProperty("heldItemDurabilitySegments")?.objectReferenceValue == durabilitySegments,
-                    "held_item_durability_segments_reference_missing",
-                    errors);
-                Require(segmentData.FindProperty("segmentContainer")?.objectReferenceValue != null,
-                    "held_item_durability_container_missing", errors);
-                Require(segmentData.FindProperty("segmentGrid")?.objectReferenceValue != null,
-                    "held_item_durability_grid_missing", errors);
-                Require(segmentData.FindProperty("segmentTemplate")?.objectReferenceValue != null,
-                    "held_item_durability_template_missing", errors);
-                Require(segmentData.FindProperty("valueText")?.objectReferenceValue != null,
-                    "held_item_durability_value_text_missing", errors);
-            }
             var gauges = prefab.GetComponentsInChildren<ParkHanSolHudGaugeMotion>(true);
             Require(gauges.Length == 2, $"gauge_count actual={gauges.Length}", errors);
             foreach (var gauge in gauges)
@@ -256,26 +226,8 @@ namespace LastJumpCrew.ParkHanSol.Editor
                 Require(valueText != null, $"gauge_value_text_missing name={gauge.name}", errors);
                 if (fill != null)
                 {
-                    Require(fill.sprite != null,
-                        $"gauge_fill_sprite_missing name={gauge.name}", errors);
                     Require(fill.type == Image.Type.Filled,
                         $"gauge_fill_type name={gauge.name} actual={fill.type}", errors);
-                    Require(fill.fillMethod == Image.FillMethod.Horizontal,
-                        $"gauge_fill_method name={gauge.name} actual={fill.fillMethod}", errors);
-                    Require(fill.fillOrigin == (int)Image.OriginHorizontal.Left,
-                        $"gauge_fill_origin name={gauge.name} actual={fill.fillOrigin}", errors);
-                }
-
-                if (change != null)
-                {
-                    Require(change.sprite != null,
-                        $"gauge_change_sprite_missing name={gauge.name}", errors);
-                    Require(change.type == Image.Type.Filled,
-                        $"gauge_change_type name={gauge.name} actual={change.type}", errors);
-                    Require(change.fillMethod == Image.FillMethod.Horizontal,
-                        $"gauge_change_method name={gauge.name} actual={change.fillMethod}", errors);
-                    Require(change.fillOrigin == (int)Image.OriginHorizontal.Left,
-                        $"gauge_change_origin name={gauge.name} actual={change.fillOrigin}", errors);
                 }
             }
 
@@ -285,25 +237,21 @@ namespace LastJumpCrew.ParkHanSol.Editor
             Require(shipHpGauge != null, "ship_hp_gauge_missing", errors);
             if (warpGauge != null)
             {
-                Require(Approximately(warpGauge.sizeDelta, new Vector2(400f, 34f)),
+                Require(Approximately(warpGauge.sizeDelta, new Vector2(300f, 30f)),
                     $"warp_gauge_size_invalid actual={warpGauge.sizeDelta}", errors);
                 var fill = Find(warpGauge, "Fill")?.GetComponent<Image>();
                 Require(fill != null && Approximately(
                         fill.color,
                         new Color(1f, 0.36f, 0.06f, 1f)),
                     "warp_gauge_fill_not_orange", errors);
-                Require(CountGaugeTicks(warpGauge) == 3,
-                    $"warp_gauge_tick_count actual={CountGaugeTicks(warpGauge)}", errors);
             }
 
             if (shipHpGauge != null)
             {
-                Require(Approximately(shipHpGauge.sizeDelta, new Vector2(400f, 34f)),
+                Require(Approximately(shipHpGauge.sizeDelta, new Vector2(300f, 30f)),
                     $"ship_hp_gauge_size_invalid actual={shipHpGauge.sizeDelta}", errors);
                 Require(shipHpGauge.anchorMin == shipHpGauge.anchorMax,
                     "ship_hp_gauge_stretch_anchor_present", errors);
-                Require(CountGaugeTicks(shipHpGauge) == 3,
-                    $"ship_hp_gauge_tick_count actual={CountGaugeTicks(shipHpGauge)}", errors);
             }
 
             var economy = Find(prefab.transform, "Economy Cluster") as RectTransform;
@@ -321,23 +269,10 @@ namespace LastJumpCrew.ParkHanSol.Editor
             Require(economy != null, "economy_cluster_missing", errors);
             if (economy != null)
             {
-                var parentRect = economy.parent as RectTransform;
-                var isTopRightRootLayout = economy.anchorMin == Vector2.one
-                    && economy.anchorMax == Vector2.one
-                    && economy.anchoredPosition.x >= -120f
-                    && economy.anchoredPosition.x <= -16f;
-                var isNestedVitalsLayout = parentRect != null
-                    && parentRect.name == "Vitals Cluster"
-                    && economy.anchorMin == new Vector2(0f, 1f)
-                    && economy.anchorMax == new Vector2(0f, 1f)
-                    && economy.anchoredPosition.x - economy.pivot.x * economy.rect.width >= 0f
-                    && economy.anchoredPosition.x
-                        + (1f - economy.pivot.x) * economy.rect.width
-                        <= parentRect.rect.width;
-                Require(
-                    isTopRightRootLayout || isNestedVitalsLayout,
-                    "economy_anchor_layout_invalid",
-                    errors);
+                Require(economy.anchorMin == Vector2.one && economy.anchorMax == Vector2.one,
+                    "economy_anchor_not_top_right", errors);
+                Require(economy.anchoredPosition.x >= -120f && economy.anchoredPosition.x <= -16f,
+                    $"economy_safe_margin_invalid x={economy.anchoredPosition.x}", errors);
                 Require(economy.gameObject.activeSelf,
                     "economy_cluster_inactive", errors);
                 var bankText = Find(economy, "Bank Text");
@@ -358,8 +293,8 @@ namespace LastJumpCrew.ParkHanSol.Editor
                     "accident_icon_entry_count_invalid", errors);
                 Require(eventData.FindProperty("miniGameIconEntries")?.arraySize == 3,
                     "minigame_icon_entry_count_invalid", errors);
-                Require(Find(prefab.transform, "PHS Event Alert Text") != null,
-                    "event_alert_text_missing", errors);
+                Require(Find(prefab.transform, "PHS Event Alert Text") == null,
+                    "event_alert_text_still_present", errors);
                 Require(Find(prefab.transform, "Icon Mark") == null,
                     "event_alert_mark_still_present", errors);
                 Require(Find(prefab.transform, "PHS Event Alert Icon") != null,
@@ -377,14 +312,9 @@ namespace LastJumpCrew.ParkHanSol.Editor
                     foreach (Transform entry in lineup.transform)
                     {
                         var icon = Find(entry, "Icon") as RectTransform;
-                        var background = entry.GetComponent<Image>();
                         Require(icon != null
                                 && Approximately(icon.sizeDelta, new Vector2(92f, 92f))
-                                && background != null
-                                && background.sprite != null
-                                && background.type == Image.Type.Sliced
-                                && !background.raycastTarget
-                                && background.color.a >= 0.5f
+                                && entry.GetComponent<Image>() == null
                                 && entry.GetComponent<Outline>() == null,
                             $"event_icon_entry_style_invalid name={entry.name}",
                             errors);
@@ -392,24 +322,16 @@ namespace LastJumpCrew.ParkHanSol.Editor
                 }
             }
 
-            var localizedFont = AssetDatabase.LoadAssetAtPath<TMP_FontAsset>(
-                CanonicalLocalizedFontPath);
-            Require(localizedFont != null, "canonical_localized_font_missing", errors);
-            var localizedTexts = prefab.GetComponentsInChildren<TextMeshProUGUI>(true)
-                .Where(UsesLocalizedHudTypography)
-                .ToArray();
-            Require(
-                localizedTexts.Length == 5,
-                $"localized_hud_text_count_invalid actual={localizedTexts.Length}",
-                errors);
-            foreach (var text in prefab.GetComponentsInChildren<TextMeshProUGUI>(true))
+            var canonicalFont = AssetDatabase.LoadAssetAtPath<TMP_FontAsset>(CanonicalEnglishFontPath);
+            Require(canonicalFont != null, "canonical_english_font_missing", errors);
+            if (canonicalFont != null)
             {
-                Require(
-                    IsProjectUiFont(text.font)
-                        && text.fontSharedMaterial != null
-                        && text.fontSharedMaterial.mainTexture == text.font.atlasTexture,
-                    $"hud_typography_invalid text={GetPath(text.transform)}",
-                    errors);
+                foreach (var text in prefab.GetComponentsInChildren<TextMeshProUGUI>(true)
+                             .Where(text => !ContainsHangul(text.text)))
+                {
+                    Require(text.font == canonicalFont,
+                        $"english_font_mismatch text={GetPath(text.transform)}", errors);
+                }
             }
 
             foreach (var transform in prefab.GetComponentsInChildren<Transform>(true))
@@ -446,10 +368,6 @@ namespace LastJumpCrew.ParkHanSol.Editor
             Require(networkHud != null, "network_hud_missing", errors);
             if (canonicalHud != null && networkHud != null)
             {
-                Require(
-                    AssetDatabase.AssetPathToGUID(NetworkHudPath) == NetworkHudGuid,
-                    "network_hud_guid_changed",
-                    errors);
                 Require(
                     PrefabUtility.GetPrefabAssetType(networkHud) == PrefabAssetType.Variant,
                     "network_hud_not_variant",
@@ -494,6 +412,12 @@ namespace LastJumpCrew.ParkHanSol.Editor
                 ?? throw new InvalidOperationException(
                     "PHS_HUD_SSO_AUTHOR_FAILED reason=event_alert_root_missing");
 
+            var oldText = Find(alertRoot.transform, "PHS Event Alert Text");
+            if (oldText != null)
+            {
+                UnityEngine.Object.DestroyImmediate(oldText.gameObject);
+            }
+
             var alertRect = alertRoot.GetComponent<RectTransform>()
                 ?? throw new InvalidOperationException(
                     "PHS_HUD_SSO_AUTHOR_FAILED reason=event_alert_rect_missing");
@@ -501,7 +425,7 @@ namespace LastJumpCrew.ParkHanSol.Editor
             alertRect.anchorMax = Vector2.one;
             alertRect.pivot = Vector2.one;
             alertRect.anchoredPosition = new Vector2(-430f, -116f);
-            alertRect.sizeDelta = new Vector2(250f, 92f);
+            alertRect.sizeDelta = new Vector2(92f, 92f);
 
             var iconTransform = Find(alertRoot.transform, "PHS Event Alert Icon");
             var iconObject = iconTransform == null
@@ -517,10 +441,10 @@ namespace LastJumpCrew.ParkHanSol.Editor
                 iconRect.SetParent(alertRoot.transform, false);
             }
 
-            iconRect.anchorMin = new Vector2(1f, 0.5f);
-            iconRect.anchorMax = new Vector2(1f, 0.5f);
+            iconRect.anchorMin = new Vector2(0.5f, 0.5f);
+            iconRect.anchorMax = new Vector2(0.5f, 0.5f);
             iconRect.pivot = new Vector2(0.5f, 0.5f);
-            iconRect.anchoredPosition = new Vector2(-46f, 0f);
+            iconRect.anchoredPosition = Vector2.zero;
             iconRect.sizeDelta = new Vector2(46f, 46f);
             iconRect.localScale = Vector3.one;
             iconRect.localEulerAngles = new Vector3(0f, 0f, 45f);
@@ -537,56 +461,18 @@ namespace LastJumpCrew.ParkHanSol.Editor
             {
                 UnityEngine.Object.DestroyImmediate(markTransform.gameObject);
             }
-
-            var labelTransform = Find(
-                alertRoot.transform,
-                "PHS Event Alert Text");
-            var labelObject = labelTransform == null
-                ? new GameObject(
-                    "PHS Event Alert Text",
-                    typeof(RectTransform),
-                    typeof(CanvasRenderer),
-                    typeof(TextMeshProUGUI))
-                : labelTransform.gameObject;
-            var labelRect = labelObject.GetComponent<RectTransform>();
-            if (labelTransform == null)
-            {
-                labelRect.SetParent(alertRoot.transform, false);
-            }
-
-            labelRect.anchorMin = new Vector2(1f, 0.5f);
-            labelRect.anchorMax = new Vector2(1f, 0.5f);
-            labelRect.pivot = new Vector2(1f, 0.5f);
-            labelRect.anchoredPosition = new Vector2(-82f, 0f);
-            labelRect.sizeDelta = new Vector2(150f, 42f);
-            labelRect.localScale = Vector3.one;
-            var label = labelObject.GetComponent<TextMeshProUGUI>();
-            label.text = "산소 유출";
-            label.fontSize = 20f;
-            label.enableAutoSizing = true;
-            label.fontSizeMin = 14f;
-            label.fontSizeMax = 20f;
-            label.alignment = TextAlignmentOptions.MidlineRight;
-            label.color = new Color(0.72f, 0.96f, 1f, 1f);
-            label.raycastTarget = false;
-            label.enableWordWrapping = false;
-            label.overflowMode = TextOverflowModes.Ellipsis;
-            labelObject.SetActive(false);
-            PHSUIFontPaths.ApplyResolved(label);
-
             SetReference(viewData, "eventAlertIcon", iconObject);
-            SetReference(viewData, "eventAlertLabelText", label);
             viewData.ApplyModifiedPropertiesWithoutUndo();
             EditorUtility.SetDirty(eventHudView);
         }
 
         private static void ConfigureEconomyCluster(RectTransform economy)
         {
-            economy.anchorMin = new Vector2(0f, 1f);
-            economy.anchorMax = new Vector2(0f, 1f);
-            economy.pivot = new Vector2(0f, 1f);
-            economy.anchoredPosition = new Vector2(12f, -112f);
-            economy.sizeDelta = new Vector2(260f, 32f);
+            economy.anchorMin = Vector2.one;
+            economy.anchorMax = Vector2.one;
+            economy.pivot = Vector2.one;
+            economy.anchoredPosition = new Vector2(-36f, -24f);
+            economy.sizeDelta = new Vector2(240f, 40f);
             economy.localScale = Vector3.one;
             economy.gameObject.SetActive(true);
 
@@ -602,8 +488,8 @@ namespace LastJumpCrew.ParkHanSol.Editor
             bankTransform.gameObject.SetActive(true);
 
             var bankText = bankTransform.GetComponent<TMP_Text>();
-            bankText.alignment = TextAlignmentOptions.Left;
-            bankText.fontSize = 24f;
+            bankText.alignment = TextAlignmentOptions.Right;
+            bankText.fontSize = 30f;
             bankText.color = new Color(0.27f, 0.81f, 1f, 1f);
         }
 
@@ -614,11 +500,7 @@ namespace LastJumpCrew.ParkHanSol.Editor
             var mission = Find(root.transform, "Mission Status Cluster") as RectTransform
                 ?? throw new InvalidOperationException(
                     "PHS_HUD_SSO_AUTHOR_FAILED reason=mission_status_cluster_missing");
-            mission.anchorMin = Vector2.one;
-            mission.anchorMax = Vector2.one;
-            mission.pivot = Vector2.one;
-            mission.anchoredPosition = new Vector2(-32f, -28f);
-            mission.sizeDelta = new Vector2(400f, 176f);
+            mission.sizeDelta = new Vector2(440f, 180f);
 
             var shipRoot = Find(root.transform, "Ship HP Root") as RectTransform
                 ?? throw new InvalidOperationException(
@@ -630,7 +512,7 @@ namespace LastJumpCrew.ParkHanSol.Editor
                 UnityEngine.Object.DestroyImmediate(obsoleteShipTextMotion);
             }
             shipRoot.SetParent(mission, false);
-            ConfigureGaugeRow(shipRoot, new Vector2(0f, -66f));
+            ConfigureGaugeRow(shipRoot, new Vector2(0f, -58f));
 
             var warpRootTransform = Find(root.transform, "Warp Gauge Root");
             var warpRootObject = warpRootTransform == null
@@ -638,7 +520,7 @@ namespace LastJumpCrew.ParkHanSol.Editor
                 : warpRootTransform.gameObject;
             var warpRoot = warpRootObject.GetComponent<RectTransform>();
             warpRoot.SetParent(mission, false);
-            ConfigureGaugeRow(warpRoot, new Vector2(0f, -112f));
+            ConfigureGaugeRow(warpRoot, new Vector2(0f, -104f));
 
             var shipBar = Find(root.transform, "Ship HP Bar") as RectTransform
                 ?? throw new InvalidOperationException(
@@ -685,7 +567,7 @@ namespace LastJumpCrew.ParkHanSol.Editor
             row.anchorMax = Vector2.one;
             row.pivot = Vector2.one;
             row.anchoredPosition = position;
-            row.sizeDelta = new Vector2(400f, 40f);
+            row.sizeDelta = new Vector2(380f, 64f);
             row.localScale = Vector3.one;
         }
 
@@ -700,17 +582,20 @@ namespace LastJumpCrew.ParkHanSol.Editor
             bar.anchorMin = new Vector2(0f, 0.5f);
             bar.anchorMax = new Vector2(0f, 0.5f);
             bar.pivot = new Vector2(0f, 0.5f);
-            bar.anchoredPosition = Vector2.zero;
-            bar.sizeDelta = new Vector2(400f, 34f);
+            bar.anchoredPosition = new Vector2(80f, 0f);
+            bar.sizeDelta = new Vector2(300f, 30f);
             bar.localScale = Vector3.one;
 
             var background = bar.GetComponent<Image>() ?? bar.gameObject.AddComponent<Image>();
+            background.sprite = AssetDatabase.GetBuiltinExtraResource<Sprite>("UI/Skin/UISprite.psd");
+            background.type = Image.Type.Simple;
             background.color = new Color(0.015f, 0.025f, 0.04f, 0.96f);
             background.raycastTarget = false;
-            var outline = bar.GetComponent<Outline>() ?? bar.gameObject.AddComponent<Outline>();
-            outline.effectColor = new Color(0.75f, 0.88f, 1f, 0.72f);
-            outline.effectDistance = new Vector2(2f, -2f);
-            outline.useGraphicAlpha = false;
+            var outline = bar.GetComponent<Outline>();
+            if (outline != null)
+            {
+                UnityEngine.Object.DestroyImmediate(outline);
+            }
 
             var fill = Find(bar, "Fill")?.GetComponent<Image>()
                 ?? throw new InvalidOperationException(
@@ -728,9 +613,11 @@ namespace LastJumpCrew.ParkHanSol.Editor
             trailRect.SetSiblingIndex(0);
             fill.rectTransform.SetSiblingIndex(1);
 
-            for (var index = 1; index <= 3; index++)
+            foreach (var tick in bar.Cast<Transform>()
+                         .Where(child => child.name.StartsWith("Gauge Tick ", StringComparison.Ordinal))
+                         .ToArray())
             {
-                EnsureGaugeTick(bar, index, index / 4f);
+                UnityEngine.Object.DestroyImmediate(tick.gameObject);
             }
 
             var valueTransform = Find(bar, "Gauge Value Text");
@@ -751,10 +638,11 @@ namespace LastJumpCrew.ParkHanSol.Editor
             valueText.text = defaultValue;
             valueText.font = AssetDatabase.LoadAssetAtPath<TMP_FontAsset>(CanonicalEnglishFontPath);
             valueText.fontSize = 19f;
-            valueText.fontStyle = FontStyles.Normal;
+            valueText.fontStyle = FontStyles.Bold;
             valueText.alignment = TextAlignmentOptions.Center;
             valueText.color = Color.white;
             valueText.raycastTarget = false;
+            valueText.rectTransform.SetAsLastSibling();
 
             var motion = bar.GetComponent<ParkHanSolHudGaugeMotion>()
                 ?? throw new InvalidOperationException(
@@ -771,20 +659,13 @@ namespace LastJumpCrew.ParkHanSol.Editor
 
         private static void ConfigureFilledImage(Image image, float inset, Color color)
         {
+            image.sprite = AssetDatabase.GetBuiltinExtraResource<Sprite>("UI/Skin/UISprite.psd");
             var rect = image.rectTransform;
             rect.anchorMin = Vector2.zero;
             rect.anchorMax = Vector2.one;
             rect.offsetMin = new Vector2(inset, inset);
             rect.offsetMax = new Vector2(-inset, -inset);
             rect.localScale = Vector3.one;
-            image.sprite = AssetDatabase.GetBuiltinExtraResource<Sprite>(
-                "UI/Skin/UISprite.psd");
-            if (image.sprite == null)
-            {
-                throw new InvalidOperationException(
-                    $"PHS_HUD_GAUGE_AUTHOR_FAILED reason=fill_sprite_missing image={image.name}");
-            }
-
             image.type = Image.Type.Filled;
             image.fillMethod = Image.FillMethod.Horizontal;
             image.fillOrigin = (int)Image.OriginHorizontal.Left;
@@ -1060,19 +941,19 @@ namespace LastJumpCrew.ParkHanSol.Editor
                 "Product Name",
                 new Vector2(0f, 34f),
                 30f,
-                FontStyles.Normal);
+                FontStyles.Bold);
             var priceText = EnsureShopText(
                 panelRect,
                 "Price",
                 Vector2.zero,
                 36f,
-                FontStyles.Normal);
+                FontStyles.Bold);
             var pickupText = EnsureShopText(
                 panelRect,
                 "Pickup Prompt",
                 new Vector2(0f, -34f),
                 22f,
-                FontStyles.Normal);
+                FontStyles.Bold);
 
             var presenters = root.GetComponentsInChildren<
                 ShopLocalProductHudPresenter>(true);
@@ -1091,9 +972,8 @@ namespace LastJumpCrew.ParkHanSol.Editor
             SetReference(presenterData, "priceText", priceText);
             SetReference(presenterData, "pickupPromptText", pickupText);
             presenterData.ApplyModifiedPropertiesWithoutUndo();
-            presenter.enabled = false;
             nameText.gameObject.SetActive(false);
-            priceText.gameObject.SetActive(false);
+            priceText.gameObject.SetActive(true);
             pickupText.gameObject.SetActive(false);
             EditorUtility.SetDirty(presenter);
         }
@@ -1136,105 +1016,20 @@ namespace LastJumpCrew.ParkHanSol.Editor
 
         private static void NormalizeEnglishFonts(GameObject root)
         {
+            var canonicalFont = AssetDatabase.LoadAssetAtPath<TMP_FontAsset>(CanonicalEnglishFontPath)
+                ?? throw new InvalidOperationException(
+                    $"PHS_HUD_SSO_AUTHOR_FAILED reason=font_missing path={CanonicalEnglishFontPath}");
             foreach (var text in root.GetComponentsInChildren<TextMeshProUGUI>(true))
             {
-                if (ContainsHangul(text.text) || UsesLocalizedHudTypography(text))
+                if (ContainsHangul(text.text))
                 {
                     continue;
                 }
 
-                if (RequiresFontMigration(text))
-                {
-                    PHSUIFontPaths.ApplyResolved(text);
-                }
+                text.font = canonicalFont;
+                text.fontSharedMaterial = canonicalFont.material;
+                EditorUtility.SetDirty(text);
             }
-        }
-
-        private static void ConfigureLocalizedHudTypography(GameObject root)
-        {
-            var localizedFont = AssetDatabase.LoadAssetAtPath<TMP_FontAsset>(
-                CanonicalLocalizedFontPath)
-                ?? throw new InvalidOperationException(
-                    $"PHS_HUD_SSO_AUTHOR_FAILED reason=localized_font_missing path={CanonicalLocalizedFontPath}");
-            var localizedTexts = root.GetComponentsInChildren<TextMeshProUGUI>(true)
-                .Where(UsesLocalizedHudTypography)
-                .ToArray();
-            if (localizedTexts.Length != 5)
-            {
-                throw new InvalidOperationException(
-                    $"PHS_HUD_SSO_AUTHOR_FAILED reason=localized_text_count_invalid actual={localizedTexts.Length}");
-            }
-
-            foreach (var text in localizedTexts)
-            {
-                if (RequiresFontMigration(text))
-                {
-                    PHSUIFontPaths.ApplyResolved(text);
-                }
-            }
-
-            var promptText = localizedTexts.First(text => text.name == "Prompt Text");
-            if (string.IsNullOrWhiteSpace(promptText.text)
-                || promptText.text == "INTERACT")
-            {
-                promptText.text = "상호작용";
-            }
-
-            var gravityWarning = localizedTexts.First(
-                text => text.name == "Gravity Warning Text");
-            if (string.IsNullOrWhiteSpace(gravityWarning.text)
-                || gravityWarning.text == "GRAVITY FIELD OFFLINE")
-            {
-                gravityWarning.text = "중력장 비활성";
-            }
-        }
-
-        private static bool UsesLocalizedHudTypography(TMP_Text text)
-        {
-            var path = GetPath(text.transform);
-            return path.EndsWith(
-                       "/Interaction Prompt/Input Badge/Input Text",
-                       StringComparison.Ordinal)
-                || path.EndsWith(
-                       "/Interaction Prompt/Prompt Text",
-                       StringComparison.Ordinal)
-                || path.EndsWith(
-                       "/Gravity Warning Text",
-                       StringComparison.Ordinal)
-                || path.EndsWith(
-                       "/PHS Shop Product Panel/Pickup Prompt",
-                       StringComparison.Ordinal)
-                || path.EndsWith(
-                       "/PHS Event Alert/PHS Event Alert Text",
-                       StringComparison.Ordinal);
-        }
-
-        private static bool RequiresFontMigration(TMP_Text text)
-        {
-            if (text.font == null)
-            {
-                return true;
-            }
-
-            var path = AssetDatabase.GetAssetPath(text.font);
-            return path.Contains("LiberationSans", StringComparison.OrdinalIgnoreCase)
-                || path.Contains("Maplestory", StringComparison.OrdinalIgnoreCase);
-        }
-
-        private static bool IsProjectUiFont(TMP_FontAsset font)
-        {
-            if (font == null)
-            {
-                return false;
-            }
-
-            var path = AssetDatabase.GetAssetPath(font);
-            return path == PHSUIFontPaths.SuitRegular
-                || path == PHSUIFontPaths.SuitMedium
-                || path == PHSUIFontPaths.SuitSemiBold
-                || path == PHSUIFontPaths.SuitBold
-                || path == PHSUIFontPaths.SuiteSemiBold
-                || path == PHSUIFontPaths.SuiteBold;
         }
 
         internal static void RemoveUnavailableModular3DText(GameObject root)

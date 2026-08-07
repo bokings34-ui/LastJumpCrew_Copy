@@ -19,6 +19,22 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Input
         public static INetworkPlayerOptionsStore Shared { get; } =
             new NetworkPlayerOptionsStore();
 
+        [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.BeforeSceneLoad)]
+        private static void ApplySavedVideoSettingsAtStartup()
+        {
+            ((NetworkPlayerOptionsStore)Shared).ApplySavedVideoSettings();
+        }
+
+        private void ApplySavedVideoSettings()
+        {
+            var width = PlayerPrefs.GetInt(ResolutionWidthPreferenceKey, Screen.width);
+            var height = PlayerPrefs.GetInt(ResolutionHeightPreferenceKey, Screen.height);
+            var mode = PlayerPrefs.GetInt(WindowModePreferenceKey, 1) == 0
+                ? FullScreenMode.Windowed
+                : FullScreenMode.FullScreenWindow;
+            Screen.SetResolution(width, height, mode);
+        }
+
         public float GetMouseSensitivity(float defaultValue)
         {
             return Mathf.Clamp(
@@ -154,6 +170,18 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Input
             PlayerPrefs.SetInt(ResolutionWidthPreferenceKey, resolution.x);
             PlayerPrefs.SetInt(ResolutionHeightPreferenceKey, resolution.y);
             PlayerPrefs.Save();
+        }
+
+        public void PreviewVideoSettings(Vector2Int resolution, FullScreenMode mode)
+        {
+            if (resolution.x <= 0 || resolution.y <= 0)
+            {
+                Debug.LogError(
+                    $"PHS_NETWORK_OPTIONS_VIDEO_PREVIEW_FAILED reason=invalid_resolution width={resolution.x} height={resolution.y}");
+                return;
+            }
+
+            Screen.SetResolution(resolution.x, resolution.y, mode);
         }
 
         public bool LoadBindingOverrides(InputActionAsset inputActions)

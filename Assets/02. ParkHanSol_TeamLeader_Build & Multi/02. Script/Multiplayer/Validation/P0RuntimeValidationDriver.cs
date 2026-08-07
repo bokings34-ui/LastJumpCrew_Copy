@@ -48,6 +48,8 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Validation
         private readonly Dictionary<ulong, DebrisSaleStateReport> debrisSaleStateReports = new();
         private readonly Dictionary<ulong, EventSnapshotReport> eventSnapshotReports = new();
         private readonly Dictionary<ulong, EventTerminalReport> eventTerminalReports = new();
+        private readonly Dictionary<ulong, PhysicalAccidentReport> physicalAccidentReports = new();
+        private readonly Dictionary<ulong, MicEffectReport> micEffectReports = new();
         private readonly Dictionary<ulong, ShipPowerReport> shipPowerReports = new();
         private readonly Dictionary<ulong, int> oxygenHealthReports = new();
         private readonly Dictionary<ulong, bool> thrownItemReports = new();
@@ -316,6 +318,85 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Validation
 
             public PHSMiniGameType MiniGameType { get; }
             public EventId ExternalEventId { get; }
+        }
+
+        private readonly struct PhysicalEventValidationCase
+        {
+            public PhysicalEventValidationCase(
+                EventId eventId,
+                PHSShipAccidentId accidentId,
+                string sourceId,
+                NetworkShipModuleId moduleId,
+                bool expectsFault,
+                bool expectsGravityDisabled)
+            {
+                EventId = eventId;
+                AccidentId = accidentId;
+                SourceId = sourceId;
+                ModuleId = moduleId;
+                ExpectsFault = expectsFault;
+                ExpectsGravityDisabled = expectsGravityDisabled;
+            }
+
+            public EventId EventId { get; }
+            public PHSShipAccidentId AccidentId { get; }
+            public string SourceId { get; }
+            public NetworkShipModuleId ModuleId { get; }
+            public bool ExpectsFault { get; }
+            public bool ExpectsGravityDisabled { get; }
+        }
+
+        private readonly struct PhysicalAccidentReport
+        {
+            public PhysicalAccidentReport(
+                bool found,
+                PHSShipAccidentId accidentId,
+                string anchorId,
+                int repairProgress,
+                int requiredRepairProgress,
+                bool presentationFound,
+                bool moduleFound,
+                int moduleHp,
+                bool moduleFaulted,
+                uint moduleRevision,
+                bool gravityEnabled)
+            {
+                Found = found;
+                AccidentId = accidentId;
+                AnchorId = anchorId;
+                RepairProgress = repairProgress;
+                RequiredRepairProgress = requiredRepairProgress;
+                PresentationFound = presentationFound;
+                ModuleFound = moduleFound;
+                ModuleHp = moduleHp;
+                ModuleFaulted = moduleFaulted;
+                ModuleRevision = moduleRevision;
+                GravityEnabled = gravityEnabled;
+            }
+
+            public bool Found { get; }
+            public PHSShipAccidentId AccidentId { get; }
+            public string AnchorId { get; }
+            public int RepairProgress { get; }
+            public int RequiredRepairProgress { get; }
+            public bool PresentationFound { get; }
+            public bool ModuleFound { get; }
+            public int ModuleHp { get; }
+            public bool ModuleFaulted { get; }
+            public uint ModuleRevision { get; }
+            public bool GravityEnabled { get; }
+        }
+
+        private readonly struct MicEffectReport
+        {
+            public MicEffectReport(bool presenterFound, bool suppressionActive)
+            {
+                PresenterFound = presenterFound;
+                SuppressionActive = suppressionActive;
+            }
+
+            public bool PresenterFound { get; }
+            public bool SuppressionActive { get; }
         }
 
         private readonly struct ShipPowerReport
@@ -634,7 +715,9 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Validation
                 "first_zone_clear_not_recorded");
             if (scenarioFinished) yield break;
 
-            for (var expectedClearedZones = 2; expectedClearedZones <= 9; expectedClearedZones++)
+            for (var expectedClearedZones = 2;
+                 expectedClearedZones <= GameLoopState.TOTAL_ZONES;
+                 expectedClearedZones++)
             {
                 if (!TryAcquireMapSceneReferences(out coordinator, out _))
                 {
@@ -700,7 +783,13 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Validation
                 }
             }
 
-            yield return ProbeRunFlowState(NetworkRunPhase.Clear, 9, 3, finalShopPending: false);
+            var expectedCompletedShopCycles =
+                GameLoopState.TOTAL_ZONES / GameLoopState.SHOP_INTERVAL + 1;
+            yield return ProbeRunFlowState(
+                NetworkRunPhase.Clear,
+                GameLoopState.TOTAL_ZONES,
+                expectedCompletedShopCycles,
+                finalShopPending: false);
             if (scenarioFinished) yield break;
 
             var gaugeValues = gaugeReports.Values.Select(report => report.Value).ToArray();
@@ -714,7 +803,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Validation
                 $"runPhase={coordinator.Phase} runPeers={runFlowReports.Count} " +
                 $"incidentCommands={validatedIncidentCommandCount} " +
                 $"incidentRevision={validatedIncidentRevision} incidentPeers={incidentReports.Count} " +
-                "events=3 miniGameApiOutcomes=6 eventPeers=2 farEventReject=true");
+                "events=8 physicalEvents=4 timedEvents=1 miniGameApiOutcomes=6 eventPeers=2 farEventReject=true");
         }
 
         private IEnumerator RunIncidentLedgerValidation()
@@ -1538,6 +1627,12 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Validation
                 if (scenarioFinished) yield break;
             }
 
+            yield return RunInternalPhysicalEventMatrixValidation(coordinator, manager);
+            if (scenarioFinished) yield break;
+
+            yield return ValidateMicDestroyNaturalLifecycle(coordinator, manager);
+            if (scenarioFinished) yield break;
+
             yield return RunExternalMiniGameApiContractValidation(coordinator, manager);
             if (scenarioFinished) yield break;
 
@@ -1545,9 +1640,406 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Validation
             if (scenarioFinished) yield break;
 
             Debug.Log(
-                $"PHS_P0_EVENT_LIFECYCLE_OK events={eventIds.Length} peers={expectedClientCount} " +
+                $"PHS_P0_EVENT_LIFECYCLE_OK events={eventIds.Length + 5} physical=4 timed=1 peers={expectedClientCount} " +
                 "externalMiniGameOutcomes=6 clientLocalActive=false clientGameplayEffects=0 clientMirrors=true terminalRemoved=true",
                 this);
+        }
+
+        private IEnumerator RunInternalPhysicalEventMatrixValidation(
+            NetworkEventCoordinator eventCoordinator,
+            EventManager eventManager)
+        {
+            var validationCases = new[]
+            {
+                new PhysicalEventValidationCase(
+                    EventId.EngineBreak,
+                    PHSShipAccidentId.DeviceFailure,
+                    "device_engine_fault",
+                    NetworkShipModuleId.Engine,
+                    false,
+                    false),
+                new PhysicalEventValidationCase(
+                    EventId.SteamLeak,
+                    PHSShipAccidentId.SteamLeak,
+                    "pipe_steam_fault",
+                    NetworkShipModuleId.Engine,
+                    false,
+                    false),
+                new PhysicalEventValidationCase(
+                    EventId.OxygenGeneratorFailure,
+                    PHSShipAccidentId.OxygenFailure,
+                    "life_support_oxygen_fault",
+                    NetworkShipModuleId.LifeSupport,
+                    true,
+                    false),
+                new PhysicalEventValidationCase(
+                    EventId.GravityGeneratorFailure,
+                    PHSShipAccidentId.GravityGeneratorFailure,
+                    "gravity_generator_fault",
+                    NetworkShipModuleId.Gravity,
+                    true,
+                    true)
+            };
+
+            foreach (var validationCase in validationCases)
+            {
+                yield return ValidateInternalPhysicalEventLifecycle(
+                    eventCoordinator,
+                    eventManager,
+                    validationCase);
+                if (scenarioFinished) yield break;
+            }
+
+            Debug.Log(
+                $"PHS_P0_INTERNAL_PHYSICAL_MATRIX_OK events={validationCases.Length} " +
+                $"peers={expectedClientCount} spawned=4 repaired=4 cleaned=4",
+                this);
+        }
+
+        private IEnumerator ValidateInternalPhysicalEventLifecycle(
+            NetworkEventCoordinator eventCoordinator,
+            EventManager eventManager,
+            PhysicalEventValidationCase validationCase)
+        {
+            var runRoot = NetworkRunSessionRoot.Instance;
+            var ledger = runRoot == null ? null : runRoot.Incidents;
+            var gateway = FindAnyObjectByType<PHSIncidentRequestGateway>(FindObjectsInactive.Include);
+            var consumer = FindAnyObjectByType<PHSMapIncidentCommandConsumer>(FindObjectsInactive.Include);
+            var accidentCoordinator = FindAnyObjectByType<PHSNetworkShipAccidentCoordinator>(FindObjectsInactive.Include);
+            var shipSystems = NetworkShipSystemsState.Instance;
+            if (ledger == null || gateway == null || !gateway.IsReady || consumer == null
+                || consumer.IncidentLayout == null || !consumer.IncidentLayout.IsReady
+                || accidentCoordinator == null || !accidentCoordinator.IsSpawned || !accidentCoordinator.IsServer
+                || shipSystems == null || !shipSystems.IsSpawned || !shipSystems.IsServer)
+            {
+                Fail($"p0_internal_physical_setup_missing event={validationCase.EventId}");
+                yield break;
+            }
+
+            if (eventCoordinator.IsEventActive(validationCase.EventId)
+                || eventManager.IsActive(validationCase.EventId)
+                || accidentCoordinator.ActiveAccidentCount != 0
+                || !shipSystems.TryGetModuleSnapshot(validationCase.ModuleId, out var moduleBefore))
+            {
+                Fail($"p0_internal_physical_preexisting_state event={validationCase.EventId}");
+                yield break;
+            }
+
+            var compatibleAnchorIds = new List<string>();
+            if (!accidentCoordinator.TryCopyAvailableCompatibleAnchorIdsServer(
+                    validationCase.AccidentId,
+                    compatibleAnchorIds,
+                    out var anchorReason))
+            {
+                Fail(
+                    $"p0_internal_physical_anchor_missing event={validationCase.EventId} " +
+                    $"reason={anchorReason}");
+                yield break;
+            }
+
+            var location = consumer.IncidentLayout.Locations.FirstOrDefault(candidate =>
+                candidate != null
+                && candidate.RuntimeTarget is PHSShipAccidentAnchor anchor
+                && compatibleAnchorIds.Contains(anchor.AnchorId));
+            if (location == null)
+            {
+                Fail(
+                    $"p0_internal_physical_submit_failed event={validationCase.EventId} " +
+                    "reason=location_missing");
+                yield break;
+            }
+
+            yield return WaitFor(
+                () => location.IsAvailable(NetworkManager.ServerTime.Time),
+                15f,
+                $"p0_internal_physical_location_unavailable event={validationCase.EventId}");
+            if (scenarioFinished) yield break;
+
+            string submitReason = null;
+            var command = default(NetworkRunIncidentCommand);
+            if (!gateway.TrySubmitServer(
+                    validationCase.SourceId,
+                    location.LocationId,
+                    0UL,
+                    out command,
+                    out submitReason))
+            {
+                Fail(
+                    $"p0_internal_physical_submit_failed event={validationCase.EventId} " +
+                    $"reason={submitReason}");
+                yield break;
+            }
+
+            NetworkShipAccidentSnapshot accidentSnapshot = default;
+            yield return WaitFor(
+                () => ledger.TryGetCommand(command.CommandId, out var current)
+                    && current.State == NetworkRunIncidentCommandState.Active
+                    && current.RuntimeInstanceId != 0UL
+                    && eventCoordinator.TryGetSnapshot(current.RuntimeInstanceId, out var eventSnapshot)
+                    && eventSnapshot.EventId == validationCase.EventId
+                    && eventSnapshot.State == EventState.InProgress
+                    && TryGetActiveAccidentForEvent(
+                        accidentCoordinator,
+                        (int)validationCase.EventId,
+                        out accidentSnapshot),
+                10f,
+                $"p0_internal_physical_not_active event={validationCase.EventId}");
+            if (scenarioFinished) yield break;
+
+            if (!ledger.TryGetCommand(command.CommandId, out command)
+                || command.RuntimeInstanceId == 0UL)
+            {
+                Fail($"p0_internal_physical_command_missing event={validationCase.EventId}");
+                yield break;
+            }
+
+            var eventInstanceId = command.RuntimeInstanceId;
+            var accidentInstanceId = accidentSnapshot.InstanceId;
+            yield return ProbeEventSnapshot(validationCase.EventId, eventInstanceId, false);
+            if (scenarioFinished) yield break;
+
+            yield return ProbePhysicalAccidentState(
+                validationCase,
+                accidentInstanceId,
+                moduleBefore,
+                true,
+                false,
+                0);
+            if (scenarioFinished) yield break;
+
+            activeObservedInstanceId = eventInstanceId;
+            eventObservationReadyClients.Clear();
+            BeginEventLifecycleObservationClientRpc(eventInstanceId);
+            yield return WaitFor(
+                () => eventObservationReadyClients.Count >= expectedClientCount,
+                5f,
+                $"p0_internal_physical_observation_not_ready event={validationCase.EventId}");
+            if (scenarioFinished) yield break;
+
+            var serverAnchor = FindObjectsByType<PHSShipAccidentAnchor>(
+                    FindObjectsInactive.Include,
+                    FindObjectsSortMode.None)
+                .FirstOrDefault(candidate => candidate.AccidentInstanceId == accidentInstanceId);
+            if (serverAnchor == null
+                || !NetworkManager.ConnectedClients.TryGetValue(
+                    NetworkManager.ServerClientId,
+                    out var hostClient)
+                || hostClient.PlayerObject == null)
+            {
+                Fail($"p0_internal_physical_repair_target_missing event={validationCase.EventId}");
+                yield break;
+            }
+
+            var hostPlayer = hostClient.PlayerObject;
+            var hostController = hostPlayer.GetComponent<NetworkPlayerController>();
+            var itemLifecycle = hostPlayer.GetComponent<NetworkPlayerItemLifecycle>();
+            var itemRecord = hostPlayer.GetComponent<NetworkPlayerItemRecord>();
+            if (hostController == null || itemLifecycle == null || itemRecord == null
+                || !itemLifecycle.TryAssignHeldItemServer("wrench"))
+            {
+                Fail($"p0_internal_physical_wrench_assign_failed event={validationCase.EventId}");
+                yield break;
+            }
+
+            yield return WaitFor(
+                () => itemRecord.HeldItemId == "wrench",
+                5f,
+                $"p0_internal_physical_wrench_not_held event={validationCase.EventId}");
+            if (scenarioFinished) yield break;
+
+            var originalPosition = hostPlayer.transform.position;
+            var originalRotation = hostPlayer.transform.rotation;
+            if (!hostController.TryTeleportForRespawn(
+                    serverAnchor.RepairPosition,
+                    originalRotation))
+            {
+                Fail($"p0_internal_physical_repair_teleport_failed event={validationCase.EventId}");
+                yield break;
+            }
+
+            yield return WaitFor(
+                () => Vector3.Distance(
+                    hostPlayer.transform.position,
+                    serverAnchor.RepairPosition) <= 1f,
+                5f,
+                $"p0_internal_physical_repair_position_not_ready event={validationCase.EventId}");
+            if (scenarioFinished) yield break;
+
+            var repairSteps = 0;
+            while (accidentCoordinator.TryGetAccidentSnapshot(accidentInstanceId, out _)
+                && repairSteps < 10)
+            {
+                if (!hostController.TryTeleportForRespawn(
+                        serverAnchor.RepairPosition,
+                        originalRotation)
+                    || !accidentCoordinator.RequestRepair(
+                        serverAnchor,
+                        itemRecord,
+                        NextEventRepairRequestSequence()))
+                {
+                    hostController.TryTeleportForRespawn(originalPosition, originalRotation);
+                    Fail(
+                        $"p0_internal_physical_repair_rejected event={validationCase.EventId} " +
+                        $"step={repairSteps + 1}");
+                    yield break;
+                }
+
+                repairSteps++;
+                if (accidentCoordinator.TryGetAccidentSnapshot(
+                        accidentInstanceId,
+                        out var repairingSnapshot))
+                {
+                    yield return ProbePhysicalAccidentState(
+                        validationCase,
+                        accidentInstanceId,
+                        moduleBefore,
+                        true,
+                        false,
+                        repairingSnapshot.RepairProgress);
+                    if (scenarioFinished)
+                    {
+                        hostController.TryTeleportForRespawn(originalPosition, originalRotation);
+                        yield break;
+                    }
+                }
+
+                yield return null;
+            }
+
+            hostController.TryTeleportForRespawn(originalPosition, originalRotation);
+            yield return WaitFor(
+                () => ledger.TryGetCommand(command.CommandId, out var resolved)
+                    && resolved.State == NetworkRunIncidentCommandState.Resolved
+                    && !eventCoordinator.TryGetSnapshot(eventInstanceId, out _)
+                    && !eventManager.IsInstanceActive(eventInstanceId)
+                    && !accidentCoordinator.TryGetAccidentSnapshot(accidentInstanceId, out _),
+                10f,
+                $"p0_internal_physical_not_resolved event={validationCase.EventId}");
+            if (scenarioFinished) yield break;
+
+            yield return ProbeEventTerminal(eventInstanceId, eventSnapshotReports.Values.First().Revision);
+            if (scenarioFinished) yield break;
+
+            yield return ProbePhysicalAccidentState(
+                validationCase,
+                accidentInstanceId,
+                moduleBefore,
+                false,
+                true,
+                0);
+            if (scenarioFinished) yield break;
+
+            var heldRevision = itemRecord.Revision;
+            if (!itemRecord.TryConsumeHeldItemServer("wrench", heldRevision))
+            {
+                Fail($"p0_internal_physical_wrench_cleanup_failed event={validationCase.EventId}");
+                yield break;
+            }
+
+            Debug.Log(
+                $"PHS_P0_INTERNAL_PHYSICAL_RESOLVE_OK event={validationCase.EventId} " +
+                $"accident={validationCase.AccidentId} eventInstance={eventInstanceId} " +
+                $"accidentInstance={accidentInstanceId} anchor={accidentSnapshot.AnchorId} " +
+                $"item=wrench steps={repairSteps} peers={expectedClientCount} command=Resolved " +
+                "eventRemoved=true accidentRemoved=true presentationCleared=true moduleRestored=true",
+                this);
+        }
+
+        private IEnumerator ValidateMicDestroyNaturalLifecycle(
+            NetworkEventCoordinator coordinator,
+            EventManager manager)
+        {
+            if (coordinator.IsEventActive(EventId.MicDestroy)
+                || manager.IsActive(EventId.MicDestroy)
+                || !coordinator.TrySpawnEventServer(EventId.MicDestroy, out var instanceId)
+                || instanceId == 0UL)
+            {
+                Fail("p0_mic_destroy_spawn_failed");
+                yield break;
+            }
+
+            yield return WaitFor(
+                () => coordinator.TryGetSnapshot(instanceId, out var snapshot)
+                    && snapshot.EventId == EventId.MicDestroy
+                    && snapshot.State == EventState.InProgress,
+                5f,
+                "p0_mic_destroy_not_in_progress");
+            if (scenarioFinished) yield break;
+
+            yield return ProbeEventSnapshot(EventId.MicDestroy, instanceId, false);
+            if (scenarioFinished) yield break;
+
+            var activeRevision = eventSnapshotReports.Values.First().Revision;
+
+            yield return ProbeMicDestroyEffectState(true);
+            if (scenarioFinished) yield break;
+
+            activeObservedInstanceId = instanceId;
+            eventObservationReadyClients.Clear();
+            BeginEventLifecycleObservationClientRpc(instanceId);
+            yield return WaitFor(
+                () => eventObservationReadyClients.Count >= expectedClientCount,
+                5f,
+                "p0_mic_destroy_observation_not_ready");
+            if (scenarioFinished) yield break;
+
+            var startedAt = Time.realtimeSinceStartup;
+            yield return WaitFor(
+                () => !coordinator.TryGetSnapshot(instanceId, out _)
+                    && !manager.IsInstanceActive(instanceId),
+                20f,
+                "p0_mic_destroy_natural_resolve_timeout");
+            if (scenarioFinished) yield break;
+
+            var elapsed = Time.realtimeSinceStartup - startedAt;
+            yield return ProbeEventTerminal(instanceId, activeRevision);
+            if (scenarioFinished) yield break;
+
+            yield return ProbeMicDestroyEffectState(false);
+            if (scenarioFinished) yield break;
+
+            Debug.Log(
+                $"PHS_P0_MIC_DESTROY_LIFECYCLE_OK instance={instanceId} " +
+                $"naturalElapsed={elapsed:F2} autoResolved=true effectConsumer=true peers={expectedClientCount}",
+                this);
+        }
+
+        private IEnumerator ProbeMicDestroyEffectState(bool expectedSuppressed)
+        {
+            var deadline = Time.realtimeSinceStartup + 5f;
+            while (scenarioRunning && !scenarioFinished && Time.realtimeSinceStartup < deadline)
+            {
+                micEffectReports.Clear();
+                var token = ++activeProbeToken;
+                ProbeMicDestroyEffectStateClientRpc(token);
+                var probeDeadline = Mathf.Min(deadline, Time.realtimeSinceStartup + 2f);
+                while (micEffectReports.Count < expectedClientCount
+                    && Time.realtimeSinceStartup < probeDeadline)
+                {
+                    yield return null;
+                }
+
+                if (micEffectReports.Count >= expectedClientCount
+                    && micEffectReports.Values.All(report =>
+                        report.PresenterFound
+                        && report.SuppressionActive == expectedSuppressed))
+                {
+                    yield break;
+                }
+
+                yield return new WaitForSecondsRealtime(0.2f);
+            }
+
+            var details = micEffectReports.Count == 0
+                ? "none"
+                : string.Join(
+                    ";",
+                    micEffectReports.Select(pair =>
+                        $"{pair.Key}:presenter={pair.Value.PresenterFound}," +
+                        $"suppressed={pair.Value.SuppressionActive}"));
+            Fail(
+                $"p0_mic_destroy_effect_state_mismatch expectedSuppressed={expectedSuppressed} " +
+                $"reports={details}");
         }
 
         private IEnumerator RunExternalMiniGameApiContractValidation(
@@ -2166,6 +2658,9 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Validation
                 case EventId.EmpAttack:
                     family = NetworkRunIncidentFamily.EMP;
                     return true;
+                case EventId.MicDestroy:
+                    family = NetworkRunIncidentFamily.Device;
+                    return true;
                 default:
                     family = NetworkRunIncidentFamily.None;
                     return false;
@@ -2773,26 +3268,123 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Validation
 
         private IEnumerator ProbeEventTerminal(ulong instanceId, uint activeRevision)
         {
-            eventTerminalReports.Clear();
-            var token = ++activeProbeToken;
-            ProbeEventTerminalClientRpc(token, instanceId);
-            yield return WaitFor(
-                () => eventTerminalReports.Count >= expectedClientCount,
-                5f,
-                $"event_terminal_reports_missing instance={instanceId}");
-            if (scenarioFinished) yield break;
-
-            var first = eventTerminalReports.Values.First();
-            if (!first.ObservedTerminal || !first.ObservedRemoved || first.TerminalRevision <= activeRevision ||
-                eventTerminalReports.Values.Any(report =>
-                    !report.ObservedTerminal ||
-                    !report.ObservedRemoved ||
-                    report.TerminalRevision != first.TerminalRevision))
+            var deadline = Time.realtimeSinceStartup + 10f;
+            while (scenarioRunning && !scenarioFinished && Time.realtimeSinceStartup < deadline)
             {
-                Fail(
-                    $"event_terminal_peer_mismatch instance={instanceId} activeRevision={activeRevision} " +
-                    $"reports={string.Join(";", eventTerminalReports.Select(pair => $"{pair.Key}:terminal={pair.Value.ObservedTerminal},removed={pair.Value.ObservedRemoved},rev={pair.Value.TerminalRevision}"))}");
+                eventTerminalReports.Clear();
+                var token = ++activeProbeToken;
+                ProbeEventTerminalClientRpc(token, instanceId);
+
+                var probeDeadline = Mathf.Min(deadline, Time.realtimeSinceStartup + 2f);
+                while (eventTerminalReports.Count < expectedClientCount
+                    && Time.realtimeSinceStartup < probeDeadline)
+                {
+                    yield return null;
+                }
+
+                if (eventTerminalReports.Count >= expectedClientCount)
+                {
+                    var first = eventTerminalReports.Values.First();
+                    if (first.ObservedTerminal
+                        && first.ObservedRemoved
+                        && first.TerminalRevision > activeRevision
+                        && eventTerminalReports.Values.All(report =>
+                            report.ObservedTerminal
+                            && report.ObservedRemoved
+                            && report.TerminalRevision == first.TerminalRevision))
+                    {
+                        yield break;
+                    }
+                }
+
+                yield return new WaitForSecondsRealtime(0.2f);
             }
+
+            var details = eventTerminalReports.Count == 0
+                ? "none"
+                : string.Join(
+                    ";",
+                    eventTerminalReports.Select(pair =>
+                        $"{pair.Key}:terminal={pair.Value.ObservedTerminal}," +
+                        $"removed={pair.Value.ObservedRemoved},rev={pair.Value.TerminalRevision}"));
+            Fail(
+                $"event_terminal_peer_mismatch instance={instanceId} " +
+                $"activeRevision={activeRevision} reports={details}");
+        }
+
+        private IEnumerator ProbePhysicalAccidentState(
+            PhysicalEventValidationCase validationCase,
+            uint accidentInstanceId,
+            NetworkShipModuleSnapshot moduleBefore,
+            bool expectActive,
+            bool expectRestored,
+            int expectedRepairProgress)
+        {
+            var deadline = Time.realtimeSinceStartup + 10f;
+            while (scenarioRunning && !scenarioFinished && Time.realtimeSinceStartup < deadline)
+            {
+                physicalAccidentReports.Clear();
+                var token = ++activeProbeToken;
+                ProbePhysicalAccidentStateClientRpc(
+                    token,
+                    accidentInstanceId,
+                    validationCase.AccidentId,
+                    validationCase.ModuleId);
+
+                var probeDeadline = Mathf.Min(deadline, Time.realtimeSinceStartup + 2f);
+                while (physicalAccidentReports.Count < expectedClientCount
+                    && Time.realtimeSinceStartup < probeDeadline)
+                {
+                    yield return null;
+                }
+
+                if (physicalAccidentReports.Count >= expectedClientCount)
+                {
+                    var activeValid = expectActive
+                        && physicalAccidentReports.Values.All(report =>
+                            report.Found
+                            && report.AccidentId == validationCase.AccidentId
+                            && !string.IsNullOrWhiteSpace(report.AnchorId)
+                            && report.RepairProgress == expectedRepairProgress
+                            && report.RequiredRepairProgress > 0
+                            && report.PresentationFound
+                            && report.ModuleFound
+                            && report.ModuleHp < moduleBefore.CurrentHp
+                            && report.ModuleRevision > moduleBefore.Revision
+                            && report.ModuleFaulted == validationCase.ExpectsFault
+                            && (!validationCase.ExpectsGravityDisabled || !report.GravityEnabled));
+                    var restoredValid = expectRestored
+                        && physicalAccidentReports.Values.All(report =>
+                            !report.Found
+                            && !report.PresentationFound
+                            && report.ModuleFound
+                            && report.ModuleHp >= moduleBefore.CurrentHp
+                            && !report.ModuleFaulted
+                            && (!validationCase.ExpectsGravityDisabled || report.GravityEnabled));
+                    if (activeValid || restoredValid)
+                    {
+                        yield break;
+                    }
+                }
+
+                yield return new WaitForSecondsRealtime(0.2f);
+            }
+
+            var details = physicalAccidentReports.Count == 0
+                ? "none"
+                : string.Join(
+                    ";",
+                    physicalAccidentReports.Select(pair =>
+                        $"{pair.Key}:found={pair.Value.Found},accident={pair.Value.AccidentId}," +
+                        $"anchor={pair.Value.AnchorId},progress={pair.Value.RepairProgress}/" +
+                        $"{pair.Value.RequiredRepairProgress},presentation={pair.Value.PresentationFound}," +
+                        $"module={pair.Value.ModuleFound}:{pair.Value.ModuleHp}:" +
+                        $"{pair.Value.ModuleFaulted}:{pair.Value.ModuleRevision}," +
+                        $"gravity={pair.Value.GravityEnabled}"));
+            Fail(
+                $"p0_internal_physical_peer_mismatch event={validationCase.EventId} " +
+                $"accident={validationCase.AccidentId} active={expectActive} restored={expectRestored} " +
+                $"reports={details}");
         }
 
         private IEnumerator ProbeFarEventTerminalRejection(
@@ -3176,7 +3768,9 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Validation
                 () => NetworkRunFlowCoordinator.Instance != null &&
                     NetworkRunFlowCoordinator.Instance.ClearedZoneCount == expectedClearedZones &&
                     NetworkRunFlowCoordinator.Instance.CompletedShopCycleCount ==
-                        (expectedShopPhase == NetworkRunPhase.FinalShop ? 3 : expectedShopCycles) &&
+                        (expectedShopPhase == NetworkRunPhase.FinalShop
+                            ? GameLoopState.TOTAL_ZONES / GameLoopState.SHOP_INTERVAL + 1
+                            : expectedShopCycles) &&
                     (expectedShopPhase == NetworkRunPhase.FinalShop
                         ? NetworkRunFlowCoordinator.Instance.Phase == NetworkRunPhase.Clear
                         : NetworkRunFlowCoordinator.Instance.Phase is NetworkRunPhase.Rearming or NetworkRunPhase.Charging),
@@ -5195,6 +5789,115 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Validation
         }
 
         [ClientRpc]
+        private void ProbePhysicalAccidentStateClientRpc(
+            uint token,
+            uint accidentInstanceId,
+            PHSShipAccidentId expectedAccidentId,
+            NetworkShipModuleId moduleId)
+        {
+            if (!IsScenarioEnabled()) return;
+
+            var coordinator = FindAnyObjectByType<PHSNetworkShipAccidentCoordinator>(
+                FindObjectsInactive.Include);
+            var snapshot = default(NetworkShipAccidentSnapshot);
+            var found = coordinator != null
+                && coordinator.TryGetAccidentSnapshot(accidentInstanceId, out snapshot);
+            var anchor = FindObjectsByType<PHSShipAccidentAnchor>(
+                    FindObjectsInactive.Include,
+                    FindObjectsSortMode.None)
+                .FirstOrDefault(candidate => candidate.AccidentInstanceId == accidentInstanceId);
+            var expectedPresentationName =
+                $"PHS_Accident_{accidentInstanceId}_{expectedAccidentId}";
+            var presentationFound = anchor != null
+                && anchor.GetComponentsInChildren<Transform>(true)
+                    .Any(candidate => candidate.name == expectedPresentationName);
+            var shipSystems = NetworkShipSystemsState.Instance;
+            var module = default(NetworkShipModuleSnapshot);
+            var moduleFound = shipSystems != null
+                && shipSystems.TryGetModuleSnapshot(moduleId, out module);
+            ReportPhysicalAccidentStateServerRpc(
+                token,
+                found,
+                found ? snapshot.AccidentId : expectedAccidentId,
+                found ? snapshot.AnchorId.ToString() : string.Empty,
+                found ? snapshot.RepairProgress : 0,
+                found ? snapshot.RequiredRepairProgress : 0,
+                presentationFound,
+                moduleFound,
+                moduleFound ? module.CurrentHp : -1,
+                moduleFound && module.IsFaulted,
+                moduleFound ? module.Revision : 0U,
+                shipSystems != null && shipSystems.IsGravityEnabled);
+        }
+
+        [ServerRpc(RequireOwnership = false)]
+        private void ReportPhysicalAccidentStateServerRpc(
+            uint token,
+            bool found,
+            PHSShipAccidentId accidentId,
+            string anchorId,
+            int repairProgress,
+            int requiredRepairProgress,
+            bool presentationFound,
+            bool moduleFound,
+            int moduleHp,
+            bool moduleFaulted,
+            uint moduleRevision,
+            bool gravityEnabled,
+            ServerRpcParams rpcParams = default)
+        {
+            if (!AcceptProbe(token)) return;
+            physicalAccidentReports[rpcParams.Receive.SenderClientId] =
+                new PhysicalAccidentReport(
+                    found,
+                    accidentId,
+                    anchorId,
+                    repairProgress,
+                    requiredRepairProgress,
+                    presentationFound,
+                    moduleFound,
+                    moduleHp,
+                    moduleFaulted,
+                    moduleRevision,
+                    gravityEnabled);
+        }
+
+        [ClientRpc]
+        private void ProbeMicDestroyEffectStateClientRpc(uint token)
+        {
+            if (!IsScenarioEnabled()) return;
+
+            var presenter = FindAnyObjectByType<MicDestroyVoiceEffectPresenter>(
+                FindObjectsInactive.Include);
+            var suppressionProperty = presenter == null
+                ? null
+                : presenter.GetType().GetProperty(
+                    "IsSuppressionActive",
+                    BindingFlags.Instance | BindingFlags.Public);
+            var suppressionStateReadable = suppressionProperty != null
+                && suppressionProperty.PropertyType == typeof(bool)
+                && suppressionProperty.GetValue(presenter) is bool;
+            var suppressionActive = suppressionStateReadable
+                && (bool)suppressionProperty.GetValue(presenter);
+            ReportMicDestroyEffectStateServerRpc(
+                token,
+                presenter != null && suppressionStateReadable,
+                suppressionActive);
+        }
+
+        [ServerRpc(RequireOwnership = false)]
+        private void ReportMicDestroyEffectStateServerRpc(
+            uint token,
+            bool presenterFound,
+            bool suppressionActive,
+            ServerRpcParams rpcParams = default)
+        {
+            if (!AcceptProbe(token)) return;
+            micEffectReports[rpcParams.Receive.SenderClientId] =
+                new MicEffectReport(presenterFound, suppressionActive);
+        }
+
+        [ClientRpc]
         private void BeginEventLifecycleObservationClientRpc(ulong instanceId)
         {
             if (!IsScenarioEnabled()) return;
@@ -5243,7 +5946,6 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Validation
                 observedTerminalState,
                 observedTerminalRemoved,
                 observedTerminalRevision);
-            DetachEventLifecycleObservation();
         }
 
         [ServerRpc(RequireOwnership = false)]

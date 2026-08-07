@@ -369,7 +369,9 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Events
                 PHSNetworkEventChannel.LegacyMixed =>
                     value >= (int)SM.EventType.Internal && value < (int)SM.EventType.Environment,
                 PHSNetworkEventChannel.ExternalThreat =>
-                    value >= (int)SM.EventType.External && value < (int)SM.EventType.Environment,
+                    eventId == EventId.MicDestroy
+                    || (value >= (int)SM.EventType.External
+                        && value < (int)SM.EventType.Environment),
                 PHSNetworkEventChannel.LegacyInternal =>
                     value >= (int)SM.EventType.Internal && value < (int)SM.EventType.External,
                 _ => false

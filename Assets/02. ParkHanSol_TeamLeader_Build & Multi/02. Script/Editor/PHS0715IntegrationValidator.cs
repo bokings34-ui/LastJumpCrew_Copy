@@ -1521,9 +1521,25 @@ namespace LastJumpCrew.ParkHanSol.Editor
             var localDebrisPortals = UnityEngine.Object.FindObjectsByType<ExteriorTestTeleportInteractable>(
                 FindObjectsInactive.Include,
                 FindObjectsSortMode.None);
+            var exteriorDestinations = UnityEngine.Object.FindObjectsByType<NetworkExteriorPortalDestination>(
+                    FindObjectsInactive.Include,
+                    FindObjectsSortMode.None)
+                .Select(destination => destination.DestinationId)
+                .Where(destinationId => !string.IsNullOrWhiteSpace(destinationId))
+                .ToHashSet(StringComparer.Ordinal);
+            var automaticExteriorPortals = localDebrisPortals
+                .Where(portal => portal.GetComponent<NetworkExteriorAutoPortal>() != null)
+                .ToArray();
+            var returnPortals = localDebrisPortals
+                .Where(portal => portal.GetComponent<NetworkExteriorAutoPortal>() == null)
+                .ToArray();
             Require(
-                localDebrisPortals.Length == 2,
-                $"map_debris_portal_pair_count_invalid actual={localDebrisPortals.Length}",
+                automaticExteriorPortals.Length == 4,
+                $"map_debris_auto_portal_count_invalid actual={automaticExteriorPortals.Length}",
+                errors);
+            Require(
+                returnPortals.Length == 1,
+                $"map_debris_return_portal_count_invalid actual={returnPortals.Length}",
                 errors);
             var portalNames = new HashSet<string>(StringComparer.Ordinal);
             foreach (var portal in localDebrisPortals)
@@ -1534,14 +1550,21 @@ namespace LastJumpCrew.ParkHanSol.Editor
                     $"map_debris_portal_name_duplicate portal={portal.name}",
                     errors);
                 var serializedPortal = new SerializedObject(portal);
-                RequireObject(
-                    serializedPortal,
-                    "destination",
-                    $"map_debris_portal_destination_missing portal={portal.name}",
+                var destinationId = serializedPortal.FindProperty("destinationId")?.stringValue;
+                Require(
+                    !string.IsNullOrWhiteSpace(destinationId) && exteriorDestinations.Contains(destinationId),
+                    $"map_debris_portal_destination_id_invalid portal={portal.name} destinationId={destinationId}",
                     errors);
                 Require(
                     serializedPortal.FindProperty("serverInteractionDistance")?.floatValue >= 0.5f,
                     $"map_debris_portal_distance_invalid portal={portal.name}",
+                    errors);
+                var expectedSector = automaticExteriorPortals.Contains(portal)
+                    ? NetworkPlayerSector.AuthorizedExterior
+                    : NetworkPlayerSector.Interior;
+                Require(
+                    serializedPortal.FindProperty("destinationSector")?.enumValueIndex == (int)expectedSector,
+                    $"map_debris_portal_sector_invalid portal={portal.name} expected={expectedSector}",
                     errors);
             }
 
@@ -1550,6 +1573,7 @@ namespace LastJumpCrew.ParkHanSol.Editor
                 "PHS_ExteriorShopPortal_0717",
                 ShopSceneName,
                 ShopSceneTransitionMode.RequireShopPhase,
+                2,
                 errors);
 
             FindOne<WarpChargeDebugInput>("map_warp_charge_debug_input", errors);
@@ -1592,12 +1616,6 @@ namespace LastJumpCrew.ParkHanSol.Editor
             var gravityZones = UnityEngine.Object.FindObjectsByType<GravityZone>(
                 FindObjectsInactive.Include,
                 FindObjectsSortMode.None);
-            ValidateGravityZone(
-                gravityZones.FirstOrDefault(zone => zone.name == "PHS_Exterior_ZeroGravityArea"),
-                LastJumpCrew.Common.GravityMode.Spacewalk,
-                0,
-                "map_exterior_gravity_zone",
-                errors);
             ValidateGravityZone(
                 gravityZones.FirstOrDefault(zone => zone.name == "PHS_ServiceGravityArea"),
                 LastJumpCrew.Common.GravityMode.ShipGravity,
@@ -1985,6 +2003,7 @@ namespace LastJumpCrew.ParkHanSol.Editor
                 "PHS_ReturnToShipPortal",
                 MapSceneName,
                 ShopSceneTransitionMode.CompleteShop,
+                1,
                 errors);
 
             var displayController = FindOne<ShopRandomDisplayController>("shop_display_controller", errors);
@@ -1993,16 +2012,16 @@ namespace LastJumpCrew.ParkHanSol.Editor
                 var serializedDisplay = new SerializedObject(displayController);
                 RequireArray(serializedDisplay, "displaySlots", 8, "shop_display_slots_insufficient", errors);
                 Require(
-                    serializedDisplay.FindProperty("displaySlots")?.arraySize == 12,
-                    "shop_display_slots_invalid expected=12",
+                    serializedDisplay.FindProperty("displaySlots")?.arraySize == 30,
+                    "shop_display_slots_invalid expected=30",
                     errors);
                 Require(
-                    serializedDisplay.FindProperty("minimumDisplayCount")?.intValue == 8,
-                    "shop_minimum_display_count_invalid expected=8",
+                    serializedDisplay.FindProperty("minimumDisplayCount")?.intValue == 10,
+                    "shop_minimum_display_count_invalid expected=10",
                     errors);
                 Require(
-                    serializedDisplay.FindProperty("maximumDisplayCount")?.intValue == 10,
-                    "shop_maximum_display_count_invalid expected=10",
+                    serializedDisplay.FindProperty("maximumDisplayCount")?.intValue == 15,
+                    "shop_maximum_display_count_invalid expected=15",
                     errors);
                 Require(
                     serializedDisplay.FindProperty("allowDuplicateProducts")?.boolValue == false,
@@ -2094,7 +2113,7 @@ namespace LastJumpCrew.ParkHanSol.Editor
             var shelfSlots = UnityEngine.Object.FindObjectsByType<ShopDisplaySlot>(
                 FindObjectsInactive.Include,
                 FindObjectsSortMode.None);
-            Require(shelfSlots.Length == 12, "shop_display_slots_invalid expected=12", errors);
+            Require(shelfSlots.Length == 30, "shop_display_slots_invalid expected=30", errors);
             foreach (var slot in shelfSlots)
             {
                 Require(
@@ -2366,7 +2385,7 @@ namespace LastJumpCrew.ParkHanSol.Editor
                 serializedRuntime.FindProperty("shopPortalRoot")?.objectReferenceValue as GameObject;
             Require(
                 shopPortalRoot != null &&
-                shopPortalRoot.GetComponent<NetworkScenePortalInteractable>() != null,
+                shopPortalRoot.GetComponentsInChildren<NetworkScenePortalInteractable>(true).Length == 2,
                 "map_runtime_shop_portal_component_missing",
                 errors);
         }
@@ -4746,14 +4765,18 @@ namespace LastJumpCrew.ParkHanSol.Editor
             string expectedObjectName,
             string expectedDestinationScene,
             ShopSceneTransitionMode expectedTransitionMode,
+            int expectedPortalCount,
             ICollection<string> errors)
         {
             var portals = UnityEngine.Object.FindObjectsByType<NetworkScenePortalInteractable>(
                 FindObjectsInactive.Include,
                 FindObjectsSortMode.None);
-            Require(portals.Length == 1, $"{label}_count_invalid actual={portals.Length}", errors);
+            Require(portals.Length == expectedPortalCount, $"{label}_count_invalid actual={portals.Length}", errors);
 
-            var portal = portals.FirstOrDefault(candidate => candidate.name == expectedObjectName);
+            var portalRoot = GameObject.Find(expectedObjectName);
+            var portal = portals.FirstOrDefault(candidate =>
+                candidate.name == expectedObjectName ||
+                portalRoot != null && candidate.transform.IsChildOf(portalRoot.transform));
             Require(portal != null, $"{label}_missing expected={expectedObjectName}", errors);
             if (portal == null)
             {

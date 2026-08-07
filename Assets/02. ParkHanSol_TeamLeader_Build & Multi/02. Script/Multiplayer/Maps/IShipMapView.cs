@@ -80,6 +80,8 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Maps
             string runPhase,
             float warpChargeNormalized,
             float shipHpNormalized,
+            int currentShipHp,
+            int maximumShipHp,
             IReadOnlyList<ShipMapEventDetail> events)
         {
             Markers = markers;
@@ -89,6 +91,8 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Maps
             RunPhase = runPhase;
             WarpChargeNormalized = warpChargeNormalized;
             ShipHpNormalized = shipHpNormalized;
+            CurrentShipHp = currentShipHp;
+            MaximumShipHp = maximumShipHp;
             Events = events;
         }
 
@@ -99,6 +103,8 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Maps
         public string RunPhase { get; }
         public float WarpChargeNormalized { get; }
         public float ShipHpNormalized { get; }
+        public int CurrentShipHp { get; }
+        public int MaximumShipHp { get; }
         public IReadOnlyList<ShipMapEventDetail> Events { get; }
     }
 

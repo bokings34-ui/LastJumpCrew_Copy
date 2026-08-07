@@ -11,7 +11,10 @@ using UnityEngine;
 
 namespace LastJumpCrew.ParkHanSol.Multiplayer
 {
-    public sealed class ProximityVoiceChatSession : MonoBehaviour, IVoiceChatSession
+    public sealed class ProximityVoiceChatSession :
+        MonoBehaviour,
+        IVoiceChatSession,
+        IVoiceCommunicationSuppression
     {
         [SerializeField] private string defaultChannelName = "ParkHanSol_TestVoice";
         [SerializeField, Min(1)] private int audibleDistance = 22;
@@ -29,6 +32,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
         private int requestedOutputVolume;
         private int requestedChannelVolume;
         private bool requestedInputMuted;
+        private bool eventInputSuppressed;
         private bool requestedOutputMuted;
         private bool warnedMissingActiveChannel;
         private bool warnedMissingSelfParticipant;
@@ -532,12 +536,23 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
         public void SetInputMuted(bool muted)
         {
             requestedInputMuted = muted;
+            ApplyInputMuteState();
+        }
+
+        public void SetEventInputSuppressed(bool suppressed)
+        {
+            eventInputSuppressed = suppressed;
+            ApplyInputMuteState();
+        }
+
+        private void ApplyInputMuteState()
+        {
             if (!servicesReady)
             {
                 return;
             }
 
-            if (requestedInputMuted)
+            if (requestedInputMuted || eventInputSuppressed)
             {
                 VivoxService.Instance.MuteInputDevice();
             }
