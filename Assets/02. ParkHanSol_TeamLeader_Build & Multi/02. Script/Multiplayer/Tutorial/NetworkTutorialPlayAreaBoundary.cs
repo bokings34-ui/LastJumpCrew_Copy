@@ -11,10 +11,13 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Tutorial
         [SerializeField] private BoxCollider playArea;
         [SerializeField] private Transform returnPoint;
         [SerializeField, Min(0.1f)] private float warningSeconds = 5f;
+        [SerializeField, Min(0.05f)] private float playerDiscoverySeconds = 0.25f;
 
         private readonly Dictionary<NetworkPlayerController, WarningState>
             warnings = new();
+        private readonly List<NetworkPlayerController> activePlayers = new();
         private bool networkSetupErrorLogged;
+        private float nextPlayerDiscoveryTime;
 
         private sealed class WarningState
         {
@@ -61,11 +64,21 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Tutorial
                 return;
             }
 
-            var players = FindObjectsByType<NetworkPlayerController>(
-                FindObjectsInactive.Exclude,
-                FindObjectsSortMode.None);
-            foreach (var player in players)
+            if (Time.unscaledTime >= nextPlayerDiscoveryTime)
             {
+                nextPlayerDiscoveryTime = Time.unscaledTime + playerDiscoverySeconds;
+                RefreshActivePlayers();
+            }
+
+            for (var index = activePlayers.Count - 1; index >= 0; index--)
+            {
+                var player = activePlayers[index];
+                if (player == null)
+                {
+                    activePlayers.RemoveAt(index);
+                    continue;
+                }
+
                 if (playArea.bounds.Contains(player.transform.position))
                 {
                     CancelWarning(player);
@@ -74,6 +87,14 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Tutorial
 
                 TickWarning(player);
             }
+        }
+
+        private void RefreshActivePlayers()
+        {
+            activePlayers.Clear();
+            activePlayers.AddRange(FindObjectsByType<NetworkPlayerController>(
+                FindObjectsInactive.Exclude,
+                FindObjectsSortMode.None));
         }
 
         private void TickWarning(NetworkPlayerController player)

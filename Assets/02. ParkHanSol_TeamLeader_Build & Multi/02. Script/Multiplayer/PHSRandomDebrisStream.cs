@@ -33,6 +33,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
         private Vector3[] angularVelocities;
         private Vector3[] flowDirections;
         private Rigidbody[] debrisRigidbodies;
+        private UtilityItemObject[] debrisItemObjects;
         private NetworkTransform[] debrisNetworkTransforms;
         private GameObject[] debrisSources;
         private readonly List<Transform> activeDebris = new();
@@ -219,7 +220,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
                     }
                 }
 
-                var itemObject = debris.GetComponent<UtilityItemObject>();
+                var itemObject = debrisItemObjects[index];
                 if (itemObject != null && itemObject.IsHeld)
                 {
                     continue;
@@ -269,6 +270,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
             angularVelocities = new Vector3[activeDebris.Count];
             flowDirections = new Vector3[activeDebris.Count];
             debrisRigidbodies = new Rigidbody[activeDebris.Count];
+            debrisItemObjects = new UtilityItemObject[activeDebris.Count];
             debrisNetworkTransforms = new NetworkTransform[activeDebris.Count];
             for (var index = 0; index < activeDebris.Count; index++)
             {
@@ -451,6 +453,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
             }
 
             debrisRigidbodies[index] = rigidbody;
+            debrisItemObjects[index] = debris.GetComponent<UtilityItemObject>();
             debrisNetworkTransforms[index] = networkTransform;
             return true;
         }

@@ -48,6 +48,7 @@ namespace LastJumpCrew.ParkHanSol.Interaction
         private int cachedInteractionHitFrame = -1;
         private bool hasCachedInteractionHit;
         private RaycastHit cachedInteractionHit;
+        private readonly RaycastHit[] interactionHits = new RaycastHit[32];
         private int interactionFocusCueFrame = -1;
 
         [Header("Drop And Throw Input")]
@@ -393,14 +394,34 @@ namespace LastJumpCrew.ParkHanSol.Interaction
             var ray = new Ray(
                 interactionCamera.transform.position,
                 interactionCamera.transform.forward);
-            var hits = Physics.RaycastAll(
+            var hitCount = Physics.RaycastNonAlloc(
                 ray,
+                interactionHits,
                 interactDistance,
                 interactableLayers,
                 QueryTriggerInteraction.Collide);
-            var nearestDistance = float.PositiveInfinity;
-            foreach (var candidate in hits)
+            if (hitCount == interactionHits.Length)
             {
+                var allHits = Physics.RaycastAll(
+                    ray,
+                    interactDistance,
+                    interactableLayers,
+                    QueryTriggerInteraction.Collide);
+                return TryCacheNearestExternalInteractionHit(allHits, out hit);
+            }
+
+            return TryCacheNearestExternalInteractionHit(interactionHits, hitCount, out hit);
+        }
+
+        private bool TryCacheNearestExternalInteractionHit(
+            RaycastHit[] hits,
+            int hitCount,
+            out RaycastHit hit)
+        {
+            var nearestDistance = float.PositiveInfinity;
+            for (var index = 0; index < hitCount; index++)
+            {
+                var candidate = hits[index];
                 if (candidate.collider == null)
                 {
                     continue;
@@ -425,6 +446,11 @@ namespace LastJumpCrew.ParkHanSol.Interaction
 
             hit = cachedInteractionHit;
             return hasCachedInteractionHit;
+        }
+
+        private bool TryCacheNearestExternalInteractionHit(RaycastHit[] hits, out RaycastHit hit)
+        {
+            return TryCacheNearestExternalInteractionHit(hits, hits.Length, out hit);
         }
 
         private void InvalidateInteractionHitCache()
