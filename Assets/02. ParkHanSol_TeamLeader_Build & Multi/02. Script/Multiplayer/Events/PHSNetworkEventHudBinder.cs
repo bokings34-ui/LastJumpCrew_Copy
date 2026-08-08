@@ -37,6 +37,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Events
         private bool toggleMapVisible;
         private float terminalVisibleUntil;
         private float nextBindAttemptTime;
+        private float nextMapContextBindAttemptTime;
 
         private void Awake()
         {
@@ -94,7 +95,11 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Events
 
             if (boundMapRuntimeContext == null)
             {
-                TryBindMapRuntimeContext();
+                if (Time.unscaledTime >= nextMapContextBindAttemptTime)
+                {
+                    nextMapContextBindAttemptTime = Time.unscaledTime + bindRetrySeconds;
+                    TryBindMapRuntimeContext();
+                }
             }
 
             if (boundCoordinator == null || !boundCoordinator.IsSpawned ||
