@@ -92,6 +92,20 @@ namespace LastJumpCrew.ParkHanSol.Interaction
                     continue;
                 }
 
+                var itemObject = debrisItem.GetComponentInParent<
+                    UtilityItemObject>();
+                var itemData = itemObject == null
+                    ? null
+                    : itemObject.ItemData;
+                if (!TryResolveSaleData(itemData, out var saleData))
+                {
+                    Debug.LogWarning(
+                        $"PHS_DEBRIS_SELL_REJECTED reason=item_not_sellable " +
+                        $"zone={name} debris={debrisItem.name}",
+                        this);
+                    continue;
+                }
+
                 var consumedHeldDebris = TryConsumeHeldDebris(debrisItem, out var isHeldDebris);
                 if (isHeldDebris && !consumedHeldDebris)
                 {
@@ -100,14 +114,14 @@ namespace LastJumpCrew.ParkHanSol.Interaction
                     continue;
                 }
 
-                if (!shopWallet.TryAddCredits(debrisItem.Value))
+                if (!shopWallet.TryAddCredits(saleData.Price))
                 {
-                    Debug.LogError($"PHS_DEBRIS_SELL_FAILED reason=wallet_rejected zone={name} debris={debrisItem.name} value={debrisItem.Value}");
+                    Debug.LogError($"PHS_DEBRIS_SELL_FAILED reason=wallet_rejected zone={name} debris={debrisItem.name} value={saleData.Price}");
                     continue;
                 }
 
                 soldItemIds.Add(debrisInstanceId);
-                Debug.Log($"PHS_DEBRIS_SOLD zone={name} debris={debrisItem.name} value={debrisItem.Value}");
+                Debug.Log($"PHS_DEBRIS_SOLD zone={name} debris={debrisItem.name} value={saleData.Price}");
 
                 // 월드 데브리만 여기서 직접 제거한다. 손에 든 데브리는 Holder가
                 // 모델, 보유 데이터, HUD를 한 번에 정리한다.
@@ -166,6 +180,15 @@ namespace LastJumpCrew.ParkHanSol.Interaction
                 return;
             }
 
+            if (!TryResolveSaleData(itemData, out var saleData))
+            {
+                Debug.LogWarning(
+                    $"PHS_DEBRIS_SELL_REJECTED reason=item_not_sellable " +
+                    $"zone={name} debris={debrisItem.name}",
+                    this);
+                return;
+            }
+
             var saleKey = $"debris_sale:world:{debrisItem.GetEntityId()}";
             if (!completedNetworkSales.Add(saleKey))
             {
@@ -174,18 +197,18 @@ namespace LastJumpCrew.ParkHanSol.Interaction
 
             if (!TryCommitNetworkSaleCredit(
                     saleKey,
-                    itemData.Price,
+                    saleData.Price,
                     NetworkManager.ServerClientId,
                     out var creditReason))
             {
                 completedNetworkSales.Remove(saleKey);
                 Debug.LogError(
-                    $"PHS_DEBRIS_SELL_FAILED reason={creditReason} zone={name} debris={debrisItem.name} value={itemData.Price}",
+                    $"PHS_DEBRIS_SELL_FAILED reason={creditReason} zone={name} debris={debrisItem.name} value={saleData.Price}",
                     this);
                 return;
             }
 
-            Debug.Log($"PHS_DEBRIS_SOLD zone={name} debris={debrisItem.name} value={itemData.Price} method=thrown");
+            Debug.Log($"PHS_DEBRIS_SOLD zone={name} debris={debrisItem.name} value={saleData.Price} method=thrown");
             PlaySaleFeedbackClientRpc();
             var debrisNetworkObject = debrisItem.GetComponent<NetworkObject>();
             if (debrisNetworkObject != null && debrisNetworkObject.IsSpawned)
@@ -292,6 +315,17 @@ namespace LastJumpCrew.ParkHanSol.Interaction
                 this);
             PlaySaleFeedbackClientRpc();
             return true;
+        }
+
+        private bool TryResolveSaleData(
+            UtilityItemDataSO itemData,
+            out UtilityItemDataSO saleData)
+        {
+            saleData = null;
+            return itemData != null
+                && !string.IsNullOrWhiteSpace(itemData.ItemId)
+                && TryResolveSellableDebris(itemData.ItemId, out saleData)
+                && saleData.Price > 0;
         }
 
         private static bool TryCommitNetworkSaleCredit(

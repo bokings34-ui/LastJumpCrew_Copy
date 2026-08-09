@@ -24,7 +24,9 @@ namespace LastJumpCrew.ParkHanSol.Interaction
     }
 
     [RequireComponent(typeof(NetworkObject))]
-    public sealed class NetworkTravelConsoleController : NetworkBehaviour
+    public sealed class NetworkTravelConsoleController :
+        NetworkBehaviour,
+        ITravelConsoleFlow
     {
         [SerializeField, Min(1f)] private float serverInteractionDistance = 4f;
 

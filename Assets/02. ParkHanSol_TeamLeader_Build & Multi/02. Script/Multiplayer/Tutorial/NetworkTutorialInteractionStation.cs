@@ -14,6 +14,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Tutorial
         [SerializeField] private bool singleUse = true;
         [SerializeField] private bool objectiveMode;
         [SerializeField] private string objectiveId = "incident_terminal";
+        [SerializeField] private Transform warpDestination;
 
         private bool hasBeenUsed;
         private bool objectiveActive;
@@ -55,12 +56,34 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Tutorial
             hasBeenUsed = true;
             if (objectiveMode)
             {
+                WarpPlayerIfConfigured(itemHolder);
                 objectiveActive = false;
                 Completed?.Invoke(this);
                 return;
             }
 
             tutorialDirector.ReportInteraction();
+        }
+
+        private void WarpPlayerIfConfigured(IItemHolder itemHolder)
+        {
+            if (warpDestination == null || itemHolder is not Component holder)
+            {
+                return;
+            }
+
+            var player = holder.GetComponent<NetworkPlayerController>();
+            if (player == null)
+            {
+                Debug.LogError(
+                    $"PHS_TUTORIAL_WARP_FAILED reason=player_missing station={name}",
+                    this);
+                return;
+            }
+
+            player.transform.SetPositionAndRotation(
+                warpDestination.position,
+                warpDestination.rotation);
         }
     }
 }
