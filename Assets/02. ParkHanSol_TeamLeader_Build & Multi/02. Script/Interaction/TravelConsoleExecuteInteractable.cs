@@ -1,22 +1,18 @@
 using UnityEngine;
-using UnityEngine.Serialization;
 
 namespace LastJumpCrew.ParkHanSol.Interaction
 {
     public sealed class TravelConsoleExecuteInteractable : MonoBehaviour, IInteractable
     {
-        [FormerlySerializedAs("console")]
-        [SerializeField] private MonoBehaviour flowSource;
+        [SerializeField] private NetworkTravelConsoleController console;
 
-        private ITravelConsoleFlow Flow => flowSource as ITravelConsoleFlow;
-
-        public string InteractionPrompt => Flow != null
-            ? Flow.ActionPrompt
+        public string InteractionPrompt => console != null
+            ? console.ActionPrompt
             : "이동 실행";
 
         public bool CanInteract(IItemHolder itemHolder)
         {
-            return Flow != null && Flow.CanExecute(itemHolder);
+            return console != null && console.CanExecute(itemHolder);
         }
 
         public void Interact(IItemHolder itemHolder)
@@ -27,7 +23,7 @@ namespace LastJumpCrew.ParkHanSol.Interaction
                 return;
             }
 
-            Flow.Execute(itemHolder);
+            console.Execute(itemHolder);
         }
     }
 }

@@ -34,25 +34,7 @@ namespace LastJumpCrew.ParkHanSol.Interaction
                 return;
             }
 
-            if (player.IsSpawned)
-            {
-                player.RequestLocalPortalTeleport(name);
-                return;
-            }
-
-            if (!TryResolveServerDestination(
-                    player,
-                    out var position,
-                    out var rotation,
-                    out var reason))
-            {
-                Debug.LogError(
-                    $"PHS_TEST_TELEPORT_FAILED reason={reason} portal={name}",
-                    this);
-                return;
-            }
-
-            player.RequestTestTeleport(position, rotation);
+            player.RequestLocalPortalTeleport(name);
         }
 
         internal bool TryResolveServerDestination(

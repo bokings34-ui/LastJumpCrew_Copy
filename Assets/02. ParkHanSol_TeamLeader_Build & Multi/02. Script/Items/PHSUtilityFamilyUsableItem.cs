@@ -54,10 +54,7 @@ namespace LastJumpCrew.ParkHanSol.Items
             var offlinePolicy = holderComponent.GetComponent<
                 PHSNetworkTutorialOfflineItemUsePolicy>();
             return offlinePolicy != null
-                && offlinePolicy.CanUseOfflineItem(
-                    FamilyKind,
-                    phsHolder.CurrentItemPrefabData,
-                    holder);
+                && offlinePolicy.CanUseOfflineItem(FamilyKind);
         }
 
         public void Use(
@@ -79,22 +76,11 @@ namespace LastJumpCrew.ParkHanSol.Items
                 return;
             }
 
-            var phsHolder = (PHSItemHolder)holder;
-            var itemData = phsHolder.CurrentItemPrefabData;
-            var offlinePolicy = holderComponent.GetComponent<
-                PHSNetworkTutorialOfflineItemUsePolicy>();
-            System.Action impactAction = controller.IsSpawned
-                ? () => controller.RequestAction(FamilyKind)
-                : () => offlinePolicy?.TryResolveOfflineItem(
-                    FamilyKind,
-                    itemData,
-                    holder);
-
             var isWrench =
                 FamilyKind == PHSUtilityFamilyActionKind.Wrench;
             presentation.TryBeginImpactAction(
                 PresentationKind,
-                impactAction,
+                () => controller.RequestAction(FamilyKind),
                 !isWrench
                     ? 0.16f
                     : 0.08f,

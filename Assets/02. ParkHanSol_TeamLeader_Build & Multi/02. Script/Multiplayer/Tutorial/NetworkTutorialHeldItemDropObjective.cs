@@ -15,7 +15,10 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Tutorial
 
         private void OnEnable()
         {
-            BindActionSource();
+            if (actionSource != null)
+            {
+                actionSource.ActionSucceeded += HandleActionSucceeded;
+            }
         }
 
         private void OnDisable()
@@ -29,24 +32,9 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Tutorial
         public override void SetObjectiveActive(bool active)
         {
             base.SetObjectiveActive(active);
-            BindActionSource();
             expectedItemWasHeld = active
                 && itemHolder != null
                 && itemHolder.IsHoldingItem(expectedItemId);
-        }
-
-        private void BindActionSource()
-        {
-            if (actionSource == null && itemHolder != null)
-            {
-                actionSource = itemHolder.GetComponent<NetworkTutorialActionSource>();
-            }
-
-            if (actionSource != null)
-            {
-                actionSource.ActionSucceeded -= HandleActionSucceeded;
-                actionSource.ActionSucceeded += HandleActionSucceeded;
-            }
         }
 
         private void Update()

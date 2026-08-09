@@ -99,104 +99,6 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
             }
         }
 
-        public bool TryResolveOfflineTarget(
-            PHSUtilityFamilyActionKind familyKind,
-            UtilityItemDataSO itemData,
-            LastJumpCrew.Common.IItemHolder itemHolder,
-            out IOfflineUtilityActionTarget target)
-        {
-            target = null;
-            if (IsSpawned
-                || itemData == null
-                || itemHolder == null
-                || !HasFamilyProfile(itemData, familyKind))
-            {
-                return false;
-            }
-
-            var origin = transform.position + Vector3.up * 0.75f;
-            var forward = transform.forward;
-            var range = familyKind == PHSUtilityFamilyActionKind.Wrench
-                ? wrenchRange
-                : extinguisherRange;
-            var radius = familyKind == PHSUtilityFamilyActionKind.Wrench
-                ? wrenchRadius
-                : extinguisherRadius;
-            var center = familyKind == PHSUtilityFamilyActionKind.Wrench
-                ? origin + forward * Mathf.Min(range, 1.2f)
-                : origin + forward * (range * 0.5f);
-            var colliders = Physics.OverlapSphere(
-                center,
-                familyKind == PHSUtilityFamilyActionKind.Wrench
-                    ? radius
-                    : range * 0.5f + radius,
-                targetLayers,
-                QueryTriggerInteraction.Collide);
-
-            var seen = new HashSet<Component>();
-            var candidates = new List<OfflineTargetCandidate>();
-            foreach (var collider in colliders)
-            {
-                if (collider == null)
-                {
-                    continue;
-                }
-
-                var closest = collider.ClosestPoint(origin);
-                var offset = closest - origin;
-                var distance = offset.magnitude;
-                if (distance > range
-                    || familyKind
-                        == PHSUtilityFamilyActionKind.FireExtinguisher
-                    && distance > 0.01f
-                    && Vector3.Dot(forward, offset / distance) < 0.45f)
-                {
-                    continue;
-                }
-
-                foreach (var component in collider.GetComponentsInParent<
-                             Component>(true))
-                {
-                    if (component is not IOfflineUtilityActionTarget candidate
-                        || candidate.IsResolved
-                        || !candidate.CanInteract(itemHolder)
-                        || !UtilityFamilyActionRules.Allows(
-                            familyKind,
-                            candidate.ActionKind)
-                        || !itemData.TryGetActionProfile(
-                            candidate.ActionKind,
-                            out _)
-                        || !seen.Add(component))
-                    {
-                        continue;
-                    }
-
-                    candidates.Add(new OfflineTargetCandidate(
-                        component,
-                        candidate,
-                        closest,
-                        distance));
-                    break;
-                }
-            }
-
-            candidates.Sort((left, right) =>
-                left.Distance.CompareTo(right.Distance));
-            foreach (var candidate in candidates)
-            {
-                if (HasLineOfSight(
-                        origin,
-                        candidate.Component,
-                        candidate.AimPosition))
-                {
-                    target = candidate.Target;
-                    return true;
-                }
-            }
-
-            return false;
-        }
-
         [ServerRpc]
         private void RequestActionServerRpc(
             PHSUtilityFamilyActionKind familyKind,
@@ -425,9 +327,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
                     && UtilityItemRepairActionResolver.TryResolve(
                         eventTarget.EffectKind,
                         out var eventAction)
-                    && UtilityFamilyActionRules.Allows(
-                        familyKind,
-                        eventAction))
+                    && FamilyAllows(familyKind, eventAction))
                 {
                     candidate = TargetCandidate.ForEvent(
                         component,
@@ -440,9 +340,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
                     && UtilityItemRepairActionResolver.TryResolve(
                         shipTarget.AccidentId,
                         out var shipAction)
-                    && UtilityFamilyActionRules.Allows(
-                        familyKind,
-                        shipAction))
+                    && FamilyAllows(familyKind, shipAction))
                 {
                     candidate = TargetCandidate.ForShip(
                         component,
@@ -518,9 +416,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
             foreach (var profile in itemData.ActionProfiles)
             {
                 if (profile.IsValid
-                    && UtilityFamilyActionRules.Allows(
-                        familyKind,
-                        profile.ActionKind))
+                    && FamilyAllows(familyKind, profile.ActionKind))
                 {
                     return true;
                 }
@@ -533,18 +429,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
             Vector3 origin,
             TargetCandidate candidate)
         {
-            return HasLineOfSight(
-                origin,
-                candidate.Component,
-                candidate.AimPosition);
-        }
-
-        private bool HasLineOfSight(
-            Vector3 origin,
-            Component target,
-            Vector3 aimPosition)
-        {
-            var offset = aimPosition - origin;
+            var offset = candidate.AimPosition - origin;
             var distance = offset.magnitude;
             if (distance <= 0.01f)
             {
@@ -573,7 +458,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
                 foreach (var component in hit.collider.GetComponentsInParent<
                              Component>(true))
                 {
-                    if (component == target)
+                    if (component == candidate.Component)
                     {
                         return true;
                     }
@@ -585,24 +470,23 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
             return false;
         }
 
-        private readonly struct OfflineTargetCandidate
+        private static bool FamilyAllows(
+            PHSUtilityFamilyActionKind familyKind,
+            UtilityItemActionKind actionKind)
         {
-            public OfflineTargetCandidate(
-                Component component,
-                IOfflineUtilityActionTarget target,
-                Vector3 aimPosition,
-                float distance)
+            return familyKind switch
             {
-                Component = component;
-                Target = target;
-                AimPosition = aimPosition;
-                Distance = distance;
-            }
-
-            public Component Component { get; }
-            public IOfflineUtilityActionTarget Target { get; }
-            public Vector3 AimPosition { get; }
-            public float Distance { get; }
+                PHSUtilityFamilyActionKind.Wrench =>
+                    actionKind is UtilityItemActionKind.DeviceRepair
+                        or UtilityItemActionKind.HullBreachRepair
+                        or UtilityItemActionKind.SteamLeakRepair
+                        or UtilityItemActionKind.OxygenLeakRepair
+                        or UtilityItemActionKind.OxygenGeneratorRepair
+                        or UtilityItemActionKind.GravityGeneratorRepair,
+                PHSUtilityFamilyActionKind.FireExtinguisher =>
+                    actionKind == UtilityItemActionKind.FireSuppression,
+                _ => false
+            };
         }
 
         private struct TargetCandidate
