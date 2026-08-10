@@ -425,14 +425,13 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
                 return false;
             }
 
-            if (!synchronizedPowerEnabled.Value && !synchronizedGravityEnabled.Value)
+            if (!synchronizedPowerEnabled.Value)
             {
                 reason = "power_already_off";
                 return false;
             }
 
             synchronizedPowerEnabled.Value = false;
-            synchronizedGravityEnabled.Value = false;
             synchronizedBatteryInstalled.Value = false;
             var powerOffCause = new FixedString64Bytes("power_off");
             synchronizedLastDamageCause.Value = powerOffCause;

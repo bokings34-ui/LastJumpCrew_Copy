@@ -11,8 +11,8 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
         [SerializeField] private GridLayoutGroup segmentGrid;
         [SerializeField] private Image segmentTemplate;
         [SerializeField] private TMP_Text valueText;
-        [SerializeField, Min(1)] private int columns = 20;
-        [SerializeField, Min(1)] private int excessiveSegmentWarning = 200;
+        [SerializeField, Min(1)] private int columns = 5;
+        [SerializeField, Min(1)] private int maximumDisplaySegments = 5;
         [SerializeField] private Color remainingColor = new(0.16f, 0.9f, 0.42f, 1f);
         [SerializeField] private Color consumedColor = new(0.1f, 0.13f, 0.16f, 0.8f);
 
@@ -29,7 +29,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
 
         public void SetDurability(int currentDurability, int maximumDurability, int durabilityCost)
         {
-            if (segmentContainer == null || segmentGrid == null || segmentTemplate == null || valueText == null)
+            if (segmentContainer == null || segmentGrid == null || segmentTemplate == null)
             {
                 Debug.LogError($"PHS_HELD_ITEM_DURABILITY_SEGMENTS_FAILED reason=reference_missing target={name}", this);
                 return;
@@ -48,25 +48,27 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
                 Mathf.CeilToInt((float)Mathf.Max(0, currentDurability) / durabilityCost),
                 0,
                 totalUses);
-            if (totalUses > excessiveSegmentWarning)
-            {
-                Debug.LogError(
-                    $"PHS_HELD_ITEM_DURABILITY_SEGMENTS_EXCESSIVE count={totalUses} target={name}",
-                    this);
-            }
-
-            EnsureSegments(totalUses);
-            ResizeCells(totalUses);
+            var displayedSegmentCount = Mathf.Min(totalUses, maximumDisplaySegments);
+            var remainingDisplayedSegments = Mathf.Clamp(
+                Mathf.CeilToInt((float)remainingUses / totalUses * displayedSegmentCount),
+                0,
+                displayedSegmentCount);
+            EnsureSegments(displayedSegmentCount);
+            ResizeCells(displayedSegmentCount);
             for (var index = 0; index < segments.Count; index++)
             {
-                segments[index].color = index < remainingUses
+                segments[index].color = index < remainingDisplayedSegments
                     ? remainingColor
                     : consumedColor;
             }
 
-            valueText.text = $"DUR  {remainingUses}/{totalUses}";
+            if (valueText != null)
+            {
+                valueText.text = string.Empty;
+                valueText.gameObject.SetActive(false);
+            }
+
             gameObject.SetActive(true);
-            valueText.gameObject.SetActive(true);
         }
 
         public void Hide()
@@ -112,11 +114,10 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
                 (segmentContainer.rect.width - spacing.x * (safeColumns - 1)) / safeColumns;
             var cellHeight =
                 (segmentContainer.rect.height - spacing.y * (rows - 1)) / rows;
-            var squareSize = Mathf.Min(cellWidth, cellHeight);
             segmentGrid.childAlignment = TextAnchor.MiddleCenter;
             segmentGrid.constraint = GridLayoutGroup.Constraint.FixedColumnCount;
             segmentGrid.constraintCount = safeColumns;
-            segmentGrid.cellSize = new Vector2(squareSize, squareSize);
+            segmentGrid.cellSize = new Vector2(cellWidth, cellHeight);
         }
     }
 }

@@ -715,7 +715,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Events
                 return false;
             }
 
-            if (!shipSystems.IsPowerEnabled && !shipSystems.IsGravityEnabled)
+            if (!shipSystems.IsPowerEnabled)
             {
                 reason = null;
                 Debug.Log(

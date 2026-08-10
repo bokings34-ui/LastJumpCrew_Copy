@@ -11,7 +11,6 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Tutorial
     public sealed class NetworkTutorialDirector : MonoBehaviour
     {
         private const int DefaultRequiredSuccessCount = 2;
-        private const int ConfiguredRoomCount = 10;
 
         private static readonly TutorialActionKind[] LegacyActionOrder =
         {
@@ -176,14 +175,6 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Tutorial
             if (!HasConfiguredRooms)
             {
                 return true;
-            }
-
-            if (rooms.Length != ConfiguredRoomCount)
-            {
-                Debug.LogError(
-                    $"PHS_NETWORK_TUTORIAL_SETUP_FAILED reason=room_count_invalid expected={ConfiguredRoomCount} actual={rooms.Length} director={name}",
-                    this);
-                return false;
             }
 
             for (var index = 0; index < rooms.Length; index++)

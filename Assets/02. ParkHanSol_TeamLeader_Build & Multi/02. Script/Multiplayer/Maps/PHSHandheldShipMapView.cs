@@ -11,8 +11,10 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Maps
     public sealed class PHSHandheldShipMapView : MonoBehaviour, IShipMapView
     {
         [SerializeField] private GameObject deviceRoot;
+        [SerializeField] private RawImage mapImage;
         [SerializeField] private RectTransform markerRoot;
         [SerializeField] private Image markerTemplate;
+        [SerializeField] private Image markerGlyphTemplate;
         [SerializeField] private TMP_Text markerLabelTemplate;
         [Header("Tactical Status")]
         [SerializeField] private TMP_Text currentMapText;
@@ -25,6 +27,11 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Maps
         [SerializeField] private TMP_Text[] eventRows = Array.Empty<TMP_Text>();
         [SerializeField] private Image[] eventIcons = Array.Empty<Image>();
         [SerializeField] private TMP_Text eventOverflowText;
+        [Header("Event List Layout")]
+        [SerializeField] private float eventRowWithIconX = 25f;
+        [SerializeField] private float eventRowWithoutIconX;
+        [SerializeField] private float eventRowWithIconWidth = 160f;
+        [SerializeField] private float eventRowWithoutIconWidth = 185f;
         [Header("Existing HUD Icons")]
         [SerializeField] private Sprite fireIcon;
         [SerializeField] private Sprite powerFailureIcon;
@@ -33,6 +40,11 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Maps
         [SerializeField] private Sprite steamLeakIcon;
         [SerializeField] private Sprite oxygenFailureIcon;
         [SerializeField] private Sprite gravityFailureIcon;
+        [SerializeField] private Sprite enemySpawnIcon;
+        [SerializeField] private Sprite patrolZoneIcon;
+        [SerializeField] private Sprite meteorZoneIcon;
+        [SerializeField] private Sprite nebulaZoneIcon;
+        [SerializeField] private Sprite planetZoneIcon;
         [SerializeField] private Sprite powerSyncIcon;
         [SerializeField] private Sprite cannonIcon;
         [SerializeField] private Sprite wireFixIcon;
@@ -46,14 +58,19 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Maps
         [SerializeField] private Color objectColor = new(1f, 0.72f, 0.12f, 1f);
 
         private readonly List<Image> markerPool = new();
+        private readonly List<Image> markerGlyphPool = new();
         private readonly List<TMP_Text> markerLabelPool = new();
+        private bool mapTextureErrorLogged;
 
         private void Awake()
         {
             if (deviceRoot == null
+                || mapImage == null
                 || markerRoot == null
                 || markerTemplate == null
+                || markerGlyphTemplate == null
                 || markerLabelTemplate == null
+                || markerGlyphTemplate.transform.parent != markerTemplate.transform
                 || currentMapText == null
                 || mapDetailText == null
                 || runPhaseText == null
@@ -71,8 +88,8 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Maps
             {
                 Debug.LogError(
                     $"PHS_HANDHELD_MAP_VIEW_SETUP_FAILED view={name} " +
-                    $"device={deviceRoot != null} root={markerRoot != null} " +
-                    $"template={markerTemplate != null && markerLabelTemplate != null} " +
+                    $"device={deviceRoot != null} map_image={mapImage != null} root={markerRoot != null} " +
+                    $"template={markerTemplate != null && markerGlyphTemplate != null && markerLabelTemplate != null} " +
                     $"map={currentMapText != null} detail={mapDetailText != null} phase={runPhaseText != null} " +
                     $"warp={warpFill != null && warpValueText != null} " +
                     $"ship={shipHpFill != null && shipHpValueText != null} " +
@@ -84,23 +101,37 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Maps
             }
 
             ValidateIconReferences();
+            ConfigureEventRows();
             markerTemplate.gameObject.SetActive(false);
+            markerGlyphTemplate.gameObject.SetActive(false);
         }
 
         public void SetVisible(bool visible)
         {
-            if (deviceRoot == null)
+            if (!enabled || deviceRoot == null || mapImage == null)
             {
-                Debug.LogError($"PHS_HANDHELD_MAP_VIEW_FAILED reason=device_missing view={name}", this);
+                Debug.LogError(
+                    $"PHS_HANDHELD_MAP_VIEW_FAILED reason=setup_invalid view={name} " +
+                    $"device={deviceRoot != null} map_image={mapImage != null}",
+                    this);
                 return;
             }
 
             deviceRoot.SetActive(visible);
+            if (visible)
+            {
+                TryBindMapTexture();
+            }
         }
 
         public void Render(in ShipMapPresentation presentation)
         {
             if (!enabled || markerRoot == null || markerTemplate == null)
+            {
+                return;
+            }
+
+            if (!TryBindMapTexture())
             {
                 return;
             }
@@ -142,17 +173,24 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Maps
                     (marker.NormalizedPosition.x - 0.5f) * size.x,
                     (marker.NormalizedPosition.y - 0.5f) * size.y);
                 var hasIcon = marker.IconId != ShipMapIconId.None;
-                markerImage.sprite = hasIcon
-                    ? ResolveIcon(marker.IconId)
-                    : markerTemplate.sprite;
-                markerImage.preserveAspect = hasIcon;
-                markerImage.color = hasIcon ? Color.white : ResolveColor(marker.Kind);
+                markerImage.sprite = markerTemplate.sprite;
+                markerImage.preserveAspect = true;
+                markerImage.color = ResolveColor(marker.Kind);
                 markerImage.rectTransform.sizeDelta = marker.Kind switch
                 {
                     ShipMapMarkerKind.Incident => new Vector2(26f, 26f),
-                    ShipMapMarkerKind.Object => new Vector2(17f, 17f),
+                    ShipMapMarkerKind.Object => new Vector2(20f, 20f),
                     _ => new Vector2(22f, 22f)
                 };
+                var markerGlyph = markerGlyphPool[index];
+                markerGlyph.gameObject.SetActive(hasIcon);
+                if (hasIcon)
+                {
+                    markerGlyph.sprite = ResolveIcon(marker.IconId);
+                    markerGlyph.preserveAspect = true;
+                    markerGlyph.color = Color.white;
+                }
+
                 var markerLabel = markerLabelPool[index];
                 markerLabel.text = marker.Symbol;
                 markerLabel.gameObject.SetActive(
@@ -180,10 +218,10 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Maps
                     }
 
                     eventRows[index].rectTransform.anchoredPosition = new Vector2(
-                        hasIcon ? 11f : 0f,
+                        hasIcon ? eventRowWithIconX : eventRowWithoutIconX,
                         eventRows[index].rectTransform.anchoredPosition.y);
                     eventRows[index].rectTransform.sizeDelta = new Vector2(
-                        hasIcon ? 128f : 154f,
+                        hasIcon ? eventRowWithIconWidth : eventRowWithoutIconWidth,
                         eventRows[index].rectTransform.sizeDelta.y);
                     var prefix = hasIcon || string.IsNullOrWhiteSpace(detail.Symbol)
                         ? string.Empty
@@ -202,6 +240,42 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Maps
             eventOverflowText.text = overflow > 0 ? $"+{overflow}개 더 있음" : string.Empty;
         }
 
+        private bool TryBindMapTexture()
+        {
+            var renderRig = PHSShipMapRenderRig.Instance;
+            if (renderRig == null || renderRig.MapTexture == null)
+            {
+                mapImage.texture = null;
+                if (!mapTextureErrorLogged)
+                {
+                    mapTextureErrorLogged = true;
+                    Debug.LogError(
+                        $"PHS_HANDHELD_MAP_VIEW_RENDER_FAILED reason=map_texture_missing view={name}",
+                        this);
+                }
+
+                return false;
+            }
+
+            mapTextureErrorLogged = false;
+            if (mapImage.texture != renderRig.MapTexture)
+            {
+                mapImage.texture = renderRig.MapTexture;
+            }
+
+            return true;
+        }
+
+        private void ConfigureEventRows()
+        {
+            for (var index = 0; index < eventRows.Length; index++)
+            {
+                var eventRow = eventRows[index];
+                eventRow.enableWordWrapping = false;
+                eventRow.overflowMode = TextOverflowModes.Ellipsis;
+            }
+        }
+
         private void EnsurePoolSize(int requiredCount)
         {
             while (markerPool.Count < requiredCount)
@@ -210,16 +284,19 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Maps
                 instance.name = $"RuntimeMarker_{markerPool.Count}";
                 instance.gameObject.SetActive(false);
                 var label = instance.transform.Find("MarkerLabel")?.GetComponent<TMP_Text>();
-                if (label == null)
+                var glyph = instance.transform.Find(markerGlyphTemplate.name)?.GetComponent<Image>();
+                if (label == null || glyph == null)
                 {
                     Debug.LogError(
-                        $"PHS_HANDHELD_MAP_MARKER_FAILED reason=label_missing marker={instance.name}",
+                        $"PHS_HANDHELD_MAP_MARKER_FAILED reason=child_missing marker={instance.name} " +
+                        $"label={label != null} glyph={glyph != null}",
                         this);
                     enabled = false;
                     return;
                 }
 
                 markerPool.Add(instance);
+                markerGlyphPool.Add(glyph);
                 markerLabelPool.Add(label);
             }
         }
@@ -232,6 +309,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Maps
                 ShipMapMarkerKind.Teammate => teammateColor,
                 ShipMapMarkerKind.Incident => incidentColor,
                 ShipMapMarkerKind.Object => objectColor,
+                ShipMapMarkerKind.ExternalInteraction => incidentColor,
                 _ => throw new ArgumentOutOfRangeException(nameof(kind), kind, null)
             };
         }
@@ -247,6 +325,11 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Maps
                 ShipMapIconId.SteamLeak => steamLeakIcon,
                 ShipMapIconId.OxygenFailure => oxygenFailureIcon,
                 ShipMapIconId.GravityFailure => gravityFailureIcon,
+                ShipMapIconId.EnemySpawn => enemySpawnIcon,
+                ShipMapIconId.PatrolZone => patrolZoneIcon,
+                ShipMapIconId.MeteorZone => meteorZoneIcon,
+                ShipMapIconId.NebulaZone => nebulaZoneIcon,
+                ShipMapIconId.PlanetZone => planetZoneIcon,
                 ShipMapIconId.PowerSync => powerSyncIcon,
                 ShipMapIconId.Cannon => cannonIcon,
                 ShipMapIconId.WireFix => wireFixIcon,

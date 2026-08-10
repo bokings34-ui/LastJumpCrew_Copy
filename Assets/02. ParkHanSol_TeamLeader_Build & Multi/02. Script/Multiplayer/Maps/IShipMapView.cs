@@ -8,7 +8,8 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Maps
         Self = 1,
         Teammate = 2,
         Incident = 3,
-        Object = 4
+        Object = 4,
+        ExternalInteraction = 5
     }
 
     public enum ShipMapIconId : byte
@@ -27,7 +28,12 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Maps
         Warp = 11,
         Battery = 12,
         Wrench = 13,
-        FireExtinguisher = 14
+        FireExtinguisher = 14,
+        EnemySpawn = 15,
+        PatrolZone = 16,
+        MeteorZone = 17,
+        NebulaZone = 18,
+        PlanetZone = 19
     }
 
     public readonly struct ShipMapMarker
@@ -56,18 +62,24 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Maps
             ShipMapIconId iconId,
             string symbol,
             string title,
-            string status)
+            string status,
+            int priority = 0,
+            string deduplicationKey = null)
         {
             IconId = iconId;
             Symbol = symbol;
             Title = title;
             Status = status;
+            Priority = priority;
+            DeduplicationKey = deduplicationKey;
         }
 
         public ShipMapIconId IconId { get; }
         public string Symbol { get; }
         public string Title { get; }
         public string Status { get; }
+        public int Priority { get; }
+        public string DeduplicationKey { get; }
     }
 
     public readonly struct ShipMapPresentation

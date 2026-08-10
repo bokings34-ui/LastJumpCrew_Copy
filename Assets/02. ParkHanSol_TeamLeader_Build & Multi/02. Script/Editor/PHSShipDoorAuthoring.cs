@@ -38,10 +38,10 @@ namespace LastJumpCrew.ParkHanSol.EditorTools
                 .OrderBy(door => GetHierarchyPath(door.transform),
                     StringComparer.Ordinal)
                 .ToArray();
-            if (legacyDoors.Length != 20)
+            if (legacyDoors.Length == 0)
             {
                 throw new InvalidOperationException(
-                    $"PHS_SHIP_DOOR_AUTHORING_FAILED reason=door_count expected=20 actual={legacyDoors.Length}");
+                    "PHS_SHIP_DOOR_AUTHORING_FAILED reason=door_missing");
             }
 
             var buttonPrefab = EnsureButtonPrefab();
@@ -86,17 +86,19 @@ namespace LastJumpCrew.ParkHanSol.EditorTools
                     FindObjectsInactive.Include, FindObjectsSortMode.None);
             var errors = new List<string>();
 
-            if (coordinator == null || coordinator.DoorCount != 20)
+            var expectedDoorCount = coordinator?.DoorCount ?? 0;
+            if (coordinator == null || expectedDoorCount == 0)
             {
-                errors.Add($"coordinator_or_count actual={coordinator?.DoorCount ?? 0}");
+                errors.Add($"coordinator_or_count actual={expectedDoorCount}");
             }
-            if (targets.Length != 20)
+            if (targets.Length != expectedDoorCount)
             {
-                errors.Add($"target_count actual={targets.Length}");
+                errors.Add($"target_count expected={expectedDoorCount} actual={targets.Length}");
             }
-            if (buttons.Length != 40)
+            var expectedButtonCount = expectedDoorCount * 2;
+            if (buttons.Length != expectedButtonCount)
             {
-                errors.Add($"button_count actual={buttons.Length}");
+                errors.Add($"button_count expected={expectedButtonCount} actual={buttons.Length}");
             }
             foreach (var target in targets)
             {

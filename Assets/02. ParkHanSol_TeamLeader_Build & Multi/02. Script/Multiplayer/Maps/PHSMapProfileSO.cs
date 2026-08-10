@@ -282,12 +282,16 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Maps
                 }
 
                 var eventValue = (int)entry.EventId;
-                var isMicDestroy = entry.EventId == EventId.MicDestroy;
-                if (!isMicDestroy
-                    && (eventValue < (int)SM.EventType.External
-                        || eventValue >= (int)SM.EventType.Environment))
+                if (entry.EventId == EventId.GravityGeneratorFailure)
                 {
-                    reason = $"external_threat_channel_mismatch:event={entry.EventId}";
+                    reason = "team_event_excluded:gravity_generator_failure";
+                    return false;
+                }
+
+                if (eventValue < (int)SM.EventType.Internal
+                    || eventValue >= (int)SM.EventType.Environment)
+                {
+                    reason = $"team_event_channel_mismatch:event={entry.EventId}";
                     return false;
                 }
 

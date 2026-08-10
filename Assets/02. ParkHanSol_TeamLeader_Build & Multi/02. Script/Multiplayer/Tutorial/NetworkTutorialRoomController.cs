@@ -24,6 +24,8 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Tutorial
             Array.Empty<MonoBehaviour>();
         [SerializeField] private GameObject roomRoot;
         [SerializeField] private bool manageRoomRootActiveState;
+        [SerializeField] private GameObject[] activationRoots =
+            Array.Empty<GameObject>();
 
         [Header("Instruction UI")]
         [SerializeField] private string roomTitle;
@@ -194,6 +196,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Tutorial
         public void SetCurrent(bool current, int completedCount)
         {
             isCurrent = current;
+            SetActivationRootsActive(current || isComplete);
             ResolveObjectiveSources();
             var objectivesAvailable = current && briefingCompleted;
             RefreshObjectiveSourceActivation();
@@ -228,6 +231,17 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Tutorial
             if (objectivesAvailable)
             {
                 ConfigureInstructionUi(completedCount);
+            }
+        }
+
+        private void SetActivationRootsActive(bool active)
+        {
+            foreach (var root in activationRoots)
+            {
+                if (root != null)
+                {
+                    root.SetActive(active);
+                }
             }
         }
 

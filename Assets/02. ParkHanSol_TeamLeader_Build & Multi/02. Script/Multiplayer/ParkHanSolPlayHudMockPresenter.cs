@@ -302,7 +302,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
             UtilityItemDataSO itemPrefabData,
             int currentDurability)
         {
-            if (heldItemDurabilityText == null || heldItemDurabilitySegments == null)
+            if (heldItemDurabilitySegments == null)
             {
                 if (itemPrefabData != null && itemPrefabData.UsesDurability)
                 {
