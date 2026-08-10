@@ -155,15 +155,20 @@ namespace LastJumpCrew.ParkHanSol.Editor
             var spawnRoot = Find(scene, "PHS_Map_Runtime/Spawn Points");
             var positions = new[]
             {
-                new Vector3(-2f, 1f, 2f),
-                new Vector3(0f, 1f, 2f),
-                new Vector3(2f, 1f, 2f),
-                new Vector3(-2f, 1f, 0f)
+                new Vector3(-8.8f, -3.69f, 9.5f),
+                new Vector3(-7.2f, -3.69f, 9.5f),
+                new Vector3(-8.8f, -3.69f, 10.5f),
+                new Vector3(-7.2f, -3.69f, 10.5f)
             };
 
             for (var index = 0; index < positions.Length; index++)
             {
-                FindDirectChild(spawnRoot, $"Spawn Point {index + 1}").position = positions[index];
+                var spawnPoint = FindDirectChild(
+                    spawnRoot,
+                    $"Spawn Point {index + 1}");
+                spawnPoint.SetPositionAndRotation(
+                    positions[index],
+                    Quaternion.Euler(0f, 180f, 0f));
             }
 
             FindDirectChild(spawnRoot, "PHS_WarpSafeZone").position = new Vector3(0f, 0f, 7.5f);

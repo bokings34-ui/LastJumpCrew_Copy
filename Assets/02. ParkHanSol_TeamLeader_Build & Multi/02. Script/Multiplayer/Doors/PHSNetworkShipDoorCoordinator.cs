@@ -356,7 +356,10 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Doors
                     Time.deltaTime * visualSpeed);
             }
 
-            var blocked = visible && !state.Open;
+            // Before NGO spawns this scene object there is no authoritative door
+            // state yet. Leaving the invisible blocker enabled here traps direct
+            // main-scene play behind a wall that has no matching presentation.
+            var blocked = IsSpawned && visible && !state.Open;
             if (binding.SolidBlocker != null)
             {
                 binding.SolidBlocker.enabled = blocked;

@@ -8,10 +8,13 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
         [SerializeField, Min(0f)] private float pushMultiplier = 1.15f;
         [SerializeField, Min(0f)] private float minimumImpulse = 0.35f;
         [SerializeField, Min(0f)] private float maximumImpulse = 8f;
+        [SerializeField, Min(0f)] private float collisionSeparationDistance = 0.02f;
+        [SerializeField, Min(0f)] private float maximumSeparationDistance = 0.25f;
         [SerializeField] private bool onlyPushInZeroGravity = true;
 
         private NetworkPlayerController playerController;
         private CharacterController characterController;
+        private bool isSeparatingFromCollision;
 
         private void Awake()
         {
@@ -39,6 +42,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
                 return;
             }
 
+            SeparateFromCollision(hit.collider, hit.normal);
             playerController.ReflectZeroGravityVelocity(hit.normal);
 
             if (hit.rigidbody == null || hit.rigidbody.isKinematic)
@@ -67,6 +71,52 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
                 maximumImpulse);
 
             hit.rigidbody.AddForceAtPosition(pushDirection * impulse, hit.point, ForceMode.Impulse);
+        }
+
+        private void SeparateFromCollision(Collider hitCollider, Vector3 hitNormal)
+        {
+            if (isSeparatingFromCollision
+                || characterController == null
+                || hitCollider == null
+                || maximumSeparationDistance <= 0f)
+            {
+                return;
+            }
+
+            var separationDirection = hitNormal.sqrMagnitude <= 0.001f
+                ? Vector3.zero
+                : hitNormal.normalized;
+            var separationDistance = collisionSeparationDistance;
+
+            if (Physics.ComputePenetration(
+                    characterController,
+                    transform.position,
+                    transform.rotation,
+                    hitCollider,
+                    hitCollider.transform.position,
+                    hitCollider.transform.rotation,
+                    out var penetrationDirection,
+                    out var penetrationDistance))
+            {
+                separationDirection = penetrationDirection;
+                separationDistance += penetrationDistance;
+            }
+
+            if (separationDirection.sqrMagnitude <= 0.001f || separationDistance <= 0f)
+            {
+                return;
+            }
+
+            separationDistance = Mathf.Min(separationDistance, maximumSeparationDistance);
+            isSeparatingFromCollision = true;
+            try
+            {
+                characterController.Move(separationDirection * separationDistance);
+            }
+            finally
+            {
+                isSeparatingFromCollision = false;
+            }
         }
     }
 }

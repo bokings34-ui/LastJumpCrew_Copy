@@ -132,7 +132,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
             if ((sharedOptionsPanel != null && sharedOptionsPanel.IsOpen)
                 || (optionsPanel != null && optionsPanel.activeSelf))
             {
-                CloseOptions();
+                CloseMenu();
                 return;
             }
 

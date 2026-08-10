@@ -62,7 +62,7 @@ namespace SM
 
             foreach (var player in _players)
             {
-                if (player == null) continue;
+                if (player == null || !player.gameObject.activeInHierarchy) continue;
 
                 float dist = Vector3.Distance(fromPosition, player.position);
                 if (dist < closestDist)

@@ -11,7 +11,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Tutorial
     public sealed class NetworkTutorialDirector : MonoBehaviour
     {
         private const int DefaultRequiredSuccessCount = 2;
-        private const int ConfiguredRoomCount = 8;
+        private const int ConfiguredRoomCount = 10;
 
         private static readonly TutorialActionKind[] LegacyActionOrder =
         {
