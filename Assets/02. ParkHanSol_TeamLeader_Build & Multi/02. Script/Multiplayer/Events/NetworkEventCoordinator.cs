@@ -57,6 +57,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Events
         private readonly Dictionary<ulong, int> registeredRepairTargetCounts = new();
         private readonly Dictionary<ulong, int> completedRepairTargetCounts = new();
         private readonly HashSet<uint> completedRepairEffectIds = new();
+        private readonly HashSet<ulong> physicallyDrivenEventInstances = new();
         private readonly Dictionary<
             (ulong ClientId, ulong PlayerNetworkObjectId),
             uint> repairRequestSequences = new();
@@ -64,6 +65,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Events
 
         private bool setupValid;
         private bool suppressTerminalShipImpact;
+        private bool allocatePhysicallyDrivenEventInstance;
         private float shipModuleDamageMultiplier = 1f;
         private float shipHullDamageMultiplier = 1f;
         private ulong nextEventInstanceId;
@@ -159,6 +161,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Events
             registeredRepairTargetCounts.Clear();
             completedRepairTargetCounts.Clear();
             completedRepairEffectIds.Clear();
+            physicallyDrivenEventInstances.Clear();
             repairRequestSequences.Clear();
             effectMirrorPresenter?.ClearMirrors();
             base.OnNetworkDespawn();
@@ -354,6 +357,11 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Events
             }
 
             var current = lifecycleSnapshots[index];
+            if (current.IsTerminal)
+            {
+                return true;
+            }
+
             var safeRequired = Mathf.Max(0f, requiredProgress);
             var safeProgress = Mathf.Clamp(progress, 0f, safeRequired > 0f ? safeRequired : float.MaxValue);
             if (Mathf.Approximately(current.Progress, safeProgress)
@@ -511,6 +519,19 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Events
             ShipRoom room,
             out ulong instanceId)
         {
+            return TrySpawnEventServer(
+                eventId,
+                room,
+                false,
+                out instanceId);
+        }
+
+        public bool TrySpawnEventServer(
+            EventId eventId,
+            ShipRoom room,
+            bool usePhysicalIncidentPayload,
+            out ulong instanceId)
+        {
             instanceId = 0UL;
 
             if (!CanSpawnEventServer(eventId))
@@ -524,7 +545,74 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Events
                 return false;
             }
 
-            return TrySpawnEventInRoomServer(eventId, room, out instanceId);
+            var previousAllocationMode = allocatePhysicallyDrivenEventInstance;
+            allocatePhysicallyDrivenEventInstance = usePhysicalIncidentPayload;
+            try
+            {
+                return TrySpawnEventInRoomServer(eventId, room, out instanceId);
+            }
+            finally
+            {
+                allocatePhysicallyDrivenEventInstance = previousAllocationMode;
+            }
+        }
+
+        public bool TryCompletePhysicalIncidentPayloadServer(
+            ulong eventInstanceId,
+            EventId eventId,
+            bool succeeded,
+            out string reason)
+        {
+            if (!IsAuthoritative
+                || !physicallyDrivenEventInstances.Contains(eventInstanceId))
+            {
+                reason = "physical_payload_event_not_active";
+                return false;
+            }
+
+            if (!TryGetSnapshot(eventInstanceId, out var snapshot)
+                || snapshot.EventId != eventId
+                || snapshot.IsTerminal)
+            {
+                reason = "physical_payload_snapshot_invalid";
+                return false;
+            }
+
+            var activeEvent = eventManager.GetActiveEvent(eventId);
+            if (activeEvent == null || activeEvent.InstanceId != eventInstanceId)
+            {
+                reason = "physical_payload_runtime_missing";
+                return false;
+            }
+
+            if (!succeeded)
+            {
+                activeEvent.OnFail();
+                reason = null;
+                return true;
+            }
+
+            switch (activeEvent)
+            {
+                case PowerOffEvent powerOffEvent:
+                    powerOffEvent.NotifyPowerRestored();
+                    break;
+                case InternalEvent internalEvent:
+                    internalEvent.ApplyRepair(float.MaxValue);
+                    break;
+                default:
+                    reason = $"physical_payload_event_type_invalid:{activeEvent.GetType().Name}";
+                    return false;
+            }
+
+            if (eventManager.IsInstanceActive(eventInstanceId))
+            {
+                reason = "physical_payload_event_not_completed";
+                return false;
+            }
+
+            reason = null;
+            return true;
         }
 
         private bool CanSpawnEventServer(EventId eventId)
@@ -666,6 +754,12 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Events
             ShipModuleEventDataSO data,
             out string reason)
         {
+            if (physicallyDrivenEventInstances.Contains(eventInstanceId))
+            {
+                reason = null;
+                return true;
+            }
+
             return TryApplyShipModuleImpact(
                 eventInstanceId,
                 eventId,
@@ -710,6 +804,12 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Events
             ShipModuleEventDataSO data,
             out string reason)
         {
+            if (physicallyDrivenEventInstances.Contains(eventInstanceId))
+            {
+                reason = null;
+                return true;
+            }
+
             return TryApplyShipModuleImpact(
                 eventInstanceId,
                 eventId,
@@ -726,6 +826,12 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Events
             ShipModuleEventDataSO data,
             out string reason)
         {
+            if (physicallyDrivenEventInstances.Contains(eventInstanceId))
+            {
+                reason = null;
+                return true;
+            }
+
             if (!TryGetAuthoritativeShipSystems(data, out var shipSystems, out reason))
             {
                 return false;
@@ -836,6 +942,11 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Events
             if (nextEventInstanceId == 0UL)
             {
                 nextEventInstanceId++;
+            }
+
+            if (allocatePhysicallyDrivenEventInstance)
+            {
+                physicallyDrivenEventInstances.Add(nextEventInstanceId);
             }
 
             return nextEventInstanceId;
@@ -1107,6 +1218,9 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Events
                 terminalState,
                 false,
                 success);
+            physicallyDrivenEventInstances.Remove(instanceId);
+            CleanupRepairTrackingForEvent(instanceId);
+            StartCoroutine(RemoveTerminalSnapshotAfterDelay(instanceId, revision));
 
             if (terminalState == EventState.Fail)
             {
@@ -1659,6 +1773,28 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Events
             {
                 PublishEffectRemoved(eventInstanceId, effectInstanceId);
             }
+        }
+
+        private void CleanupRepairTrackingForEvent(ulong eventInstanceId)
+        {
+            effectRemovalBuffer.Clear();
+            foreach (var pair in repairTargets)
+            {
+                if (pair.Value != null
+                    && pair.Value.EventInstanceId == eventInstanceId)
+                {
+                    effectRemovalBuffer.Add(pair.Key);
+                }
+            }
+
+            foreach (var effectInstanceId in effectRemovalBuffer)
+            {
+                repairTargets.Remove(effectInstanceId);
+                completedRepairEffectIds.Remove(effectInstanceId);
+            }
+
+            registeredRepairTargetCounts.Remove(eventInstanceId);
+            completedRepairTargetCounts.Remove(eventInstanceId);
         }
 
         private int FindSnapshotIndex(ulong instanceId)

@@ -61,7 +61,7 @@ namespace LastJumpCrew.ParkHanSol.Interaction
         private UtilityItemObject currentItemObject;
 
         // 현재 아이템의 데이터 캐시다. 빈손이면 null이다.
-        // 변경: UtilityItemPrefabData → UtilityItemDataSO
+        // 통합 아이템 데이터
         private UtilityItemDataSO currentItemPrefabData;
 
         private DebrisItem heldDebris;
@@ -77,6 +77,8 @@ namespace LastJumpCrew.ParkHanSol.Interaction
 
         // 변수 이름은 기존 코드를 최대한 유지하기 위해 그대로 두고, 반환 타입만 UtilityItemDataSO로 변경
         public UtilityItemDataSO CurrentItemPrefabData => currentItemPrefabData;
+
+        public ItemDropMotionProfile DropMotionProfile => dropMotionProfile;
 
         public DebrisItem HeldDebris => heldDebris;
      
@@ -138,7 +140,7 @@ namespace LastJumpCrew.ParkHanSol.Interaction
             }
         }
 
-        // 변경: UtilityItemPrefabData → UtilityItemDataSO
+        // 통합 아이템 데이터
         public bool CanReplaceHeldItem(UtilityItemDataSO itemPrefabData)
         {
             // 손 위치, 아이템 데이터, HandPrefab 참조만 검사한다.
@@ -529,9 +531,25 @@ namespace LastJumpCrew.ParkHanSol.Interaction
                 return false;
             }
 
-            droppedItemObject.OnDropped(position);
+            if (!dropMotionProfile.TryResolveFloorPlacement(
+                    droppedRigidbody,
+                    position,
+                    source.rotation,
+                    transform.root,
+                    out var resolvedPosition,
+                    out var resolvedRotation))
+            {
+                Debug.LogError($"PHS_TEMP_ITEM_PLACE_FAILED " + $"reason=floor_placement_rejected " + $"item={currentItemPrefabData.ItemId}");
+                Destroy(droppedItemInstance);
+                return false;
+            }
 
-            if (!dropMotionProfile.TryApply(droppedRigidbody, source.rotation))
+            droppedItemInstance.transform.SetPositionAndRotation(
+                resolvedPosition,
+                resolvedRotation);
+            droppedItemObject.OnDropped(resolvedPosition);
+
+            if (!dropMotionProfile.TryApply(droppedRigidbody, resolvedRotation))
             {
                 Debug.LogError($"PHS_TEMP_ITEM_PLACE_FAILED " + $"reason=drop_motion_rejected " + $"item={currentItemPrefabData.ItemId}");
 
@@ -581,17 +599,31 @@ namespace LastJumpCrew.ParkHanSol.Interaction
 
             heldItemInstance.transform.SetParent(null, true);
 
-            heldItemInstance.transform.SetPositionAndRotation(position, source.rotation);
-
             heldItemInstance.transform.localScale = heldDebrisWorldScale;
       
             RestoreHeldDebrisColliders();
 
-            currentItemObject.OnDropped(position);
+            if (!dropMotionProfile.TryResolveFloorPlacement(
+                    debrisRigidbody,
+                    position,
+                    source.rotation,
+                    transform.root,
+                    out var resolvedPosition,
+                    out var resolvedRotation))
+            {
+                Debug.LogError($"PHS_DEBRIS_PLACE_FAILED " + $"reason=floor_placement_rejected " + $"player={name} " + $"debris={debrisName}");
+                return false;
+            }
+
+            heldItemInstance.transform.SetPositionAndRotation(
+                resolvedPosition,
+                resolvedRotation);
+
+            currentItemObject.OnDropped(resolvedPosition);
 
             if (!dropMotionProfile.TryApply(
                     debrisRigidbody,
-                    source.rotation))
+                    resolvedRotation))
             {
                 Debug.LogError($"PHS_DEBRIS_PLACE_FAILED " + $"reason=drop_motion_rejected " + $"player={name} " + $"debris={debrisName}");
 
@@ -623,7 +655,8 @@ namespace LastJumpCrew.ParkHanSol.Interaction
                 heldDebrisColliderStates[index] = heldDebrisColliders[index].enabled;
 
                 heldDebrisTriggerStates[index] = heldDebrisColliders[index].isTrigger;
-          
+
+                heldDebrisColliders[index].enabled = true;
                 heldDebrisColliders[index].isTrigger = true;
             }
         }
@@ -885,7 +918,7 @@ namespace LastJumpCrew.ParkHanSol.Interaction
         
         }
 
-        // 변경: UtilityItemPrefabData → UtilityItemDataSO
+        // 통합 아이템 데이터
         private bool TryApplyHeldItemPose(Transform itemTransform, UtilityItemDataSO itemData, Transform activeHoldPoint, Vector3 sourceScale)
         {
             var firstPerson = ShouldUseFirstPersonHoldPoint();
@@ -933,6 +966,11 @@ namespace LastJumpCrew.ParkHanSol.Interaction
         {
             thrownItemInstance = null;
             actionAmount = 0;
+            if (dropMotionProfile == null)
+            {
+                Debug.LogError($"PHS_TEMP_ITEM_THROW_FAILED reason=drop_motion_profile_missing player={name}", this);
+                return false;
+            }
 
             if (IsNetworkSessionActive())
             {
@@ -989,6 +1027,7 @@ namespace LastJumpCrew.ParkHanSol.Interaction
 
                 thrownItemInstance =
                     spawnedItem.gameObject;
+                ApplyThrowSpin(thrownItemInstance);
 
                 Debug.Log($"PHS_TEMP_ITEM_THROW_CREATED " + $"player={name} " + $"item={networkItemId} " + $"networkObjectId={spawnedItem.NetworkObjectId} " + $"position={spawnPosition}");
 
@@ -1069,6 +1108,7 @@ namespace LastJumpCrew.ParkHanSol.Interaction
             }
 
             thrownItemObject.OnDropped(spawnPosition);
+            ApplyThrowSpin(thrownItemInstance);
 
             if (networkSessionActive && !thrownNetworkObject.IsSpawned)
             {
@@ -1092,6 +1132,18 @@ namespace LastJumpCrew.ParkHanSol.Interaction
             Debug.Log($"PHS_TEMP_ITEM_THROW_CREATED " + $"player={name} " + $"item={thrownItemId} " + $"position={spawnPosition}");
 
             return true;
+        }
+
+        private void ApplyThrowSpin(GameObject thrownItem)
+        {
+            var body = thrownItem.GetComponent<Rigidbody>();
+            if (body == null)
+            {
+                Debug.LogError($"PHS_TEMP_ITEM_THROW_FAILED reason=rigidbody_missing item={thrownItem.name}", thrownItem);
+                return;
+            }
+
+            dropMotionProfile.TryApplyAngularVelocity(body, body.rotation);
         }
 
         private bool TryReleaseHeldDebrisForThrow(Vector3 spawnPosition, Quaternion spawnRotation, bool networkSessionActive, out GameObject thrownItemInstance)

@@ -25,7 +25,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
         [SerializeField, Min(0.1f)] private float maximumFallSpeed = 14f;
         [Header("Cinematic Zero Gravity Thruster")]
         [SerializeField, Min(1f)] private float thrusterFuelCapacity = 100f;
-        [SerializeField, Min(0.1f)] private float thrusterFuelUsePerSecond = 7.5f;
+        [SerializeField, Min(0.1f)] private float thrusterFuelUsePerSecond = 3.75f;
         [SerializeField, Min(0f)] private float thrusterFuelRecoveryDelay = 1f;
         [SerializeField, Min(0.1f)] private float thrusterFuelRecoveryPerSecond = 18f;
         [SerializeField, Min(0.1f)] private float thrusterAcceleration = 7f;
@@ -211,6 +211,17 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
             }
 
             zeroGravityVelocity = nextVelocity;
+        }
+
+        public void StopZeroGravityMovement()
+        {
+            if (gravityMode == NetworkPlayerGravityMode.ShipGravity)
+            {
+                return;
+            }
+
+            zeroGravityVelocity = Vector3.zero;
+            PlanarVelocity = Vector3.zero;
         }
 
         public void RequestTestTeleport(Vector3 targetPosition, Quaternion targetRotation)
@@ -734,6 +745,11 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
             }
             else
             {
+                if (gravityMode == NetworkPlayerGravityMode.ShipGravity)
+                {
+                    RotatePlayer(look.x * GetMouseLookDegrees(), deltaTime);
+                }
+
                 SubmitInputServerRpc(
                     move,
                     verticalMove,
@@ -1345,6 +1361,8 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
 
         private void ApplyGravityAreaMode()
         {
+            gravityAreas.RemoveAll(area => area == null || !area.ContainsPosition(transform.position));
+
             var nextMode = NetworkPlayerGravityMode.ShipGravity;
             var highestPriority = int.MinValue;
             foreach (var area in gravityAreas)
@@ -1676,6 +1694,8 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
                 characterController.enabled = wasEnabled;
             }
 
+            RefreshGravityTrackingAtCurrentPosition();
+
             Debug.Log(
                 $"PHS_PLAYER_TELEPORT_OK operation={operation} player={name} pos={targetPosition}",
                 this);
@@ -1701,6 +1721,8 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
                 characterController.enabled = wasEnabled;
             }
 
+            RefreshGravityTrackingAtCurrentPosition();
+
             Debug.Log($"PHS_PLAYER_TELEPORT_OK player={name} pos={targetPosition}");
         }
 
@@ -1714,19 +1736,43 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
             }
         }
 
+        private void RefreshGravityTrackingAtCurrentPosition()
+        {
+            gravityAreas.Clear();
+            foreach (var gravityArea in FindObjectsByType<NetworkPlayerGravityArea>(
+                         FindObjectsInactive.Exclude,
+                         FindObjectsSortMode.None))
+            {
+                if (gravityArea.ContainsPosition(transform.position))
+                {
+                    gravityAreas.Add(gravityArea);
+                }
+            }
+
+            ApplyGravityAreaMode();
+        }
+
         private void ApplyLocalLook(Vector2 look)
         {
             cameraPitch = Mathf.Clamp(cameraPitch - look.y * GetMouseLookDegrees(), -80f, 80f);
 
             if (cameraRoot != null)
             {
-                currentCameraPitch = Mathf.SmoothDampAngle(
-                    currentCameraPitch,
-                    cameraPitch,
-                    ref cameraPitchVelocity,
-                    cameraRotationSmoothTime,
-                    cameraMaxRotationSpeed,
-                    Time.deltaTime);
+                if (gravityMode == NetworkPlayerGravityMode.ShipGravity)
+                {
+                    currentCameraPitch = cameraPitch;
+                    cameraPitchVelocity = 0f;
+                }
+                else
+                {
+                    currentCameraPitch = Mathf.SmoothDampAngle(
+                        currentCameraPitch,
+                        cameraPitch,
+                        ref cameraPitchVelocity,
+                        cameraRotationSmoothTime,
+                        cameraMaxRotationSpeed,
+                        Time.deltaTime);
+                }
 
                 var shake = GetThrusterCameraShake();
                 cameraRoot.localRotation = Quaternion.Euler(
@@ -1762,6 +1808,13 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
         private void RotatePlayer(float yawDegrees, float deltaTime)
         {
             targetYaw += yawDegrees;
+            if (gravityMode == NetworkPlayerGravityMode.ShipGravity)
+            {
+                yawVelocity = 0f;
+                transform.rotation = Quaternion.Euler(0f, targetYaw, 0f);
+                return;
+            }
+
             var nextYaw = Mathf.SmoothDampAngle(
                 transform.eulerAngles.y,
                 targetYaw,

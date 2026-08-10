@@ -1,4 +1,5 @@
 using UnityEngine;
+using UnityEngine.AI;
 
 namespace SM
 {
@@ -32,12 +33,22 @@ namespace SM
 
                 if (Vector3.Distance(_lastPosition, target.position) >= MinMoveDistance)
                 {
-                    owner.Agent.SetDestination(target.position);
+                    var destination = target.position;
+                    if (NavMesh.SamplePosition(
+                            destination,
+                            out var navMeshHit,
+                            3f,
+                            owner.Agent.areaMask))
+                    {
+                        destination = navMeshHit.position;
+                    }
+
+                    owner.Agent.SetDestination(destination);
                     _lastPosition = target.position;
                 }
             }
 
-            if (owner.GetDistanceToTarget(target) <= owner.AttackRange)
+            if (owner.IsTargetWithinAttackRange(target))
             {
                 owner.StateMachine.ChangeState(owner, EnemyStateType.Attack);
             }

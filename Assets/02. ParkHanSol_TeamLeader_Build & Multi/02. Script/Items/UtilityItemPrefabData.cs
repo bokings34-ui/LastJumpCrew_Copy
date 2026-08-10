@@ -1,72 +1,8 @@
-using System;
 using System.Collections.Generic;
 using UnityEngine;
 
 namespace LastJumpCrew.ParkHanSol.Items
 {
-    [Serializable]
-    public struct UtilityHeldItemPose
-    {
-        [SerializeField] private Vector3 localPosition;
-        [SerializeField] private Vector3 localEulerAngles;
-        [SerializeField, Min(0.01f)] private float scaleMultiplier;
-
-        public UtilityHeldItemPose(
-            Vector3 localPosition,
-            Vector3 localEulerAngles,
-            float scaleMultiplier)
-        {
-            this.localPosition = localPosition;
-            this.localEulerAngles = localEulerAngles;
-            this.scaleMultiplier = scaleMultiplier;
-        }
-
-        public Vector3 LocalPosition => localPosition;
-        public Quaternion LocalRotation => Quaternion.Euler(localEulerAngles);
-        public float ScaleMultiplier => scaleMultiplier;
-        public bool IsValid => scaleMultiplier > 0f;
-    }
-
-    public enum UtilityItemUpgradeEffect
-    {
-        None,
-        RestoreShipHp,
-        IncreaseShipMaximumHp,
-        IncreaseHookPower,
-        IncreaseThrusterDuration,
-        IncreasePlayerMaximumHp
-    }
-
-    public enum UtilityItemActionKind : byte
-    {
-        None = 0,
-        FireSuppression = 1,
-        PowerRestore = 2,
-        DeviceRepair = 3,
-        HullBreachRepair = 4,
-        SteamLeakRepair = 5,
-        OxygenLeakRepair = 6,
-        OxygenGeneratorRepair = 7,
-        GravityGeneratorRepair = 8,
-        BatteryDischarge = 9
-    }
-
-    [Serializable]
-    public struct UtilityItemActionProfile
-    {
-        [SerializeField] private UtilityItemActionKind actionKind;
-        [SerializeField, Min(1)] private int amount;
-        [SerializeField, Min(0)] private int durabilityCost;
-
-        public UtilityItemActionKind ActionKind => actionKind;
-        public int Amount => amount;
-        public int DurabilityCost => durabilityCost;
-        public bool IsValid => actionKind != UtilityItemActionKind.None
-            && Enum.IsDefined(typeof(UtilityItemActionKind), actionKind)
-            && amount > 0
-            && durabilityCost >= 0;
-    }
-
     // 아이템 하나가 런타임에서 어떤 프리팹/아이콘/표시명을 사용할지 정의하는 데이터 asset이다.
     // 실제 아이템 오브젝트에 붙는 컴포넌트는 UtilityItemObject이고, 이 ScriptableObject는 그 오브젝트가 참조하는 설정값이다.
     // 팀원이 새 아이템을 추가할 때는 prefab만 만드는 것으로 끝내지 말고, 이 데이터 asset도 같이 만든 뒤 itemPrefabData에 연결해야 한다.

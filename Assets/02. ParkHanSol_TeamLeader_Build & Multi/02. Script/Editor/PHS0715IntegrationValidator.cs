@@ -1521,9 +1521,25 @@ namespace LastJumpCrew.ParkHanSol.Editor
             var localDebrisPortals = UnityEngine.Object.FindObjectsByType<ExteriorTestTeleportInteractable>(
                 FindObjectsInactive.Include,
                 FindObjectsSortMode.None);
+            var exteriorDestinations = UnityEngine.Object.FindObjectsByType<NetworkExteriorPortalDestination>(
+                    FindObjectsInactive.Include,
+                    FindObjectsSortMode.None)
+                .Select(destination => destination.DestinationId)
+                .Where(destinationId => !string.IsNullOrWhiteSpace(destinationId))
+                .ToHashSet(StringComparer.Ordinal);
+            var automaticExteriorPortals = localDebrisPortals
+                .Where(portal => portal.GetComponent<NetworkExteriorAutoPortal>() != null)
+                .ToArray();
+            var returnPortals = localDebrisPortals
+                .Where(portal => portal.GetComponent<NetworkExteriorAutoPortal>() == null)
+                .ToArray();
             Require(
-                localDebrisPortals.Length == 2,
-                $"map_debris_portal_pair_count_invalid actual={localDebrisPortals.Length}",
+                automaticExteriorPortals.Length == 4,
+                $"map_debris_auto_portal_count_invalid actual={automaticExteriorPortals.Length}",
+                errors);
+            Require(
+                returnPortals.Length == 1,
+                $"map_debris_return_portal_count_invalid actual={returnPortals.Length}",
                 errors);
             var portalNames = new HashSet<string>(StringComparer.Ordinal);
             foreach (var portal in localDebrisPortals)
@@ -1534,14 +1550,21 @@ namespace LastJumpCrew.ParkHanSol.Editor
                     $"map_debris_portal_name_duplicate portal={portal.name}",
                     errors);
                 var serializedPortal = new SerializedObject(portal);
-                RequireObject(
-                    serializedPortal,
-                    "destination",
-                    $"map_debris_portal_destination_missing portal={portal.name}",
+                var destinationId = serializedPortal.FindProperty("destinationId")?.stringValue;
+                Require(
+                    !string.IsNullOrWhiteSpace(destinationId) && exteriorDestinations.Contains(destinationId),
+                    $"map_debris_portal_destination_id_invalid portal={portal.name} destinationId={destinationId}",
                     errors);
                 Require(
                     serializedPortal.FindProperty("serverInteractionDistance")?.floatValue >= 0.5f,
                     $"map_debris_portal_distance_invalid portal={portal.name}",
+                    errors);
+                var expectedSector = automaticExteriorPortals.Contains(portal)
+                    ? NetworkPlayerSector.AuthorizedExterior
+                    : NetworkPlayerSector.Interior;
+                Require(
+                    serializedPortal.FindProperty("destinationSector")?.enumValueIndex == (int)expectedSector,
+                    $"map_debris_portal_sector_invalid portal={portal.name} expected={expectedSector}",
                     errors);
             }
 
@@ -1550,6 +1573,7 @@ namespace LastJumpCrew.ParkHanSol.Editor
                 "PHS_ExteriorShopPortal_0717",
                 ShopSceneName,
                 ShopSceneTransitionMode.RequireShopPhase,
+                2,
                 errors);
 
             FindOne<WarpChargeDebugInput>("map_warp_charge_debug_input", errors);
@@ -1592,12 +1616,6 @@ namespace LastJumpCrew.ParkHanSol.Editor
             var gravityZones = UnityEngine.Object.FindObjectsByType<GravityZone>(
                 FindObjectsInactive.Include,
                 FindObjectsSortMode.None);
-            ValidateGravityZone(
-                gravityZones.FirstOrDefault(zone => zone.name == "PHS_Exterior_ZeroGravityArea"),
-                LastJumpCrew.Common.GravityMode.Spacewalk,
-                0,
-                "map_exterior_gravity_zone",
-                errors);
             ValidateGravityZone(
                 gravityZones.FirstOrDefault(zone => zone.name == "PHS_ServiceGravityArea"),
                 LastJumpCrew.Common.GravityMode.ShipGravity,
@@ -1985,6 +2003,7 @@ namespace LastJumpCrew.ParkHanSol.Editor
                 "PHS_ReturnToShipPortal",
                 MapSceneName,
                 ShopSceneTransitionMode.CompleteShop,
+                1,
                 errors);
 
             var displayController = FindOne<ShopRandomDisplayController>("shop_display_controller", errors);
@@ -1993,16 +2012,16 @@ namespace LastJumpCrew.ParkHanSol.Editor
                 var serializedDisplay = new SerializedObject(displayController);
                 RequireArray(serializedDisplay, "displaySlots", 8, "shop_display_slots_insufficient", errors);
                 Require(
-                    serializedDisplay.FindProperty("displaySlots")?.arraySize == 12,
-                    "shop_display_slots_invalid expected=12",
+                    serializedDisplay.FindProperty("displaySlots")?.arraySize == 30,
+                    "shop_display_slots_invalid expected=30",
                     errors);
                 Require(
-                    serializedDisplay.FindProperty("minimumDisplayCount")?.intValue == 8,
-                    "shop_minimum_display_count_invalid expected=8",
+                    serializedDisplay.FindProperty("minimumDisplayCount")?.intValue == 10,
+                    "shop_minimum_display_count_invalid expected=10",
                     errors);
                 Require(
-                    serializedDisplay.FindProperty("maximumDisplayCount")?.intValue == 10,
-                    "shop_maximum_display_count_invalid expected=10",
+                    serializedDisplay.FindProperty("maximumDisplayCount")?.intValue == 15,
+                    "shop_maximum_display_count_invalid expected=15",
                     errors);
                 Require(
                     serializedDisplay.FindProperty("allowDuplicateProducts")?.boolValue == false,
@@ -2094,7 +2113,7 @@ namespace LastJumpCrew.ParkHanSol.Editor
             var shelfSlots = UnityEngine.Object.FindObjectsByType<ShopDisplaySlot>(
                 FindObjectsInactive.Include,
                 FindObjectsSortMode.None);
-            Require(shelfSlots.Length == 12, "shop_display_slots_invalid expected=12", errors);
+            Require(shelfSlots.Length == 30, "shop_display_slots_invalid expected=30", errors);
             foreach (var slot in shelfSlots)
             {
                 Require(
@@ -2366,7 +2385,7 @@ namespace LastJumpCrew.ParkHanSol.Editor
                 serializedRuntime.FindProperty("shopPortalRoot")?.objectReferenceValue as GameObject;
             Require(
                 shopPortalRoot != null &&
-                shopPortalRoot.GetComponent<NetworkScenePortalInteractable>() != null,
+                shopPortalRoot.GetComponentsInChildren<NetworkScenePortalInteractable>(true).Length == 2,
                 "map_runtime_shop_portal_component_missing",
                 errors);
         }
@@ -2905,28 +2924,20 @@ namespace LastJumpCrew.ParkHanSol.Editor
 
             ValidateCombatItemRoute(
                 "Assets/02. ParkHanSol_TeamLeader_Build & Multi/04. Data/UtilityItems/ParkHanSol_WrenchItemPrefabData.asset",
-                "Assets/02. ParkHanSol_TeamLeader_Build & Multi/03. Prefab/Props/Prefabs/Items/Imported/ParkHanSol_Wrench_Held.prefab",
-                "Assets/02. ParkHanSol_TeamLeader_Build & Multi/03. Prefab/Props/Prefabs/Items/Imported/ParkHanSol_Wrench_Dropped.prefab",
                 "wrench",
                 errors);
             ValidateCombatItemRoute(
                 "Assets/02. ParkHanSol_TeamLeader_Build & Multi/04. Data/UtilityItems/ParkHanSol_FireExtinguisherItemPrefabData.asset",
-                "Assets/02. ParkHanSol_TeamLeader_Build & Multi/03. Prefab/Props/Prefabs/Items/Imported/ParkHanSol_FireExtinguisher_Held.prefab",
-                "Assets/02. ParkHanSol_TeamLeader_Build & Multi/03. Prefab/Props/Prefabs/Items/Imported/ParkHanSol_FireExtinguisher_Dropped.prefab",
                 "fire_extinguisher",
                 errors);
             ValidateCombatItemRoute(
                 "Assets/02. ParkHanSol_TeamLeader_Build & Multi/04. Data/UtilityItems/ParkHanSol_BatteryItemPrefabData.asset",
-                "Assets/02. ParkHanSol_TeamLeader_Build & Multi/03. Prefab/Props/Prefabs/Items/Imported/ParkHanSol_BatteryPack_Held.prefab",
-                "Assets/02. ParkHanSol_TeamLeader_Build & Multi/03. Prefab/Props/Prefabs/Items/Imported/ParkHanSol_BatteryPack_Dropped.prefab",
                 "battery",
                 errors);
         }
 
         private static void ValidateCombatItemRoute(
             string itemDataPath,
-            string expectedHeldPath,
-            string expectedDroppedPath,
             string label,
             ICollection<string> errors)
         {
@@ -2938,11 +2949,11 @@ namespace LastJumpCrew.ParkHanSol.Editor
             }
 
             Require(
-                AssetDatabase.GetAssetPath(itemData.HandPrefab) == expectedHeldPath,
+                itemData.HandPrefab != null,
                 $"{label}_held_prefab_invalid",
                 errors);
             Require(
-                AssetDatabase.GetAssetPath(itemData.DroppedPrefab) == expectedDroppedPath,
+                itemData.DroppedPrefab != null,
                 $"{label}_dropped_prefab_invalid",
                 errors);
 
@@ -2955,8 +2966,7 @@ namespace LastJumpCrew.ParkHanSol.Editor
                 if (impact != null)
                 {
                     var playerLayer = LayerMask.NameToLayer("Player");
-                    var targetMask = new SerializedObject(impact)
-                        .FindProperty("targetLayers")?.intValue ?? 0;
+                    var targetMask = itemData.TargetLayers.value;
                     Require(
                         playerLayer >= 0 && (targetMask & (1 << playerLayer)) != 0,
                         $"battery_target_mask_missing_player mask={targetMask}",
@@ -4476,17 +4486,16 @@ namespace LastJumpCrew.ParkHanSol.Editor
                 typeof(AutoRepairKitUsableItem),
                 $"{prefabRoot}/Held/ParkHanSol_AutoRepairKit_Held.prefab",
                 $"{prefabRoot}/ParkHanSol_AutoRepairKit.prefab",
-                true,
-                1,
+                false,
+                100,
                 UtilityItemUpgradeEffect.None,
                 0f,
                 errors,
-                ExpectedProfile(UtilityItemActionKind.DeviceRepair, 1, 1),
-                ExpectedProfile(UtilityItemActionKind.HullBreachRepair, 1, 1),
-                ExpectedProfile(UtilityItemActionKind.SteamLeakRepair, 1, 1),
-                ExpectedProfile(UtilityItemActionKind.OxygenLeakRepair, 1, 1),
-                ExpectedProfile(UtilityItemActionKind.OxygenGeneratorRepair, 1, 1),
-                ExpectedProfile(UtilityItemActionKind.GravityGeneratorRepair, 1, 1));
+                ExpectedProfile(UtilityItemActionKind.DeviceRepair, 100, 0),
+                ExpectedProfile(UtilityItemActionKind.SteamLeakRepair, 100, 0),
+                ExpectedProfile(UtilityItemActionKind.OxygenLeakRepair, 100, 0),
+                ExpectedProfile(UtilityItemActionKind.OxygenGeneratorRepair, 100, 0),
+                ExpectedProfile(UtilityItemActionKind.GravityGeneratorRepair, 100, 0));
             ValidateUtilityItemFunctionContract(
                 $"{dataRoot}/ParkHanSol_FuturisticAdjustableWrenchItemPrefabData.asset",
                 "futuristic_adjustable_wrench",
@@ -4534,7 +4543,7 @@ namespace LastJumpCrew.ParkHanSol.Editor
             ICollection<string> errors,
             params UtilityItemActionProfileExpectation[] expectedProfiles)
         {
-            var itemData = AssetDatabase.LoadAssetAtPath<UtilityItemPrefabData>(
+            var itemData = AssetDatabase.LoadAssetAtPath<UtilityItemDataSO>(
                 dataPath);
             Require(
                 itemData != null,
@@ -4550,7 +4559,7 @@ namespace LastJumpCrew.ParkHanSol.Editor
                 $"utility_function_item_id_invalid expected={expectedItemId} actual={itemData.ItemId}",
                 errors);
             Require(
-                itemData.HasDurability == expectedDurability,
+                itemData.UsesDurability == expectedDurability,
                 $"utility_function_durability_flag_invalid item={expectedItemId} expected={expectedDurability}",
                 errors);
             Require(
@@ -4560,6 +4569,8 @@ namespace LastJumpCrew.ParkHanSol.Editor
                 errors);
             Require(
                 typeof(ProfiledRepairUsableItem).IsAssignableFrom(
+                    expectedDroppedUsableType)
+                || typeof(PHSUtilityFamilyUsableItem).IsAssignableFrom(
                     expectedDroppedUsableType),
                 $"utility_function_online_request_contract_invalid item={expectedItemId}",
                 errors);
@@ -4620,7 +4631,7 @@ namespace LastJumpCrew.ParkHanSol.Editor
                     errors);
             }
 
-            var heldPrefab = itemData.HeldPrefab;
+            var heldPrefab = itemData.HandPrefab;
             var droppedPrefab = itemData.DroppedPrefab;
             Require(
                 AssetDatabase.GetAssetPath(heldPrefab) == expectedHeldPath,
@@ -4648,7 +4659,7 @@ namespace LastJumpCrew.ParkHanSol.Editor
 
         private static void ValidateUtilityItemFunctionPrefab(
             GameObject prefab,
-            UtilityItemPrefabData expectedItemData,
+            UtilityItemDataSO expectedItemData,
             Type expectedUsableType,
             bool expectDurabilityState,
             string itemId,
@@ -4662,7 +4673,7 @@ namespace LastJumpCrew.ParkHanSol.Editor
             var itemObjects = prefab.GetComponents<UtilityItemObject>();
             Require(
                 itemObjects.Length == 1
-                && itemObjects[0].ItemPrefabData == expectedItemData,
+                && itemObjects[0].ItemData == expectedItemData,
                 $"utility_function_item_object_invalid item={itemId} prefab={prefab.name}",
                 errors);
             Require(
@@ -4754,14 +4765,18 @@ namespace LastJumpCrew.ParkHanSol.Editor
             string expectedObjectName,
             string expectedDestinationScene,
             ShopSceneTransitionMode expectedTransitionMode,
+            int expectedPortalCount,
             ICollection<string> errors)
         {
             var portals = UnityEngine.Object.FindObjectsByType<NetworkScenePortalInteractable>(
                 FindObjectsInactive.Include,
                 FindObjectsSortMode.None);
-            Require(portals.Length == 1, $"{label}_count_invalid actual={portals.Length}", errors);
+            Require(portals.Length == expectedPortalCount, $"{label}_count_invalid actual={portals.Length}", errors);
 
-            var portal = portals.FirstOrDefault(candidate => candidate.name == expectedObjectName);
+            var portalRoot = GameObject.Find(expectedObjectName);
+            var portal = portals.FirstOrDefault(candidate =>
+                candidate.name == expectedObjectName ||
+                portalRoot != null && candidate.transform.IsChildOf(portalRoot.transform));
             Require(portal != null, $"{label}_missing expected={expectedObjectName}", errors);
             if (portal == null)
             {

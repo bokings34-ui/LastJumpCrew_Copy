@@ -37,6 +37,8 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
         private readonly Dictionary<ulong, EventId> eventContentIds = new();
         private readonly Dictionary<uint, PHSShipAccidentId> accidentContentIds =
             new();
+        private readonly Dictionary<uint, ulong> physicalAccidentEventIds = new();
+        private readonly Dictionary<ulong, uint> eventPhysicalAccidentIds = new();
         private readonly Dictionary<ulong, string> eventLocationIds = new();
         private readonly Dictionary<uint, string> accidentLocationIds = new();
         private readonly Dictionary<ulong, EventCompletion>
@@ -265,6 +267,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
             }
 
             RetryPendingRuntimeCompletions();
+            SynchronizePhysicalIncidentEventProgress();
             RetryPendingConsequences();
             CopyCurrentPendingCommands();
             foreach (var command in pendingCommands)
@@ -378,13 +381,19 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
                 return;
             }
 
+            ShipRoom room;
+            string resolvedTargetId;
+            string managedLocationId;
+            string roomReason;
+            string physicalAnchorId = null;
             var roomResolved = command.Channel == NetworkRunIncidentChannel.Internal
                 ? TryResolveInternalEventRoom(
                     command,
-                    out var room,
-                    out var resolvedTargetId,
-                    out var managedLocationId,
-                    out var roomReason)
+                    out room,
+                    out resolvedTargetId,
+                    out managedLocationId,
+                    out physicalAnchorId,
+                    out roomReason)
                 : TryResolveExternalRoom(
                     command,
                     out room,
@@ -393,6 +402,14 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
                     out roomReason);
             if (!roomResolved)
             {
+                if (command.SourceKind
+                        == NetworkRunIncidentSourceKind.Consequence
+                    && roomReason
+                        == "compatible_layout_location_unavailable")
+                {
+                    return;
+                }
+
                 Debug.LogWarning(
                     $"PHS_INCIDENT_CONSUME_FAILED command={command.CommandId} " +
                     $"reason=target_unavailable detail={roomReason}",
@@ -431,9 +448,14 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
             spawningEventCommandId = claimed.CommandId;
             try
             {
+                var usePhysicalIncidentPayload =
+                    TryGetPhysicalIncidentPayload(
+                        command,
+                        out var physicalAccidentId);
                 if (!eventCoordinator.TrySpawnEventServer(
                         eventId,
                         room,
+                        usePhysicalIncidentPayload,
                         out runtimeInstanceId))
                 {
                     pendingEventCompletions.Remove(runtimeInstanceId);
@@ -443,9 +465,58 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
                     CancelClaimedCommand(claimed.CommandId, "spawn_failed");
                     return;
                 }
+
+                if (usePhysicalIncidentPayload)
+                {
+                    var physicalAccidentInstanceId = 0U;
+                    string physicalSpawnReason = null;
+                    if (string.IsNullOrWhiteSpace(physicalAnchorId)
+                        || !accidentCoordinator.TrySpawnAccidentServer(
+                            physicalAccidentId,
+                            physicalAnchorId,
+                            out physicalAccidentInstanceId,
+                            out physicalSpawnReason))
+                    {
+                        eventCoordinator.TryCompletePhysicalIncidentPayloadServer(
+                            runtimeInstanceId,
+                            eventId,
+                            false,
+                            out _);
+                        pendingEventCompletions.Remove(runtimeInstanceId);
+                        ReleaseManagedLocation(
+                            managedLocationId,
+                            claimed.CommandId);
+                        Debug.LogWarning(
+                            $"PHS_INCIDENT_CONSUME_FAILED command={claimed.CommandId} " +
+                            $"reason=physical_payload_spawn_failed " +
+                            $"detail={physicalSpawnReason ?? "anchor_missing"}",
+                            this);
+                        CancelClaimedCommand(
+                            claimed.CommandId,
+                            "physical_payload_spawn_failed");
+                        return;
+                    }
+
+                    physicalAccidentEventIds.Add(
+                        physicalAccidentInstanceId,
+                        runtimeInstanceId);
+                    eventPhysicalAccidentIds.Add(
+                        runtimeInstanceId,
+                        physicalAccidentInstanceId);
+                    Debug.Log(
+                        $"PHS_INCIDENT_PHYSICAL_PAYLOAD_SPAWNED " +
+                        $"command={claimed.CommandId} event={runtimeInstanceId}:{eventId} " +
+                        $"accident={physicalAccidentInstanceId}:{physicalAccidentId} " +
+                        $"anchor={physicalAnchorId}",
+                        this);
+                }
             }
             catch (Exception exception)
             {
+                TryFailPhysicalIncidentEvent(
+                    runtimeInstanceId,
+                    eventId,
+                    "spawn_failed");
                 pendingEventCompletions.Remove(runtimeInstanceId);
                 ReleaseManagedLocation(
                     managedLocationId,
@@ -488,6 +559,10 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
                     $"reason=activate_failed detail={activateReason}",
                     this);
                 CancelClaimedCommand(claimed.CommandId, "activate_failed");
+                TryFailPhysicalIncidentEvent(
+                    runtimeInstanceId,
+                    eventId,
+                    "activate_failed");
                 if (pendingEventCompletions.TryGetValue(
                         runtimeInstanceId,
                         out var failedActivationCompletion))
@@ -717,6 +792,22 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
             EventId eventId,
             bool succeeded)
         {
+            if (eventPhysicalAccidentIds.Remove(
+                    runtimeInstanceId,
+                    out var physicalAccidentInstanceId))
+            {
+                physicalAccidentEventIds.Remove(physicalAccidentInstanceId);
+                if (accidentCoordinator.TryGetAccidentSnapshot(
+                        physicalAccidentInstanceId,
+                        out _))
+                {
+                    accidentCoordinator.TryTerminateAccidentServer(
+                        physicalAccidentInstanceId,
+                        "event_runtime_finished",
+                        out _);
+                }
+            }
+
             var completion = new EventCompletion(
                 eventId,
                 succeeded,
@@ -751,6 +842,31 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
             PHSShipAccidentId accidentId,
             bool succeeded)
         {
+            if (physicalAccidentEventIds.Remove(
+                    runtimeInstanceId,
+                    out var eventRuntimeInstanceId))
+            {
+                eventPhysicalAccidentIds.Remove(eventRuntimeInstanceId);
+                string completionReason = null;
+                if (!IncidentRequestContentContract.TryMapLegacyAccidentToEvent(
+                        (int)accidentId,
+                        out var mappedEventId)
+                    || !eventCoordinator.TryCompletePhysicalIncidentPayloadServer(
+                        eventRuntimeInstanceId,
+                        (EventId)mappedEventId,
+                        succeeded,
+                        out completionReason))
+                {
+                    Debug.LogError(
+                        $"PHS_INCIDENT_PHYSICAL_PAYLOAD_COMPLETE_FAILED " +
+                        $"event={eventRuntimeInstanceId} accident={runtimeInstanceId} " +
+                        $"reason={completionReason ?? "event_mapping_missing"}",
+                        this);
+                }
+
+                return;
+            }
+
             var completion = new AccidentCompletion(
                 accidentId,
                 succeeded,
@@ -1515,12 +1631,36 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
             out ShipRoom room,
             out string resolvedTargetId,
             out string managedLocationId,
+            out string physicalAnchorId,
             out string reason)
         {
             room = null;
+            physicalAnchorId = null;
+            if (!IncidentRequestContentContract.TryMapEventToLegacyAccident(
+                    command.ContentId,
+                    out var legacyAccidentId))
+            {
+                resolvedTargetId = null;
+                managedLocationId = null;
+                reason = $"internal_event_accident_mapping_missing:{command.ContentId}";
+                return false;
+            }
+
+            if (!accidentCoordinator.TryCopyAvailableCompatibleAnchorIdsServer(
+                    (PHSShipAccidentId)(ushort)legacyAccidentId,
+                    compatibleAnchorIds,
+                    out var anchorReason))
+            {
+                resolvedTargetId = null;
+                managedLocationId = null;
+                reason = $"internal_event_anchor_unavailable:{anchorReason}";
+                return false;
+            }
+
+            compatibleAnchorIds.Sort(StringComparer.Ordinal);
             if (!TryResolveInternalAnchorId(
                     command,
-                    out var anchorId,
+                    out physicalAnchorId,
                     out resolvedTargetId,
                     out managedLocationId,
                     out reason))
@@ -1551,7 +1691,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
                     if (candidate != null
                         && string.Equals(
                             candidate.AnchorId,
-                            anchorId,
+                            physicalAnchorId,
                             StringComparison.Ordinal))
                     {
                         targetTransform = candidate.transform;
@@ -1590,12 +1730,74 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
 
             if (room == null)
             {
-                reason = $"internal_event_room_missing:{anchorId}";
+                reason = $"internal_event_room_missing:{physicalAnchorId}";
                 return false;
             }
 
             reason = null;
             return true;
+        }
+
+        private static bool TryGetPhysicalIncidentPayload(
+            in NetworkRunIncidentCommand command,
+            out PHSShipAccidentId accidentId)
+        {
+            accidentId = PHSShipAccidentId.None;
+            if (command.Channel != NetworkRunIncidentChannel.Internal
+                || command.PayloadKind
+                    != NetworkRunIncidentPayloadKind.EventManagerEvent
+                || !IncidentRequestContentContract.TryMapEventToLegacyAccident(
+                    command.ContentId,
+                    out var legacyAccidentId))
+            {
+                return false;
+            }
+
+            accidentId = (PHSShipAccidentId)(ushort)legacyAccidentId;
+            return accidentId != PHSShipAccidentId.None
+                && accidentId != PHSShipAccidentId.Fire;
+        }
+
+        private void SynchronizePhysicalIncidentEventProgress()
+        {
+            foreach (var pair in physicalAccidentEventIds)
+            {
+                if (accidentCoordinator.TryGetAccidentSnapshot(
+                        pair.Key,
+                        out var snapshot))
+                {
+                    eventCoordinator.PublishEventProgressServer(
+                        pair.Value,
+                        snapshot.RepairProgress,
+                        snapshot.RequiredRepairProgress);
+                }
+            }
+        }
+
+        private void TryFailPhysicalIncidentEvent(
+            ulong eventInstanceId,
+            EventId eventId,
+            string cause)
+        {
+            if (eventInstanceId == 0UL)
+            {
+                return;
+            }
+
+            var previousTerminationCause = eventTerminationCause;
+            eventTerminationCause = cause;
+            try
+            {
+                eventCoordinator.TryCompletePhysicalIncidentPayloadServer(
+                    eventInstanceId,
+                    eventId,
+                    false,
+                    out _);
+            }
+            finally
+            {
+                eventTerminationCause = previousTerminationCause;
+            }
         }
 
         private bool TrySelectLayoutLocation(

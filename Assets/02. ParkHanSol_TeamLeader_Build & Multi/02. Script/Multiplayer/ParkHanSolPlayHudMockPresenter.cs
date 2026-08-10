@@ -26,6 +26,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
         [SerializeField] private TMP_Text heldItemText;
         [SerializeField] private Image heldItemIconImage;
         [SerializeField] private TMP_Text heldItemDurabilityText;
+        [SerializeField] private ParkHanSolHeldItemDurabilitySegments heldItemDurabilitySegments;
         [SerializeField] private PHSHudFeedbackController hudFeedbackController;
 
         private readonly List<SpeakingPlayerView> speakingPlayerViews = new();
@@ -301,11 +302,11 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
             UtilityItemDataSO itemPrefabData,
             int currentDurability)
         {
-            if (heldItemDurabilityText == null)
+            if (heldItemDurabilityText == null || heldItemDurabilitySegments == null)
             {
                 if (itemPrefabData != null && itemPrefabData.UsesDurability)
                 {
-                    Debug.LogError($"PHS_HELD_ITEM_UI_FAILED reason=heldItemDurabilityText_missing target={name} item={itemPrefabData.ItemId}");
+                    Debug.LogError($"PHS_HELD_ITEM_UI_FAILED reason=durability_gauge_reference_missing target={name} item={itemPrefabData.ItemId}");
                 }
 
                 return;
@@ -313,17 +314,30 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
 
             if (itemPrefabData == null || itemPrefabData.IsUpgradeItem)
             {
-                heldItemDurabilityText.gameObject.SetActive(false);
-                SetText(heldItemDurabilityText, string.Empty);
+                heldItemDurabilitySegments.Hide();
                 return;
             }
 
-            heldItemDurabilityText.gameObject.SetActive(true);
-            SetText(
-                heldItemDurabilityText,
-                itemPrefabData.UsesDurability
-                    ? $"DUR {currentDurability}/{itemPrefabData.MaxDurability}"
-                    : "DUR MAX");
+            if (!itemPrefabData.UsesDurability)
+            {
+                heldItemDurabilitySegments.Hide();
+                return;
+            }
+
+            var durabilityCost = itemPrefabData.DurabilityCostPerUse;
+            if (durabilityCost <= 0)
+            {
+                Debug.LogError(
+                    $"PHS_HELD_ITEM_UI_FAILED reason=durability_cost_missing target={name} item={itemPrefabData.ItemId}",
+                    this);
+                heldItemDurabilitySegments.Hide();
+                return;
+            }
+
+            heldItemDurabilitySegments.SetDurability(
+                currentDurability,
+                itemPrefabData.MaxDurability,
+                durabilityCost);
         }
 
         private void RebuildSpeakingPlayerViews(IReadOnlyList<string> playerNames)

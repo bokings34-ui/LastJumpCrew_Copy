@@ -32,7 +32,7 @@ namespace SM
 
             owner.RotateTowards(target.position, deltaTime);
 
-            if (owner.GetDistanceToTarget(target) > owner.AttackRange)
+            if (!owner.IsTargetWithinAttackRange(target))
             {
                 owner.StateMachine.ChangeState(owner, EnemyStateType.Chase);
                 return;

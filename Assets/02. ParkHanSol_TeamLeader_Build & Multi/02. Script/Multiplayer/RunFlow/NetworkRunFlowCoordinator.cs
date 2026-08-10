@@ -482,7 +482,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
 
             finalShopCompleted = true;
             synchronizedFinalShopPending.Value = false;
-            synchronizedShopCycles.Value = 3;
+            MirrorGameState();
             TryStopStageClockServer("final_shop_completed");
             synchronizedPhase.Value = NetworkRunPhase.Clear;
             reason = null;
@@ -1236,7 +1236,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
                 completedShopCycles++;
             }
 
-            synchronizedShopCycles.Value = Mathf.Clamp(completedShopCycles, 0, 3);
+            synchronizedShopCycles.Value = Mathf.Max(0, completedShopCycles);
         }
 
         private void RequestSceneLoad(string sceneName)

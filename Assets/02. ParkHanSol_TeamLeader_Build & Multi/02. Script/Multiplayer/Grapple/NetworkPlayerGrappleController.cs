@@ -193,6 +193,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
             }
 
             Debug.Log($"PHS_GRAPPLE_AUTO_DETACH player={name} reason=player_blocked flags={collisionFlags}");
+            playerController.StopZeroGravityMovement();
             StopGrapple();
         }
 

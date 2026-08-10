@@ -1,7 +1,9 @@
+using System;
 using System.Collections.Generic;
 using LastJumpCrew.ParkHanSol.Items;
 using LastJumpCrew.ParkHanSol.Multiplayer;
 using LastJumpCrew.ParkHanSol.Multiplayer.Events;
+using LastJumpCrew.ParkHanSol.Multiplayer.Events.MiniGames;
 using LastJumpCrew.ParkHanSol.Multiplayer.ShipAccidents;
 using Unity.Netcode;
 using Unity.Netcode.Components;
@@ -119,7 +121,9 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Maps
 
         private void HandleVisibilityChanged(bool previousValue, bool currentValue)
         {
-            ApplyVisibility(currentValue);
+            // The owner closes the held map immediately on key release. A delayed
+            // server echo must not reopen the local view after that release.
+            ApplyVisibility(IsOwner ? requestedVisible : currentValue);
         }
 
         private void ApplyVisibility(bool visible)
@@ -171,10 +175,8 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Maps
             markers.Clear();
             eventDetails.Clear();
             AppendPlayerMarkers(layout);
-            AppendEventMarkers(layout);
             AppendAccidentMarkers(layout);
-            AppendObjectMarkers(layout);
-            AppendFloorItemMarkers(layout);
+            AppendEventMarkers(layout);
 
             if (!TryBuildPresentation(out var presentation))
             {
@@ -263,6 +265,8 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Maps
                 ResolveRunPhase(runFlow.Phase),
                 runFlow.WarpChargeNormalized,
                 (float)shipSystems.CurrentShipHp / shipSystems.MaximumShipHp,
+                shipSystems.CurrentShipHp,
+                shipSystems.MaximumShipHp,
                 eventDetails);
             return true;
         }
@@ -332,7 +336,10 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Maps
                     continue;
                 }
 
-                var symbol = TryResolveEventSymbol(lifecycle.InstanceId, out var resolvedSymbol)
+                var hasWorldEffect = TryResolveEventSymbol(
+                    lifecycle.InstanceId,
+                    out var resolvedSymbol);
+                var symbol = hasWorldEffect
                     ? resolvedSymbol
                     : ResolveLifecycleEventSymbol(lifecycle.EventId);
                 eventDetails.Add(new ShipMapEventDetail(
@@ -341,6 +348,22 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Maps
                     ResolveLifecycleEventTitle(lifecycle.EventId),
                     $"{ResolveRoomName(lifecycle.RoomId.ToString())} · " +
                     ResolveEventState(lifecycle.State)));
+
+                if (!hasWorldEffect
+                    && (!UsesPhysicalAccidentMarker(lifecycle.EventId)
+                        || !HasActivePhysicalAccidentMarker(lifecycle.EventId))
+                    && TryResolveEventWorldPosition(
+                        lifecycle.EventId,
+                        lifecycle.RoomId.ToString(),
+                        out var roomPosition)
+                    && layout.TryProject(roomPosition, out var mapPosition))
+                {
+                    markers.Add(new ShipMapMarker(
+                        ShipMapMarkerKind.Incident,
+                        mapPosition,
+                        symbol,
+                        ResolveLifecycleEventIcon(lifecycle.EventId)));
+                }
             }
 
             for (var index = 0; index < effectSnapshots.Count; index++)
@@ -351,7 +374,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Maps
                     markers.Add(new ShipMapMarker(
                         ShipMapMarkerKind.Incident,
                         position,
-                        string.Empty,
+                        ResolveEventSymbol(snapshot.Kind),
                         ResolveEventIcon(snapshot.Kind)));
                 }
             }
@@ -420,6 +443,33 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Maps
                 var anchor = layout.GetObjectAnchorAt(index);
                 if (anchor != null
                     && (anchor.Kind == ShipMapObjectKind.SellStation || anchor.gameObject.activeInHierarchy)
+                    && layout.TryProject(anchor.transform.position, out var position))
+                {
+                    markers.Add(new ShipMapMarker(
+                        ShipMapMarkerKind.Object,
+                        position,
+                        anchor.Symbol,
+                        anchor.IconId));
+                }
+            }
+        }
+
+        private void AppendShopMarker(PHSShipMapWorldLayout layout)
+        {
+            var runFlow = NetworkRunFlowCoordinator.Instance;
+            if (runFlow == null
+                || !runFlow.IsSpawned
+                || (runFlow.Phase != NetworkRunPhase.Shop
+                    && runFlow.Phase != NetworkRunPhase.FinalShop))
+            {
+                return;
+            }
+
+            for (var index = 0; index < layout.ObjectAnchorCount; index++)
+            {
+                var anchor = layout.GetObjectAnchorAt(index);
+                if (anchor != null
+                    && anchor.Kind == ShipMapObjectKind.ShopPortal
                     && layout.TryProject(anchor.transform.position, out var position))
                 {
                     markers.Add(new ShipMapMarker(
@@ -564,9 +614,13 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Maps
                 EventId.OxygenLeak => "O2",
                 EventId.EngineBreak => "ENG",
                 EventId.MicDestroy => "MIC",
-                EventId.EnemyScout => "SCT",
-                EventId.MeteorAttack => "MET",
-                EventId.EmpAttack => "EMP",
+                EventId.HullBreach => "HULL",
+                EventId.SteamLeak => "STM",
+                EventId.OxygenGeneratorFailure => "O2G",
+                EventId.GravityGeneratorFailure => "GRV",
+                EventId.EnemyScout => "SYNC",
+                EventId.MeteorAttack => "CAN",
+                EventId.EmpAttack => "WIRE",
                 EventId.PatrolZone => "PAT",
                 EventId.MeteorZone => "MET",
                 EventId.NebulaZone => "NEB",
@@ -584,16 +638,112 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Maps
                 EventId.OxygenLeak => ShipMapIconId.OxygenFailure,
                 EventId.EngineBreak => ShipMapIconId.DeviceFailure,
                 EventId.MicDestroy => ShipMapIconId.DeviceFailure,
+                EventId.HullBreach => ShipMapIconId.HullBreach,
+                EventId.SteamLeak => ShipMapIconId.SteamLeak,
+                EventId.OxygenGeneratorFailure => ShipMapIconId.OxygenFailure,
+                EventId.GravityGeneratorFailure => ShipMapIconId.GravityFailure,
+                EventId.EnemyScout => ShipMapIconId.PowerSync,
+                EventId.MeteorAttack => ShipMapIconId.Cannon,
+                EventId.EmpAttack => ShipMapIconId.WireFix,
                 EventId.EnemySpawn
-                    or EventId.EnemyScout
-                    or EventId.MeteorAttack
-                    or EventId.EmpAttack
                     or EventId.PatrolZone
                     or EventId.MeteorZone
                     or EventId.NebulaZone
                     or EventId.PlanetZone => ShipMapIconId.None,
                 _ => throw new System.ArgumentOutOfRangeException(nameof(eventId), eventId, null)
             };
+        }
+
+        private static bool UsesPhysicalAccidentMarker(EventId eventId)
+        {
+            return eventId is EventId.Fire
+                or EventId.PowerOff
+                or EventId.OxygenLeak
+                or EventId.EngineBreak
+                or EventId.HullBreach
+                or EventId.SteamLeak
+                or EventId.OxygenGeneratorFailure
+                or EventId.GravityGeneratorFailure;
+        }
+
+        private static bool HasActivePhysicalAccidentMarker(EventId eventId)
+        {
+            var coordinator = PHSNetworkShipAccidentCoordinator.Instance;
+            if (coordinator == null || !coordinator.IsSpawned)
+            {
+                return false;
+            }
+
+            for (var index = 0; index < coordinator.ActiveAccidentCount; index++)
+            {
+                var accidentId = coordinator.GetActiveAccidentAt(index).AccidentId;
+                if ((eventId == EventId.Fire && accidentId == PHSShipAccidentId.Fire)
+                    || (eventId == EventId.PowerOff && accidentId == PHSShipAccidentId.PowerFailure)
+                    || (eventId == EventId.EngineBreak && accidentId == PHSShipAccidentId.DeviceFailure)
+                    || (eventId == EventId.HullBreach && accidentId == PHSShipAccidentId.HullBreach)
+                    || (eventId == EventId.SteamLeak && accidentId == PHSShipAccidentId.SteamLeak)
+                    || (eventId == EventId.OxygenGeneratorFailure && accidentId == PHSShipAccidentId.OxygenFailure)
+                    || (eventId == EventId.GravityGeneratorFailure && accidentId == PHSShipAccidentId.GravityGeneratorFailure))
+                {
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
+        private static bool TryResolveRoomWorldPosition(
+            string roomId,
+            out Vector3 worldPosition)
+        {
+            if (!string.IsNullOrWhiteSpace(roomId))
+            {
+                var rooms = FindObjectsByType<ShipRoom>(FindObjectsInactive.Exclude);
+                for (var index = 0; index < rooms.Length; index++)
+                {
+                    var room = rooms[index];
+                    if (room != null
+                        && string.Equals(
+                            room.RoomId,
+                            roomId,
+                            StringComparison.Ordinal))
+                    {
+                        worldPosition = room.transform.position;
+                        return true;
+                    }
+                }
+            }
+
+            worldPosition = default;
+            return false;
+        }
+
+        private static bool TryResolveEventWorldPosition(
+            EventId eventId,
+            string roomId,
+            out Vector3 worldPosition)
+        {
+            if (eventId is EventId.EnemyScout or EventId.MeteorAttack or EventId.EmpAttack)
+            {
+                var terminals = FindObjectsByType<PHSFinalMiniGameTerminal>(
+                    FindObjectsInactive.Exclude,
+                    FindObjectsSortMode.None);
+                for (var index = 0; index < terminals.Length; index++)
+                {
+                    var terminal = terminals[index];
+                    if (terminal != null && terminal.ConfiguredEventId == eventId)
+                    {
+                        worldPosition = terminal.WorldPosition;
+                        return true;
+                    }
+                }
+
+                Debug.LogError($"PHS_HANDHELD_MAP_EVENT_LOCATION_FAILED event={eventId} reason=minigame_terminal_missing");
+                worldPosition = default;
+                return false;
+            }
+
+            return TryResolveRoomWorldPosition(roomId, out worldPosition);
         }
 
         private static string ResolveLifecycleEventTitle(EventId eventId)
@@ -606,9 +756,13 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Maps
                 EventId.OxygenLeak => "산소 누출",
                 EventId.EngineBreak => "엔진 고장",
                 EventId.MicDestroy => "통신 장치 파손",
-                EventId.EnemyScout => "적 정찰",
-                EventId.MeteorAttack => "운석 공격",
-                EventId.EmpAttack => "EMP 공격",
+                EventId.HullBreach => "선체 파손",
+                EventId.SteamLeak => "증기 누출",
+                EventId.OxygenGeneratorFailure => "산소 장치 고장",
+                EventId.GravityGeneratorFailure => "중력 장치 고장",
+                EventId.EnemyScout => "전력 동기화 미니게임",
+                EventId.MeteorAttack => "캐논 미니게임",
+                EventId.EmpAttack => "배선 수리 미니게임",
                 EventId.PatrolZone => "적 순찰 구역",
                 EventId.MeteorZone => "운석 지대",
                 EventId.NebulaZone => "성운 지대",

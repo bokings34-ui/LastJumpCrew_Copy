@@ -17,6 +17,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
         public const int FireEventId = 7101;
         public const int PowerOffEventId = 7103;
         public const int EngineBreakEventId = 7105;
+        public const int MicDestroyEventId = 7106;
         public const int HullBreachEventId = 7107;
         public const int SteamLeakEventId = 7108;
         public const int OxygenGeneratorFailureEventId = 7109;
@@ -161,6 +162,9 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
                     break;
                 case EmpAttackEventId:
                     expectedFamily = NetworkRunIncidentFamily.EMP;
+                    break;
+                case MicDestroyEventId:
+                    expectedFamily = NetworkRunIncidentFamily.Device;
                     break;
                 default:
                     reason = $"external_content_id_not_supported:{contentId}";

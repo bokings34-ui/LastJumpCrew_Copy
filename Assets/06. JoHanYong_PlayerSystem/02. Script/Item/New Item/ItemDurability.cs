@@ -59,6 +59,8 @@ namespace LastJumpCrew.ParkHanSol.Items
 
             currentDurability.OnValueChanged += HandleDurabilityChanged;
             //현재 내구도 변경 이벤트를 등록합니다.
+
+
             if (IsServer)
             {
                 InitializeDurability();
@@ -67,6 +69,7 @@ namespace LastJumpCrew.ParkHanSol.Items
         public override void OnNetworkDespawn()
         {
             currentDurability.OnValueChanged -= HandleDurabilityChanged;
+
 
             base.OnNetworkDespawn();
         }
@@ -162,5 +165,6 @@ namespace LastJumpCrew.ParkHanSol.Items
 
             Debug.Log($"PHS_ITEM_DURABILITY_CHANGED " + $"item={name} " + $"previous={previousValue} " + $"current={newValue}");
         }
+       
     }
 }

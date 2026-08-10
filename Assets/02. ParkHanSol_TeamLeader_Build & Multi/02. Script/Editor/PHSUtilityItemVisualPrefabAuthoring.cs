@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using LastJumpCrew.Common;
 using LastJumpCrew.ParkHanSol.Items;
 using UnityEditor;
 using UnityEditor.SceneManagement;
@@ -17,6 +18,8 @@ namespace LastJumpCrew.ParkHanSol.Editor
             "Assets/02. ParkHanSol_TeamLeader_Build & Multi/01. Scene/test/PHS_FeatureInspectionScene.unity";
         private const string NetworkTutorialScene =
             "Assets/02. ParkHanSol_TeamLeader_Build & Multi/01. Scene/BEAVER_2026/Tutorial/PHS_NetworkTutorialScene.unity";
+        private const string UtilityItemDataRoot =
+            "Assets/02. ParkHanSol_TeamLeader_Build & Multi/04. Data/UtilityItems";
 
         private sealed class ItemSpec
         {
@@ -24,14 +27,12 @@ namespace LastJumpCrew.ParkHanSol.Editor
                 string name,
                 string heldFile,
                 string droppedFile,
-                string economyFile,
                 string legacyPath)
             {
                 Name = name;
                 HeldPath = $"{ItemRoot}/Imported/{heldFile}";
                 DroppedPath = $"{ItemRoot}/Imported/{droppedFile}";
                 VisualPath = $"{ItemRoot}/Visual/ParkHanSol_{name}_Visual.prefab";
-                EconomyPath = $"Assets/03. SeoBoGyeong_Game Economy/04. Data/Items/{economyFile}";
                 LegacyPath = legacyPath;
             }
 
@@ -39,7 +40,6 @@ namespace LastJumpCrew.ParkHanSol.Editor
             public string HeldPath { get; }
             public string DroppedPath { get; }
             public string VisualPath { get; }
-            public string EconomyPath { get; }
             public string LegacyPath { get; }
         }
 
@@ -49,19 +49,16 @@ namespace LastJumpCrew.ParkHanSol.Editor
                 "Wrench",
                 "ParkHanSol_Wrench_Held.prefab",
                 "ParkHanSol_Wrench_Dropped.prefab",
-                "UtilityItem_Wrench.asset",
                 $"{ItemRoot}/ParkHanSol_Wrench.prefab"),
             new(
                 "FireExtinguisher",
                 "ParkHanSol_FireExtinguisher_Held.prefab",
                 "ParkHanSol_FireExtinguisher_Dropped.prefab",
-                "UtilityItem_FireExtinguisher.asset",
                 $"{ItemRoot}/ParkHanSol_FireExtinguisher.prefab"),
             new(
                 "BatteryPack",
                 "ParkHanSol_BatteryPack_Held.prefab",
                 "ParkHanSol_BatteryPack_Dropped.prefab",
-                "UtilityItem_BatteryPack.asset",
                 $"{ItemRoot}/ParkHanSol_FuturisticBatteryPack.prefab")
         };
 
@@ -79,7 +76,6 @@ namespace LastJumpCrew.ParkHanSol.Editor
                 BuildVisualPrefab(spec);
                 ReplaceWrapperVisual(spec.HeldPath, spec.VisualPath);
                 ReplaceWrapperVisual(spec.DroppedPath, spec.VisualPath);
-                UpdateEconomyData(spec);
             }
 
             ReplaceLegacySceneInstances(
@@ -98,7 +94,64 @@ namespace LastJumpCrew.ParkHanSol.Editor
 
             AssetDatabase.SaveAssets();
             AssetDatabase.Refresh();
-            Debug.Log("PHS_UTILITY_ITEM_VISUAL_TRUTH_BUILD_PASSED items=3 wrappers=6 economy=3 scenes=2");
+            Debug.Log("PHS_UTILITY_ITEM_VISUAL_TRUTH_BUILD_PASSED items=3 wrappers=6 scenes=2");
+        }
+
+        [MenuItem("Tools/ParkHanSol/BEAVER/Reconcile Canonical Utility Item Scene Instances")]
+        public static void ReconcileCanonicalSceneInstances()
+        {
+            if (EditorApplication.isPlayingOrWillChangePlaymode)
+            {
+                throw new InvalidOperationException("Stop Play Mode before reconciling utility item scenes.");
+            }
+
+            var wrench = RequireItemData("ParkHanSol_WrenchItemPrefabData.asset");
+            var battery = RequireItemData("ParkHanSol_BatteryItemPrefabData.asset");
+
+            ReplaceLegacySceneInstances(
+                FeatureInspectionScene,
+                CreateReplacements((Specs[2].HeldPath, battery.HandPrefab)));
+            ReplaceLegacySceneInstances(
+                NetworkTutorialScene,
+                CreateReplacements(
+                    (Specs[0].LegacyPath, wrench.DroppedPrefab),
+                    (Specs[2].LegacyPath, battery.DroppedPrefab),
+                    (Specs[0].DroppedPath, wrench.DroppedPrefab),
+                    (Specs[2].DroppedPath, battery.DroppedPrefab)));
+
+            AssetDatabase.SaveAssets();
+            Debug.Log("PHS_UTILITY_ITEM_SCENE_RECONCILE_PASSED scenes=2 items=2");
+        }
+
+        private static UtilityItemDataSO RequireItemData(string fileName)
+        {
+            var path = $"{UtilityItemDataRoot}/{fileName}";
+            var itemData = AssetDatabase.LoadAssetAtPath<UtilityItemDataSO>(path);
+            if (itemData == null || itemData.HandPrefab == null || itemData.DroppedPrefab == null)
+            {
+                throw new InvalidOperationException(
+                    $"Utility item data contract missing. path={path}");
+            }
+
+            return itemData;
+        }
+
+        private static Dictionary<string, string> CreateReplacements(
+            params (string sourcePath, GameObject targetPrefab)[] replacements)
+        {
+            var result = new Dictionary<string, string>();
+            foreach (var (sourcePath, targetPrefab) in replacements)
+            {
+                var targetPath = AssetDatabase.GetAssetPath(targetPrefab);
+                if (!string.IsNullOrEmpty(sourcePath)
+                    && !string.IsNullOrEmpty(targetPath)
+                    && sourcePath != targetPath)
+                {
+                    result[sourcePath] = targetPath;
+                }
+            }
+
+            return result;
         }
 
         private static void BuildVisualPrefab(ItemSpec spec)
@@ -307,28 +360,6 @@ namespace LastJumpCrew.ParkHanSol.Editor
             }
 
             return candidates[0];
-        }
-
-        private static void UpdateEconomyData(ItemSpec spec)
-        {
-            var economyData = AssetDatabase.LoadMainAssetAtPath(spec.EconomyPath);
-            if (economyData == null)
-            {
-                throw new InvalidOperationException($"Economy item data missing. path={spec.EconomyPath}");
-            }
-
-            var serialized = new SerializedObject(economyData);
-            var heldProperty = serialized.FindProperty("heldPrefab");
-            var droppedProperty = serialized.FindProperty("droppedPrefab");
-            if (heldProperty == null || droppedProperty == null)
-            {
-                throw new InvalidOperationException($"Economy prefab fields missing. path={spec.EconomyPath}");
-            }
-
-            heldProperty.objectReferenceValue = RequirePrefab(spec.HeldPath);
-            droppedProperty.objectReferenceValue = RequirePrefab(spec.DroppedPath);
-            serialized.ApplyModifiedPropertiesWithoutUndo();
-            EditorUtility.SetDirty(economyData);
         }
 
         private static void ReplaceLegacySceneInstances(

@@ -13,6 +13,7 @@ namespace LastJumpCrew.ParkHanSol.Items
         [SerializeField] private Camera ownerAimCamera;
         [SerializeField] private Transform serverOrigin;
         [SerializeField] private NetworkPlayerItemRecord itemRecord;
+        [SerializeField] private NetworkPlayerItemLifecycle itemLifecycle;
         [SerializeField] private NetworkPlayerLifeState lifeState;
         [SerializeField] private PHSNetworkItemUseActionController actionController;
         [SerializeField] private PHSNetworkItemUseFeedbackController feedbackController;
@@ -32,10 +33,10 @@ namespace LastJumpCrew.ParkHanSol.Items
         private float nextLocalShotTime;
         private float nextTelegraphTime;
         private bool setupValid;
-
         public bool HasRequiredReferences => ownerAimCamera != null
             && serverOrigin != null
             && itemRecord != null
+            && itemLifecycle != null
             && lifeState != null
             && actionController != null
             && feedbackController != null;
@@ -58,8 +59,7 @@ namespace LastJumpCrew.ParkHanSol.Items
             && IsSpawned
             && IsOwner
             && lifeState.IsAlive
-            && itemRecord.HeldItemId == PHSNetworkFoamCoordinator.FoamItemId
-            && itemRecord.CurrentDurability > 0;
+            && HasUsableFoamItem();
 
         private void Awake()
         {
@@ -151,9 +151,7 @@ namespace LastJumpCrew.ParkHanSol.Items
                 || !IsSpawned
                 || !IsServer
                 || !lifeState.IsAlive
-                || itemRecord.HeldItemId
-                    != PHSNetworkFoamCoordinator.FoamItemId
-                || itemRecord.CurrentDurability <= 0)
+                || !HasUsableFoamItem())
             {
                 RejectServerShot("player_or_item_contract", senderClientId, shotSequence);
                 return;
@@ -211,6 +209,19 @@ namespace LastJumpCrew.ParkHanSol.Items
             var yaw = Vector3.Angle(planarForward, planarDirection);
             var pitch = Mathf.Abs(90f - Vector3.Angle(normalized, Vector3.up));
             return yaw <= maximumYawError && pitch <= maximumPitch;
+        }
+
+        private bool HasUsableFoamItem()
+        {
+            return itemRecord != null
+                && itemLifecycle != null
+                && itemLifecycle.ItemCatalog != null
+                && itemRecord.HeldItemId == PHSNetworkFoamCoordinator.FoamItemId
+                && itemLifecycle.ItemCatalog.TryGetById(
+                    itemRecord.HeldItemId,
+                    out var itemData)
+                && (!itemData.UsesDurability
+                    || itemRecord.CurrentDurability > 0);
         }
 
         private void RejectServerShot(

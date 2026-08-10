@@ -28,6 +28,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
         private NetworkGameOverSequenceCoordinator sequence;
         private NetworkGameOverSequenceSnapshot activeSnapshot;
         private Vector3 playerShipStart;
+        private Quaternion playerShipRotationStart;
         private Vector3 enemyFleetStart;
         private Vector3 cameraStart;
         private Quaternion cameraRotationStart;
@@ -57,6 +58,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
         {
             NetworkRunSessionRoot.InstanceAvailable -= HandleRunSessionRootAvailable;
             Unbind();
+            ResetPresentation();
         }
 
         private void Update()
@@ -284,6 +286,9 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
         private void CacheStartPose()
         {
             playerShipStart = playerShipRoot != null ? playerShipRoot.localPosition : Vector3.zero;
+            playerShipRotationStart = playerShipRoot != null
+                ? playerShipRoot.localRotation
+                : Quaternion.identity;
             enemyFleetStart = enemyFleetRoot != null ? enemyFleetRoot.localPosition : Vector3.zero;
             cameraStart = cinematicCamera != null ? cinematicCamera.transform.localPosition : Vector3.zero;
             cameraRotationStart = cinematicCamera != null
@@ -296,7 +301,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
             if (playerShipRoot != null)
             {
                 playerShipRoot.localPosition = playerShipStart;
-                playerShipRoot.localRotation = Quaternion.identity;
+                playerShipRoot.localRotation = playerShipRotationStart;
                 playerShipRoot.gameObject.SetActive(true);
             }
 

@@ -5,9 +5,11 @@ namespace SM
 {
     public class PlayerAttackEnemy : EnemyBase
     {
+        [SerializeField] private float verticalAttackTolerance = 2f;
+
         protected override Transform SetTarget()
         {
-            var target = PlayerRegistry.Peek()?.GetRandomActivePlayer();
+            var target = PlayerRegistry.Peek()?.GetNearestPlayer(transform.position);
 
             if (target == null)
             {
@@ -15,6 +17,18 @@ namespace SM
             }
 
             return target;
+        }
+
+        public override bool IsTargetWithinAttackRange(Transform target)
+        {
+            if (base.IsTargetWithinAttackRange(target)) return true;
+            if (target == null) return false;
+
+            var offset = target.position - transform.position;
+            var verticalDistance = Mathf.Abs(offset.y);
+            offset.y = 0f;
+            return verticalDistance <= verticalAttackTolerance
+                && offset.sqrMagnitude <= AttackRange * AttackRange;
         }
 
         public override void PerformAttack(Transform target)
