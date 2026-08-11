@@ -1169,6 +1169,17 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
             ulong parentCommandId,
             EventId eventId)
         {
+            if (PHSShipEventImpactAdapter.TryGetFailureConsequence(
+                    eventId,
+                    out var delegatedEventId))
+            {
+                Debug.Log(
+                    $"PHS_INCIDENT_CONSEQUENCE_DELEGATED parent={parentCommandId} " +
+                    $"event={eventId} target={delegatedEventId}",
+                    this);
+                return;
+            }
+
             if (consequenceSelector.TryRequestForFailedExternalEventServer(
                     parentCommandId,
                     out var consequenceCommand,

@@ -91,6 +91,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Tutorial
         private CursorLockMode previousCursorLockMode;
         private bool previousCursorVisible;
         private bool inputBlocked;
+        private int popupOpenedFrame = -1;
         private Tween pageFadeTween;
 
         public event Action<NetworkTutorialRoomController> Completed;
@@ -160,22 +161,26 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Tutorial
                 return;
             }
 
-            var keyboard = Keyboard.current;
-            if (keyboard == null)
+            if (Time.frameCount == popupOpenedFrame)
             {
                 return;
             }
 
-            if (keyboard.leftArrowKey.wasPressedThisFrame
-                || keyboard.aKey.wasPressedThisFrame)
+            var keyboardPressed = Keyboard.current != null
+                && Keyboard.current.anyKey.wasPressedThisFrame;
+            var mouse = Mouse.current;
+            var mousePressed = mouse != null
+                && (mouse.leftButton.wasPressedThisFrame
+                    || mouse.rightButton.wasPressedThisFrame
+                    || mouse.middleButton.wasPressedThisFrame);
+            var pointerOverNavigationButton = mouse != null
+                && IsPointerOverNavigationButton(mouse.position.ReadValue());
+            if (!keyboardPressed && (!mousePressed || pointerOverNavigationButton))
             {
-                ShowPreviousPage();
+                return;
             }
-            else if (keyboard.rightArrowKey.wasPressedThisFrame
-                     || keyboard.dKey.wasPressedThisFrame)
-            {
-                ShowNextPageOrComplete();
-            }
+
+            ShowNextPageOrComplete();
         }
 
         public bool TryPresent(
@@ -232,6 +237,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Tutorial
             Cursor.lockState = CursorLockMode.None;
             Cursor.visible = true;
             SetPopupVisible(true);
+            popupOpenedFrame = Time.frameCount;
             RefreshPage(0f);
             reason = null;
             return true;
@@ -320,6 +326,32 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Tutorial
 
             currentPageIndex--;
             RefreshPage(0.35f);
+        }
+
+        private bool IsPointerOverNavigationButton(Vector2 screenPosition)
+        {
+            return IsPointerOverButton(previousButton, screenPosition)
+                || IsPointerOverButton(nextButton, screenPosition);
+        }
+
+        private static bool IsPointerOverButton(
+            Button button,
+            Vector2 screenPosition)
+        {
+            if (button == null || !button.gameObject.activeInHierarchy)
+            {
+                return false;
+            }
+
+            var canvas = button.GetComponentInParent<Canvas>();
+            var eventCamera = canvas != null
+                && canvas.renderMode != RenderMode.ScreenSpaceOverlay
+                ? canvas.worldCamera
+                : null;
+            return RectTransformUtility.RectangleContainsScreenPoint(
+                button.transform as RectTransform,
+                screenPosition,
+                eventCamera);
         }
 
         private void ShowNextPageOrComplete()

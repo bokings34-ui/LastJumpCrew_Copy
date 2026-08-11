@@ -22,6 +22,9 @@ namespace SM
         [SerializeField] private AudioSource audioSource;
         [SerializeField] private AudioClip attackSound;
 
+        [Header("피격 연출")]
+        [SerializeField] private ParticleSystem hitEffect;
+
         protected float _currentHealth;
         private GameObject _enemyPrefab;
         private Collider[] _colliders;
@@ -54,6 +57,11 @@ namespace SM
 
             Anim = GetComponentInChildren<Animator>();
             _statusEffectController = GetComponent<StatusEffectController>();
+
+            if (hitEffect == null)
+            {
+                Debug.LogError($"ENEMY_HIT_EFFECT_MISSING enemy={name}", this);
+            }
 
             StateMachine = new EnemyStateMachine();
             StateMachine.Register(EnemyStateType.Chase, new EnemyChaseState());
@@ -129,6 +137,8 @@ namespace SM
             if (!IsAlive) return;
 
             _currentHealth -= amount;
+            hitEffect.Stop(true, ParticleSystemStopBehavior.StopEmittingAndClear);
+            hitEffect.Play(true);
 
             if (_currentHealth <= 0f)
             {

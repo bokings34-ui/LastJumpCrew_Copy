@@ -5,6 +5,8 @@ namespace SM
 {
     public class FireEvent : InternalEvent
     {
+        private const float FireVisualHeightOffset = 0.4f;
+
         private FireEventDataSO FireData { get { return _data as FireEventDataSO; } }
 
         private float _timer = 0f;
@@ -67,7 +69,8 @@ namespace SM
             var point = PickNextSpawnPoint();
             if (point == null) return;
 
-            var effect = FireEffectPool.Instance.Get(point.transform.position, FireData.damagePerSecond, FireData.maxRepairProgress);
+            var firePosition = point.transform.position + Vector3.up * FireVisualHeightOffset;
+            var effect = FireEffectPool.Instance.Get(firePosition, FireData.damagePerSecond, FireData.maxRepairProgress);
 
             var effectInstanceId = AllocateEffectInstanceId();
             if (_effectRuntimeBridge != null && effectInstanceId == 0U)
@@ -103,7 +106,7 @@ namespace SM
                     InstanceId,
                     effectInstanceId,
                     EventEffectKind.Fire,
-                    point.transform.position,
+                    firePosition,
                     0);
             }
         }

@@ -22,12 +22,18 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Maps
         [SerializeField] private PHSHandheldShipMapView worldView;
         [SerializeField, Min(0.02f)] private float refreshIntervalSeconds = 0.08f;
         [SerializeField, Min(0.1f)] private float coordinatorBindTimeoutSeconds = 5f;
+        [Header("Marker Limits")]
+        [SerializeField, Min(1)] private int maximumPlayerMarkers = 8;
+        [SerializeField, Min(1)] private int maximumIncidentMarkers = 5;
+        [SerializeField, Min(1)] private int maximumExternalInteractionMarkers = 3;
+        [SerializeField, Min(1)] private int maximumObjectMarkers = 6;
 
         private readonly NetworkVariable<bool> mapVisible = new(
             false,
             NetworkVariableReadPermission.Everyone,
             NetworkVariableWritePermission.Server);
         private readonly List<ShipMapMarker> markers = new();
+        private readonly List<ShipMapMarker> cappedMarkers = new();
         private readonly List<ShipMapEventDetail> eventDetails = new();
         private readonly List<NetworkEventEffectSnapshot> effectSnapshots = new();
         private readonly List<NetworkEventLifecycleSnapshot> lifecycleSnapshots = new();
@@ -76,6 +82,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Maps
             firstPersonView?.SetVisible(false);
             worldView?.SetVisible(false);
             base.OnNetworkDespawn();
+            UpdateMapRenderVisibility();
         }
 
         private void Update()
@@ -130,6 +137,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Maps
         {
             firstPersonView.SetVisible(IsOwner && visible);
             worldView.SetVisible(!IsOwner && visible);
+            UpdateMapRenderVisibility();
             if (!IsOwner)
             {
                 return;
@@ -177,6 +185,8 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Maps
             AppendPlayerMarkers(layout);
             AppendAccidentMarkers(layout);
             AppendEventMarkers(layout);
+            AppendObjectMarkers(layout);
+            FinalizePresentationContent();
 
             if (!TryBuildPresentation(out var presentation))
             {
@@ -276,6 +286,127 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Maps
             return Time.unscaledTime < coordinatorBindDeadline;
         }
 
+        private void UpdateMapRenderVisibility()
+        {
+            var layout = PHSShipMapWorldLayout.Instance;
+            if (layout == null || !layout.isActiveAndEnabled)
+            {
+                return;
+            }
+
+            var controllers = FindObjectsByType<PHSHandheldShipMapController>(
+                FindObjectsInactive.Exclude,
+                FindObjectsSortMode.None);
+            var anyMapVisible = false;
+            for (var index = 0; index < controllers.Length; index++)
+            {
+                var controller = controllers[index];
+                if (controller != null
+                    && controller.IsSpawned
+                    && controller.isActiveAndEnabled
+                    && (controller.IsOwner
+                        ? controller.requestedVisible
+                        : controller.mapVisible.Value))
+                {
+                    anyMapVisible = true;
+                    break;
+                }
+            }
+
+            layout.SetMapRenderVisible(anyMapVisible);
+        }
+
+        private void FinalizePresentationContent()
+        {
+            eventDetails.Sort(CompareEventDetails);
+            ApplyMarkerLimits();
+        }
+
+        private void ApplyMarkerLimits()
+        {
+            cappedMarkers.Clear();
+            AppendMarkersOfKind(ShipMapMarkerKind.Incident, maximumIncidentMarkers);
+            AppendMarkersOfKind(ShipMapMarkerKind.Self, 1);
+            AppendMarkersOfKind(
+                ShipMapMarkerKind.Teammate,
+                Mathf.Max(
+                    0,
+                    maximumPlayerMarkers - CountMarkersOfKind(ShipMapMarkerKind.Self)));
+            AppendMarkersOfKind(
+                ShipMapMarkerKind.ExternalInteraction,
+                maximumExternalInteractionMarkers);
+            AppendMarkersOfKind(ShipMapMarkerKind.Object, maximumObjectMarkers);
+
+            markers.Clear();
+            markers.AddRange(cappedMarkers);
+        }
+
+        private int CountMarkersOfKind(ShipMapMarkerKind kind)
+        {
+            var count = 0;
+            for (var index = 0; index < cappedMarkers.Count; index++)
+            {
+                if (cappedMarkers[index].Kind == kind)
+                {
+                    count++;
+                }
+            }
+
+            return count;
+        }
+
+        private void AppendMarkersOfKind(ShipMapMarkerKind kind, int maximumCount)
+        {
+            if (maximumCount <= 0)
+            {
+                return;
+            }
+
+            var count = 0;
+            for (var index = 0; index < markers.Count && count < maximumCount; index++)
+            {
+                var marker = markers[index];
+                if (marker.Kind != kind || ContainsMatchingMarker(cappedMarkers, marker))
+                {
+                    continue;
+                }
+
+                cappedMarkers.Add(marker);
+                count++;
+            }
+        }
+
+        private static bool ContainsMatchingMarker(
+            IReadOnlyList<ShipMapMarker> candidates,
+            ShipMapMarker marker)
+        {
+            const float positionTolerance = 0.0025f;
+            for (var index = 0; index < candidates.Count; index++)
+            {
+                var candidate = candidates[index];
+                if (candidate.Kind == marker.Kind
+                    && candidate.IconId == marker.IconId
+                    && Vector2.SqrMagnitude(
+                        candidate.NormalizedPosition - marker.NormalizedPosition)
+                    <= positionTolerance * positionTolerance)
+                {
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
+        private static int CompareEventDetails(
+            ShipMapEventDetail left,
+            ShipMapEventDetail right)
+        {
+            var priority = left.Priority.CompareTo(right.Priority);
+            return priority != 0
+                ? priority
+                : string.Compare(left.Title, right.Title, StringComparison.Ordinal);
+        }
+
         private void AppendPlayerMarkers(PHSShipMapWorldLayout layout)
         {
             var networkManager = NetworkManager.Singleton;
@@ -342,16 +473,22 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Maps
                 var symbol = hasWorldEffect
                     ? resolvedSymbol
                     : ResolveLifecycleEventSymbol(lifecycle.EventId);
-                eventDetails.Add(new ShipMapEventDetail(
-                    ResolveLifecycleEventIcon(lifecycle.EventId),
-                    symbol,
-                    ResolveLifecycleEventTitle(lifecycle.EventId),
-                    $"{ResolveRoomName(lifecycle.RoomId.ToString())} · " +
-                    ResolveEventState(lifecycle.State)));
+                var hasPhysicalAccidentMarker = UsesPhysicalAccidentMarker(lifecycle.EventId)
+                    && HasActivePhysicalAccidentMarker(lifecycle.EventId);
+                if (!hasPhysicalAccidentMarker)
+                {
+                    AddEventDetail(new ShipMapEventDetail(
+                        ResolveLifecycleEventIcon(lifecycle.EventId),
+                        symbol,
+                        ResolveLifecycleEventTitle(lifecycle.EventId),
+                        $"{ResolveRoomName(lifecycle.RoomId.ToString())} · " +
+                        ResolveEventState(lifecycle.State),
+                        ResolveLifecycleEventPriority(lifecycle.EventId),
+                        $"lifecycle:{lifecycle.EventId}:{lifecycle.RoomId}"));
+                }
 
                 if (!hasWorldEffect
-                    && (!UsesPhysicalAccidentMarker(lifecycle.EventId)
-                        || !HasActivePhysicalAccidentMarker(lifecycle.EventId))
+                    && !hasPhysicalAccidentMarker
                     && TryResolveEventWorldPosition(
                         lifecycle.EventId,
                         lifecycle.RoomId.ToString(),
@@ -359,7 +496,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Maps
                     && layout.TryProject(roomPosition, out var mapPosition))
                 {
                     markers.Add(new ShipMapMarker(
-                        ShipMapMarkerKind.Incident,
+                        ResolveLifecycleMarkerKind(lifecycle.EventId),
                         mapPosition,
                         symbol,
                         ResolveLifecycleEventIcon(lifecycle.EventId)));
@@ -428,20 +565,33 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Maps
                 }
 
                 accidentDefinitionErrors.Remove(snapshot.AccidentId);
-                eventDetails.Add(new ShipMapEventDetail(
+                AddEventDetail(new ShipMapEventDetail(
                     ResolveAccidentIcon(snapshot.AccidentId),
                     ResolveAccidentSymbol(snapshot.AccidentId),
                     ResolveAccidentTitle(snapshot.AccidentId),
-                    $"발생 중 · 필요: {definition.RequiredItemId}"));
+                    $"발생 중 · 필요: {definition.RequiredItemId}",
+                    0,
+                    $"accident:{snapshot.AccidentId}:{snapshot.AnchorId}"));
             }
         }
 
         private void AppendObjectMarkers(PHSShipMapWorldLayout layout)
         {
+            AppendObjectMarkers(layout, ShipMapObjectKind.Vending);
+            AppendObjectMarkers(layout, null);
+        }
+
+        private void AppendObjectMarkers(
+            PHSShipMapWorldLayout layout,
+            ShipMapObjectKind? requiredKind)
+        {
             for (var index = 0; index < layout.ObjectAnchorCount; index++)
             {
                 var anchor = layout.GetObjectAnchorAt(index);
                 if (anchor != null
+                    && (requiredKind.HasValue
+                        ? anchor.Kind == requiredKind.Value
+                        : anchor.Kind != ShipMapObjectKind.Vending)
                     && (anchor.Kind == ShipMapObjectKind.SellStation || anchor.gameObject.activeInHierarchy)
                     && layout.TryProject(anchor.transform.position, out var position))
                 {
@@ -452,6 +602,36 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Maps
                         anchor.IconId));
                 }
             }
+        }
+
+        private void AddEventDetail(ShipMapEventDetail detail)
+        {
+            if (string.IsNullOrWhiteSpace(detail.DeduplicationKey))
+            {
+                eventDetails.Add(detail);
+                return;
+            }
+
+            for (var index = 0; index < eventDetails.Count; index++)
+            {
+                var existing = eventDetails[index];
+                if (!string.Equals(
+                        existing.DeduplicationKey,
+                        detail.DeduplicationKey,
+                        StringComparison.Ordinal))
+                {
+                    continue;
+                }
+
+                if (detail.Priority < existing.Priority)
+                {
+                    eventDetails[index] = detail;
+                }
+
+                return;
+            }
+
+            eventDetails.Add(detail);
         }
 
         private void AppendShopMarker(PHSShipMapWorldLayout layout)
@@ -599,7 +779,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Maps
             {
                 EventEffectKind.Fire => ShipMapIconId.Fire,
                 EventEffectKind.OxygenLeak => ShipMapIconId.OxygenFailure,
-                EventEffectKind.Enemy => ShipMapIconId.None,
+                EventEffectKind.Enemy => ShipMapIconId.EnemySpawn,
                 _ => throw new System.ArgumentOutOfRangeException(nameof(kind), kind, null)
             };
         }
@@ -645,13 +825,29 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Maps
                 EventId.EnemyScout => ShipMapIconId.PowerSync,
                 EventId.MeteorAttack => ShipMapIconId.Cannon,
                 EventId.EmpAttack => ShipMapIconId.WireFix,
-                EventId.EnemySpawn
-                    or EventId.PatrolZone
-                    or EventId.MeteorZone
-                    or EventId.NebulaZone
-                    or EventId.PlanetZone => ShipMapIconId.None,
+                EventId.EnemySpawn => ShipMapIconId.EnemySpawn,
+                EventId.PatrolZone => ShipMapIconId.PatrolZone,
+                EventId.MeteorZone => ShipMapIconId.MeteorZone,
+                EventId.NebulaZone => ShipMapIconId.NebulaZone,
+                EventId.PlanetZone => ShipMapIconId.PlanetZone,
                 _ => throw new System.ArgumentOutOfRangeException(nameof(eventId), eventId, null)
             };
+        }
+
+        private static ShipMapMarkerKind ResolveLifecycleMarkerKind(EventId eventId)
+        {
+            return eventId is EventId.EnemyScout
+                or EventId.MeteorAttack
+                or EventId.EmpAttack
+                ? ShipMapMarkerKind.ExternalInteraction
+                : ShipMapMarkerKind.Incident;
+        }
+
+        private static int ResolveLifecycleEventPriority(EventId eventId)
+        {
+            return ResolveLifecycleMarkerKind(eventId) == ShipMapMarkerKind.ExternalInteraction
+                ? 2
+                : 1;
         }
 
         private static bool UsesPhysicalAccidentMarker(EventId eventId)

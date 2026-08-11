@@ -8,12 +8,13 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Maps
     [DisallowMultipleComponent]
     public sealed class PHSShipMapWorldLayout : MonoBehaviour
     {
-        [SerializeField] private Vector2 worldCenterXZ = new(2f, 55f);
-        [SerializeField] private Vector2 worldSizeXZ = new(82f, 114f);
+        [Header("Schematic Projection")]
+        [SerializeField] private PHSShipMapRenderRig mapRenderRig;
         [SerializeField] private PHSShipAccidentAnchor[] accidentAnchors = Array.Empty<PHSShipAccidentAnchor>();
         [SerializeField] private PHSShipMapObjectAnchor[] objectAnchors = Array.Empty<PHSShipMapObjectAnchor>();
 
         private readonly Dictionary<string, PHSShipAccidentAnchor> anchorsById = new(StringComparer.Ordinal);
+        private bool projectionRigErrorLogged;
 
         public static PHSShipMapWorldLayout Instance { get; private set; }
         public int ObjectAnchorCount => objectAnchors?.Length ?? 0;
@@ -43,19 +44,44 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Maps
 
         public bool TryProject(Vector3 worldPosition, out Vector2 normalizedPosition)
         {
-            if (worldSizeXZ.x <= 0f || worldSizeXZ.y <= 0f)
+            normalizedPosition = default;
+            if (mapRenderRig == null)
             {
-                Debug.LogError(
-                    $"PHS_SHIP_MAP_LAYOUT_PROJECT_FAILED reason=invalid_size size={worldSizeXZ}",
-                    this);
-                normalizedPosition = default;
+                if (!projectionRigErrorLogged)
+                {
+                    projectionRigErrorLogged = true;
+                    Debug.LogError(
+                        "PHS_SHIP_MAP_LAYOUT_PROJECT_FAILED reason=render_rig_missing",
+                        this);
+                }
+
                 return false;
             }
 
-            normalizedPosition = new Vector2(
-                Mathf.Clamp01((worldPosition.x - worldCenterXZ.x) / worldSizeXZ.x + 0.5f),
-                Mathf.Clamp01((worldPosition.z - worldCenterXZ.y) / worldSizeXZ.y + 0.5f));
-            return true;
+            projectionRigErrorLogged = false;
+            return mapRenderRig.TryProjectWorldPosition(
+                worldPosition,
+                "ship_map_marker",
+                out normalizedPosition);
+        }
+
+        public void SetMapRenderVisible(bool visible)
+        {
+            if (mapRenderRig == null)
+            {
+                if (!projectionRigErrorLogged)
+                {
+                    projectionRigErrorLogged = true;
+                    Debug.LogError(
+                        "PHS_SHIP_MAP_LAYOUT_RENDER_FAILED reason=render_rig_missing",
+                        this);
+                }
+
+                return;
+            }
+
+            projectionRigErrorLogged = false;
+            mapRenderRig.SetMapVisible(visible);
         }
 
         public bool TryGetAnchorWorldPosition(string anchorId, out Vector3 worldPosition)

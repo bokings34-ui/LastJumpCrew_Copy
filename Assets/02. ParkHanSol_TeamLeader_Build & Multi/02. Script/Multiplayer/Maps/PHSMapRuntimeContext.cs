@@ -231,30 +231,13 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Maps
 
             if (currentPhase == NetworkRunPhase.WarpReady)
             {
-                if (!TrySetIncidentSchedulingEnabled(false, out var pauseReason))
-                {
-                    Debug.LogError(
-                        $"PHS_MAP_INCIDENT_SCHEDULE_PAUSE_FAILED reason={pauseReason}",
-                        this);
-                }
-
+                ClearPendingIncidentSchedule();
                 return;
             }
 
             if (currentPhase == NetworkRunPhase.Charging && CurrentProfile != null)
             {
-                TryConfigurePendingIncidentSchedule();
-                if (!internalAccidentCoordinator.TrySetMaintenancePausedServer(false, out var maintenanceReason))
-                {
-                    Debug.LogError($"PHS_MAP_MAINTENANCE_RESUME_FAILED reason={maintenanceReason}", this);
-                }
-
-                if (!externalThreatScheduler.TryStopServer(out var externalStopReason))
-                {
-                    Debug.LogError(
-                        $"PHS_MAP_EXTERNAL_THREAT_STOP_FAILED reason={externalStopReason} mapId={CurrentProfile.MapId}",
-                        this);
-                }
+                ClearPendingIncidentSchedule();
 
                 if (!internalAccidentCoordinator.TryStopServer(out var internalStopReason))
                 {
@@ -263,13 +246,27 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Maps
                         this);
                 }
 
-                if (CurrentProfile.AllowsEventGeneration
-                    && !TrySetIncidentSchedulingEnabled(true, out var scheduleReason))
+                var incidentDirector = NetworkRunSessionRoot.Instance?.IncidentDirector;
+                if (incidentDirector != null
+                    && incidentDirector.IsConfigured
+                    && !incidentDirector.ScheduleCancelled
+                    && !incidentDirector.TrySetSchedulingEnabledServer(
+                        false,
+                        out var incidentDisableReason))
                 {
                     Debug.LogError(
-                        $"PHS_MAP_INCIDENT_SCHEDULE_START_FAILED reason={scheduleReason} mapId={CurrentProfile.MapId}",
+                        $"PHS_MAP_INCIDENT_SCHEDULE_DISABLE_FAILED reason={incidentDisableReason} mapId={CurrentProfile.MapId}",
                         this);
                 }
+
+                if (CurrentProfile.AllowsEventGeneration
+                    && !externalThreatScheduler.TryStartServer(out var externalStartReason))
+                {
+                    Debug.LogError(
+                        $"PHS_MAP_TEAM_EVENT_SCHEDULE_START_FAILED reason={externalStartReason} mapId={CurrentProfile.MapId}",
+                        this);
+                }
+
             }
         }
 
@@ -473,7 +470,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Maps
             }
 
             if (!externalThreatScheduler.TryConfigureServer(
-                    PHSNetworkEventChannel.ExternalThreat,
+                    PHSNetworkEventChannel.LegacyMixed,
                     externalEntries,
                     profile.ExternalThreatIntervalMinSeconds,
                     profile.ExternalThreatIntervalMaxSeconds,
@@ -481,26 +478,6 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Maps
                     out var externalConfigureReason))
             {
                 reason = $"external_threat_scheduler_configure_failed:{externalConfigureReason}";
-                return false;
-            }
-
-            var internalWeights = profile.InternalAccidentWeights;
-            var internalEntries = new PHSMapShipAccidentWeight[internalWeights.Count];
-            for (var index = 0; index < internalWeights.Count; index++)
-            {
-                internalEntries[index] = internalWeights[index];
-            }
-
-            if (!internalAccidentCoordinator.TryConfigureServer(
-                    internalEntries,
-                    profile.InternalAccidentIntervalMinSeconds,
-                    profile.InternalAccidentIntervalMaxSeconds,
-                    profile.MaximumActiveInternalAccidents,
-                    profile.InternalModuleDamageMultiplier,
-                    profile.InternalShipDamageMultiplier,
-                    out var internalConfigureReason))
-            {
-                reason = $"internal_accident_scheduler_configure_failed:{internalConfigureReason}";
                 return false;
             }
 
@@ -518,23 +495,23 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Maps
                 return false;
             }
 
-            var root = NetworkRunSessionRoot.Instance;
-            if (root == null
-                || root.IncidentDirector == null
-                || root.StageClock == null)
+            ClearPendingIncidentSchedule();
+            var incidentDirector = NetworkRunSessionRoot.Instance?.IncidentDirector;
+            if (incidentDirector != null
+                && incidentDirector.IsConfigured
+                && !incidentDirector.ScheduleCancelled
+                && !incidentDirector.TrySetSchedulingEnabledServer(false, out var incidentDisableReason))
             {
-                reason = "incident_root_not_ready";
+                reason = $"incident_schedule_disable_failed:{incidentDisableReason}";
                 return false;
             }
 
-            if (!IsIncidentStageReady(profile, root.StageClock))
-            {
-                SetPendingIncidentSchedule(profile);
-                reason = null;
-                return true;
-            }
-
-            return TryConfigureIncidentDirector(profile, root, out reason);
+            Debug.Log(
+                $"PHS_MAP_TEAM_EVENT_AUTHORITY_READY mapId={profile.MapId} " +
+                $"entries={externalEntries.Length}",
+                this);
+            reason = null;
+            return true;
         }
 
         private bool TryConfigureIncidentDirector(

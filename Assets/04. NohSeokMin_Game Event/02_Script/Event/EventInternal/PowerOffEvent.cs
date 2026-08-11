@@ -1,4 +1,5 @@
 using System;
+using LastJumpCrew.ParkHanSol.Multiplayer.Events;
 using UnityEngine;
 
 namespace SM
@@ -12,6 +13,21 @@ namespace SM
 
         public override void OnTrigger()
         {
+            var powerBridge = Context?.RuntimeBridge as IShipPowerEventRuntimeBridge;
+            if (powerBridge == null)
+            {
+                Debug.LogError("PHS_POWER_OFF_FAILED reason=power_runtime_bridge_missing");
+                OnFail();
+                return;
+            }
+
+            if (!powerBridge.TryApplyPowerOff(InstanceId, out var reason))
+            {
+                Debug.LogError($"PHS_POWER_OFF_FAILED reason=apply_rejected:{reason} instance={InstanceId}");
+                OnFail();
+                return;
+            }
+
             ChangeState(EventState.InProgress);
             IsPowerOffActive = true;
             OnPowerOff?.Invoke();
