@@ -15,6 +15,12 @@ namespace LastJumpCrew.Common
         PlayerOnly,
         EnemyOnly
     }
+    public enum StatusEffectApplyMode
+    {
+        Refresh, //다시 맞으면 지속시간만 갱신
+        Stack, //중첩
+        Fixed //고정값
+    }
     [Serializable]
     public struct ItemEffectData
     {
@@ -42,6 +48,13 @@ namespace LastJumpCrew.Common
         [SerializeField, Min(0f)]
         private float duration;
 
+        [Tooltip("상태이상 모드")]
+        [SerializeField]
+        private StatusEffectApplyMode statusEffectApplyMode;
+
+        [SerializeField, Min(1)]
+        private int maxStacks;
+
         public ItemEffectType EffectType => effectType;
 
         public EffectTargetType TargetType => targetType;
@@ -51,5 +64,9 @@ namespace LastJumpCrew.Common
         public StatusEffectType StatusEffectType => statusEffectType;
 
         public float Duration => duration;
+
+        public StatusEffectApplyMode StatusEffectApplyMode => statusEffectApplyMode;
+
+        public int MaxStacks => maxStacks;
     }
 }

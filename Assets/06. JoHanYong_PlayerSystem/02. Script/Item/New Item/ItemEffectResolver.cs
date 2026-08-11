@@ -79,7 +79,7 @@ namespace LastJumpCrew.ParkHanSol.Items
                 case ItemEffectType.Knockback:
                     return ApplyKnockback(target, effectDirction, effect.Amount, attacker);
                 case ItemEffectType.StatusEffect:
-                    return ApplyStatusEffect(target, effect.StatusEffectType, effect.Duration, attacker);
+                    return ApplyStatusEffect(target, effect, attacker);
                 default: Debug.LogError($"PHS_ITEM_EFFECT_FAILED " + $"reason=unsupported_effect_type " + $"effect={effect.EffectType}");
 
                     return false;
@@ -129,23 +129,29 @@ namespace LastJumpCrew.ParkHanSol.Items
 
             return true;
         }
-        private static bool ApplyStatusEffect(GameObject target, StatusEffectType statusEffectType, float duration, GameObject attacker)
+        private static bool ApplyStatusEffect(GameObject target, ItemEffectData effect, GameObject attacker)
         {
-            if(statusEffectType == StatusEffectType.None)
+            if(effect.StatusEffectType == StatusEffectType.None)
             {
                 return false;   
             }
-            if (duration <= 0f)
+            if (effect.Duration <= 0f)
             {
                 return false;
             }
             IStatusEffectReceiver receiver = target.GetComponentInParent<IStatusEffectReceiver>();
 
-            if (receiver == null || !receiver.CanReceiveStatusEffect(statusEffectType))
+            if(receiver == null)
             {
                 return false;
             }
-            receiver.ApplyStatusEffect(statusEffectType, duration, attacker);
+            if (!receiver.CanReceiveStatusEffect(effect.StatusEffectType))
+            {
+                return false;
+            }
+            var request = new StatusEffectRequest(effect.StatusEffectType, effect.Duration, effect.Amount, effect.StatusEffectApplyMode, effect.MaxStacks, attacker);
+
+            receiver.ApplyStatusEffect(request);
 
             return true;
         }

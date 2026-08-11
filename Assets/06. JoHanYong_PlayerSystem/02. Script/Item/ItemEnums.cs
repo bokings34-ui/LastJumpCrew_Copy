@@ -17,7 +17,9 @@ public enum ItemAttackType //공격 아이템 사용 방식
 public enum EffectType //상태이상의 종류
 {
     None,
-    Electric,
-    Stun,
+    Electric, //감전
+    Stun, //기절
+    Freeze, //빙결
+    Slow, //이동속도 감소
     Burn
 }
