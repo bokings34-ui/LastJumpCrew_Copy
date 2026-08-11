@@ -18,6 +18,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
     public sealed class NetworkPlayerCombatController : NetworkBehaviour
     {
         private TempPlayerItemHolder itemHolder;
+        private StatusEffectController statusEffectController; 
 
         [Header("Wrench Attack")]
 
@@ -63,6 +64,14 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
         [SerializeField]
         private GameObject extinguisherWorldSprayEffectRoot;
 
+        [Header("Freeze Sprayer Visual Effect")]
+
+        [SerializeField]
+        private GameObject freezeSprayEffectRoot;
+
+        [SerializeField]
+        private GameObject freezeWorldSprayEffectRoot;
+
         [UnityEngine.Serialization.FormerlySerializedAs("extinguisherEffectKeepAliceTime")]
         [SerializeField, Min(0.05f)]
         private float extinguisherEffectKeepAliveTime = 0.65f;
@@ -76,11 +85,16 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
 
         public Transform GeneralThrowOrigin => generalThrowOrigin;
 
+        [SerializeField]
+        private string freezeSprayerItemId = "freeze_sprayer";
+
 
 
 
         [SerializeField]
         private string batteryItemId = "battery_pack";
+        [SerializeField]
+        private string spiderWebBombItemId = "spider_web_bomb";
 
         private readonly HashSet<GameObject> processedTargets = new();
         private readonly List<Vector3> itemFeedbackTargetPositions = new();
@@ -93,6 +107,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
         private void Awake()
         {
             itemHolder = GetComponent<TempPlayerItemHolder>();
+            statusEffectController = GetComponent<StatusEffectController>();
 
             if(itemHolder == null)
             {
@@ -192,6 +207,10 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
         }
         public void RequestWrenchAttack()
         {
+            if(statusEffectController != null && statusEffectController.IsActionBlocked)
+            {
+                return;
+            }
             if (!IsSpawned)
             {
                 PlayOneShotEffect(wrenchUseEffect);
@@ -212,6 +231,10 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
         }
         private void PerformWrenchAttack()
         {
+            if (statusEffectController != null && statusEffectController.IsActionBlocked)
+            {
+                return;
+            }
             if (IsSpawned && !IsServer)
             {
                 return;
@@ -364,6 +387,12 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
         }
         public void RequestExtinguisherSpray() //자기 플레이어만 소화기 사용 요청을 보낼 수 있음
         {
+
+            if(statusEffectController != null && statusEffectController.IsActionBlocked)
+            {
+                StopExtinguisherEffect();
+                return;
+            }
             if (!IsSpawned)
             {
                 if (PerformExtinguisherSpray())
@@ -380,7 +409,11 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
         }
         public void RequestBatteryThrow() //배터리
         {
-            if(batteryThrowOrigin == null)
+            if (statusEffectController != null && statusEffectController.IsActionBlocked)
+            {
+                return;
+            }
+            if (batteryThrowOrigin == null)
             {
                 Debug.LogError($"PHS_BATTERY_THROW_FAILED " + $"reason=throw_origin_missing " + $"player={name}");
                 return;
@@ -388,7 +421,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
             if (!IsSpawned)
             {
                 PlayOneShotEffect(batteryUseEffect);
-                PerformBatteryThrow(batteryThrowOrigin.position, batteryThrowOrigin.forward);
+                PerformThrowableAttack(batteryThrowOrigin.position, batteryThrowOrigin.forward);
                 return;
             }
             if (!IsOwner)
@@ -400,9 +433,13 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
                 Debug.LogWarning($"PHS_BATTERY_THROW_FAILED " + $"reason=item_data_or_use_type_invalid " + $"player={name}");
                 return;
             }
-            if(itemData.ItemId != batteryItemId)//다른 투척형 아이템의 배터리 공격 방지
+            bool isBattery = itemData.ItemId == batteryItemId;
+
+            bool isSpiderWebBomb = itemData.ItemId == spiderWebBombItemId;
+
+            if(!isBattery && !isSpiderWebBomb)
             {
-                Debug.LogWarning($"PHS_BATTERY_THROW_FAILED " + $"reason=battery_not_held " + $"player={name} " + $"actual={itemData.ItemId}");
+                Debug.LogWarning($"PHS_THROWABLE_ATTACK_FAILED " + $"reason=unsupported_throwable");
                 return;
             }
             if(Time.time < nextBatteryThrowTime) //쿨타임 아직 끝나지 않으면 중복 투척 요청 x
@@ -454,6 +491,10 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
         }
         private void PerformThrowHeldItem(Vector3 requestedPosition, Vector3 requestedDirection, float requestedForce)
         {
+            if (statusEffectController != null && statusEffectController.IsActionBlocked)
+            {
+                return;
+            }
             if (IsSpawned && !IsServer) //멀티 중에는 서버만 투척처리
             {
                 return;
@@ -549,8 +590,12 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
 
             return Mathf.Lerp(minimumThrowForce, maximumThrowForce, chargeRatio);
         }
-        private void PerformBatteryThrow(Vector3 requestedPosition,Vector3 requestedDirection)
+        private void PerformThrowableAttack(Vector3 requestedPosition,Vector3 requestedDirection)
         {
+            if (statusEffectController != null && statusEffectController.IsActionBlocked)
+            {
+                return;
+            }
             if (IsSpawned && !IsServer)
             {
                 return;
@@ -561,11 +606,6 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
             {
                 Debug.LogError($"PHS_BATTERY_THROW_FAILED " + $"reason=item_holder_missing " + $"player={name}");
 
-                return;
-            }
-            if (!itemHolder.IsHoldingItem(batteryItemId))
-            {
-                Debug.LogWarning($"PHS_BATTERY_THROW_FAILED " + $"reason=battery_not_held " + $"player={name} " + $"actual=" + $"{itemHolder.CurrentItemPrefabData?.ItemId ?? "none"}");
                 return;
             }
             if(!TryGetHeldItemData(ItemUseType.Throwable, out var batteryItemData))
@@ -587,10 +627,11 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
             {
                 throwPosition = transform.position + transform.forward * 0.7f;
             }
+            var actionKind = batteryItemData.ItemId == batteryItemId ? UtilityItemActionKind.BatteryDischarge : UtilityItemActionKind.None;
             if (!itemHolder.TryCreateThrownItem(
                     throwPosition,
                     Quaternion.LookRotation(direction),
-                    UtilityItemActionKind.BatteryDischarge,
+                    actionKind,
                     out var batteryInstance,
                     out _ )) //효과 수치는 SO HitEffects가 처리
             {
@@ -598,24 +639,48 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
             }
             var body = batteryInstance.GetComponent<Rigidbody>();
 
-            var impact = batteryInstance.GetComponent<BatteryThrownImpact>();
+            BatteryThrownImpact batteryImpact = batteryInstance.GetComponent<BatteryThrownImpact>();
 
-            if (body == null || impact == null)
+            SpiderWebBombImpact spiderImpact = batteryInstance.GetComponent<SpiderWebBombImpact>();
+
+            bool isBattery = batteryItemData.ItemId == batteryItemId;
+            bool isSpider = batteryItemData.ItemId == spiderWebBombItemId;
+
+            if (body == null)
             {
-                Debug.LogError($"PHS_BATTERY_THROW_FAILED " + $"reason=required_component_missing " + $"battery={batteryInstance.name}");
                 RemoveFailedThrownObject(batteryInstance);
-
                 return;
             }
+
+            if (isBattery && batteryImpact == null)
+            {
+                RemoveFailedThrownObject(batteryInstance);
+                return;
+            }
+
+            if (isSpider && spiderImpact == null)
+            {
+                RemoveFailedThrownObject(batteryInstance);
+                return;
+            }
+
             body.isKinematic = false;
             body.detectCollisions = true;
 
-            impact.InitializeAttackThrow(gameObject, batteryItemData);
+            if (isBattery)
+            {
+                batteryImpact.InitializeAttackThrow(gameObject, batteryItemData);
+            }
+            else if (isSpider)
+            {
+                spiderImpact.InitializeAttackThrow(gameObject, batteryItemData);
+            }
 
             var throwVelocity = direction * batteryItemData.ThrowForce + Vector3.up * batteryItemData.UpwardForce;
 
             body.linearVelocity = throwVelocity;
-            Debug.Log($"PHS_BATTERY_THROW_EXECUTED " + $"player={name} " + $"battery={batteryInstance.name} " + $"item={batteryItemData.ItemId} " + $"throwForce={batteryItemData.ThrowForce:F2} " +
+
+            Debug.Log($"PHS_THROWABLE_EXECUTED " + $"player={name} " + $"item={batteryInstance.name} " + $"item={batteryItemData.ItemId} " + $"throwForce={batteryItemData.ThrowForce:F2} " +
               $"upwardForce={batteryItemData.UpwardForce:F2} " + $"rangeFeedback=on_first_impact", this);
         }
         private void RemoveFailedThrownObject(GameObject thrownObject)
@@ -643,6 +708,11 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
         }
         private bool PerformExtinguisherSpray()
         {
+            if(statusEffectController != null && statusEffectController.IsActionBlocked)
+            {
+                StopExtinguisherEffect();
+                return false;
+            }
             if (IsSpawned && !IsServer)
             {
                 return false;
@@ -794,7 +864,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
         [ServerRpc]
         private void RequestBatteryThrowServerRpc(Vector3 throwPosition, Vector3 throwDirection, ServerRpcParams rpcParams = default)
         {
-            PerformBatteryThrow(throwPosition, throwDirection);
+            PerformThrowableAttack(throwPosition, throwDirection);
 
         }
         [ServerRpc]
@@ -1039,9 +1109,20 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
             out string view)
         {
             var firstPerson = !IsSpawned || IsOwner;
-            effectRoot = firstPerson
-                ? extinguisherSprayEffectRoot
-                : extinguisherWorldSprayEffectRoot;
+            bool freezeSprayer = IsFreezeSprayerHeld();
+
+            if (freezeSprayer)
+            {
+                effectRoot = firstPerson
+                    ? freezeSprayEffectRoot
+                    : freezeWorldSprayEffectRoot;
+            }
+            else
+            {
+                effectRoot = firstPerson
+                    ? extinguisherSprayEffectRoot
+                    : extinguisherWorldSprayEffectRoot;
+            }
             view = firstPerson ? "first_person" : "world";
             if (effectRoot == null)
             {
@@ -1190,6 +1271,11 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
             expectedRevision = itemRecord.Revision;
 
             return itemRecord.CanSpendHeldItemDurabilityServer(itemData.ItemId, expectedRevision, itemData.DurabilityCostPerUse);
+        }
+        private bool IsFreezeSprayerHeld()
+        {
+            return TryGetCurrentItemData(out var itemData)
+                && itemData.ItemId == freezeSprayerItemId;
         }
     }
 }

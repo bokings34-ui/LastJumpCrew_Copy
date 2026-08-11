@@ -3,24 +3,27 @@ using UnityEngine;
 namespace LastJumpCrew.Common
 {
     /// <summary>
-    /// 지속시간이 있는 상태이상을 받을 수 있는 대상의 공용 규칙입니다.
-    /// 불, 감전, 기절처럼 적용과 해제가 필요한 상태에 사용합니다.
+    /// 상태이상을 받을 수 있는 대상의 공통 규칙
     /// </summary>
     public interface IStatusEffectReceiver
     {
         /// <summary>
-        /// 지정 상태이상을 받을 수 있는지 판단합니다.
+        /// 현재 상태이상을 받을 수 있는지 
         /// </summary>
         bool CanReceiveStatusEffect(StatusEffectType effectType);
 
         /// <summary>
-        /// 지속시간이 있는 상태이상을 적용합니다.
+        /// 상태이상 적용
         /// </summary>
-        void ApplyStatusEffect(StatusEffectType effectType, float duration, GameObject source);
+        void ApplyStatusEffect(StatusEffectRequest request);
+
+        ///
+        ///특정 상태이상 제거
+        ///
+        void RemoveStatusEffect(StatusEffectType effectType);
 
         /// <summary>
-        /// 지정 상태이상을 제거합니다.
-        /// </summary>
-        void RemoveStatusEffect(StatusEffectType effectType);
+        /// 현재 해당 상태이상이 적용 중인지
+        bool HasStatusEffect(StatusEffectType effectType);
     }
 }

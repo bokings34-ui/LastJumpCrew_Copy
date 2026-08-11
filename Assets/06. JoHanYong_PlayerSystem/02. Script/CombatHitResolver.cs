@@ -115,7 +115,8 @@ namespace LastJumpCrew.ParkHanSol.Combat
             {
                 return;
             }
-            statusReceiver.ApplyStatusEffect(effectType, duration, source);
+            var request = new StatusEffectRequest(effectType, duration, 0f, StatusEffectApplyMode.Refresh, 1, source);
+            statusReceiver.ApplyStatusEffect(request);
         }
         public static bool TryResolveCombatTarget(Collider hitCollider, out GameObject targetObject)
         {

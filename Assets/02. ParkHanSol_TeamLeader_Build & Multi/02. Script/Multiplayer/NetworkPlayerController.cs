@@ -1143,6 +1143,18 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
                 StopMovementForShock();
                 return;
             }
+            if (statusEffectController != null && statusEffectController.IsMovementBlocked)//움직이 봉쇄
+            {
+                move = Vector2.zero;
+                verticalMove = 0f;
+
+                jump = false;
+                ascend = false;
+                sprint = false;
+
+                HasMoveInput = false;
+                IsRunning = false;
+            }
 
             RotatePlayer(yawDegrees, deltaTime);
             RecoverThrusterFuel(deltaTime);
@@ -1181,7 +1193,9 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
             var hasPlanarMoveInput = wishDirection.sqrMagnitude > 0.001f;
             if (hasPlanarMoveInput || grappleController == null || !grappleController.IsPullingPlayer)
             {
-                var targetSpeed = sprint ? runSpeed : moveSpeed;
+                float movementSpeedMultiplier = statusEffectController != null ? statusEffectController.MovementSpeedMultiplier : 1f; //추가(슬로우 판정)
+                var targetSpeed = (sprint ? runSpeed : moveSpeed)
+                    * movementSpeedMultiplier;
                 var targetPlanar = wishDirection * targetSpeed;
                 PlanarVelocity = Vector3.MoveTowards(
                     PlanarVelocity,
