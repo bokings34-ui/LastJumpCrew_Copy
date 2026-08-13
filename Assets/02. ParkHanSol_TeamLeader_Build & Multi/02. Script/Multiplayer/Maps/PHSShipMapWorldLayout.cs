@@ -1,6 +1,4 @@
 using System;
-using System.Collections.Generic;
-using LastJumpCrew.ParkHanSol.Multiplayer.ShipAccidents;
 using UnityEngine;
 
 namespace LastJumpCrew.ParkHanSol.Multiplayer.Maps
@@ -10,10 +8,8 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Maps
     {
         [Header("Schematic Projection")]
         [SerializeField] private PHSShipMapRenderRig mapRenderRig;
-        [SerializeField] private PHSShipAccidentAnchor[] accidentAnchors = Array.Empty<PHSShipAccidentAnchor>();
         [SerializeField] private PHSShipMapObjectAnchor[] objectAnchors = Array.Empty<PHSShipMapObjectAnchor>();
 
-        private readonly Dictionary<string, PHSShipAccidentAnchor> anchorsById = new(StringComparer.Ordinal);
         private bool projectionRigErrorLogged;
 
         public static PHSShipMapWorldLayout Instance { get; private set; }
@@ -31,7 +27,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Maps
             }
 
             Instance = this;
-            RebuildAnchorLookup();
+            ValidateSetup();
         }
 
         private void OnDestroy()
@@ -84,23 +80,6 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Maps
             mapRenderRig.SetMapVisible(visible);
         }
 
-        public bool TryGetAnchorWorldPosition(string anchorId, out Vector3 worldPosition)
-        {
-            if (!string.IsNullOrWhiteSpace(anchorId)
-                && anchorsById.TryGetValue(anchorId, out var anchor)
-                && anchor != null)
-            {
-                worldPosition = anchor.RepairPosition;
-                return true;
-            }
-
-            Debug.LogError(
-                $"PHS_SHIP_MAP_ANCHOR_FAILED reason=anchor_not_registered anchor={anchorId}",
-                this);
-            worldPosition = default;
-            return false;
-        }
-
         public PHSShipMapObjectAnchor GetObjectAnchorAt(int index)
         {
             if (index < 0 || index >= ObjectAnchorCount)
@@ -111,35 +90,13 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Maps
             return objectAnchors[index];
         }
 
-        private void RebuildAnchorLookup()
+        private void ValidateSetup()
         {
-            anchorsById.Clear();
-            if (accidentAnchors == null || accidentAnchors.Length == 0)
+            if (mapRenderRig == null)
             {
-                Debug.LogError("PHS_SHIP_MAP_LAYOUT_SETUP_FAILED reason=accident_anchors_missing", this);
+                Debug.LogError("PHS_SHIP_MAP_LAYOUT_SETUP_FAILED reason=render_rig_missing", this);
                 enabled = false;
                 return;
-            }
-
-            for (var index = 0; index < accidentAnchors.Length; index++)
-            {
-                var anchor = accidentAnchors[index];
-                if (anchor == null || string.IsNullOrWhiteSpace(anchor.AnchorId))
-                {
-                    Debug.LogError(
-                        $"PHS_SHIP_MAP_LAYOUT_SETUP_FAILED reason=anchor_reference_invalid index={index}",
-                        this);
-                    enabled = false;
-                    continue;
-                }
-
-                if (!anchorsById.TryAdd(anchor.AnchorId, anchor))
-                {
-                    Debug.LogError(
-                        $"PHS_SHIP_MAP_LAYOUT_SETUP_FAILED reason=anchor_duplicate anchor={anchor.AnchorId}",
-                        this);
-                    enabled = false;
-                }
             }
 
             if (objectAnchors == null || objectAnchors.Length == 0)

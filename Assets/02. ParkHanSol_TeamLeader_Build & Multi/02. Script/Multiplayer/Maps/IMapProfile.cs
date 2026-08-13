@@ -1,5 +1,3 @@
-using System.Collections.Generic;
-using LastJumpCrew.ParkHanSol.Multiplayer.ShipAccidents;
 using UnityEngine;
 
 namespace LastJumpCrew.ParkHanSol.Multiplayer.Maps
@@ -50,15 +48,10 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Maps
         PHSMapSkyboxMode SkyboxMode { get; }
         Material GameplaySkybox { get; }
         Material ArrivalSkybox { get; }
-        int IncidentPressureCapacity { get; }
-        IReadOnlyList<PHSMapEventWeight> ExternalThreatWeights { get; }
+        System.Collections.Generic.IReadOnlyList<PHSMapEventWeight> ExternalThreatWeights { get; }
         float ExternalThreatIntervalMinSeconds { get; }
         float ExternalThreatIntervalMaxSeconds { get; }
         int MaximumActiveExternalThreats { get; }
-        IReadOnlyList<PHSMapShipAccidentWeight> InternalAccidentWeights { get; }
-        float InternalAccidentIntervalMinSeconds { get; }
-        float InternalAccidentIntervalMaxSeconds { get; }
-        int MaximumActiveInternalAccidents { get; }
         float InternalModuleDamageMultiplier { get; }
         float InternalShipDamageMultiplier { get; }
 

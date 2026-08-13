@@ -16,6 +16,10 @@ namespace SM
         private readonly Dictionary<ShipSpawnPoint, FireEffectInstance> _occupiedPoints = new Dictionary<ShipSpawnPoint, FireEffectInstance>();
         private readonly Dictionary<FireEffectInstance, ShipSpawnPoint> _effectToPoint = new Dictionary<FireEffectInstance, ShipSpawnPoint>();
         private readonly Dictionary<FireEffectInstance, uint> _effectInstanceIds = new Dictionary<FireEffectInstance, uint>();
+        private readonly HashSet<ShipSpawnPoint> _sealedPoints = new HashSet<ShipSpawnPoint>();
+        // Once a crew member suppresses any patch, this incident may only be
+        // finished, never escalate with a replacement fire.
+        private bool _spawningClosedBySuppression;
         private IEventEffectRuntimeBridge _effectRuntimeBridge;
         private IEventRepairRuntimeBridge _repairRuntimeBridge;
 
@@ -27,6 +31,8 @@ namespace SM
             _occupiedPoints.Clear();
             _effectToPoint.Clear();
             _effectInstanceIds.Clear();
+            _sealedPoints.Clear();
+            _spawningClosedBySuppression = false;
             _effectRuntimeBridge = Context?.RuntimeBridge as IEventEffectRuntimeBridge;
             _repairRuntimeBridge = Context?.RuntimeBridge as IEventRepairRuntimeBridge;
 
@@ -43,7 +49,9 @@ namespace SM
             if (State != EventState.InProgress) return;
 
             _timer += deltaTime;
-            if (_timer >= FireData.levelUpInterval)
+            if (_timer >= FireData.levelUpInterval
+                && !_spawningClosedBySuppression
+                && _activeEffects.Count < FireData.maxConcurrentFires)
             {
                 _timer = 0f;
                 SpawnNextFire();
@@ -60,8 +68,27 @@ namespace SM
             }
 
             return _occupiedPoints.Count == 0
-                ? config.GetRandomFreePoint()
-                : config.GetRandomFreeNeighbor(_occupiedPoints.Keys);
+                ? config.GetRandomFreePoint(point =>
+                    !_sealedPoints.Contains(point)
+                    && HasFreeUnsealedNeighbor(point))
+                : config.GetRandomFreeNeighbor(
+                    _occupiedPoints.Keys,
+                    point => !_sealedPoints.Contains(point));
+        }
+
+        private bool HasFreeUnsealedNeighbor(ShipSpawnPoint point)
+        {
+            foreach (var neighbor in point.Neighbors)
+            {
+                if (neighbor != null
+                    && neighbor.IsFree
+                    && !_sealedPoints.Contains(neighbor))
+                {
+                    return true;
+                }
+            }
+
+            return false;
         }
 
         private void SpawnNextFire()
@@ -108,17 +135,22 @@ namespace SM
                     EventEffectKind.Fire,
                     firePosition,
                     0);
+                effect.SetAuthoritativePresentationVisible(false);
             }
         }
 
         private void HandleRemoveFire(FireEffectInstance effect)
         {
+            _spawningClosedBySuppression = true;
             effect.OnRemove -= HandleRemoveFire;
             effect.UnbindRepairTarget();
             PublishEffectRemoved(effect);
 
             if (_effectToPoint.TryGetValue(effect, out var point))
             {
+                // A repaired patch stays sealed for this incident. Releasing
+                // the spawn point only permits other events to use it later.
+                _sealedPoints.Add(point);
                 point.Release();
                 _occupiedPoints.Remove(point);
                 _effectToPoint.Remove(effect);
@@ -167,6 +199,8 @@ namespace SM
             _occupiedPoints.Clear();
             _effectToPoint.Clear();
             _effectInstanceIds.Clear();
+            _sealedPoints.Clear();
+            _spawningClosedBySuppression = false;
 
             base.ForceTerminate();
         }

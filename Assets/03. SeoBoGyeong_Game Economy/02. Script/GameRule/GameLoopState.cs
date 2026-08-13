@@ -23,7 +23,7 @@ namespace LastJumpCrew.SeoBoGyeong
     /// </summary>
     public class GameLoopState
     {
-        public const int SHOP_INTERVAL = 3;         // 3구역 클리어마다 상점
+        public const int SHOP_INTERVAL = 2;         // 2구역 클리어 후 상점
         public const int TOTAL_ZONES = 4;           // 4구역 클리어 시 게임 클리어
         public const float STAGE_TIME_LIMIT = 300f; // 스테이지 제한시간(고정, 초)
 
@@ -37,7 +37,7 @@ namespace LastJumpCrew.SeoBoGyeong
         /// <summary>4구역을 모두 클리어했는가.</summary>
         public bool IsGameClear => ClearedZoneCount >= TOTAL_ZONES;
 
-        /// <summary>이번 클리어 직후 상점에 들러야 하는가(4구역마다, 단 게임 클리어 제외).</summary>
+        /// <summary>이번 클리어 직후 상점에 들러야 하는가(2구역마다, 단 게임 클리어 제외).</summary>
         public bool IsShopDue => ClearedZoneCount > 0
                               && ClearedZoneCount % SHOP_INTERVAL == 0
                               && !IsGameClear;

@@ -16,8 +16,8 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Events.MiniGames.Runtime
 
         [Header("이펙트 설정")]
         public RectTransform handleRect; // 움직이는 빨간색 막대기(핸들)의 위치 데이터
-        public Color normalSafeColor = new Color(0f, 1f, 1f, 1f); // 진입 전 기본 하늘색 (Cyan)
-        public Color highlightSafeColor = Color.green;            // 핸들이 진입했을 때 빛날 형광 초록색
+        public Color normalSafeColor = new(1f, 0.48f, 0.08f, 0.52f);
+        public Color highlightSafeColor = new(0.22f, 0.95f, 0.46f, 0.82f);
 
         [Header("게임 추가 설정")]
         public float speed = 2.0f;        // 게이지 바가 움직이는 속도
@@ -34,7 +34,6 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Events.MiniGames.Runtime
         public override void StartGame(IMiniGameTarget target)
         {
             base.StartGame(target); // 부모(PHSMiniGameBase)의 타이머 초기화 등을 실행합니다.
-
             powerSlider.value = 0f; // 시작할 때 게이지 바 위치를 맨 왼쪽(0)으로 리셋
             wasInSafeZone = false;  // 상태 초기화
             isHitStopped = false;   // 💡 게임이 다시 켜질 때 멈춤 스위치를 깨끗하게 꺼줍니다.
@@ -138,13 +137,13 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Events.MiniGames.Runtime
             if (powerSlider.value >= safeZoneMin && powerSlider.value <= safeZoneMax)
             {
                 if (statusText != null) statusText.text = "전력 동기화 성공!";
-                if (safeZoneImage != null) safeZoneImage.color = Color.green; // 성공 시 영구적으로 초록색 변경
+                if (safeZoneImage != null) safeZoneImage.color = Color.green;
                 TriggerSuccess(); // 부모의 최종 성공 처리 (창 닫기 등)
             }
             else // 구간을 벗어났다면? (실패!)
             {
                 if (statusText != null) statusText.text = "동기화 실패! 전력 과부하!";
-                if (safeZoneImage != null) safeZoneImage.color = Color.red;   // 실패 시 영구적으로 빨간색 변경
+                if (safeZoneImage != null) safeZoneImage.color = Color.red;
                 TriggerFailure(); // 부모의 최종 실패 처리 (화면 지진, 글리치 등)
             }
         }

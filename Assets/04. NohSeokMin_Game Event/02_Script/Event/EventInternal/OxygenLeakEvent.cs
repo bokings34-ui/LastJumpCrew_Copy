@@ -11,7 +11,6 @@ namespace SM
         private OxygenLeakEffectPool _effectPool;
         private IEventEffectRuntimeBridge _effectRuntimeBridge;
         private IEventRepairRuntimeBridge _repairRuntimeBridge;
-        private ShipSpawnPoint _spawnPoint;
         private IOxygenLeakZone _oxygenZone;
         private uint _effectInstanceId;
         private bool _effectSpawnPublishAttempted;
@@ -23,7 +22,6 @@ namespace SM
             _effectPool = null;
             _effectRuntimeBridge = null;
             _repairRuntimeBridge = null;
-            _spawnPoint = null;
             _oxygenZone = null;
             _effectInstanceId = 0U;
             _effectSpawnPublishAttempted = false;
@@ -106,6 +104,7 @@ namespace SM
                     EventEffectKind.OxygenLeak,
                     spawnPosition,
                     0);
+                _effect.SetAuthoritativePresentationVisible(false);
             }
 
             _effect.OnSealed += HandleSealed;
@@ -118,32 +117,28 @@ namespace SM
             out string reason)
         {
             var roomComponent = TargetRoom as Component;
-            var zoneProvider = roomComponent == null
-                ? null
-                : roomComponent.GetComponent<IOxygenLeakZoneProvider>();
-            if (zoneProvider != null)
-            {
-                if (!zoneProvider.TryAcquireZone(out _oxygenZone, out reason))
-                {
-                    spawnPosition = default;
-                    return false;
-                }
-
-                spawnPosition = _oxygenZone.RepairPosition;
-                reason = null;
-                return true;
-            }
-
-            _spawnPoint = ShipSpawnPointConfig.Peek()?.GetRandomFreePoint();
-            if (_spawnPoint == null)
+            if (roomComponent == null)
             {
                 spawnPosition = default;
-                reason = "spawn_point_unavailable";
+                reason = "repair_socket_room_missing";
                 return false;
             }
 
-            _spawnPoint.Occupy(EventId.OxygenLeak);
-            spawnPosition = _spawnPoint.transform.position;
+            var zoneProvider = roomComponent.GetComponent<IOxygenLeakZoneProvider>();
+            if (zoneProvider == null)
+            {
+                spawnPosition = default;
+                reason = "repair_socket_provider_missing";
+                return false;
+            }
+
+            if (!zoneProvider.TryAcquireZone(out _oxygenZone, out reason))
+            {
+                spawnPosition = default;
+                return false;
+            }
+
+            spawnPosition = _oxygenZone.RepairPosition;
             reason = null;
             return true;
         }
@@ -278,8 +273,6 @@ namespace SM
 
         private void ReleaseSpawnPoint()
         {
-            _spawnPoint?.Release();
-            _spawnPoint = null;
             _oxygenZone?.Deactivate();
             _oxygenZone = null;
         }

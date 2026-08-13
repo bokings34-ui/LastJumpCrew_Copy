@@ -19,6 +19,9 @@ namespace LastJumpCrew.ParkHanSol.Editor
             "Prefabs/Fire (+ Torso)/FX Fire Orange.prefab";
         private const string ActiveFlameName = "PHS_TeamFireVisual";
         private const float FloorLift = 0.12f;
+        // Preserve the source fire silhouette at ship-scale.  The prior 0.55
+        // override reduced both team particle systems to a marker-sized flame.
+        private const float FlameStartSize = 1.35f;
 
         [MenuItem("Tools/ParkHanSol/BEAVER/Restore Active Fire Flame")]
         public static void Author()
@@ -68,7 +71,7 @@ namespace LastJumpCrew.ParkHanSol.Editor
                     main.simulationSpace = ParticleSystemSimulationSpace.Local;
                     main.startLifetime = 1.1f;
                     main.startSpeed = 1.2f;
-                    main.startSize = 0.55f;
+                    main.startSize = FlameStartSize;
                     var emission = particle.emission;
                     emission.enabled = true;
                     emission.rateOverTime = 26f;
@@ -107,16 +110,28 @@ namespace LastJumpCrew.ParkHanSol.Editor
                 var renderers = flame == null
                     ? Array.Empty<Renderer>()
                     : flame.GetComponentsInChildren<Renderer>(true);
+                var particles = flame == null
+                    ? Array.Empty<ParticleSystem>()
+                    : flame.GetComponentsInChildren<ParticleSystem>(true);
                 var trigger = root.GetComponent<BoxCollider>();
                 var materialsValid = renderers.All(renderer => renderer.sharedMaterial != null
                     && renderer.sharedMaterial.shader != null
                     && renderer.sharedMaterial.shader.isSupported);
+                var particleSizeValid = particles.Length > 0
+                    && particles.All(particle =>
+                        Mathf.Abs(particle.main.startSize.constant - FlameStartSize) <= 0.001f);
                 if (view == null || flame == null || renderers.Length == 0
                     || Mathf.Abs(flame.localPosition.y - FloorLift) > 0.001f
-                    || trigger == null || !trigger.isTrigger || !materialsValid)
+                    || trigger == null || !trigger.isTrigger || !materialsValid
+                    || !particleSizeValid)
                 {
                     throw new InvalidOperationException(
-                        $"PHS_ACTIVE_FIRE_VALIDATE_FAILED view={view != null} flame={flame != null} renderers={renderers.Length} materials={materialsValid} floorLift={(flame == null ? -1f : flame.localPosition.y)} trigger={trigger != null && trigger.isTrigger}");
+                        $"PHS_ACTIVE_FIRE_VALIDATE_FAILED view={view != null} flame={flame != null} " +
+                        $"renderers={renderers.Length} particles={particles.Length} " +
+                        $"materials={materialsValid} particleSize={particleSizeValid} " +
+                        $"expectedStartSize={FlameStartSize:F2} " +
+                        $"floorLift={(flame == null ? -1f : flame.localPosition.y)} " +
+                        $"trigger={trigger != null && trigger.isTrigger}");
                 }
             }
             finally

@@ -89,6 +89,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Incidents.Fire
             public double NextSpreadTime { get; set; }
             public double NextDamageTime { get; set; }
             public double ContainmentResolveAtServerTime { get; set; }
+            public bool IsSpreadSealed { get; set; }
         }
 
         public int ActivePatchCount => activePatches.Count;
@@ -527,6 +528,14 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Incidents.Fire
                 && CountActivePatches(accidentInstanceId) == 1;
 
             suppressionSequences[sequenceKey] = hit.RequestSequence;
+            if (!runtime.IsSpreadSealed)
+            {
+                runtime.IsSpreadSealed = true;
+                Debug.Log(
+                    $"PHS_FIRE_SPREAD_SEALED instance={accidentInstanceId} " +
+                    $"location={locationId} patch={patchId}",
+                    this);
+            }
             var feedback =
                 hit.Attacker.GetComponent<PHSNetworkItemUseFeedbackController>();
             feedback?.PublishConfirmedTargetImpactServer(
@@ -721,7 +730,15 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Incidents.Fire
             CopyPatchSnapshots(
                 runtime.AccidentInstanceId,
                 patchSnapshotBuffer);
+            if (runtime.IsSpreadSealed)
+            {
+                return;
+            }
+
             var newIgnitions = 0;
+            // A new incident always establishes its first neighboring fire;
+            // subsequent growth keeps the authored probability.
+            var guaranteeInitialExpansion = patchSnapshotBuffer.Count == 1;
             for (var attempt = 0;
                  attempt < runtime.Zone.SpreadAttemptsPerTick
                  && newIgnitions
@@ -793,7 +810,8 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Incidents.Fire
                     / (byte)PHSFireIntensityUtility.FromHeat(
                         runtime.Zone.MaximumHeat));
                 if (spreadChance <= 0f
-                    || NextUnit(runtime.Random) >= spreadChance)
+                    || (!guaranteeInitialExpansion
+                        && NextUnit(runtime.Random) >= spreadChance))
                 {
                     continue;
                 }

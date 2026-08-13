@@ -9,6 +9,8 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Events
     [DisallowMultipleComponent]
     public sealed class PHSNetworkEventScheduler : MonoBehaviour, IEventScheduleConfigurator
     {
+        private const float CapacityRetrySeconds = 1f;
+
         [SerializeField] private NetworkEventCoordinator coordinator;
         [SerializeField] private PHSNetworkEventChannel channel = PHSNetworkEventChannel.LegacyMixed;
         [SerializeField] private WeightedEventScheduleEntry[] weightedEvents =
@@ -30,6 +32,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Events
         private bool isRunning;
         private bool setupValid;
         private bool scheduleValid;
+        private bool capacityBlocked;
 
         private void Awake()
         {
@@ -56,11 +59,28 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Events
                 return;
             }
 
-            nextSpawnTime = Time.time + RollNextInterval();
-            if (maximumActiveEvents > 0 && CountActiveEvents() >= maximumActiveEvents)
+            var activeCount = CountActiveEvents();
+            if (maximumActiveEvents > 0 && activeCount >= maximumActiveEvents)
             {
+                // Do not consume a full event interval while the configured
+                // concurrency cap is occupied. The next event remains blocked
+                // until a slot is free, then is retried promptly without ever
+                // exceeding the Inspector-owned maximumActiveEvents value.
+                nextSpawnTime = Time.time + CapacityRetrySeconds;
+                if (!capacityBlocked)
+                {
+                    Debug.Log(
+                        $"PHS_EVENT_SCHEDULER_CAPACITY_WAIT active={activeCount} " +
+                        $"maxActive={maximumActiveEvents} retry={CapacityRetrySeconds:0.###}",
+                        this);
+                }
+
+                capacityBlocked = true;
                 return;
             }
+
+            capacityBlocked = false;
+            nextSpawnTime = Time.time + RollNextInterval();
 
             if (!TrySelectWeightedEvent(out var eventId, out var selectionReason))
             {
@@ -103,6 +123,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Events
         {
             isRunning = false;
             nextSpawnTime = 0f;
+            capacityBlocked = false;
         }
 
         public bool TryConfigureServer(
@@ -170,6 +191,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Events
 
             isRunning = true;
             nextSpawnTime = Time.time + RollNextInterval();
+            capacityBlocked = false;
             reason = null;
             return true;
         }
@@ -189,6 +211,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Events
 
             isRunning = false;
             nextSpawnTime = 0f;
+            capacityBlocked = false;
             reason = null;
             return true;
         }

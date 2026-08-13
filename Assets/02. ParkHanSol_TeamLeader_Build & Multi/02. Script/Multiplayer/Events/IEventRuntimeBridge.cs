@@ -1,3 +1,4 @@
+using LastJumpCrew.Common;
 using UnityEngine;
 
 namespace SM
@@ -6,7 +7,8 @@ namespace SM
     {
         Fire = 0,
         OxygenLeak = 1,
-        Enemy = 2
+        Enemy = 2,
+        HullBreach = 3
     }
 
     public enum EventEffectLifecycle : byte
@@ -58,6 +60,17 @@ namespace SM
             Vector3 worldPosition);
 
         void PublishEffectRemoved(ulong eventInstanceId, uint effectInstanceId);
+    }
+
+    public interface IEventEffectFeedbackRuntimeBridge
+    {
+        void PublishEnemyHitFeedback(ulong eventInstanceId, uint effectInstanceId);
+
+        void PublishEnemyStatusFeedback(
+            ulong eventInstanceId,
+            uint effectInstanceId,
+            StatusEffectType effectType,
+            bool active);
     }
 
     public interface IShipPowerEventRuntimeBridge

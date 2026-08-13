@@ -34,6 +34,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
         private NetworkPlayerItemLifecycle itemLifecycle;
         private NetworkPlayerLifeState lifeState;
         private PHSNetworkItemInteractionAudioRelay interactionAudio;
+        private PHSNetworkItemUseFeedbackController itemUseFeedback;
         private uint ownerSequence;
         private uint lastServerSequence;
         private double nextWrenchServerTime;
@@ -45,6 +46,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
             itemLifecycle = GetComponent<NetworkPlayerItemLifecycle>();
             lifeState = GetComponent<NetworkPlayerLifeState>();
             interactionAudio = GetComponent<PHSNetworkItemInteractionAudioRelay>();
+            itemUseFeedback = GetComponent<PHSNetworkItemUseFeedbackController>();
         }
 
         public bool CanRequestAction(
@@ -82,17 +84,18 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
                 ownerSequence = 1U;
             }
 
+            TryResolveVisiblePresentationTarget(
+                familyKind,
+                out var requestedEventInstanceId,
+                out var requestedEffectInstanceId);
             RequestActionServerRpc(
                 familyKind,
                 new FixedString64Bytes(itemRecord.HeldItemId),
                 itemRecord.Revision,
-                ownerSequence);
-            if (familyKind == PHSUtilityFamilyActionKind.FireExtinguisher)
-            {
-                interactionAudio?.TryPlayOwnerPredicted(
-                    NetworkAudioCue.ExtinguisherSpray);
-            }
-            else if (familyKind == PHSUtilityFamilyActionKind.Wrench)
+                ownerSequence,
+                requestedEventInstanceId,
+                requestedEffectInstanceId);
+            if (familyKind == PHSUtilityFamilyActionKind.Wrench)
             {
                 interactionAudio?.TryPlayOwnerPredicted(
                     NetworkAudioCue.WrenchImpact);
@@ -105,6 +108,8 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
             FixedString64Bytes expectedItemId,
             uint expectedRevision,
             uint requestSequence,
+            ulong requestedEventInstanceId,
+            uint requestedEffectInstanceId,
             ServerRpcParams rpcParams = default)
         {
             var senderClientId = rpcParams.Receive.SenderClientId;
@@ -129,11 +134,123 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
             }
 
             lastServerSequence = requestSequence;
+            if (requestedEventInstanceId != 0UL
+                || requestedEffectInstanceId != 0U)
+            {
+                if (requestedEventInstanceId == 0UL
+                    || requestedEffectInstanceId == 0U)
+                {
+                    Debug.LogError(
+                        $"PHS_UTILITY_PRESENTATION_TARGET_REJECTED reason=partial_id event={requestedEventInstanceId} effect={requestedEffectInstanceId}",
+                        this);
+                    return;
+                }
+
+                TryResolvePresentationTargetServer(
+                    familyKind,
+                    itemData,
+                    expectedRevision,
+                    requestSequence,
+                    requestedEventInstanceId,
+                    requestedEffectInstanceId);
+                return;
+            }
+
             TryResolveNearestTargetServer(
                 familyKind,
                 itemData,
                 expectedRevision,
                 requestSequence);
+        }
+
+        private bool TryResolvePresentationTargetServer(
+            PHSUtilityFamilyActionKind familyKind,
+            UtilityItemDataSO itemData,
+            uint expectedRevision,
+            uint requestSequence,
+            ulong eventInstanceId,
+            uint effectInstanceId)
+        {
+            var coordinator = NetworkEventCoordinator.Instance;
+            if (coordinator == null
+                || !coordinator.TryGetRepairTargetServer(
+                    eventInstanceId,
+                    effectInstanceId,
+                    out var target)
+                || target == null
+                || !UtilityItemRepairActionResolver.TryResolve(
+                    target.EffectKind,
+                    out var actionKind)
+                || !FamilyAllows(familyKind, actionKind)
+                || !itemData.TryGetActionProfile(actionKind, out _)
+                || !itemLifecycle.TryResolveHeldItemActionServer(
+                    itemData.ItemId,
+                    expectedRevision,
+                    actionKind,
+                    out _))
+            {
+                Debug.LogError(
+                    $"PHS_UTILITY_PRESENTATION_TARGET_REJECTED reason=server_target_or_profile event={eventInstanceId} effect={effectInstanceId} family={familyKind}",
+                    this);
+                return false;
+            }
+
+            return coordinator.RequestEffectRepair(
+                target,
+                itemRecord,
+                requestSequence);
+        }
+
+        private bool TryResolveVisiblePresentationTarget(
+            PHSUtilityFamilyActionKind familyKind,
+            out ulong eventInstanceId,
+            out uint effectInstanceId)
+        {
+            eventInstanceId = 0UL;
+            effectInstanceId = 0U;
+            if (!IsOwner)
+            {
+                return false;
+            }
+
+            var origin = transform.position + Vector3.up * 0.75f;
+            var forward = transform.forward;
+            var range = familyKind == PHSUtilityFamilyActionKind.Wrench
+                ? wrenchRange
+                : extinguisherRange;
+            var nearestDistance = float.PositiveInfinity;
+            foreach (var view in FindObjectsByType<EventEffectPresentationView>(
+                         FindObjectsInactive.Exclude,
+                         FindObjectsSortMode.None))
+            {
+                if (view == null
+                    || !view.IsActiveEffect
+                    || !UtilityItemRepairActionResolver.TryResolve(
+                        view.EffectKind,
+                        out var actionKind)
+                    || !FamilyAllows(familyKind, actionKind)
+                    || !view.TryGetVisualRepairPoint(origin, out var point))
+                {
+                    continue;
+                }
+
+                var offset = point - origin;
+                var distance = offset.magnitude;
+                if (distance > range
+                    || familyKind == PHSUtilityFamilyActionKind.FireExtinguisher
+                    && distance > 0.01f
+                    && Vector3.Dot(forward, offset / distance) < 0.45f
+                    || distance >= nearestDistance)
+                {
+                    continue;
+                }
+
+                nearestDistance = distance;
+                eventInstanceId = view.EventInstanceId;
+                effectInstanceId = view.EffectInstanceId;
+            }
+
+            return effectInstanceId != 0U;
         }
 
         private bool TryResolveNearestTargetServer(
@@ -217,6 +334,27 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
 
                 if (resolvedCandidate.TryResolve(itemRecord, requestSequence, gameObject))
                 {
+                    if (resolvedCandidate.IsEnemyTarget)
+                    {
+                        itemUseFeedback?.PublishConfirmedTargetImpactServer(
+                            UtilityItemActionKind.DeviceRepair,
+                            resolvedCandidate.AimPosition);
+                    }
+
+                    if (resolvedCandidate.IsRepairTarget)
+                    {
+                        interactionAudio?.TryBroadcastConfirmedServer(
+                            NetworkAudioCue.RepairComplete,
+                            requestSequence);
+                        if (familyKind
+                            == PHSUtilityFamilyActionKind.FireExtinguisher)
+                        {
+                            interactionAudio?.TryBroadcastConfirmedServer(
+                                NetworkAudioCue.ExtinguisherSpray,
+                                requestSequence);
+                        }
+                    }
+
                     if (familyKind == PHSUtilityFamilyActionKind.Wrench)
                     {
                         interactionAudio?.TryBroadcastConfirmedServer(
@@ -333,19 +471,6 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
                         component,
                         eventTarget,
                         eventAction);
-                    return true;
-                }
-
-                if (component is IShipAccidentRepairTarget shipTarget
-                    && UtilityItemRepairActionResolver.TryResolve(
-                        shipTarget.AccidentId,
-                        out var shipAction)
-                    && FamilyAllows(familyKind, shipAction))
-                {
-                    candidate = TargetCandidate.ForShip(
-                        component,
-                        shipTarget,
-                        shipAction);
                     return true;
                 }
 
@@ -492,7 +617,6 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
         private struct TargetCandidate
         {
             private IEventRepairTargetHandle eventTarget;
-            private IShipAccidentRepairTarget shipTarget;
             private IUtilityAttackTarget utilityTarget;
             private IDamageable damageable;
 
@@ -505,9 +629,11 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
             public bool IsRepairComplete =>
                 eventTarget is IEventRepairableEffect repairable
                     && repairable.IsRepairComplete
-                || shipTarget != null && shipTarget.IsRepairComplete
                 || utilityTarget is PHSFirePatchRuntimeTarget fireTarget
                     && !fireTarget.IsActive;
+
+            public bool IsRepairTarget => eventTarget != null;
+            public bool IsEnemyTarget => damageable != null;
 
             public static TargetCandidate ForEvent(
                 Component component,
@@ -517,17 +643,6 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
                 {
                     Component = component,
                     eventTarget = target,
-                    ActionKind = actionKind
-                };
-
-            public static TargetCandidate ForShip(
-                Component component,
-                IShipAccidentRepairTarget target,
-                UtilityItemActionKind actionKind) =>
-                new()
-                {
-                    Component = component,
-                    shipTarget = target,
                     ActionKind = actionKind
                 };
 
@@ -565,15 +680,6 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
                             eventTarget,
                             record,
                             sequence);
-                }
-
-                if (shipTarget != null)
-                {
-                    return PHSNetworkShipAccidentCoordinator.Instance != null
-                        && PHSNetworkShipAccidentCoordinator.Instance.RequestRepair(
-                            shipTarget,
-                            record,
-                        sequence);
                 }
 
                 if (damageable != null)

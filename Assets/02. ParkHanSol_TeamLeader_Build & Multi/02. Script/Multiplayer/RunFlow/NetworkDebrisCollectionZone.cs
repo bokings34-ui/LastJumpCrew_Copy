@@ -40,7 +40,10 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
             var coordinator = NetworkRunFlowCoordinator.Instance;
             if (coordinator == null)
             {
-                Debug.LogError($"PHS_DEBRIS_ZONE_FAILED reason=coordinator_missing zone={name}", this);
+                if (NetworkRunSessionRoot.Instance != null)
+                {
+                    Debug.LogError($"PHS_DEBRIS_ZONE_FAILED reason=coordinator_missing zone={name}", this);
+                }
                 return;
             }
 
@@ -68,7 +71,10 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
             var coordinator = NetworkRunFlowCoordinator.Instance;
             if (coordinator == null)
             {
-                Debug.LogError($"PHS_DEBRIS_ZONE_FAILED reason=coordinator_missing zone={name}", this);
+                if (NetworkRunSessionRoot.Instance != null)
+                {
+                    Debug.LogError($"PHS_DEBRIS_ZONE_FAILED reason=coordinator_missing zone={name}", this);
+                }
                 return;
             }
 

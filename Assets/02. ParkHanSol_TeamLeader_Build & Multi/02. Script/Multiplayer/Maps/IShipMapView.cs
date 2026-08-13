@@ -33,7 +33,9 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Maps
         PatrolZone = 16,
         MeteorZone = 17,
         NebulaZone = 18,
-        PlanetZone = 19
+        PlanetZone = 19,
+        Vending = 20,
+        Player = 21
     }
 
     public readonly struct ShipMapMarker

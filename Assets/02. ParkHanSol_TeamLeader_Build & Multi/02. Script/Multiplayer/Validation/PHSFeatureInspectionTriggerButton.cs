@@ -9,6 +9,7 @@ using Unity.Netcode;
 using UnityEngine;
 using LocalInteraction = LastJumpCrew.ParkHanSol.Interaction;
 
+#if false // Removed PHS accident inspection control; team events use NetworkEventCoordinator validation.
 namespace LastJumpCrew.ParkHanSol.Multiplayer.Validation
 {
     public enum PHSFeatureInspectionTriggerKind
@@ -341,3 +342,4 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Validation
         }
     }
 }
+#endif

@@ -19,6 +19,8 @@ namespace LastJumpCrew.ParkHanSol.Editor
     /// </summary>
     public static class PHSMapSpawnNavigationValidator
     {
+        private const string MainMapScenePath =
+            "Assets/02. ParkHanSol_TeamLeader_Build & Multi/01. Scene/BEAVER_2026/PHS_Map_ver1.unity";
         private const string LegacyNavigationName = "PHS_0715_Navigation";
         private const int ExpectedPointCount = 81;
         private const int ExpectedIgnoreVolumeCount = 10;
@@ -26,7 +28,7 @@ namespace LastJumpCrew.ParkHanSol.Editor
         [MenuItem("Tools/ParkHanSol/Validate Map Spawn And Navigation")]
         public static void ValidateOrThrow()
         {
-            var activeScene = SceneManager.GetActiveScene();
+            var activeScene = OpenMainMapSceneIfNeeded();
             var configs = FindSceneComponents<ShipSpawnPointConfig>(activeScene);
             Require(configs.Length == 1, $"spawn_config_count={configs.Length}");
             var config = configs[0];
@@ -68,7 +70,7 @@ namespace LastJumpCrew.ParkHanSol.Editor
         [MenuItem("Tools/ParkHanSol/Repair Map Spawn Neighbors")]
         public static void RepairNeighbors()
         {
-            var activeScene = SceneManager.GetActiveScene();
+            var activeScene = OpenMainMapSceneIfNeeded();
             var configs = FindSceneComponents<ShipSpawnPointConfig>(activeScene);
             Require(configs.Length == 1, $"spawn_config_count={configs.Length}");
 
@@ -119,6 +121,17 @@ namespace LastJumpCrew.ParkHanSol.Editor
                 .SelectMany(root => root.GetComponentsInChildren<Transform>(true))
                 .Where(transform => transform.name == name)
                 .ToArray();
+        }
+
+        private static Scene OpenMainMapSceneIfNeeded()
+        {
+            var activeScene = SceneManager.GetActiveScene();
+            if (activeScene.path == MainMapScenePath)
+            {
+                return activeScene;
+            }
+
+            return EditorSceneManager.OpenScene(MainMapScenePath, OpenSceneMode.Single);
         }
 
         private static T[] FindSceneComponents<T>(Scene scene) where T : Component

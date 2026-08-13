@@ -31,7 +31,8 @@ namespace LastJumpCrew.ParkHanSol.Editor
         public static void BuildReleasePlayer()
         {
             ValidateReleaseScenes();
-            PHSIntegratedReleaseValidator.Validate();
+            PHSRuntimeEditorOnlyComponentCleanup.Cleanup();
+            PHS20260812ReleaseValidator.Validate();
 
             var absoluteOutputPath = Path.GetFullPath(OutputPath);
             var outputDirectory = Path.GetDirectoryName(absoluteOutputPath);
@@ -42,13 +43,23 @@ namespace LastJumpCrew.ParkHanSol.Editor
             }
 
             Directory.CreateDirectory(outputDirectory);
-            var report = BuildPipeline.BuildPlayer(new BuildPlayerOptions
+            var previousStripEngineCode = PlayerSettings.stripEngineCode;
+            PlayerSettings.stripEngineCode = false;
+            BuildReport report;
+            try
             {
-                scenes = ReleaseScenePaths,
-                locationPathName = absoluteOutputPath,
-                target = BuildTarget.StandaloneWindows64,
-                options = BuildOptions.None
-            });
+                report = BuildPipeline.BuildPlayer(new BuildPlayerOptions
+                {
+                    scenes = ReleaseScenePaths,
+                    locationPathName = absoluteOutputPath,
+                    target = BuildTarget.StandaloneWindows64,
+                    options = BuildOptions.None
+                });
+            }
+            finally
+            {
+                PlayerSettings.stripEngineCode = previousStripEngineCode;
+            }
             if (report.summary.result != BuildResult.Succeeded)
             {
                 throw new InvalidOperationException(

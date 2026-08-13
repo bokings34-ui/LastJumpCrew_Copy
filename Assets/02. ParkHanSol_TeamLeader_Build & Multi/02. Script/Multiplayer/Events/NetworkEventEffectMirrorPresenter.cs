@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using LastJumpCrew.Common;
 using SM;
 using Unity.Netcode;
 using UnityEngine;
@@ -12,6 +13,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Events
         [Header("Presentation-only Prefabs")]
         [SerializeField] private EventEffectPresentationView firePresentationPrefab;
         [SerializeField] private EventEffectPresentationView oxygenLeakPresentationPrefab;
+        [SerializeField] private EventEffectPresentationView hullBreachPresentationPrefab;
         [SerializeField] private EventEffectPresentationView playerAttackEnemyPresentationPrefab;
         [SerializeField] private EventEffectPresentationView deviceAttackEnemyPresentationPrefab;
 
@@ -20,6 +22,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Events
 
         private readonly Dictionary<uint, ActiveMirror> activeMirrors = new();
         private readonly Dictionary<EventEffectPresentationView, Queue<EventEffectPresentationView>> pools = new();
+        private readonly Dictionary<uint, byte> enemyStatusMasks = new();
         private readonly HashSet<uint> desiredEffectIds = new();
         private readonly List<uint> removalBuffer = new();
 
@@ -44,6 +47,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Events
             var valid = presentationRoot != null;
             valid &= ValidatePresentationPrefab(firePresentationPrefab, "fire");
             valid &= ValidatePresentationPrefab(oxygenLeakPresentationPrefab, "oxygen_leak");
+            valid &= ValidatePresentationPrefab(hullBreachPresentationPrefab, "hull_breach");
             valid &= ValidatePresentationPrefab(playerAttackEnemyPresentationPrefab, "enemy_player_attack");
             valid &= ValidatePresentationPrefab(deviceAttackEnemyPresentationPrefab, "enemy_device_attack");
             if (presentationRoot == null)
@@ -82,6 +86,11 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Events
 
                 var view = GetFromPool(sourcePrefab);
                 view.Activate(snapshot);
+                if (snapshot.Kind == EventEffectKind.Enemy
+                    && enemyStatusMasks.TryGetValue(snapshot.EffectInstanceId, out var statusMask))
+                {
+                    view.SetEnemyStatusMask(statusMask);
+                }
                 activeMirrors.Add(snapshot.EffectInstanceId, new ActiveMirror(sourcePrefab, view));
                 Debug.Log(
                     $"PHS_EVENT_EFFECT_MIRROR_SPAWNED effect={snapshot.EffectInstanceId} event={snapshot.EventInstanceId} kind={snapshot.Kind} variant={snapshot.Variant}",
@@ -113,12 +122,59 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Events
             }
         }
 
+        public bool TryPlayEnemyHitFeedback(uint effectInstanceId)
+        {
+            if (!activeMirrors.TryGetValue(effectInstanceId, out var active)
+                || active.View == null
+                || active.View.EffectKind != EventEffectKind.Enemy)
+            {
+                return false;
+            }
+
+            active.View.PlayEnemyHitFeedback();
+            return true;
+        }
+
+        public bool TrySetEnemyStatusFeedback(
+            uint effectInstanceId,
+            StatusEffectType effectType,
+            bool active)
+        {
+            if (effectInstanceId == 0U || !TryGetStatusBit(effectType, out var bit))
+            {
+                return false;
+            }
+
+            enemyStatusMasks.TryGetValue(effectInstanceId, out var mask);
+            mask = active
+                ? (byte)(mask | bit)
+                : (byte)(mask & ~bit);
+
+            if (mask == 0)
+            {
+                enemyStatusMasks.Remove(effectInstanceId);
+            }
+            else
+            {
+                enemyStatusMasks[effectInstanceId] = mask;
+            }
+
+            if (activeMirrors.TryGetValue(effectInstanceId, out var mirror)
+                && mirror.View != null)
+            {
+                mirror.View.SetEnemyStatusMask(mask);
+            }
+
+            return true;
+        }
+
         private EventEffectPresentationView ResolvePrefab(EventEffectKind kind, byte variant)
         {
             return kind switch
             {
                 EventEffectKind.Fire => variant == 0 ? firePresentationPrefab : null,
                 EventEffectKind.OxygenLeak => variant == 0 ? oxygenLeakPresentationPrefab : null,
+                EventEffectKind.HullBreach => variant == 0 ? hullBreachPresentationPrefab : null,
                 EventEffectKind.Enemy => variant switch
                 {
                     0 => playerAttackEnemyPresentationPrefab,
@@ -150,6 +206,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Events
             }
 
             active.View.Deactivate();
+            enemyStatusMasks.Remove(effectInstanceId);
             if (!pools.TryGetValue(active.SourcePrefab, out var pool))
             {
                 pool = new Queue<EventEffectPresentationView>();
@@ -158,6 +215,18 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Events
 
             pool.Enqueue(active.View);
             Debug.Log($"PHS_EVENT_EFFECT_MIRROR_REMOVED effect={effectInstanceId}", this);
+        }
+
+        private static bool TryGetStatusBit(StatusEffectType effectType, out byte bit)
+        {
+            bit = effectType switch
+            {
+                StatusEffectType.ElectricShok => 1 << 0,
+                StatusEffectType.Freeze => 1 << 1,
+                StatusEffectType.Slow => 1 << 2,
+                _ => 0
+            };
+            return bit != 0;
         }
 
         private bool ValidatePresentationPrefab(

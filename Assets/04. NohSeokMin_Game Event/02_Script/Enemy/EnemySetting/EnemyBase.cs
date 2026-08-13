@@ -11,6 +11,7 @@ namespace SM
     public abstract class EnemyBase : MonoBehaviour, IDamageable, IKnockbackable
     {
         public event Action<EnemyBase> OnDeath;
+        public event Action<EnemyBase> OnDamaged;
 
         [Header("스탯 설정")]
         [SerializeField] private float maxHealth = 10f;
@@ -35,6 +36,7 @@ namespace SM
 
         private Coroutine _knockbackRoutine;
         private StatusEffectController _statusEffectController;
+        private float _baseAgentSpeed;
 
         public bool IsAlive { get { return StateMachine.CurrentType != EnemyStateType.Dead; } }
         public bool IsShocked
@@ -53,6 +55,7 @@ namespace SM
         protected virtual void Awake()
         {
             Agent = GetComponent<NavMeshAgent>();
+            _baseAgentSpeed = Agent != null ? Agent.speed : 0f;
             _colliders = GetComponentsInChildren<Collider>();
 
             Anim = GetComponentInChildren<Animator>();
@@ -74,6 +77,9 @@ namespace SM
             _enemyPrefab = sourcePrefab;
             _currentHealth = maxHealth;
             _cachedTarget = null;
+
+            // Pool reuse must never inherit a prior battery-shock presentation/state.
+            _statusEffectController?.ResetElectricShockForReuse();
 
             Agent.enabled = true;
             gameObject.SetActive(true);
@@ -107,13 +113,17 @@ namespace SM
 
         public void Tick(float deltaTime)
         {
-            if (IsShocked)
+            if (_statusEffectController != null && _statusEffectController.IsMovementBlocked)
             {
                 if (Agent.enabled) Agent.isStopped = true;
                 return;
             }
 
-            if (Agent.enabled) Agent.isStopped = false;
+            if (Agent.enabled)
+            {
+                Agent.isStopped = false;
+                Agent.speed = _baseAgentSpeed * (_statusEffectController?.MovementSpeedMultiplier ?? 1f);
+            }
             StateMachine.Tick(this, deltaTime);
         }
 
@@ -137,8 +147,17 @@ namespace SM
             if (!IsAlive) return;
 
             _currentHealth -= amount;
-            hitEffect.Stop(true, ParticleSystemStopBehavior.StopEmittingAndClear);
-            hitEffect.Play(true);
+            if (hitEffect != null)
+            {
+                hitEffect.Stop(true, ParticleSystemStopBehavior.StopEmittingAndClear);
+                hitEffect.Play(true);
+            }
+            else
+            {
+                Debug.LogError($"ENEMY_HIT_EFFECT_MISSING enemy={name}", this);
+            }
+
+            OnDamaged?.Invoke(this);
 
             if (_currentHealth <= 0f)
             {
@@ -181,8 +200,27 @@ namespace SM
 
             if (agentWasEnabled)
             {
-                Agent.Warp(transform.position);
+                if (!NavMesh.SamplePosition(
+                        transform.position,
+                        out var navMeshHit,
+                        Mathf.Max(1f, Agent.height),
+                        Agent.areaMask))
+                {
+                    Debug.LogError(
+                        $"PHS_ENEMY_KNOCKBACK_RECOVERY_FAILED enemy={name} reason=navmesh_sample_missing position={transform.position}",
+                        this);
+                    _knockbackRoutine = null;
+                    yield break;
+                }
+
+                transform.position = navMeshHit.position;
                 Agent.enabled = true;
+                if (!Agent.Warp(navMeshHit.position))
+                {
+                    Debug.LogError(
+                        $"PHS_ENEMY_KNOCKBACK_RECOVERY_FAILED enemy={name} reason=agent_warp_rejected position={navMeshHit.position}",
+                        this);
+                }
             }
 
             _knockbackRoutine = null;

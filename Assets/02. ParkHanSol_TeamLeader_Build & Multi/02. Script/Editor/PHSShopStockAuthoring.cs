@@ -153,7 +153,10 @@ namespace LastJumpCrew.ParkHanSol.Editor
                     label.gameObject.SetActive(false);
                     var rect = label.rectTransform;
                     rect.SetParent(slot.PresentationAnchor, false);
-                    rect.anchoredPosition = Vector2.zero;
+                    // The stock prefab is spawned at this anchor.  A zero-height
+                    // price tag is occluded by the item mesh, which made valid prices
+                    // look absent in play.
+                    rect.anchoredPosition = new Vector2(0f, 1.15f);
                     rect.sizeDelta = new Vector2(3.2f, 0.8f);
                     rect.localScale = Vector3.one;
                     EditorUtility.SetDirty(label);
@@ -408,6 +411,10 @@ namespace LastJumpCrew.ParkHanSol.Editor
                 Require(
                     label.rectTransform.sizeDelta.x <= 3.21f,
                     $"shop_price_tag_size_invalid path={prefabPath} slot={slot.name}",
+                    errors);
+                Require(
+                    label.rectTransform.anchoredPosition.y >= 1f,
+                    $"shop_price_tag_height_invalid path={prefabPath} slot={slot.name}",
                     errors);
                 Require(
                     !label.gameObject.activeSelf,

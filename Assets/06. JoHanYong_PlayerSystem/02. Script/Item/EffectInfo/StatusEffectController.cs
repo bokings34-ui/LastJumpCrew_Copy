@@ -19,6 +19,12 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
             false,
             NetworkVariableReadPermission.Everyone,
             NetworkVariableWritePermission.Server);
+        private readonly NetworkVariable<bool> freezeActive = new(false,
+            NetworkVariableReadPermission.Everyone,
+            NetworkVariableWritePermission.Server);
+        private readonly NetworkVariable<bool> slowActive = new(false,
+            NetworkVariableReadPermission.Everyone,
+            NetworkVariableWritePermission.Server);
 
         private ParticleSystem[] electricShockParticles =
             Array.Empty<ParticleSystem>();
@@ -26,14 +32,26 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
             Array.Empty<AudioSource>();
         private Light[] electricShockLights = Array.Empty<Light>();
         private Coroutine electricShockRoutine;
+        private Coroutine freezeRoutine;
+        private Coroutine slowRoutine;
 
         public bool IsShocked => IsSpawned
             ? electricShockActive.Value
             : electricShockEffectRoot != null
                 && electricShockEffectRoot.activeSelf;
+        // Event enemies are authoritative server simulations and use a separate
+        // client mirror for presentation. Their gameplay NetworkObject is not
+        // spawned to clients, but the server-side status value must still drive
+        // EnemyBase.Tick.
+        public bool IsFrozen => freezeActive.Value;
+        public bool IsSlowed => slowActive.Value;
+        public bool IsMovementBlocked => IsShocked || IsFrozen;
+        public float MovementSpeedMultiplier => IsSlowed ? 0.5f : 1f;
 
         public event Action<StatusEffectType> StatusEffectStarted;
         public event Action<StatusEffectType> StatusEffectEnded;
+        public event Action<StatusEffectController, StatusEffectType, bool>
+            StatusEffectStateChanged;
 
         private void Awake()
         {
@@ -60,6 +78,8 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
             base.OnNetworkSpawn();
             electricShockActive.OnValueChanged +=
                 HandleElectricShockStateChanged;
+            freezeActive.OnValueChanged += HandleFreezeStateChanged;
+            slowActive.OnValueChanged += HandleSlowStateChanged;
             ApplyElectricShockPresentation(electricShockActive.Value);
         }
 
@@ -67,7 +87,11 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
         {
             electricShockActive.OnValueChanged -=
                 HandleElectricShockStateChanged;
+            freezeActive.OnValueChanged -= HandleFreezeStateChanged;
+            slowActive.OnValueChanged -= HandleSlowStateChanged;
             StopElectricShockRoutine();
+            StopTimedRoutine(ref freezeRoutine);
+            StopTimedRoutine(ref slowRoutine);
             ApplyElectricShockPresentation(false);
             base.OnNetworkDespawn();
         }
@@ -76,7 +100,9 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
         {
             return isActiveAndEnabled
                 && electricShockEffectRoot != null
-                && effectType == StatusEffectType.ElectricShok
+                && (effectType == StatusEffectType.ElectricShok
+                    || effectType == StatusEffectType.Freeze
+                    || effectType == StatusEffectType.Slow)
                 && (!IsSpawned || IsServer);
         }
 
@@ -94,6 +120,17 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
                 return;
             }
 
+            if (effectType == StatusEffectType.Freeze)
+            {
+                ApplyTimedEffect(freezeActive, ref freezeRoutine, effectType, duration, source);
+                return;
+            }
+            if (effectType == StatusEffectType.Slow)
+            {
+                ApplyTimedEffect(slowActive, ref slowRoutine, effectType, duration, source);
+                return;
+            }
+
             var refreshed = electricShockActive.Value;
             StopElectricShockRoutine();
             if (IsSpawned)
@@ -108,6 +145,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
             if (!refreshed)
             {
                 StatusEffectStarted?.Invoke(effectType);
+                StatusEffectStateChanged?.Invoke(this, effectType, true);
             }
 
             electricShockRoutine = StartCoroutine(
@@ -120,17 +158,13 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
                 this);
         }
 
+        public void ApplyStatusEffect(StatusEffectRequest request)
+        {
+            ApplyStatusEffect(request.EffectType, request.Duration, request.Source);
+        }
+
         public void RemoveStatusEffect(StatusEffectType effectType)
         {
-            if (effectType != StatusEffectType.ElectricShok)
-            {
-                Debug.LogError(
-                    $"PHS_STATUS_EFFECT_REMOVE_FAILED " +
-                    $"reason=unsupported effect={effectType}",
-                    this);
-                return;
-            }
-
             if (IsSpawned && !IsServer)
             {
                 Debug.LogError(
@@ -140,7 +174,36 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
                 return;
             }
 
-            FinishElectricShock();
+            switch (effectType)
+            {
+                case StatusEffectType.ElectricShok: FinishElectricShock(); break;
+                case StatusEffectType.Freeze: FinishTimedEffect(freezeActive, ref freezeRoutine, effectType); break;
+                case StatusEffectType.Slow: FinishTimedEffect(slowActive, ref slowRoutine, effectType); break;
+            }
+        }
+
+        /// <summary>
+        /// Clears a pooled actor's transient shock state before it is reused.
+        /// The server owns the replicated value; clients only clear stale local presentation
+        /// until the authoritative value arrives.
+        /// </summary>
+        public void ResetElectricShockForReuse()
+        {
+            StopElectricShockRoutine();
+
+            if (IsSpawned && IsServer)
+            {
+                electricShockActive.Value = false;
+                freezeActive.Value = false;
+                slowActive.Value = false;
+            }
+            else if (!IsSpawned)
+            {
+                freezeActive.Value = false;
+                slowActive.Value = false;
+            }
+
+            ApplyElectricShockPresentation(false);
         }
 
         private IEnumerator RemoveElectricShockAfter(float duration)
@@ -172,6 +235,10 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
             }
 
             StatusEffectEnded?.Invoke(StatusEffectType.ElectricShok);
+            StatusEffectStateChanged?.Invoke(
+                this,
+                StatusEffectType.ElectricShok,
+                false);
             Debug.Log(
                 $"PHS_STATUS_EFFECT_ENDED target={name} " +
                 $"effect={StatusEffectType.ElectricShok}",
@@ -188,6 +255,47 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
             StopCoroutine(electricShockRoutine);
             electricShockRoutine = null;
         }
+
+        private void ApplyTimedEffect(NetworkVariable<bool> state, ref Coroutine routine, StatusEffectType effectType, float duration, GameObject source)
+        {
+            var refreshed = state.Value;
+            StopTimedRoutine(ref routine);
+            state.Value = true;
+            if (!refreshed)
+            {
+                StatusEffectStarted?.Invoke(effectType);
+                StatusEffectStateChanged?.Invoke(this, effectType, true);
+            }
+            routine = StartCoroutine(RemoveTimedEffectAfter(state, effectType, duration));
+            Debug.Log($"PHS_STATUS_EFFECT_APPLIED target={name} effect={effectType} duration={duration:F2} source={(source != null ? source.name : "null")}", this);
+        }
+
+        private IEnumerator RemoveTimedEffectAfter(NetworkVariable<bool> state, StatusEffectType effectType, float duration)
+        {
+            yield return new WaitForSeconds(duration);
+            state.Value = false;
+            StatusEffectEnded?.Invoke(effectType);
+            StatusEffectStateChanged?.Invoke(this, effectType, false);
+        }
+
+        private void FinishTimedEffect(NetworkVariable<bool> state, ref Coroutine routine, StatusEffectType effectType)
+        {
+            StopTimedRoutine(ref routine);
+            if (!state.Value) return;
+            state.Value = false;
+            StatusEffectEnded?.Invoke(effectType);
+            StatusEffectStateChanged?.Invoke(this, effectType, false);
+        }
+
+        private void StopTimedRoutine(ref Coroutine routine)
+        {
+            if (routine == null) return;
+            StopCoroutine(routine);
+            routine = null;
+        }
+
+        private void HandleFreezeStateChanged(bool previous, bool current) => ApplyElectricShockPresentation(current || IsShocked);
+        private void HandleSlowStateChanged(bool previous, bool current) { }
 
         private void HandleElectricShockStateChanged(
             bool previous,
@@ -253,9 +361,13 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
         private void OnDisable()
         {
             StopElectricShockRoutine();
+            StopTimedRoutine(ref freezeRoutine);
+            StopTimedRoutine(ref slowRoutine);
             if (IsSpawned && IsServer && electricShockActive.Value)
             {
                 electricShockActive.Value = false;
+                freezeActive.Value = false;
+                slowActive.Value = false;
             }
             ApplyElectricShockPresentation(false);
         }

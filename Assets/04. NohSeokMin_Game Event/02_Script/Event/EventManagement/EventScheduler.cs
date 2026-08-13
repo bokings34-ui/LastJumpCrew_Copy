@@ -20,8 +20,7 @@ namespace SM
             EventId.MicDestroy,
             EventId.HullBreach,
             EventId.SteamLeak,
-            EventId.OxygenGeneratorFailure,
-            EventId.GravityGeneratorFailure
+            EventId.OxygenGeneratorFailure
         };
 
         private const float TotalTime = 300f;

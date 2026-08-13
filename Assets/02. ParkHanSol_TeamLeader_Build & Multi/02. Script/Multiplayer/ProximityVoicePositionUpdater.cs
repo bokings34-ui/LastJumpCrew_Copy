@@ -10,7 +10,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
 
         private float nextPositionUpdateTime;
 
-        public override async void OnNetworkSpawn()
+        public override void OnNetworkSpawn()
         {
             if (!IsOwner)
             {
@@ -18,10 +18,6 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
             }
 
             ResolveVoiceChatSession();
-            if (voiceChatSession != null)
-            {
-                await voiceChatSession.JoinForLocalPlayerAsync(gameObject);
-            }
         }
 
         private void Update()

@@ -22,6 +22,8 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Events.MiniGames
 
         [Header("Interaction")]
         [SerializeField] private string interactionPrompt = "고장난 장치 수리하기";
+        [SerializeField] private Collider interactionRangeCollider;
+        [SerializeField, Min(0.1f)] private float interactionRange = 1.5f;
 
         private NetworkPlayerController activePlayer;
         private CursorLockMode previousCursorLockMode;
@@ -35,6 +37,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Events.MiniGames
         public bool IsConfigured => IsMatchingPair(eventId, miniGameType);
         public string MiniGameTargetId => eventId.ToString();
         public string InteractionPrompt => interactionPrompt;
+        public float InteractionRange => interactionRange;
 
         private void Awake()
         {
@@ -56,7 +59,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Events.MiniGames
 
         public bool CanInteract(IItemHolder itemHolder)
         {
-            return CanInteractCore();
+            return CanInteractCore(itemHolder as Component);
         }
 
         public void Interact(IItemHolder itemHolder)
@@ -66,12 +69,24 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Events.MiniGames
 
         bool CommonInteraction.IInteractable.CanInteract(CommonInteraction.IItemHolder itemHolder)
         {
-            return CanInteractCore();
+            return CanInteractCore(itemHolder as Component);
         }
 
         void CommonInteraction.IInteractable.Interact(CommonInteraction.IItemHolder itemHolder)
         {
             TryOpenMiniGame(itemHolder as Component);
+        }
+
+        public bool IsWithinInteractionRange(Vector3 playerPosition)
+        {
+            if (interactionRangeCollider == null)
+            {
+                return false;
+            }
+
+            var closestPoint = interactionRangeCollider.ClosestPoint(playerPosition);
+            return (closestPoint - playerPosition).sqrMagnitude
+                <= interactionRange * interactionRange;
         }
 
         public void OnMiniGameSucceeded()
@@ -89,9 +104,15 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Events.MiniGames
             RestorePlayerInput();
         }
 
-        private bool CanInteractCore()
+        private bool CanInteractCore(Component itemHolderComponent)
         {
             if (!setupValid || isMiniGameOpen)
+            {
+                return false;
+            }
+
+            if (itemHolderComponent == null
+                || !IsWithinInteractionRange(itemHolderComponent.transform.position))
             {
                 return false;
             }
@@ -104,7 +125,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Events.MiniGames
 
         private void TryOpenMiniGame(Component itemHolderComponent)
         {
-            if (!CanInteractCore())
+            if (!CanInteractCore(itemHolderComponent))
             {
                 Debug.LogWarning(
                     $"PHS_FINAL_MINIGAME_OPEN_REJECTED reason=event_not_active_or_terminal_busy event={eventId}",
@@ -202,10 +223,14 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Events.MiniGames
         private bool ValidateConfiguration(bool logErrors)
         {
             var valid = IsMatchingPair(eventId, miniGameType);
+            valid &= interactionRangeCollider != null;
+            valid &= interactionRange > 0f;
             if (!valid && logErrors)
             {
                 Debug.LogError(
-                    $"PHS_FINAL_MINIGAME_SETUP_INVALID event={eventId} type={miniGameType}",
+                    $"PHS_FINAL_MINIGAME_SETUP_INVALID event={eventId} type={miniGameType} " +
+                    $"collider={(interactionRangeCollider == null ? "missing" : interactionRangeCollider.name)} " +
+                    $"range={interactionRange:F2}",
                     this);
             }
 

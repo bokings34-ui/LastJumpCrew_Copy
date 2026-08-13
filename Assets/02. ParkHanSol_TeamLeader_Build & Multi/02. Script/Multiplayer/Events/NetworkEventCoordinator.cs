@@ -20,6 +20,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Events
         IEventRuntimeBridge,
         IEventProgressRuntimeBridge,
         IEventEffectRuntimeBridge,
+        IEventEffectFeedbackRuntimeBridge,
         IEventRepairRuntimeBridge,
         IShipPowerEventRuntimeBridge,
         IShipModuleEventRuntimeBridge
@@ -31,6 +32,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Events
 
         [Header("Client Effect Presentation")]
         [SerializeField] private NetworkEventEffectMirrorPresenter effectMirrorPresenter;
+        [SerializeField] private PHSHullBreachRuntime hullBreachRuntime;
 
         [Header("Server Runtime")]
         [SerializeField] private bool startSchedulerOnServerSpawn;
@@ -280,6 +282,27 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Events
             }
 
             return false;
+        }
+
+        public bool TryGetRepairTargetServer(
+            ulong eventInstanceId,
+            uint effectInstanceId,
+            out IEventRepairTargetHandle target)
+        {
+            target = null;
+            if (!IsAuthoritative
+                || eventInstanceId == 0UL
+                || effectInstanceId == 0U
+                || !repairTargets.TryGetValue(effectInstanceId, out var repairTarget)
+                || repairTarget == null
+                || repairTarget.EventInstanceId != eventInstanceId
+                || repairTarget.IsRepairComplete)
+            {
+                return false;
+            }
+
+            target = repairTarget;
+            return true;
         }
 
         public bool IsEventActive(EventId eventId)
@@ -615,6 +638,36 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Events
             return true;
         }
 
+        public bool TryResolveHullBreachServer(
+            ulong eventInstanceId,
+            out string reason)
+        {
+            if (!IsAuthoritative)
+            {
+                reason = "server_required";
+                return false;
+            }
+
+            var activeEvent = eventManager == null
+                ? null
+                : eventManager.GetActiveEvent(EventId.HullBreach);
+            if (activeEvent == null || activeEvent.InstanceId != eventInstanceId)
+            {
+                reason = "hull_event_not_active";
+                return false;
+            }
+
+            eventManager.ApplyRepairTo(EventId.HullBreach, float.MaxValue);
+            if (eventManager.IsInstanceActive(eventInstanceId))
+            {
+                reason = "hull_event_not_resolved";
+                return false;
+            }
+
+            reason = null;
+            return true;
+        }
+
         private bool CanSpawnEventServer(EventId eventId)
         {
             if (!IsAuthoritative)
@@ -625,13 +678,28 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Events
 
             if (!setupValid || eventManager == null || roomRegistry == null)
             {
-                Debug.LogError($"PHS_EVENT_SERVER_SPAWN_REJECTED reason=invalid_setup event={eventId}", this);
+                Debug.LogError(
+                    $"PHS_EVENT_SERVER_SPAWN_REJECTED reason=invalid_setup event={eventId} " +
+                    $"setup={setupValid} manager={eventManager != null} scheduler={eventScheduler != null} " +
+                    $"rooms={roomRegistry != null} presenter={effectMirrorPresenter != null}",
+                    this);
                 return false;
             }
 
             if (IsEventActive(eventId) || eventManager.IsActive(eventId))
             {
                 Debug.LogWarning($"PHS_EVENT_SERVER_SPAWN_REJECTED reason=already_active event={eventId}", this);
+                return false;
+            }
+
+            string hullReason = null;
+            if (eventId == EventId.HullBreach
+                && (hullBreachRuntime == null
+                    || !hullBreachRuntime.TryValidate(out hullReason)))
+            {
+                Debug.LogError(
+                    $"PHS_EVENT_SERVER_SPAWN_REJECTED reason=hull_runtime_invalid detail={hullReason ?? "runtime_missing"} event={eventId}",
+                    this);
                 return false;
             }
 
@@ -1147,6 +1215,98 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Events
                 GetServerTime());
         }
 
+        public void PublishEnemyHitFeedback(ulong eventInstanceId, uint effectInstanceId)
+        {
+            if (!IsAuthoritative || eventInstanceId == 0UL || effectInstanceId == 0U)
+            {
+                Debug.LogError(
+                    $"PHS_ENEMY_HIT_FEEDBACK_REJECTED reason=authority_or_id_invalid event={eventInstanceId} effect={effectInstanceId}",
+                    this);
+                return;
+            }
+
+            var index = FindEffectSnapshotIndex(effectInstanceId);
+            if (index < 0
+                || effectSnapshots[index].EventInstanceId != eventInstanceId
+                || effectSnapshots[index].Kind != EventEffectKind.Enemy
+                || !effectSnapshots[index].IsActive)
+            {
+                Debug.LogError(
+                    $"PHS_ENEMY_HIT_FEEDBACK_REJECTED reason=enemy_effect_missing event={eventInstanceId} effect={effectInstanceId}",
+                    this);
+                return;
+            }
+
+            PlayEnemyHitFeedbackClientRpc(effectInstanceId);
+        }
+
+        public void PublishEnemyStatusFeedback(
+            ulong eventInstanceId,
+            uint effectInstanceId,
+            StatusEffectType effectType,
+            bool active)
+        {
+            if (!IsAuthoritative
+                || eventInstanceId == 0UL
+                || effectInstanceId == 0U
+                || effectType == StatusEffectType.None)
+            {
+                Debug.LogError(
+                    $"PHS_ENEMY_STATUS_FEEDBACK_REJECTED reason=authority_or_contract event={eventInstanceId} effect={effectInstanceId} status={effectType}",
+                    this);
+                return;
+            }
+
+            var index = FindEffectSnapshotIndex(effectInstanceId);
+            if (index < 0
+                || effectSnapshots[index].EventInstanceId != eventInstanceId
+                || effectSnapshots[index].Kind != EventEffectKind.Enemy
+                || !effectSnapshots[index].IsActive)
+            {
+                Debug.LogError(
+                    $"PHS_ENEMY_STATUS_FEEDBACK_REJECTED reason=enemy_effect_missing event={eventInstanceId} effect={effectInstanceId} status={effectType}",
+                    this);
+                return;
+            }
+
+            PlayEnemyStatusFeedbackClientRpc(effectInstanceId, effectType, active);
+        }
+
+        [ClientRpc]
+        private void PlayEnemyHitFeedbackClientRpc(uint effectInstanceId)
+        {
+            if (effectMirrorPresenter == null
+                || !effectMirrorPresenter.TryPlayEnemyHitFeedback(effectInstanceId))
+            {
+                Debug.LogError(
+                    $"PHS_ENEMY_HIT_FEEDBACK_FAILED reason=presentation_missing effect={effectInstanceId}",
+                    this);
+            }
+        }
+
+        [ClientRpc]
+        private void PlayEnemyStatusFeedbackClientRpc(
+            uint effectInstanceId,
+            StatusEffectType effectType,
+            bool active)
+        {
+            if (effectMirrorPresenter == null
+                || !effectMirrorPresenter.TrySetEnemyStatusFeedback(
+                    effectInstanceId,
+                    effectType,
+                    active))
+            {
+                Debug.LogError(
+                    $"PHS_ENEMY_STATUS_FEEDBACK_FAILED reason=presentation_missing effect={effectInstanceId} status={effectType}",
+                    this);
+                return;
+            }
+
+            Debug.Log(
+                $"PHS_ENEMY_STATUS_FEEDBACK_APPLIED effect={effectInstanceId} status={effectType} active={active}",
+                this);
+        }
+
         public void PublishEventStarted(
             ulong instanceId,
             EventId eventId,
@@ -1176,6 +1336,16 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Events
             }
 
             var revision = UpsertLifecycleSnapshot(instanceId, eventId, roomId, state, false);
+            string hullReason = null;
+            if (eventId == EventId.HullBreach && state == EventState.InProgress
+                && (hullBreachRuntime == null
+                    || !hullBreachRuntime.TryStartServer(instanceId, out hullReason)))
+            {
+                Debug.LogError(
+                    $"PHS_HULL_BREACH_RUNTIME_START_FAILED reason={hullReason ?? "runtime_missing"} event={instanceId}",
+                    this);
+                eventManager.GetActiveEvent(eventId)?.OnFail();
+            }
             Debug.Log(
                 $"PHS_EVENT_LIFECYCLE_STATE instance={instanceId} event={eventId} state={state} revision={revision}",
                 this);
@@ -1204,6 +1374,11 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Events
                     $"reason=forced_termination instance={instanceId} " +
                     $"event={eventId}",
                     this);
+            }
+
+            if (eventId == EventId.HullBreach)
+            {
+                hullBreachRuntime?.StopServer(instanceId);
             }
 
             RemoveActiveEffectsForEvent(instanceId);
@@ -1370,7 +1545,16 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Events
                 return RejectRepair("duplicate_sequence", eventInstanceId, effectInstanceId, senderClientId);
             }
 
-            var distance = Vector3.Distance(client.PlayerObject.transform.position, target.RepairPosition);
+            if (!target.TryGetRepairPoint(
+                    client.PlayerObject.transform.position,
+                    out var repairPoint))
+            {
+                return RejectRepair("repair_bounds", eventInstanceId, effectInstanceId, senderClientId);
+            }
+
+            var distance = Vector3.Distance(
+                client.PlayerObject.transform.position,
+                repairPoint);
             if (distance > serverRepairDistance)
             {
                 return RejectRepair("distance", eventInstanceId, effectInstanceId, senderClientId);
@@ -1501,8 +1685,6 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Events
                 return false;
             }
 
-            const float maximumResultDistance = 4f;
-            var maximumResultDistanceSquared = maximumResultDistance * maximumResultDistance;
             var playerPosition = client.PlayerObject.transform.position;
             var terminals = FindObjectsByType<PHSFinalMiniGameTerminal>(
                 FindObjectsInactive.Exclude,
@@ -1514,8 +1696,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Events
                     && terminal.IsConfigured
                     && terminal.ConfiguredEventId == eventId
                     && terminal.ConfiguredMiniGameType == miniGameType
-                    && (terminal.WorldPosition - playerPosition).sqrMagnitude
-                    <= maximumResultDistanceSquared)
+                    && terminal.IsWithinInteractionRange(playerPosition))
                 {
                     rejectionReason = string.Empty;
                     return true;
@@ -1865,7 +2046,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Events
                 }
             }
 
-            if (!IsServer && effectMirrorPresenter != null)
+            if (effectMirrorPresenter != null)
             {
                 effectMirrorPresenter.Reconcile(effectSnapshotCache.Values);
             }
@@ -1910,6 +2091,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Events
         private bool ValidateSetup()
         {
             var valid = true;
+            var presentationValid = false;
 
             if (eventManager == null)
             {
@@ -1940,6 +2122,17 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Events
             {
                 valid = false;
             }
+            else
+            {
+                presentationValid = true;
+            }
+
+            Debug.Log(
+                $"PHS_EVENT_COORDINATOR_SETUP_CHECK valid={valid} " +
+                $"manager={eventManager != null} scheduler={eventScheduler != null} " +
+                $"rooms={roomRegistry != null} presenter={effectMirrorPresenter != null} " +
+                $"presentationValid={presentationValid}",
+                this);
 
             return valid;
         }

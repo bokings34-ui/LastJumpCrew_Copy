@@ -6,6 +6,7 @@ namespace SM
     public class PlayerAttackEnemy : EnemyBase
     {
         [SerializeField] private float verticalAttackTolerance = 2f;
+        [SerializeField, Min(0f)] private float playerKnockbackForce = 4f;
 
         protected override Transform SetTarget()
         {
@@ -39,6 +40,23 @@ namespace SM
             {
                 damageable.ApplyDamage(Mathf.RoundToInt(AttackDamage), gameObject);
             }
+
+            var knockbackable = target.GetComponentInParent<IKnockbackable>();
+            if (knockbackable == null
+                || !knockbackable.CanReceiveKnockback
+                || playerKnockbackForce <= 0f)
+            {
+                return;
+            }
+
+            var direction = target.position - transform.position;
+            direction.y = 0f;
+            knockbackable.ApplyKnockback(
+                direction.sqrMagnitude > 0.001f
+                    ? direction.normalized
+                    : transform.forward,
+                playerKnockbackForce,
+                gameObject);
         }
     }
 }

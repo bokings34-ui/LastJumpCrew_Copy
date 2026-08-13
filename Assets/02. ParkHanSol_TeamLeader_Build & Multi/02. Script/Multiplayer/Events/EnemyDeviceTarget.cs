@@ -1,5 +1,4 @@
 using LastJumpCrew.Common;
-using LastJumpCrew.ParkHanSol.Multiplayer.ShipAccidents;
 using SM;
 using Unity.Netcode;
 using UnityEngine;
@@ -12,15 +11,14 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Events
     {
         [SerializeField, Min(1)] private int maximumHealth = 10;
         [SerializeField] private Transform visualRoot;
-        [SerializeField] private PHSShipAccidentId destructionAccident;
-        [SerializeField] private string requestedAnchorId;
+        [SerializeField] private EventId destroyedEvent = EventId.PowerOff;
 
         private Renderer[] renderers;
         private bool[] initialRendererStates;
         private int localCurrentHealth;
         private bool isRegistered;
-        private PHSNetworkShipAccidentCoordinator boundAccidentCoordinator;
-        private uint activeBreakdownAccidentInstanceId;
+        private NetworkEventCoordinator boundEventCoordinator;
+        private ulong activeBreakdownEventInstanceId;
         private readonly NetworkVariable<int> synchronizedHealth = new(
             0,
             NetworkVariableReadPermission.Everyone,
@@ -50,7 +48,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Events
         private void OnEnable()
         {
             localCurrentHealth = maximumHealth;
-            SetVisualsAlive(true);
+            RestoreVisuals();
             if (NetworkManager.Singleton == null
                 || !NetworkManager.Singleton.IsListening)
             {
@@ -60,7 +58,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Events
 
         private void OnDisable()
         {
-            UnbindAccidentCoordinator();
+            UnbindBreakdownEvent();
             Unregister();
         }
 
@@ -79,13 +77,13 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Events
                 Unregister();
             }
 
-            SetVisualsAlive(synchronizedHealth.Value > 0);
+            RestoreVisuals();
         }
 
         public override void OnNetworkDespawn()
         {
             synchronizedHealth.OnValueChanged -= HandleHealthChanged;
-            UnbindAccidentCoordinator();
+            UnbindBreakdownEvent();
             Unregister();
             base.OnNetworkDespawn();
         }
@@ -116,7 +114,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Events
             }
             else
             {
-                SetVisualsAlive(remainingHealth > 0);
+                RestoreVisuals();
             }
 
             if (remainingHealth > 0)
@@ -125,104 +123,133 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Events
             }
 
             Unregister();
-            if (!TryTriggerBreakdownAccident())
-            {
-                return;
-            }
-
-            Debug.Log($"PHS_ENEMY_DEVICE_BROKEN target={name} attacker={attacker?.name ?? "unknown"}", this);
+            TryStartDestroyedEvent();
+            Debug.Log($"TEAM_ENEMY_DEVICE_BROKEN target={name} attacker={attacker?.name ?? "unknown"}", this);
         }
 
-        private bool TryTriggerBreakdownAccident()
+        public bool TryRestoreFromBatteryServer()
         {
-            if (destructionAccident == PHSShipAccidentId.None)
+            if (!IsServer || !IsBroken || destroyedEvent != EventId.PowerOff)
             {
-                Debug.LogError(
-                    $"PHS_ENEMY_DEVICE_BREAKDOWN_FAILED target={name} reason=accident_not_configured",
-                    this);
                 return false;
             }
 
-            var coordinator = PHSNetworkShipAccidentCoordinator.Instance;
-            var reason = coordinator == null ? "coordinator_missing" : null;
-            uint instanceId = 0;
-            if (coordinator == null
-                || !coordinator.TrySpawnAccidentServer(
-                    destructionAccident,
-                    requestedAnchorId,
-                    out instanceId,
-                    out reason))
-            {
-                Debug.LogError(
-                    $"PHS_ENEMY_DEVICE_ACCIDENT_FAILED target={name} accident={destructionAccident} reason={reason}",
-                    this);
-                return false;
-            }
-
-            BindAccidentCoordinator(coordinator, instanceId);
-            Debug.Log(
-                $"PHS_ENEMY_DEVICE_ACCIDENT_STARTED target={name} accident={destructionAccident} instance={instanceId}",
-                this);
+            localCurrentHealth = maximumHealth;
+            synchronizedHealth.Value = maximumHealth;
+            RegisterTarget();
             return true;
         }
 
-        private void BindAccidentCoordinator(
-            PHSNetworkShipAccidentCoordinator coordinator,
-            uint accidentInstanceId)
+        private void TryStartDestroyedEvent()
         {
-            UnbindAccidentCoordinator();
-            boundAccidentCoordinator = coordinator;
-            activeBreakdownAccidentInstanceId = accidentInstanceId;
-            boundAccidentCoordinator.ServerAccidentFinished += HandleServerAccidentFinished;
-        }
-
-        private void UnbindAccidentCoordinator()
-        {
-            if (boundAccidentCoordinator != null)
+            var coordinator = NetworkEventCoordinator.Instance;
+            if (coordinator == null || !coordinator.IsAuthoritative)
             {
-                boundAccidentCoordinator.ServerAccidentFinished -= HandleServerAccidentFinished;
+                Debug.LogError(
+                    $"TEAM_ENEMY_DEVICE_EVENT_FAILED reason=coordinator_server_missing target={name} event={destroyedEvent}",
+                    this);
+                return;
             }
 
-            boundAccidentCoordinator = null;
-            activeBreakdownAccidentInstanceId = 0U;
+            if (!coordinator.TrySpawnEventServer(destroyedEvent, out var instanceId))
+            {
+                if (TryFindActiveEventInstance(
+                        coordinator,
+                        destroyedEvent,
+                        out instanceId))
+                {
+                    BindBreakdownEvent(coordinator, instanceId);
+                    Debug.Log(
+                        $"TEAM_ENEMY_DEVICE_EVENT_JOINED target={name} event={destroyedEvent} instance={instanceId}",
+                        this);
+                    return;
+                }
+
+                Debug.LogWarning(
+                    $"TEAM_ENEMY_DEVICE_EVENT_REJECTED target={name} event={destroyedEvent}",
+                    this);
+                return;
+            }
+
+            BindBreakdownEvent(coordinator, instanceId);
+            Debug.Log(
+                $"TEAM_ENEMY_DEVICE_EVENT_STARTED target={name} event={destroyedEvent} instance={instanceId}",
+                this);
         }
 
-        private void HandleServerAccidentFinished(
-            uint accidentInstanceId,
-            PHSShipAccidentId accidentId,
-            bool resolved)
+        private static bool TryFindActiveEventInstance(
+            NetworkEventCoordinator coordinator,
+            EventId eventId,
+            out ulong instanceId)
         {
-            if (accidentInstanceId != activeBreakdownAccidentInstanceId)
+            for (var index = 0; index < coordinator.SnapshotCount; index++)
+            {
+                var snapshot = coordinator.GetLifecycleSnapshotAt(index);
+                if (snapshot.EventId == eventId && !snapshot.IsTerminal)
+                {
+                    instanceId = snapshot.InstanceId;
+                    return instanceId != 0UL;
+                }
+            }
+
+            instanceId = 0UL;
+            return false;
+        }
+
+        private void BindBreakdownEvent(
+            NetworkEventCoordinator coordinator,
+            ulong eventInstanceId)
+        {
+            UnbindBreakdownEvent();
+            boundEventCoordinator = coordinator;
+            activeBreakdownEventInstanceId = eventInstanceId;
+            boundEventCoordinator.ServerEventFinished += HandleServerEventFinished;
+        }
+
+        private void UnbindBreakdownEvent()
+        {
+            if (boundEventCoordinator != null)
+            {
+                boundEventCoordinator.ServerEventFinished -= HandleServerEventFinished;
+            }
+
+            boundEventCoordinator = null;
+            activeBreakdownEventInstanceId = 0UL;
+        }
+
+        private void HandleServerEventFinished(
+            ulong eventInstanceId,
+            EventId eventId,
+            bool succeeded)
+        {
+            if (eventInstanceId != activeBreakdownEventInstanceId
+                || eventId != destroyedEvent)
             {
                 return;
             }
 
-            UnbindAccidentCoordinator();
-            if (!resolved)
+            UnbindBreakdownEvent();
+            if (!succeeded)
             {
                 Debug.LogWarning(
-                    $"PHS_ENEMY_DEVICE_REPAIR_FAILED target={name} accident={accidentId} instance={accidentInstanceId}",
+                    $"TEAM_ENEMY_DEVICE_RESTORE_REJECTED target={name} event={eventId} instance={eventInstanceId} reason=event_failed",
+                    this);
+                return;
+            }
+
+            if (!IsServer)
+            {
+                Debug.LogError(
+                    $"TEAM_ENEMY_DEVICE_RESTORE_FAILED target={name} event={eventId} instance={eventInstanceId} reason=server_required",
                     this);
                 return;
             }
 
             localCurrentHealth = maximumHealth;
-            if (IsSpawned && IsServer)
-            {
-                synchronizedHealth.Value = maximumHealth;
-            }
-            else
-            {
-                SetVisualsAlive(true);
-            }
-
-            if (isActiveAndEnabled)
-            {
-                RegisterTarget();
-            }
-
+            synchronizedHealth.Value = maximumHealth;
+            RegisterTarget();
             Debug.Log(
-                $"PHS_ENEMY_DEVICE_REPAIRED target={name} accident={accidentId} instance={accidentInstanceId}",
+                $"TEAM_ENEMY_DEVICE_RESTORED target={name} event={eventId} instance={eventInstanceId}",
                 this);
         }
 
@@ -251,10 +278,9 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Events
         private void HandleHealthChanged(int previousHealth, int currentHealth)
         {
             localCurrentHealth = currentHealth;
-            SetVisualsAlive(currentHealth > 0);
         }
 
-        private void SetVisualsAlive(bool alive)
+        private void RestoreVisuals()
         {
             if (renderers == null)
             {
@@ -265,7 +291,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Events
             {
                 if (renderers[index] != null)
                 {
-                    renderers[index].enabled = alive && initialRendererStates[index];
+                    renderers[index].enabled = initialRendererStates[index];
                 }
             }
         }

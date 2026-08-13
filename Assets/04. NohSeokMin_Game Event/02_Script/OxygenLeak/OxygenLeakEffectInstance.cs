@@ -25,6 +25,9 @@ namespace SM
 
         [SerializeField] private AudioSource audioSource;
 
+        [Header("Repair Bounds")]
+        [SerializeField] private Collider repairBounds;
+
         private float _outerPullRadius;
         private float _innerDamageRadius;
         private float _initialPullSpeed;
@@ -44,6 +47,7 @@ namespace SM
         public EventEffectKind EffectKind => EventEffectKind.OxygenLeak;
         public Vector3 RepairPosition => transform.position;
         public bool IsRepairComplete => IsSealed;
+        public bool IsAuthoritativePresentationVisible { get; private set; } = true;
         public event Action<OxygenLeakEffectInstance> OnSealed;
 
         private struct PullTarget
@@ -55,10 +59,16 @@ namespace SM
         private readonly Dictionary<Transform, PullTarget> _targetsInRange
             = new Dictionary<Transform, PullTarget>();
 
+        private void Awake()
+        {
+            ValidateRepairBounds();
+        }
+
         public void Activate(
             OxygenLeakEventDataSO data,
             bool hazardHandledExternally)
         {
+            SetAuthoritativePresentationVisible(true);
             _outerPullRadius = data.outerPullRadius;
             _innerDamageRadius = data.innerDamageRadius;
             _initialPullSpeed = data.pullSpeed;
@@ -88,6 +98,36 @@ namespace SM
             if (audioSource != null)
             {
                 audioSource.Stop();
+            }
+        }
+
+        public void SetAuthoritativePresentationVisible(bool visible)
+        {
+            IsAuthoritativePresentationVisible = visible;
+            foreach (var renderer in GetComponentsInChildren<Renderer>(true))
+            {
+                renderer.enabled = visible;
+            }
+
+            foreach (var particle in GetComponentsInChildren<ParticleSystem>(true))
+            {
+                if (visible)
+                {
+                    particle.Play(true);
+                }
+                else
+                {
+                    particle.Stop(true, ParticleSystemStopBehavior.StopEmittingAndClear);
+                }
+            }
+
+            foreach (var source in GetComponentsInChildren<AudioSource>(true))
+            {
+                source.enabled = visible;
+                if (!visible)
+                {
+                    source.Stop();
+                }
             }
         }
 
@@ -303,6 +343,20 @@ namespace SM
             return true;
         }
 
+        public bool TryGetRepairPoint(
+            Vector3 actorPosition,
+            out Vector3 repairPoint)
+        {
+            if (!ValidateRepairBounds())
+            {
+                repairPoint = default;
+                return false;
+            }
+
+            repairPoint = repairBounds.ClosestPoint(actorPosition);
+            return true;
+        }
+
         // ____ IRepairable ____
         public bool CanRepair => !IsSealed;
 
@@ -324,6 +378,20 @@ namespace SM
 
             Gizmos.color = Color.red;
             Gizmos.DrawWireSphere(transform.position, _innerDamageRadius);
+        }
+
+        private bool ValidateRepairBounds()
+        {
+            if (repairBounds != null && repairBounds.isTrigger)
+            {
+                return true;
+            }
+
+            Debug.LogError(
+                $"PHS_EVENT_REPAIR_BOUNDS_INVALID effect=OxygenLeak target={name} " +
+                $"assigned={repairBounds != null} trigger={repairBounds != null && repairBounds.isTrigger}",
+                this);
+            return false;
         }
     }
 }

@@ -1,5 +1,6 @@
 ﻿using LastJumpCrew.Common;
 using SM;
+using LastJumpCrew.ParkHanSol.Multiplayer.Audio;
 using LastJumpCrew.ParkHanSol.Multiplayer.Events.MiniGames;
 using System.Collections;
 using System.Collections.Generic;
@@ -19,6 +20,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Events.MiniGames.Runtime
 
         [Header("결과 피드백 연출")]
         public Image flashScreen;           // 번쩍일 전체 화면 이미지
+        [SerializeField] private MonoBehaviour successCuePlayerSource;
 
         [Header("애니메이션 설정")]
         public float slideDuration = 0.25f; // 오르내리는 속도
@@ -27,6 +29,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Events.MiniGames.Runtime
         private IMiniGameTarget activeTarget = null;
         private bool isFlashing = false;    // 연출 중 키보드 입력 방지
         private Coroutine slideCoroutine = null;
+        private INetworkAudioCuePlayer successCuePlayer;
 
         public bool BlocksPauseMenuEscape => activeGame != null || isFlashing;
 
@@ -45,6 +48,13 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Events.MiniGames.Runtime
 
             canvasRoot.SetActive(false);
             if (flashScreen != null) flashScreen.gameObject.SetActive(false);
+            successCuePlayer = successCuePlayerSource as INetworkAudioCuePlayer;
+            if (successCuePlayer == null)
+            {
+                Debug.LogError(
+                    $"PHS_MINIGAME_SETUP_FAILED reason=success_cue_player_missing manager={name}",
+                    this);
+            }
         }
 
         private void Update()
@@ -145,12 +155,36 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Events.MiniGames.Runtime
         {
             if (isFlashing) return;
 
+            if (isSuccess)
+            {
+                PlaySuccessCue();
+            }
+
             if (slideCoroutine != null)
             {
                 StopCoroutine(slideCoroutine);
             }
 
             slideCoroutine = StartCoroutine(FlashAndSlideUpRoutine(isSuccess));
+        }
+
+        private void PlaySuccessCue()
+        {
+            if (successCuePlayer == null)
+            {
+                Debug.LogError(
+                    $"PHS_MINIGAME_SUCCESS_CUE_FAILED reason=cue_player_missing manager={name}",
+                    this);
+                return;
+            }
+
+            if (!successCuePlayer.TryPlay(NetworkAudioCue.MissionSuccess, out var reason)
+                && reason != "cue_cooldown")
+            {
+                Debug.LogError(
+                    $"PHS_MINIGAME_SUCCESS_CUE_FAILED reason={reason} manager={name}",
+                    this);
+            }
         }
 
         public void CancelActiveMiniGame()
@@ -173,10 +207,12 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Events.MiniGames.Runtime
         {
             isFlashing = true; // 연출 시작 (입력 차단)
 
-            // 1단계: 화면 번쩍임 (성공 시 파란색 / 실패 시 빨간색)
+            // 1단계: 화면 번쩍임 (성공 파랑 / 실패 빨강)
             if (flashScreen != null)
             {
-                flashScreen.color = isSuccess ? new Color(0f, 0.5f, 1f, 0.7f) : new Color(1f, 0f, 0f, 0.7f);
+                flashScreen.color = isSuccess
+                    ? new Color(0f, 0.5f, 1f, 0.7f)
+                    : new Color(1f, 0f, 0f, 0.7f);
                 flashScreen.gameObject.SetActive(true);
             }
 

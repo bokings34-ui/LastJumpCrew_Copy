@@ -70,6 +70,31 @@ namespace LastJumpCrew.ParkHanSol.Editor
             Debug.Log($"PHS_GAME_OVER_VALIDATE_OK prefab={PrefabPath} scene={MapScenePath}");
         }
 
+        [MenuItem(MenuRoot + "Repair Presentation Materials")]
+        public static void RepairPresentationMaterials()
+        {
+            var heroMaterial = CreateOrUpdateMaterial(
+                MaterialFolder + "/PHS_GameOver_HeroShip.mat",
+                new Color(0.08f, 0.3f, 0.58f, 1f),
+                new Color(0.04f, 0.24f, 0.75f, 1f));
+            var prefabRoot = PrefabUtility.LoadPrefabContents(PrefabPath);
+            try
+            {
+                var heroRoot = prefabRoot.transform.Find("Presentation/HeroShipVisualRoot")
+                    ?? throw new InvalidOperationException("Game over hero ship root missing.");
+                ReplaceMaterials(heroRoot.gameObject, heroMaterial);
+                PrefabUtility.SaveAsPrefabAsset(prefabRoot, PrefabPath);
+            }
+            finally
+            {
+                PrefabUtility.UnloadPrefabContents(prefabRoot);
+            }
+
+            AssetDatabase.SaveAssets();
+            ValidateOrThrow();
+            Debug.Log($"PHS_GAME_OVER_MATERIAL_REPAIR_OK prefab={PrefabPath}");
+        }
+
         private static void BuildPresentationPrefab(
             Material heroMaterial,
             Material enemyMaterial,
@@ -109,6 +134,7 @@ namespace LastJumpCrew.ParkHanSol.Editor
                 var hero = InstantiateAsset(HeroShipPath, heroRoot.transform, "HeroShip_SpaceCrew_Outside");
                 hero.transform.localRotation = Quaternion.Euler(-4f, 155f, -3f);
                 hero.transform.localScale = Vector3.one;
+                ReplaceMaterials(hero, heroMaterial);
 
                 var enemyRoot = CreateChild(visualRoot.transform, "EnemyFleetRoot", new Vector3(0f, 3f, 52f));
                 CreateFleetMember(CarrierPath, enemyRoot.transform, "EnemyCarrier", new Vector3(0f, 4f, 0f), 0.55f, enemyMaterial);
@@ -219,6 +245,20 @@ namespace LastJumpCrew.ParkHanSol.Editor
                 throw new InvalidOperationException("Game over presenter component missing.");
             }
 
+            var heroMaterial = AssetDatabase.LoadAssetAtPath<Material>(
+                MaterialFolder + "/PHS_GameOver_HeroShip.mat");
+            var heroRoot = prefab.transform.Find("Presentation/HeroShipVisualRoot");
+            if (heroMaterial == null
+                || heroRoot == null
+                || heroRoot.GetComponentsInChildren<Renderer>(true).Any(renderer =>
+                    renderer.sharedMaterials.Length == 0
+                    || renderer.sharedMaterials.Any(material => material != heroMaterial)))
+            {
+                throw new InvalidOperationException("Game over hero ship material is not fully applied.");
+            }
+
+            ValidateExplosionAssets();
+
             var rootPrefab = AssetDatabase.LoadAssetAtPath<GameObject>(RunSessionRootPath);
             if (rootPrefab == null
                 || rootPrefab.GetComponent<NetworkGameOverSequenceCoordinator>() == null)
@@ -256,6 +296,27 @@ namespace LastJumpCrew.ParkHanSol.Editor
             instance.name = name;
             instance.transform.SetParent(parent, false);
             return instance;
+        }
+
+        private static void ValidateExplosionAssets()
+        {
+            var explosion = AssetDatabase.LoadAssetAtPath<GameObject>(ExplosionPath);
+            var renderers = explosion != null
+                ? explosion.GetComponentsInChildren<ParticleSystemRenderer>(true)
+                : Array.Empty<ParticleSystemRenderer>();
+            var invalidRenderers = renderers
+                .Where(renderer => renderer.sharedMaterial == null
+                    || renderer.sharedMaterial.shader == null
+                    || (renderer.renderMode == ParticleSystemRenderMode.Mesh && renderer.mesh == null))
+                .Select(renderer => $"{renderer.name}:material={renderer.sharedMaterial?.name ?? "null"},"
+                    + $"shader={renderer.sharedMaterial?.shader?.name ?? "null"},mesh={renderer.mesh?.name ?? "null"}")
+                .ToArray();
+            if (renderers.Length == 0 || invalidRenderers.Length > 0)
+            {
+                throw new InvalidOperationException(
+                    "Game over ruin explosion has a missing material, shader, or mesh reference: "
+                    + string.Join("; ", invalidRenderers));
+            }
         }
 
         private static void CreateFleetMember(

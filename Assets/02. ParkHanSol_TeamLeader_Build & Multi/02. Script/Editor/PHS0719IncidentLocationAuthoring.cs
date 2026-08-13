@@ -11,6 +11,7 @@ using UnityEditor.SceneManagement;
 using UnityEngine;
 using UnityEngine.SceneManagement;
 
+#if false // Replaced by team NetworkEventCoordinator event-location authoring.
 namespace LastJumpCrew.ParkHanSol.Editor
 {
     /// <summary>
@@ -3245,3 +3246,4 @@ namespace LastJumpCrew.ParkHanSol.Editor
         }
     }
 }
+#endif

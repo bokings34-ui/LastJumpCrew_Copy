@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Reflection;
 using LastJumpCrew.Common;
 using LastJumpCrew.ParkHanSol.Interaction;
 using LastJumpCrew.ParkHanSol.Items;
@@ -32,6 +33,22 @@ namespace LastJumpCrew.ParkHanSol.Editor
 {
     public static class PHS0715IntegrationValidator
     {
+        private static readonly HashSet<string> VendingOnlyShopItemIds = new(StringComparer.Ordinal)
+        {
+            "wrench",
+            "futuristic_adjustable_wrench",
+            "fire_extinguisher",
+            "tripo_fire_extinguisher",
+            "battery_pack"
+        };
+
+        private static readonly HashSet<string> OneShotConsumableShopItemIds = new(StringComparer.Ordinal)
+        {
+            "auto_repair_kit",
+            "foam_sealant_gun",
+            "futuristic_canister"
+        };
+
         private const string LobbyScenePath =
             "Assets/02. ParkHanSol_TeamLeader_Build & Multi/01. Scene/BEAVER_2026/ParkHanSol_LobbyScene.unity";
         private const string LobbyCustomizationFrontendPrefabPath =
@@ -66,6 +83,7 @@ namespace LastJumpCrew.ParkHanSol.Editor
             "Assets/02. ParkHanSol_TeamLeader_Build & Multi/04. Data/ShopProducts/PHS_ShopCatalog_0715.asset";
         private const string UtilityItemCatalogPath =
             "Assets/02. ParkHanSol_TeamLeader_Build & Multi/04. Data/UtilityItems/PHS_UtilityItemCatalog_0717.asset";
+        private const string NetworkPrefabsPath = "Assets/DefaultNetworkPrefabs.asset";
         private const string SellStationPrefabPath =
             "Assets/02. ParkHanSol_TeamLeader_Build & Multi/03. Prefab/Props/Prefabs/ShopCheckoutCounter/PHS_DebrisSellStation.prefab";
         private const string PlayHudPrefabPath =
@@ -88,6 +106,14 @@ namespace LastJumpCrew.ParkHanSol.Editor
             "Assets/02. ParkHanSol_TeamLeader_Build & Multi/06. Audio/NetworkGenerated";
         private const string BatteryShockAudioPath =
             NetworkGeneratedAudioFolder + "/PHS_Item_Battery_Shock.wav";
+        private const string OxygenContinuousSprayMaterialPath =
+            "Assets/02. ParkHanSol_TeamLeader_Build & Multi/05. Material/Items/Feedback/" +
+            "PHS_OxygenExtinguisherBlue.mat";
+        private static readonly string[] IgnoredNetworkGeneratedAudioPaths =
+        {
+            NetworkGeneratedAudioFolder + "/PHS_Warp_SafeZone_Enter.wav",
+            NetworkGeneratedAudioFolder + "/PHS_Warp_SafeZone_Exit.wav"
+        };
         private static readonly HashSet<string>
             LegacyHeldNetworkObjectAllowedPaths = new(StringComparer.Ordinal)
             {
@@ -119,6 +145,15 @@ namespace LastJumpCrew.ParkHanSol.Editor
             8004
         };
 
+        private static readonly IReadOnlyDictionary<int, int>
+            ExpectedExternalThreatCaps = new Dictionary<int, int>
+            {
+                [8001] = 2,
+                [8002] = 2,
+                [8003] = 3,
+                [8004] = 3
+            };
+
         private static readonly Type[] GravityDuplicateGuardTypes =
         {
             typeof(PlayerGravityReceiver),
@@ -132,6 +167,19 @@ namespace LastJumpCrew.ParkHanSol.Editor
         public static void ValidateFromMenu()
         {
             ValidateOrThrow();
+        }
+
+        [MenuItem("Tools/ParkHanSol/BEAVER/Validate Content And Incident Icons")]
+        public static void ValidateContentAndIncidentIconsFromMenu()
+        {
+            var errors = new List<string>();
+            ValidateContentAndIncidentContracts(errors, true);
+            if (errors.Count > 0)
+            {
+                throw new InvalidOperationException(
+                    "PHS_CONTENT_ICON_CONTRACT_VALIDATE_FAILED\n- " +
+                    string.Join("\n- ", errors));
+            }
         }
 
         [MenuItem(
@@ -150,6 +198,21 @@ namespace LastJumpCrew.ParkHanSol.Editor
             Debug.Log(
                 "PHS_TUTORIAL_PLAYER_VARIANT_VALIDATION_OK " +
                 $"source={PlayerPrefabPath} target={TutorialPlayerPrefabPath}");
+        }
+
+        [MenuItem("Tools/ParkHanSol/BEAVER/Validate Tutorial Scene Contracts")]
+        public static void ValidateTutorialSceneContractsFromMenu()
+        {
+            var errors = new List<string>();
+            ValidateTutorialScene(errors);
+            if (errors.Count > 0)
+            {
+                throw new InvalidOperationException(
+                    "PHS_TUTORIAL_SCENE_CONTRACT_VALIDATION_FAILED\n- " +
+                    string.Join("\n- ", errors));
+            }
+
+            Debug.Log($"PHS_TUTORIAL_SCENE_CONTRACT_VALIDATION_OK scene={TutorialScenePath}");
         }
 
         [MenuItem("Tools/ParkHanSol/Migrate 0715 Economy Ledger")]
@@ -222,6 +285,7 @@ namespace LastJumpCrew.ParkHanSol.Editor
                     throw new InvalidOperationException(
                         "PHS_RUN_RNG_MIGRATION_FAILED reason=prefab_save_failed");
                 }
+
             }
             finally
             {
@@ -235,33 +299,11 @@ namespace LastJumpCrew.ParkHanSol.Editor
         [MenuItem("Tools/ParkHanSol/Migrate 0718 Incident Ledger")]
         public static void MigrateRunIncidentLedgerIntegration()
         {
-            var originalActiveScene =
-                UnityEngine.SceneManagement.SceneManager.GetActiveScene();
-            if (originalActiveScene.IsValid() && originalActiveScene.isDirty)
-            {
-                throw new InvalidOperationException(
-                    $"PHS_INCIDENT_MIGRATION_FAILED reason=active_scene_dirty scene={originalActiveScene.path}");
-            }
-
-            var loadedMapScene =
-                UnityEngine.SceneManagement.SceneManager.GetSceneByPath(MapScenePath);
-            if (loadedMapScene.IsValid()
-                && loadedMapScene.isLoaded
-                && loadedMapScene.isDirty)
-            {
-                throw new InvalidOperationException(
-                    $"PHS_INCIDENT_MIGRATION_FAILED reason=map_scene_dirty scene={MapScenePath}");
-            }
-
-            var profileCount = MigrateIncidentMapProfiles();
-            MigrateIncidentRootPrefab();
-            var roomCount = MigrateMapIncidentConsumerPreservingActiveScene(
-                originalActiveScene);
-            Debug.Log(
-                $"PHS_INCIDENT_MIGRATION_OK prefab={RunSessionRootPrefabPath} " +
-                $"profiles={profileCount} rooms={roomCount} scene={MapScenePath}");
+            throw new InvalidOperationException(
+                "PHS_LEGACY_INCIDENT_MIGRATION_REMOVED use team event authoring only");
         }
 
+        #if false // Removed PHS incident authoring. Team events are authored by their scheduler/coordinator.
         private static int MigrateIncidentMapProfiles()
         {
             var targetIds = new HashSet<int>(IncidentGameplayMapIds);
@@ -559,6 +601,8 @@ namespace LastJumpCrew.ParkHanSol.Editor
             }
         }
 
+        #endif
+
         public static string ValidateOrThrow()
         {
             var originalSceneSetup = EditorSceneManager.GetSceneManagerSetup();
@@ -573,6 +617,11 @@ namespace LastJumpCrew.ParkHanSol.Editor
                 .Where(scene =>
                     scene.IsValid()
                     && scene.isLoaded
+                    && !EditorSceneManager.IsPreviewScene(scene)
+                    && !string.Equals(
+                        scene.name,
+                        "DontDestroyOnLoad",
+                        StringComparison.Ordinal)
                     && scene.isDirty)
                 .Select(scene =>
                     string.IsNullOrWhiteSpace(scene.path)
@@ -597,7 +646,9 @@ namespace LastJumpCrew.ParkHanSol.Editor
                 ValidateShopScene(errors);
                 ValidateShopPresentationPrefabs(errors);
                 ValidateUtilityItemCatalog(errors);
+                ValidateContentAndIncidentContracts(errors, false);
                 ValidateUtilityItemFunctionContracts(errors);
+                ValidateCanonicalSpecialItems(errors);
                 ValidateSellStationPrefab(errors);
                 ValidatePlayHudPrefab(errors);
                 TryValidateCanonicalHud(errors);
@@ -669,7 +720,9 @@ namespace LastJumpCrew.ParkHanSol.Editor
                 return;
             }
 
-            Require(networkManager.GetComponent<UnityTransport>() != null, "lobby_transport_missing", errors);
+            var transport = networkManager.GetComponent<UnityTransport>();
+            Require(transport != null, "lobby_transport_missing", errors);
+            Require(transport != null && transport.MaxPacketQueueSize >= 512, "lobby_transport_queue_below_8p_contract", errors);
             Require(networkManager.NetworkConfig != null, "lobby_network_config_missing", errors);
             Require(
                 networkManager.NetworkConfig != null && networkManager.NetworkConfig.PlayerPrefab != null,
@@ -880,8 +933,15 @@ namespace LastJumpCrew.ParkHanSol.Editor
                 "closeButton",
                 "creditsLabel",
                 "statusLabel",
+                "localService",
                 "previewPresenter",
                 "lobbyEventSystem",
+                "itemContent",
+                "itemRowTemplate",
+                "allItemsButton",
+                "headItemsButton",
+                "backItemsButton",
+                "petItemsButton",
                 "applyColorButton",
                 "unequipHeadButton",
                 "unequipBackButton",
@@ -925,33 +985,6 @@ namespace LastJumpCrew.ParkHanSol.Editor
                 Require(
                     missingBlockedButtonCount == 0,
                     $"lobby_customization_blocked_menu_button_reference_invalid count={missingBlockedButtonCount}",
-                    errors);
-            }
-
-            var itemRows = serialized.FindProperty("itemRows");
-            Require(
-                itemRows != null && itemRows.arraySize == 6,
-                $"lobby_customization_item_row_count_invalid actual={(itemRows == null ? -1 : itemRows.arraySize)}",
-                errors);
-            if (itemRows != null && itemRows.arraySize == 6)
-            {
-                var missingItemRowReferences = 0;
-                for (var index = 0; index < itemRows.arraySize; index++)
-                {
-                    var row = itemRows.GetArrayElementAtIndex(index);
-                    missingItemRowReferences += CountMissingRelativeReferences(
-                        row,
-                        "item",
-                        "previewButton",
-                        "itemLabel",
-                        "priceLabel",
-                        "actionButton",
-                        "actionLabel");
-                }
-
-                Require(
-                    missingItemRowReferences == 0,
-                    $"lobby_customization_item_row_reference_missing count={missingItemRowReferences}",
                     errors);
             }
 
@@ -1136,6 +1169,40 @@ namespace LastJumpCrew.ParkHanSol.Editor
                 "returnToLobbyButton",
                 "tutorial_return_button_missing",
                 errors);
+
+            var playerController = serializedDirector.FindProperty("playerController")
+                ?.objectReferenceValue as NetworkPlayerController;
+            var actionSource = playerController == null
+                ? null
+                : playerController.GetComponent<NetworkTutorialActionSource>();
+            Require(
+                actionSource != null,
+                "tutorial_action_source_missing",
+                errors);
+            Require(
+                actionSource != null
+                && serializedDirector.FindProperty("actionSourceBehaviour")?.objectReferenceValue == actionSource,
+                "tutorial_director_action_source_invalid",
+                errors);
+
+            var dropObjectives = UnityEngine.Object.FindObjectsByType<
+                NetworkTutorialHeldItemDropObjective>(
+                FindObjectsInactive.Include,
+                FindObjectsSortMode.None);
+            Require(
+                dropObjectives.Length == 2,
+                $"tutorial_drop_objective_count_invalid:{dropObjectives.Length}",
+                errors);
+            foreach (var dropObjective in dropObjectives)
+            {
+                var serializedObjective = new SerializedObject(dropObjective);
+                Require(
+                    actionSource != null
+                    && serializedObjective.FindProperty("actionSource")?.objectReferenceValue == actionSource,
+                    $"tutorial_drop_objective_action_source_invalid:{dropObjective.name}",
+                    errors);
+            }
+
             ValidateTutorialAudioWiring(director, errors);
 
             var station = FindOne<NetworkTutorialInteractionStation>(
@@ -1454,17 +1521,49 @@ namespace LastJumpCrew.ParkHanSol.Editor
                     $"lobby_network_prefab_unregistered item={itemData.ItemId} path={AssetDatabase.GetAssetPath(droppedPrefab)}",
                     errors);
             }
+
+            ValidateRegisteredNetworkPrefabHashIdentity(
+                networkPrefabLists,
+                errors);
+        }
+
+        private static void ValidateRegisteredNetworkPrefabHashIdentity(
+            IReadOnlyList<NetworkPrefabsList> networkPrefabLists,
+            ICollection<string> errors)
+        {
+            var hashToPrefabGuid = new Dictionary<long, string>();
+            foreach (var prefab in networkPrefabLists
+                         .Where(list => list != null)
+                         .SelectMany(list => list.PrefabList)
+                         .Select(entry => entry.Prefab)
+                         .Where(prefab => prefab != null)
+                         .Distinct())
+            {
+                var networkObject = prefab.GetComponent<NetworkObject>();
+                if (networkObject == null)
+                {
+                    continue;
+                }
+
+                var path = AssetDatabase.GetAssetPath(prefab);
+                var hash = new SerializedObject(networkObject)
+                    .FindProperty("GlobalObjectIdHash")?.longValue ?? 0;
+                Require(
+                    hash != 0,
+                    $"lobby_network_prefab_hash_missing path={path}",
+                    errors);
+                ValidateNetworkPrefabHashIdentity(
+                    hash,
+                    path,
+                    hashToPrefabGuid,
+                    "lobby_network_prefab_hash_duplicate",
+                    errors);
+            }
         }
 
         private static void ValidateMapScene(ICollection<string> errors)
         {
             OpenAndValidateScene(MapScenePath, errors);
-            Require(
-                PHS0719IncidentLocationAuthoring.ValidateAuthoredScene(
-                    out var incidentLocationReason),
-                $"map_incident_location_authoring_invalid " +
-                $"reason={incidentLocationReason}",
-                errors);
             ValidateNoSceneOwnedStageClock("map", errors);
             ValidateNoSceneOwnedEconomyLedger("map", errors);
             ValidateNoSceneOwnedRandomLedger("map", errors);
@@ -1472,6 +1571,7 @@ namespace LastJumpCrew.ParkHanSol.Editor
             ValidateNoLegacyEconomyOwner("map", errors);
             ValidateGravityDuplicateComponents("map", errors);
             ValidateGameplayContext("map", errors);
+            ValidateToolBoxPersistence(errors);
 
             PHSMapCatalogSO mapCatalog = null;
             var console = FindOne<NetworkTravelConsoleController>("map_travel_console", errors);
@@ -1540,6 +1640,17 @@ namespace LastJumpCrew.ParkHanSol.Editor
             Require(
                 returnPortals.Length == 1,
                 $"map_debris_return_portal_count_invalid actual={returnPortals.Length}",
+                errors);
+            Require(
+                automaticExteriorPortals.Count(portal =>
+                    portal.name == ExteriorTestTeleportInteractable.DebrisEntryPortalName) == 1,
+                "map_debris_canonical_entry_portal_invalid",
+                errors);
+            Require(
+                returnPortals.Length == 1
+                && returnPortals[0].name
+                    == ExteriorTestTeleportInteractable.DebrisReturnPortalName,
+                "map_debris_canonical_return_portal_invalid",
                 errors);
             var portalNames = new HashSet<string>(StringComparer.Ordinal);
             foreach (var portal in localDebrisPortals)
@@ -1639,14 +1750,11 @@ namespace LastJumpCrew.ParkHanSol.Editor
                     $"map_enemy_device_visual_missing target={deviceTarget.name}",
                     errors);
                 Require(
-                    serializedDeviceTarget.FindProperty("destructionAccident")?.enumValueIndex
-                        != (int)PHSShipAccidentId.None,
-                    $"map_enemy_device_accident_missing target={deviceTarget.name}",
-                    errors);
-                Require(
-                    !string.IsNullOrWhiteSpace(
-                        serializedDeviceTarget.FindProperty("requestedAnchorId")?.stringValue),
-                    $"map_enemy_device_anchor_missing target={deviceTarget.name}",
+                    Enum.IsDefined(
+                        typeof(EventId),
+                        serializedDeviceTarget.FindProperty("destroyedEvent")
+                            ?.intValue ?? 0),
+                    $"map_enemy_device_event_missing target={deviceTarget.name}",
                     errors);
                 Require(
                     deviceTarget.GetComponentInChildren<Collider>(true) != null,
@@ -1662,171 +1770,35 @@ namespace LastJumpCrew.ParkHanSol.Editor
                 Require(safeTrigger != null && safeTrigger.isTrigger, "map_warp_safe_trigger_invalid", errors);
             }
 
-            var eventManager = FindOne<EventManager>("map_event_manager", errors);
-            if (eventManager != null)
-            {
-                var serializedEventManager = new SerializedObject(eventManager);
-                RequireObject(
-                    serializedEventManager,
-                    "registry",
-                    "map_event_registry_missing",
-                    errors);
-                var registry = serializedEventManager.FindProperty("registry")?.objectReferenceValue
-                    as EventRegistrySO;
-                var powerOffData = registry == null ? null : registry.GetData(EventId.PowerOff);
-                Require(
-                    powerOffData != null &&
-                    powerOffData.Id == EventId.PowerOff &&
-                    powerOffData.Type == SM.EventType.Internal,
-                    "map_event_power_off_data_missing_or_invalid",
-                    errors);
-            }
-
-            var enemySpawnSetting = FindOne<EnemySpawnSetting>(
-                "map_enemy_spawn_setting",
+            var spawnConfigs = UnityEngine.Object.FindObjectsByType<ShipSpawnPointConfig>(
+                FindObjectsInactive.Include,
+                FindObjectsSortMode.None);
+            Require(
+                spawnConfigs.Length == 1,
+                $"map_enemy_spawn_config_count_invalid expected=1 actual={spawnConfigs.Length}",
                 errors);
-            if (enemySpawnSetting != null)
+            if (spawnConfigs.Length == 1)
             {
-                var spawnGroups = new SerializedObject(enemySpawnSetting)
-                    .FindProperty("spawnGroups");
+                var spawnPoints = new SerializedObject(spawnConfigs[0])
+                    .FindProperty("spawnPoints");
                 Require(
-                    spawnGroups != null
-                    && spawnGroups.isArray
-                    && spawnGroups.arraySize > 0,
-                    "map_enemy_spawn_groups_missing",
+                    spawnPoints != null && spawnPoints.isArray && spawnPoints.arraySize > 0,
+                    "map_enemy_spawn_points_missing",
                     errors);
-                if (spawnGroups != null && spawnGroups.isArray)
+                if (spawnPoints != null && spawnPoints.isArray)
                 {
-                    for (var index = 0; index < spawnGroups.arraySize; index++)
+                    for (var index = 0; index < spawnPoints.arraySize; index++)
                     {
-                        RequireRelativeObject(
-                            spawnGroups.GetArrayElementAtIndex(index),
-                            "spawnPoint",
+                        Require(
+                            spawnPoints.GetArrayElementAtIndex(index).objectReferenceValue != null,
                             $"map_enemy_spawn_point_missing index={index}",
                             errors);
                     }
                 }
             }
 
-            var eventScheduler = FindOne<PHSNetworkEventScheduler>("map_event_scheduler", errors);
-            if (eventScheduler != null)
-            {
-                var serializedScheduler = new SerializedObject(eventScheduler);
-                var configuredEvents = CollectWeightedSchedulerEvents(serializedScheduler);
-
-                foreach (var requiredEvent in new[]
-                         {
-                             EventId.Fire,
-                             EventId.EnemySpawn,
-                             EventId.OxygenLeak,
-                             EventId.MeteorAttack,
-                             EventId.EmpAttack,
-                             EventId.EnemyScout
-                         })
-                {
-                    Require(
-                        configuredEvents.Contains(requiredEvent),
-                        $"map_event_scheduler_pool_missing event={requiredEvent}",
-                        errors);
-                }
-
-            }
-
-            var roomRegistry = FindOne<RoomRegistry>("map_room_registry", errors);
-            var eventCoordinator = FindOne<NetworkEventCoordinator>("map_event_network_coordinator", errors);
-            if (eventCoordinator != null)
-            {
-                Require(
-                    eventCoordinator.GetComponent<NetworkObject>() != null,
-                    "map_event_network_object_missing",
-                    errors);
-                var serializedCoordinator = new SerializedObject(eventCoordinator);
-                Require(
-                    serializedCoordinator.FindProperty("startSchedulerOnServerSpawn")?.boolValue == false,
-                    "map_event_scheduler_auto_start_must_be_disabled",
-                    errors);
-                RequireObject(
-                    serializedCoordinator,
-                    "eventManager",
-                    "map_event_coordinator_manager_missing",
-                    errors);
-                RequireObject(
-                    serializedCoordinator,
-                    "eventScheduler",
-                    "map_event_coordinator_scheduler_missing",
-                    errors);
-                RequireObject(
-                    serializedCoordinator,
-                    "roomRegistry",
-                    "map_event_coordinator_room_registry_missing",
-                    errors);
-                Require(
-                    serializedCoordinator.FindProperty("eventManager")?.objectReferenceValue == eventManager,
-                    "map_event_coordinator_manager_mismatch",
-                    errors);
-                Require(
-                    serializedCoordinator.FindProperty("eventScheduler")?.objectReferenceValue == eventScheduler,
-                    "map_event_coordinator_scheduler_mismatch",
-                    errors);
-                Require(
-                    serializedCoordinator.FindProperty("roomRegistry")?.objectReferenceValue == roomRegistry,
-                    "map_event_coordinator_room_registry_mismatch",
-                    errors);
-                RequireObject(
-                    serializedCoordinator,
-                    "effectMirrorPresenter",
-                    "map_event_effect_mirror_presenter_missing",
-                    errors);
-                Require(
-                    serializedCoordinator.FindProperty("fireHullDamagePerEffect")?.intValue > 0,
-                    "map_event_fire_ship_impact_invalid",
-                    errors);
-                Require(
-                    serializedCoordinator.FindProperty("oxygenLifeSupportDamagePerEffect")?.intValue > 0,
-                    "map_event_oxygen_ship_impact_invalid",
-                    errors);
-                Require(
-                    serializedCoordinator.FindProperty("enemyEngineDamagePerEffect")?.intValue > 0,
-                    "map_event_enemy_ship_impact_invalid",
-                    errors);
-            }
-
-            ValidateMapRuntimeContext(mapCatalog, eventScheduler, eventCoordinator, errors);
-            ValidateShipAccidentRuntime(mapCatalog, errors);
-
-            var effectMirrorPresenter = FindOne<NetworkEventEffectMirrorPresenter>(
-                "map_event_effect_mirror_presenter",
-                errors);
-            if (effectMirrorPresenter != null)
-            {
-                var serializedPresenter = new SerializedObject(effectMirrorPresenter);
-                RequireObject(serializedPresenter, "firePresentationPrefab", "map_fire_presentation_missing", errors);
-                RequireObject(serializedPresenter, "oxygenLeakPresentationPrefab", "map_oxygen_presentation_missing", errors);
-                RequireObject(serializedPresenter, "playerAttackEnemyPresentationPrefab", "map_player_enemy_presentation_missing", errors);
-                RequireObject(serializedPresenter, "deviceAttackEnemyPresentationPrefab", "map_device_enemy_presentation_missing", errors);
-                RequireObject(serializedPresenter, "presentationRoot", "map_event_presentation_root_missing", errors);
-            }
-
-            Require(
-                FindAllMonoBehaviours().Count(component => component is IRoom) >= 4,
-                "map_rooms_insufficient expected=4",
-                errors);
-            foreach (var shipRoom in FindAllMonoBehaviours().OfType<ShipRoom>())
-            {
-                var oxygenZoneProvider =
-                    shipRoom.GetComponent<PHSOxygenLeakZoneProvider>();
-                Require(
-                    oxygenZoneProvider != null,
-                    $"map_oxygen_zone_provider_missing room={shipRoom.RoomId}",
-                    errors);
-                if (oxygenZoneProvider != null)
-                {
-                    Require(
-                        oxygenZoneProvider.TryValidate(out var zoneReason),
-                        $"map_oxygen_zone_provider_invalid room={shipRoom.RoomId} reason={zoneReason}",
-                        errors);
-                }
-            }
+            ValidateMapEventRuntimeAbsent(errors);
+            ValidateMapRuntimeContext(mapCatalog, errors);
 
             ValidateEventHudWiring(
                 "map",
@@ -1843,6 +1815,7 @@ namespace LastJumpCrew.ParkHanSol.Editor
             ValidateShipPowerWiring(errors);
         }
 
+        #if false // Removed PHS accident feature-inspection validator.
         private static void ValidateFeatureInspectionScene(
             ICollection<string> errors)
         {
@@ -1988,6 +1961,8 @@ namespace LastJumpCrew.ParkHanSol.Editor
                 $"actual={configuredTerminalEventIds.Count}",
                 errors);
         }
+
+        #endif
 
         private static void ValidateShopScene(ICollection<string> errors)
         {
@@ -2251,6 +2226,8 @@ namespace LastJumpCrew.ParkHanSol.Editor
             PHSMapCatalogSO mapCatalog,
             ICollection<string> errors)
         {
+            var displayNames = new HashSet<string>(StringComparer.Ordinal);
+            var scheduleSignatures = new HashSet<string>(StringComparer.Ordinal);
             foreach (var mapId in IncidentGameplayMapIds)
             {
                 var matches = mapCatalog.Profiles
@@ -2268,23 +2245,77 @@ namespace LastJumpCrew.ParkHanSol.Editor
 
                 var profile = matches[0];
                 Require(
-                    profile.IncidentPressureCapacity == 3,
-                    $"{label}_incident_pressure_invalid " +
-                    $"map={mapId} expected=3 " +
-                    $"actual={profile.IncidentPressureCapacity}",
+                    displayNames.Add(profile.DisplayName),
+                    $"{label}_incident_profile_display_name_duplicate " +
+                    $"map={mapId} name={profile.DisplayName}",
                     errors);
                 Require(
-                    profile.MaximumActiveExternalThreats == 1,
+                    ExpectedExternalThreatCaps.TryGetValue(mapId, out var expectedCap)
+                    && profile.MaximumActiveExternalThreats == expectedCap,
                     $"{label}_incident_external_cap_invalid " +
-                    $"map={mapId} expected=1 " +
+                    $"map={mapId} expected={expectedCap} " +
                     $"actual={profile.MaximumActiveExternalThreats}",
                     errors);
+                var scheduleSignature = string.Join(
+                    ";",
+                    profile.ExternalThreatWeights.Select(
+                        entry => $"{(int)entry.EventId}:{entry.Weight:0.###}"));
                 Require(
-                    profile.MaximumActiveInternalAccidents == 2,
-                    $"{label}_incident_internal_cap_invalid " +
-                    $"map={mapId} expected=2 " +
-                    $"actual={profile.MaximumActiveInternalAccidents}",
+                    scheduleSignatures.Add(scheduleSignature),
+                    $"{label}_incident_schedule_not_map_specific map={mapId}",
                     errors);
+            }
+
+            for (var clearedZones = 0;
+                 clearedZones < PHSMapProfileSO.MaximumRunDifficultyStage - 1;
+                 clearedZones++)
+            {
+                Require(
+                    PHSMapProfileSO.GetRunDifficultyStage(clearedZones + 1)
+                    > PHSMapProfileSO.GetRunDifficultyStage(clearedZones),
+                    $"{label}_run_difficulty_not_monotonic cleared={clearedZones}",
+                    errors);
+            }
+        }
+
+        private static void ValidateToolBoxPersistence(ICollection<string> errors)
+        {
+            var coordinators = UnityEngine.Object
+                .FindObjectsByType<NetworkToolBoxStorageCoordinator>(
+                    FindObjectsInactive.Include,
+                    FindObjectsSortMode.None);
+            Require(
+                coordinators.Length > 0,
+                "map_tool_box_coordinator_missing",
+                errors);
+
+            var slotKeys = new HashSet<string>(StringComparer.Ordinal);
+            foreach (var coordinator in coordinators)
+            {
+                var serializedCoordinator = new SerializedObject(coordinator);
+                var distance = serializedCoordinator
+                    .FindProperty("serverInteractionDistance")
+                    ?.floatValue ?? 0f;
+                Require(
+                    Mathf.Approximately(distance, 4f),
+                    $"map_tool_box_interaction_distance_invalid box={GetHierarchyPath(coordinator.transform)} expected=4 actual={distance}",
+                    errors);
+
+                var slots = coordinator.GetComponentsInChildren<
+                    UtilityToolBoxStorageSlotInteractable>(true);
+                Require(
+                    slots.Length > 0,
+                    $"map_tool_box_slots_missing box={GetHierarchyPath(coordinator.transform)}",
+                    errors);
+                for (var index = 0; index < slots.Length; index++)
+                {
+                    var key = coordinator.gameObject.scene.name + ":" +
+                              GetHierarchyPath(coordinator.transform) + ":" + index;
+                    Require(
+                        slotKeys.Add(key),
+                        $"map_tool_box_slot_key_duplicate key={key}",
+                        errors);
+                }
             }
         }
 
@@ -2323,8 +2354,6 @@ namespace LastJumpCrew.ParkHanSol.Editor
 
         private static void ValidateMapRuntimeContext(
             PHSMapCatalogSO mapCatalog,
-            PHSNetworkEventScheduler eventScheduler,
-            NetworkEventCoordinator eventCoordinator,
             ICollection<string> errors)
         {
             var mapRuntime = FindOne<PHSMapRuntimeContext>("map_runtime_context", errors);
@@ -2352,34 +2381,10 @@ namespace LastJumpCrew.ParkHanSol.Editor
                 ValidateMapDebrisPhysicsReferences(debrisStream, errors);
             }
 
-            RequireObject(serializedRuntime, "externalThreatScheduler", "map_runtime_external_scheduler_missing", errors);
-            RequireObject(serializedRuntime, "internalAccidentCoordinator", "map_runtime_internal_accident_missing", errors);
-            RequireObject(
-                serializedRuntime,
-                "incidentCommandConsumer",
-                "map_runtime_incident_consumer_missing",
-                errors);
             Require(
                 mapCatalog == null
                 || serializedRuntime.FindProperty("mapCatalog")?.objectReferenceValue == mapCatalog,
                 "map_runtime_catalog_mismatch",
-                errors);
-            Require(
-                eventScheduler == null
-                || serializedRuntime.FindProperty("externalThreatScheduler")?.objectReferenceValue == eventScheduler,
-                "map_runtime_external_scheduler_mismatch",
-                errors);
-            Require(
-                eventCoordinator == null
-                || serializedRuntime.FindProperty("externalThreatScheduler")?.objectReferenceValue ==
-                eventCoordinator.GetComponent<PHSNetworkEventScheduler>(),
-                "map_runtime_event_coordinator_scheduler_mismatch",
-                errors);
-            ValidateMapIncidentCommandConsumer(
-                mapRuntime,
-                eventCoordinator,
-                serializedRuntime.FindProperty("incidentCommandConsumer")
-                    ?.objectReferenceValue as PHSMapIncidentCommandConsumer,
                 errors);
             var shopPortalRoot =
                 serializedRuntime.FindProperty("shopPortalRoot")?.objectReferenceValue as GameObject;
@@ -2390,151 +2395,51 @@ namespace LastJumpCrew.ParkHanSol.Editor
                 errors);
         }
 
-        private static void ValidateMapIncidentCommandConsumer(
-            PHSMapRuntimeContext mapRuntime,
-            NetworkEventCoordinator eventCoordinator,
-            PHSMapIncidentCommandConsumer configuredConsumer,
+        private static void ValidateMapEventRuntimeAbsent(
             ICollection<string> errors)
         {
-            var consumers =
-                UnityEngine.Object.FindObjectsByType<PHSMapIncidentCommandConsumer>(
+            Require(
+                UnityEngine.Object.FindObjectsByType<EventManager>(
                     FindObjectsInactive.Include,
-                    FindObjectsSortMode.None);
-            Require(
-                consumers.Length == 1,
-                $"map_incident_consumer_count_invalid expected=1 " +
-                $"actual={consumers.Length}",
-                errors);
-            if (consumers.Length != 1)
-            {
-                return;
-            }
-
-            var consumer = consumers[0];
-            Require(
-                consumer.gameObject == mapRuntime.gameObject,
-                "map_incident_consumer_owner_invalid expected=map_runtime_context",
+                    FindObjectsSortMode.None).Length == 0,
+                "map_event_manager_must_be_session_owned",
                 errors);
             Require(
-                configuredConsumer == consumer,
-                "map_runtime_incident_consumer_reference_mismatch",
+                UnityEngine.Object.FindObjectsByType<PHSNetworkEventScheduler>(
+                    FindObjectsInactive.Include,
+                    FindObjectsSortMode.None).Length == 0,
+                "map_event_scheduler_must_be_session_owned",
                 errors);
             Require(
-                consumer.enabled,
-                "map_incident_consumer_disabled",
+                UnityEngine.Object.FindObjectsByType<RoomRegistry>(
+                    FindObjectsInactive.Include,
+                    FindObjectsSortMode.None).Length == 0,
+                "map_room_registry_must_be_session_owned",
                 errors);
             Require(
-                consumer.IncidentLayout != null,
-                "map_incident_layout_reference_missing",
+                UnityEngine.Object.FindObjectsByType<NetworkEventCoordinator>(
+                    FindObjectsInactive.Include,
+                    FindObjectsSortMode.None).Length == 0,
+                "map_event_coordinator_must_be_session_owned",
                 errors);
             Require(
-                !consumer.AllowLegacyLocationFallback,
-                "map_incident_legacy_location_fallback_must_be_false",
+                UnityEngine.Object.FindObjectsByType<NetworkEventEffectMirrorPresenter>(
+                    FindObjectsInactive.Include,
+                    FindObjectsSortMode.None).Length == 0,
+                "map_event_effect_mirror_must_be_session_owned",
                 errors);
-
-            var accidentCoordinators =
+            Require(
                 UnityEngine.Object.FindObjectsByType<PHSNetworkShipAccidentCoordinator>(
                     FindObjectsInactive.Include,
-                    FindObjectsSortMode.None);
-            Require(
-                accidentCoordinators.Length == 1,
-                $"map_incident_accident_coordinator_count_invalid expected=1 " +
-                $"actual={accidentCoordinators.Length}",
+                    FindObjectsSortMode.None).Length == 0,
+                "map_legacy_ship_accident_coordinator_present",
                 errors);
-            var expectedAccidentCoordinator = accidentCoordinators.Length == 1
-                ? accidentCoordinators[0]
-                : null;
-            var sceneRooms = UnityEngine.Object.FindObjectsByType<ShipRoom>(
+            Require(
+                UnityEngine.Object.FindObjectsByType<PHSShipAccidentAnchor>(
                     FindObjectsInactive.Include,
-                    FindObjectsSortMode.None)
-                .OrderBy(room => room.RoomId, StringComparer.Ordinal)
-                .ToArray();
-            Require(
-                sceneRooms.Length > 0,
-                "map_incident_rooms_empty",
+                    FindObjectsSortMode.None).Length == 0,
+                "map_legacy_ship_accident_anchor_present",
                 errors);
-            Require(
-                sceneRooms.All(room => !string.IsNullOrWhiteSpace(room.RoomId)),
-                "map_incident_room_id_missing",
-                errors);
-            Require(
-                sceneRooms.Select(room => room.RoomId)
-                    .Distinct(StringComparer.Ordinal)
-                    .Count() == sceneRooms.Length,
-                "map_incident_room_id_duplicate",
-                errors);
-
-            var serializedConsumer = new SerializedObject(consumer);
-            Require(
-                eventCoordinator == null
-                || serializedConsumer.FindProperty("eventCoordinator")
-                    ?.objectReferenceValue == eventCoordinator,
-                "map_incident_event_coordinator_mismatch",
-                errors);
-            Require(
-                expectedAccidentCoordinator == null
-                || serializedConsumer.FindProperty("accidentCoordinator")
-                    ?.objectReferenceValue == expectedAccidentCoordinator,
-                "map_incident_accident_coordinator_mismatch",
-                errors);
-            var selectors =
-                UnityEngine.Object.FindObjectsByType<PHSIncidentConsequenceSelector>(
-                    FindObjectsInactive.Include,
-                    FindObjectsSortMode.None);
-            Require(
-                selectors.Length == 1,
-                $"map_incident_consequence_selector_count_invalid " +
-                $"expected=1 actual={selectors.Length}",
-                errors);
-            if (selectors.Length == 1)
-            {
-                var selector = selectors[0];
-                Require(
-                    selector.gameObject == mapRuntime.gameObject,
-                    "map_incident_consequence_selector_owner_invalid",
-                    errors);
-                Require(
-                    serializedConsumer.FindProperty("consequenceSelector")
-                        ?.objectReferenceValue == selector,
-                    "map_incident_consequence_selector_reference_mismatch",
-                    errors);
-                Require(
-                    selector.RequestGateway
-                        == mapRuntime.GetComponent<PHSIncidentRequestGateway>(),
-                    "map_incident_consequence_gateway_mismatch",
-                    errors);
-                Require(
-                    expectedAccidentCoordinator == null
-                    || selector.AccidentCoordinator
-                        == expectedAccidentCoordinator,
-                    "map_incident_consequence_accident_coordinator_mismatch",
-                    errors);
-            }
-            var configuredRooms = serializedConsumer.FindProperty("rooms");
-            Require(
-                configuredRooms != null
-                && configuredRooms.isArray
-                && configuredRooms.arraySize == sceneRooms.Length,
-                $"map_incident_room_count_invalid expected={sceneRooms.Length} " +
-                $"actual={(configuredRooms != null && configuredRooms.isArray ? configuredRooms.arraySize : -1)}",
-                errors);
-            if (configuredRooms == null
-                || !configuredRooms.isArray
-                || configuredRooms.arraySize != sceneRooms.Length)
-            {
-                return;
-            }
-
-            for (var index = 0; index < sceneRooms.Length; index++)
-            {
-                Require(
-                    configuredRooms
-                        .GetArrayElementAtIndex(index)
-                        .objectReferenceValue == sceneRooms[index],
-                    $"map_incident_room_order_invalid index={index} " +
-                    $"expected={sceneRooms[index].RoomId}",
-                    errors);
-            }
         }
 
         private static void ValidateMiniGameIndicator(
@@ -2668,71 +2573,6 @@ namespace LastJumpCrew.ParkHanSol.Editor
                         new SerializedObject(physicsAuthority),
                         "targetRigidbody",
                         $"map_debris_stream_physics_rigidbody_reference_missing seed={seed.name} path={droppedPath}",
-                        errors);
-                }
-            }
-        }
-
-        private static void ValidateShipAccidentRuntime(
-            PHSMapCatalogSO mapCatalog,
-            ICollection<string> errors)
-        {
-            var coordinator = FindOne<PHSNetworkShipAccidentCoordinator>("map_ship_accident_coordinator", errors);
-            var anchors = UnityEngine.Object.FindObjectsByType<PHSShipAccidentAnchor>(
-                FindObjectsInactive.Include,
-                FindObjectsSortMode.None);
-            Require(anchors.Length >= 5, $"map_ship_accident_anchors_insufficient actual={anchors.Length}", errors);
-
-            if (coordinator != null)
-            {
-                Require(
-                    coordinator.GetComponent<NetworkObject>() != null,
-                    "map_ship_accident_network_object_missing",
-                    errors);
-                var serializedCoordinator = new SerializedObject(coordinator);
-                var catalog = serializedCoordinator.FindProperty("accidentCatalog")?.objectReferenceValue
-                    as PHSShipAccidentCatalogSO;
-                Require(catalog != null, "map_ship_accident_catalog_missing", errors);
-                if (catalog != null)
-                {
-                    Require(
-                        catalog.TryValidate(out var catalogReason),
-                        $"map_ship_accident_catalog_invalid detail={catalogReason}",
-                        errors);
-                }
-
-                RequireArray(serializedCoordinator, "anchors", 5, "map_ship_accident_registered_anchors_insufficient", errors);
-            }
-
-            Require(
-                anchors.Any(anchor => anchor != null
-                    && anchor.AnchorId == "gravity_generator"
-                    && anchor.ModuleId == NetworkShipModuleId.Gravity),
-                "map_gravity_generator_anchor_missing",
-                errors);
-
-            if (mapCatalog == null)
-            {
-                return;
-            }
-
-            foreach (var profile in mapCatalog.Profiles)
-            {
-                if (profile == null)
-                {
-                    continue;
-                }
-
-                foreach (var entry in profile.InternalAccidentWeights)
-                {
-                    if (entry?.Definition == null)
-                    {
-                        continue;
-                    }
-
-                    Require(
-                        anchors.Any(anchor => anchor != null && anchor.Supports(entry.Definition)),
-                        $"map_ship_accident_anchor_missing map={profile.MapId} accident={entry.Definition.Id}",
                         errors);
                 }
             }
@@ -3051,27 +2891,13 @@ namespace LastJumpCrew.ParkHanSol.Editor
                     prefab.GetComponentsInChildren<PHSNetworkIncidentDirector>(true).Length == 0,
                     "ship_runtime_incident_director_must_be_session_owned",
                     errors);
-                var coordinator = prefab.GetComponent<PHSNetworkShipAccidentCoordinator>();
-                Require(coordinator != null, "ship_runtime_accident_coordinator_missing", errors);
-                if (coordinator != null)
-                {
-                    var serializedCoordinator = new SerializedObject(coordinator);
-                    RequireObject(
-                        serializedCoordinator,
-                        "accidentCatalog",
-                        "ship_runtime_accident_catalog_missing",
-                        errors);
-                    RequireArray(
-                        serializedCoordinator,
-                        "anchors",
-                        5,
-                        "ship_runtime_accident_anchors_insufficient",
-                        errors);
-                }
-
                 Require(
-                    prefab.GetComponentsInChildren<PHSShipAccidentAnchor>(true).Length >= 5,
-                    "ship_runtime_accident_anchor_children_insufficient",
+                    prefab.GetComponentsInChildren<PHSNetworkShipAccidentCoordinator>(true).Length == 0,
+                    "ship_runtime_legacy_accident_coordinator_present",
+                    errors);
+                Require(
+                    prefab.GetComponentsInChildren<PHSShipAccidentAnchor>(true).Length == 0,
+                    "ship_runtime_legacy_accident_anchor_present",
                     errors);
             }
             finally
@@ -3148,73 +2974,14 @@ namespace LastJumpCrew.ParkHanSol.Editor
                     $"run_session_root_random_algorithm_contract_invalid reason={randomAlgorithmReason}",
                     errors);
 
-                var incidentLedgers =
-                    prefab.GetComponentsInChildren<NetworkRunIncidentLedger>(true);
                 Require(
-                    incidentLedgers.Length == 1,
-                    $"run_session_root_incident_ledger_count_invalid " +
-                    $"expected=1 actual={incidentLedgers.Length}",
+                    prefab.GetComponentsInChildren<NetworkRunIncidentLedger>(true).Length == 0,
+                    "run_session_root_legacy_incident_ledger_present",
                     errors);
-                var incidentLedger =
-                    prefab.GetComponent<NetworkRunIncidentLedger>();
                 Require(
-                    incidentLedger != null,
-                    "run_session_root_incident_ledger_owner_invalid expected=root",
+                    prefab.GetComponentsInChildren<PHSNetworkIncidentDirector>(true).Length == 0,
+                    "run_session_root_legacy_incident_director_present",
                     errors);
-                if (incidentLedger != null)
-                {
-                    var serializedIncidentLedger =
-                        new SerializedObject(incidentLedger);
-                    Require(
-                        serializedIncidentLedger
-                            .FindProperty("defaultPressureCapacity")
-                            ?.intValue == 3,
-                        "run_session_root_incident_default_pressure_invalid " +
-                        "expected=3",
-                        errors);
-                    Require(
-                        serializedIncidentLedger
-                            .FindProperty("defaultMaximumExternalCommands")
-                            ?.intValue == 1,
-                        "run_session_root_incident_default_external_cap_invalid " +
-                        "expected=1",
-                        errors);
-                    Require(
-                        serializedIncidentLedger
-                            .FindProperty("defaultMaximumInternalCommands")
-                            ?.intValue == 2,
-                        "run_session_root_incident_default_internal_cap_invalid " +
-                        "expected=2",
-                        errors);
-                    Require(
-                        serializedIncidentLedger
-                            .FindProperty("maximumCommandHistory")
-                            ?.intValue >= 32,
-                        "run_session_root_incident_command_history_invalid " +
-                        "expected_minimum=32",
-                        errors);
-                }
-
-                var incidentDirectors =
-                    prefab.GetComponentsInChildren<PHSNetworkIncidentDirector>(true);
-                Require(
-                    incidentDirectors.Length == 1,
-                    $"run_session_root_incident_director_count_invalid " +
-                    $"expected=1 actual={incidentDirectors.Length}",
-                    errors);
-                var incidentDirector =
-                    prefab.GetComponent<PHSNetworkIncidentDirector>();
-                Require(
-                    incidentDirector != null,
-                    "run_session_root_incident_director_owner_invalid expected=root",
-                    errors);
-                if (incidentDirector != null)
-                {
-                    Require(
-                        incidentDirector.enabled,
-                        "run_session_root_incident_director_disabled",
-                        errors);
-                }
 
                 var networkBehaviours = prefab.GetComponents<NetworkBehaviour>();
                 var expectedBehaviourTypes = new[]
@@ -3225,11 +2992,12 @@ namespace LastJumpCrew.ParkHanSol.Editor
                     typeof(NetworkRunStageClock),
                     typeof(NetworkRunEconomyLedger),
                     typeof(NetworkRunRandomLedger),
-                    typeof(NetworkRunIncidentLedger),
                     typeof(NetworkShopTransitionVoteCoordinator),
                     typeof(NetworkRunRestartCoordinator),
                     typeof(PHSNetworkFoamCoordinator),
-                    typeof(NetworkGameOverSequenceCoordinator)
+                    typeof(NetworkGameOverSequenceCoordinator),
+                    typeof(NetworkEventCoordinator),
+                    typeof(NetworkPersistentToolBoxStorage)
                 };
                 Require(
                     networkBehaviours.Length == expectedBehaviourTypes.Length,
@@ -3296,11 +3064,99 @@ namespace LastJumpCrew.ParkHanSol.Editor
                         "run_session_root_event_impact_state_invalid",
                         errors);
                 }
+
+                ValidatePersistentTeamEventRoot(prefab, errors);
             }
             finally
             {
                 PrefabUtility.UnloadPrefabContents(prefab);
             }
+        }
+
+        private static void ValidatePersistentTeamEventRoot(
+            GameObject sessionRoot,
+            ICollection<string> errors)
+        {
+            var eventManagers = sessionRoot.GetComponentsInChildren<EventManager>(true);
+            var schedulers = sessionRoot.GetComponentsInChildren<PHSNetworkEventScheduler>(true);
+            var registries = sessionRoot.GetComponentsInChildren<RoomRegistry>(true);
+            var presenters = sessionRoot.GetComponentsInChildren<NetworkEventEffectMirrorPresenter>(true);
+            var coordinators = sessionRoot.GetComponents<NetworkEventCoordinator>();
+
+            Require(eventManagers.Length == 1,
+                $"run_session_root_event_manager_count_invalid expected=1 actual={eventManagers.Length}", errors);
+            Require(schedulers.Length == 1,
+                $"run_session_root_event_scheduler_count_invalid expected=1 actual={schedulers.Length}", errors);
+            Require(registries.Length == 1,
+                $"run_session_root_room_registry_count_invalid expected=1 actual={registries.Length}", errors);
+            Require(presenters.Length == 1,
+                $"run_session_root_event_effect_mirror_count_invalid expected=1 actual={presenters.Length}", errors);
+            Require(coordinators.Length == 1,
+                $"run_session_root_event_coordinator_count_invalid expected=1 actual={coordinators.Length}", errors);
+            if (eventManagers.Length != 1 || schedulers.Length != 1 || registries.Length != 1
+                || presenters.Length != 1 || coordinators.Length != 1)
+            {
+                return;
+            }
+
+            var eventManager = eventManagers[0];
+            var scheduler = schedulers[0];
+            var roomRegistry = registries[0];
+            var presenter = presenters[0];
+            var coordinator = coordinators[0];
+            var sessionRooms = sessionRoot.GetComponentsInChildren<ShipRoom>(true);
+            Require(
+                sessionRooms.Length == 4,
+                $"run_session_root_room_count_invalid expected=4 actual={sessionRooms.Length}",
+                errors);
+            var serializedEventManager = new SerializedObject(eventManager);
+            RequireObject(serializedEventManager, "registry", "run_session_root_event_registry_missing", errors);
+            var registry = serializedEventManager.FindProperty("registry")?.objectReferenceValue as EventRegistrySO;
+            var powerOffData = registry == null ? null : registry.GetData(EventId.PowerOff);
+            Require(powerOffData != null && powerOffData.Id == EventId.PowerOff
+                    && powerOffData.Type == SM.EventType.Internal,
+                "run_session_root_event_power_off_data_missing_or_invalid", errors);
+            var enemySpawnData = registry == null ? null : registry.GetData(EventId.EnemySpawn);
+            Require(
+                enemySpawnData != null && enemySpawnData.Id == EventId.EnemySpawn,
+                "run_session_root_event_enemy_spawn_data_missing_or_invalid",
+                errors);
+
+            var configuredEvents = CollectWeightedSchedulerEvents(new SerializedObject(scheduler));
+            foreach (var requiredEvent in new[]
+                     {
+                         EventId.Fire, EventId.EnemySpawn, EventId.OxygenLeak,
+                         EventId.MeteorAttack, EventId.EmpAttack, EventId.EnemyScout
+                     })
+            {
+                Require(configuredEvents.Contains(requiredEvent),
+                    $"run_session_root_event_scheduler_pool_missing event={requiredEvent}", errors);
+            }
+
+            var serializedCoordinator = new SerializedObject(coordinator);
+            Require(serializedCoordinator.FindProperty("startSchedulerOnServerSpawn")?.boolValue == false,
+                "run_session_root_event_scheduler_auto_start_must_be_disabled", errors);
+            Require(serializedCoordinator.FindProperty("eventManager")?.objectReferenceValue == eventManager,
+                "run_session_root_event_coordinator_manager_mismatch", errors);
+            Require(serializedCoordinator.FindProperty("eventScheduler")?.objectReferenceValue == scheduler,
+                "run_session_root_event_coordinator_scheduler_mismatch", errors);
+            Require(serializedCoordinator.FindProperty("roomRegistry")?.objectReferenceValue == roomRegistry,
+                "run_session_root_event_coordinator_room_registry_mismatch", errors);
+            Require(serializedCoordinator.FindProperty("effectMirrorPresenter")?.objectReferenceValue == presenter,
+                "run_session_root_event_coordinator_effect_mirror_mismatch", errors);
+            Require(serializedCoordinator.FindProperty("fireHullDamagePerEffect")?.intValue > 0,
+                "run_session_root_event_fire_ship_impact_invalid", errors);
+            Require(serializedCoordinator.FindProperty("oxygenLifeSupportDamagePerEffect")?.intValue > 0,
+                "run_session_root_event_oxygen_ship_impact_invalid", errors);
+            Require(serializedCoordinator.FindProperty("enemyEngineDamagePerEffect")?.intValue > 0,
+                "run_session_root_event_enemy_ship_impact_invalid", errors);
+
+            var serializedPresenter = new SerializedObject(presenter);
+            RequireObject(serializedPresenter, "firePresentationPrefab", "run_session_root_fire_presentation_missing", errors);
+            RequireObject(serializedPresenter, "oxygenLeakPresentationPrefab", "run_session_root_oxygen_presentation_missing", errors);
+            RequireObject(serializedPresenter, "playerAttackEnemyPresentationPrefab", "run_session_root_player_enemy_presentation_missing", errors);
+            RequireObject(serializedPresenter, "deviceAttackEnemyPresentationPrefab", "run_session_root_device_enemy_presentation_missing", errors);
+            RequireObject(serializedPresenter, "presentationRoot", "run_session_root_event_presentation_root_missing", errors);
         }
 
         private static void ValidateNetworkAudioAssets(
@@ -3310,6 +3166,14 @@ namespace LastJumpCrew.ParkHanSol.Editor
                 .Values
                 .Append(BatteryShockAudioPath)
                 .ToHashSet(StringComparer.Ordinal);
+            var expectedGeneratedPaths = expectedPaths
+                .Where(path => path.StartsWith(
+                    NetworkGeneratedAudioFolder + "/",
+                    StringComparison.Ordinal))
+                .ToHashSet(StringComparer.Ordinal);
+            var allowedGeneratedPaths = expectedGeneratedPaths
+                .Concat(IgnoredNetworkGeneratedAudioPaths)
+                .ToHashSet(StringComparer.Ordinal);
             var actualPaths = AssetDatabase.FindAssets(
                     "t:AudioClip",
                     new[] { NetworkGeneratedAudioFolder })
@@ -3317,10 +3181,10 @@ namespace LastJumpCrew.ParkHanSol.Editor
                 .ToHashSet(StringComparer.Ordinal);
 
             Require(
-                actualPaths.IsSupersetOf(expectedPaths),
-                $"network_audio_generated_assets_invalid expected={expectedPaths.Count} " +
-                $"actual={actualPaths.Count} missing={string.Join(",", expectedPaths.Except(actualPaths))} " +
-                $"extra={string.Join(",", actualPaths.Except(expectedPaths))}",
+                actualPaths.SetEquals(allowedGeneratedPaths),
+                $"network_audio_generated_assets_invalid expected={expectedGeneratedPaths.Count} " +
+                $"actual={actualPaths.Count} missing={string.Join(",", expectedGeneratedPaths.Except(actualPaths))} " +
+                $"extra={string.Join(",", actualPaths.Except(allowedGeneratedPaths))}",
                 errors);
             foreach (var path in expectedPaths)
             {
@@ -3442,43 +3306,36 @@ namespace LastJumpCrew.ParkHanSol.Editor
             if (runRoot != null)
             {
                 Require(
-                    runRoot.GetComponentsInChildren<NetworkAudioCueEmitter>(true).Length == 1,
-                    "network_audio_run_root_emitter_count_invalid expected=1",
+                    runRoot.GetComponentsInChildren<NetworkRunWarningAudioPresenter>(true).Length == 0,
+                    "network_audio_legacy_incident_warning_presenter_present",
                     errors);
-                var emitter = ValidateNamedAudioEmitter(
+                var eventEmitter = ValidateNamedAudioEmitter(
                     runRoot,
                     "PHS_NetworkWarningAudio",
                     new Dictionary<NetworkAudioCue, string>
                     {
-                        { NetworkAudioCue.Warning, clips[NetworkAudioCue.Warning] }
+                        { NetworkAudioCue.AccidentAppeared, clips[NetworkAudioCue.AccidentAppeared] }
                     },
-                    "network_audio_warning",
+                    "network_audio_event_scheduler",
                     errors);
-                var presenters = runRoot.GetComponentsInChildren<NetworkRunWarningAudioPresenter>(true);
+                var eventPresenters = runRoot.GetComponentsInChildren<NetworkEventLifecycleAudioPresenter>(true);
                 Require(
-                    presenters.Length == 1 && presenters[0].gameObject == runRoot,
-                    $"network_audio_warning_presenter_count_or_owner_invalid " +
-                    $"expected=1 actual={presenters.Length}",
+                    eventPresenters.Length == 1,
+                    $"network_audio_event_scheduler_presenter_count_invalid actual={eventPresenters.Length}",
                     errors);
-                if (presenters.Length == 1)
+                if (eventPresenters.Length == 1)
                 {
                     RequireSerializedReferenceEquals(
-                        presenters[0],
-                        "incidentLedger",
-                        runRoot.GetComponent<NetworkRunIncidentLedger>(),
-                        "network_audio_warning_incident_ledger_reference_invalid",
+                        eventPresenters[0],
+                        "eventCoordinator",
+                        runRoot.GetComponent<NetworkEventCoordinator>(),
+                        "network_audio_event_scheduler_coordinator_reference_invalid",
                         errors);
                     RequireSerializedReferenceEquals(
-                        presenters[0],
-                        "stageClock",
-                        runRoot.GetComponent<NetworkRunStageClock>(),
-                        "network_audio_warning_stage_clock_reference_invalid",
-                        errors);
-                    RequireSerializedReferenceEquals(
-                        presenters[0],
+                        eventPresenters[0],
                         "cuePlayerSource",
-                        emitter,
-                        "network_audio_warning_player_reference_invalid",
+                        eventEmitter,
+                        "network_audio_event_scheduler_emitter_reference_invalid",
                         errors);
                 }
             }
@@ -3851,7 +3708,13 @@ namespace LastJumpCrew.ParkHanSol.Editor
                 { NetworkAudioCue.FoamAttach, $"{NetworkGeneratedAudioFolder}/PHS_Item_Foam_Attach.wav" },
                 { NetworkAudioCue.FoamHarden, $"{NetworkGeneratedAudioFolder}/PHS_Item_Foam_Harden.wav" },
                 { NetworkAudioCue.FoamSealComplete, $"{NetworkGeneratedAudioFolder}/PHS_Item_Foam_Seal_Complete.wav" },
-                { NetworkAudioCue.FoamFireComplete, $"{NetworkGeneratedAudioFolder}/PHS_Item_Foam_Fire_Complete.wav" }
+                { NetworkAudioCue.FoamFireComplete, $"{NetworkGeneratedAudioFolder}/PHS_Item_Foam_Fire_Complete.wav" },
+                // Scheduler lifecycle audio is authored from the curated SFX source,
+                // not the legacy generated-audio folder.
+                {
+                    NetworkAudioCue.AccidentAppeared,
+                    PHSCuratedAssetSfxAuthoring.GetCuePath(NetworkAudioCue.AccidentAppeared)
+                }
             };
         }
 
@@ -3915,6 +3778,12 @@ namespace LastJumpCrew.ParkHanSol.Editor
 
                 if (validateRendererMaterials)
                 {
+                    if (path.EndsWith("/PHS_OxygenLeakPipePresentation.prefab", StringComparison.Ordinal))
+                    {
+                        ValidateOxygenContinuousSprayMaterials(prefab, path, errors);
+                        return;
+                    }
+
                     var renderers = prefab.GetComponentsInChildren<Renderer>(true);
                     Require(
                         renderers.Length > 0,
@@ -4017,59 +3886,85 @@ namespace LastJumpCrew.ParkHanSol.Editor
 
         private static void ValidateShipPowerWiring(ICollection<string> errors)
         {
-            var batterySocket = FindOne<BatteryInsertPowerStationSocket>(
-                "map_battery_socket",
+            var batterySockets = UnityEngine.Object
+                .FindObjectsByType<BatteryInsertPowerStationSocket>(
+                    FindObjectsInactive.Include,
+                    FindObjectsSortMode.None);
+            Require(
+                batterySockets.Length == 4,
+                $"map_battery_socket_count_invalid actual={batterySockets.Length}",
                 errors);
-            if (batterySocket != null)
+            var socketNames = new HashSet<string>(StringComparer.Ordinal);
+            foreach (var batterySocket in batterySockets)
             {
                 Require(
+                    batterySocket != null
+                    && !string.IsNullOrWhiteSpace(batterySocket.name)
+                    && socketNames.Add(batterySocket.name),
+                    $"map_battery_socket_identity_invalid socket={batterySocket?.name ?? "null"}",
+                    errors);
+                Require(
                     batterySocket.GetComponent<NetworkObject>() != null,
-                    "map_battery_socket_network_object_missing",
+                    $"map_battery_socket_network_object_missing socket={batterySocket.name}",
                     errors);
                 var serializedSocket = new SerializedObject(batterySocket);
                 Require(
                     serializedSocket.FindProperty("requiredItemId")?.stringValue == "battery_pack",
-                    "map_battery_socket_item_id_invalid expected=battery_pack",
+                    $"map_battery_socket_item_id_invalid socket={batterySocket.name} expected=battery_pack",
                     errors);
                 RequireObject(
                     serializedSocket,
                     "installedBatteryVisual",
-                    "map_battery_socket_visual_missing",
+                    $"map_battery_socket_visual_missing socket={batterySocket.name}",
+                    errors);
+                RequireObject(
+                    serializedSocket,
+                    "feedbackPoint",
+                    $"map_battery_socket_feedback_point_missing socket={batterySocket.name}",
                     errors);
             }
+        }
 
-            var gravityController = FindOne<ShipGravityZoneController>(
-                "map_ship_gravity_controller",
+        private static void ValidateOxygenContinuousSprayMaterials(
+            GameObject prefab,
+            string path,
+            ICollection<string> errors)
+        {
+            var expectedMaterial = AssetDatabase.LoadAssetAtPath<Material>(
+                OxygenContinuousSprayMaterialPath);
+            var particles = prefab.GetComponentsInChildren<ParticleSystem>(true);
+            Require(
+                expectedMaterial != null
+                && expectedMaterial.shader != null
+                && expectedMaterial.shader.isSupported,
+                $"event_presentation_oxygen_material_asset_invalid path={OxygenContinuousSprayMaterialPath}",
                 errors);
             Require(
-                UnityEngine.Object.FindObjectsByType<PHSShipAccidentAnchor>(
-                    FindObjectsInactive.Include,
-                    FindObjectsSortMode.None).Any(anchor =>
-                    anchor != null
-                    && anchor.AnchorId == "gravity_generator"
-                    && anchor.ModuleId == NetworkShipModuleId.Gravity),
-                "map_gravity_generator_anchor_missing",
+                particles.Length > 0,
+                $"event_presentation_oxygen_particles_missing path={path}",
                 errors);
-
-            if (gravityController != null)
+            foreach (var particle in particles)
             {
-                var serializedController = new SerializedObject(gravityController);
-                var legacyAreas = serializedController.FindProperty("shipInteriorAreas");
-                var gravityZones = serializedController.FindProperty("gravityZones");
-                var configuredCount =
-                    (legacyAreas != null && legacyAreas.isArray ? legacyAreas.arraySize : 0) +
-                    (gravityZones != null && gravityZones.isArray ? gravityZones.arraySize : 0);
+                var renderer = particle.GetComponent<ParticleSystemRenderer>();
+                var material = renderer == null ? null : renderer.sharedMaterial;
                 Require(
-                    configuredCount > 0,
-                    "map_ship_gravity_areas_missing",
+                    material != null
+                    && material == expectedMaterial
+                    && material.shader != null
+                    && material.shader.isSupported,
+                    $"event_presentation_oxygen_active_material_invalid path={path} particle={particle.name}",
                     errors);
-                RequireArrayElementsAssigned(
-                    legacyAreas,
-                    "map_ship_gravity_area_missing",
-                    errors);
-                RequireArrayElementsAssigned(
-                    gravityZones,
-                    "map_gravity_zone_missing",
+                if (renderer == null)
+                {
+                    continue;
+                }
+
+                Require(
+                    renderer.sharedMaterials.Where(candidate => candidate != null)
+                        .All(candidate => candidate == expectedMaterial
+                            && candidate.shader != null
+                            && candidate.shader.isSupported),
+                    $"event_presentation_oxygen_material_override_invalid path={path} particle={particle.name}",
                     errors);
             }
         }
@@ -4116,11 +4011,6 @@ namespace LastJumpCrew.ParkHanSol.Editor
                     serializedView,
                     "eventAlertIcon",
                     $"{label}_event_hud_alert_icon_missing",
-                    errors);
-                RequireObject(
-                    serializedView,
-                    "eventAlertLabelText",
-                    $"{label}_event_hud_alert_label_missing",
                     errors);
                 RequireObject(
                     serializedView,
@@ -4217,7 +4107,7 @@ namespace LastJumpCrew.ParkHanSol.Editor
             }
 
             Require(catalog.Products.Count >= 10, $"shop_catalog_count_invalid actual={catalog.Products.Count}", errors);
-            var networkPrefabHashes = new HashSet<long>();
+            var networkPrefabHashes = new Dictionary<long, string>();
             foreach (var product in catalog.Products)
             {
                 Require(product != null && product.IsConfigured, "shop_product_invalid", errors);
@@ -4227,6 +4117,29 @@ namespace LastJumpCrew.ParkHanSol.Editor
                     errors);
                 ValidateShopDroppedPrefab(product, networkPrefabHashes, errors);
             }
+
+            var configuredProducts = catalog.Products
+                .Where(product => product?.ItemPrefabData != null)
+                .ToArray();
+            var vendingToolOffers = configuredProducts
+                .Where(product => VendingOnlyShopItemIds.Contains(product.ItemPrefabData.ItemId))
+                .ToArray();
+            Require(
+                vendingToolOffers.Length == 0,
+                $"shop_vending_tool_offer_present count={vendingToolOffers.Length}",
+                errors);
+
+            var consumableOffers = configuredProducts
+                .Where(product => OneShotConsumableShopItemIds.Contains(product.ItemPrefabData.ItemId))
+                .ToArray();
+            Require(
+                consumableOffers.Length >= 2,
+                $"shop_consumable_offer_count_small actual={consumableOffers.Length}",
+                errors);
+            Require(
+                consumableOffers.All(product => product.StockPolicy == ShopStockPolicy.Unlimited),
+                "shop_consumable_stock_policy_not_unlimited",
+                errors);
         }
 
         private static void ValidatePurchaseDeliveryBox(ICollection<string> errors)
@@ -4260,7 +4173,7 @@ namespace LastJumpCrew.ParkHanSol.Editor
 
         private static void ValidateShopDroppedPrefab(
             ShopProductData product,
-            ISet<long> networkPrefabHashes,
+            IDictionary<long, string> networkPrefabHashes,
             ICollection<string> errors)
         {
             var itemData = product?.ItemPrefabData;
@@ -4323,9 +4236,11 @@ namespace LastJumpCrew.ParkHanSol.Editor
                     hash != 0,
                     $"shop_dropped_network_hash_missing offer={offerId} path={path}",
                     errors);
-                Require(
-                    hash == 0 || networkPrefabHashes.Add(hash),
-                    $"shop_dropped_network_hash_duplicate offer={offerId} hash={hash} path={path}",
+                ValidateNetworkPrefabHashIdentity(
+                    hash,
+                    path,
+                    networkPrefabHashes,
+                    $"shop_dropped_network_hash_duplicate offer={offerId}",
                     errors);
             }
 
@@ -4343,6 +4258,211 @@ namespace LastJumpCrew.ParkHanSol.Editor
                 errors);
         }
 
+        private static void ValidateCanonicalSpecialItems(ICollection<string> errors)
+        {
+            try
+            {
+                PHSCanonicalSpecialItemAuthoring.Validate();
+            }
+            catch (Exception exception)
+            {
+                errors.Add($"canonical_special_items_invalid detail={exception.Message}");
+            }
+        }
+
+        private static void ValidateContentAndIncidentContracts(
+            ICollection<string> errors,
+            bool logSuccess)
+        {
+            var itemCatalog = AssetDatabase.LoadAssetAtPath<UtilityItemCatalogSO>(
+                UtilityItemCatalogPath);
+            var shopCatalog = AssetDatabase.LoadAssetAtPath<ShopCatalogSO>(
+                ShopCatalogPath);
+            var networkPrefabs = AssetDatabase.LoadAssetAtPath<NetworkPrefabsList>(
+                NetworkPrefabsPath);
+            Require(itemCatalog != null, "content_gate_item_catalog_missing", errors);
+            Require(shopCatalog != null, "content_gate_shop_catalog_missing", errors);
+            Require(networkPrefabs != null, "content_gate_network_prefabs_missing", errors);
+            if (itemCatalog == null || shopCatalog == null || networkPrefabs == null)
+            {
+                return;
+            }
+
+            var catalogItems = itemCatalog.Items.Where(item => item != null).ToArray();
+            var catalogItemSet = new HashSet<UtilityItemDataSO>(catalogItems);
+            var shopProducts = shopCatalog.Products
+                .Where(product => product?.ItemPrefabData != null)
+                .ToArray();
+            foreach (var product in shopProducts)
+            {
+                Require(
+                    catalogItemSet.Contains(product.ItemPrefabData),
+                    $"content_gate_shop_item_not_in_catalog offer={product.OfferId} item={product.ItemPrefabData.ItemId}",
+                    errors);
+            }
+
+            var specialIds = new HashSet<string>(StringComparer.Ordinal)
+            {
+                "freeze_sprayer",
+                "spider_web_bomb",
+                "hammer"
+            };
+            Require(
+                specialIds.All(id => catalogItems.Any(item => item.ItemId == id)),
+                "content_gate_special_item_catalog_incomplete",
+                errors);
+
+            foreach (var item in catalogItems)
+            {
+                var itemId = item.ItemId;
+                var isShopCandidate = !VendingOnlyShopItemIds.Contains(itemId)
+                    && !string.Equals(itemId, "gravity_test_ball", StringComparison.Ordinal)
+                    && !itemId.StartsWith("debris_", StringComparison.Ordinal);
+                if (isShopCandidate)
+                {
+                    Require(
+                        shopProducts.Any(product => product.ItemPrefabData == item),
+                        $"content_gate_shop_product_missing item={itemId}",
+                        errors);
+                }
+
+                var dropped = item.DroppedPrefab;
+                if (dropped == null)
+                {
+                    continue;
+                }
+
+                var itemObject = dropped.GetComponent<UtilityItemObject>();
+                Require(
+                    itemObject != null && itemObject.ItemData == item,
+                    $"content_gate_dropped_item_data_invalid item={itemId} prefab={dropped.name}",
+                    errors);
+                var registrationCount = networkPrefabs.PrefabList.Count(entry =>
+                    entry != null && entry.Prefab == dropped);
+                Require(
+                    registrationCount == 1,
+                    $"content_gate_network_prefab_count_invalid item={itemId} prefab={dropped.name} count={registrationCount}",
+                    errors);
+            }
+
+            ValidateHudLifecycleIconContract(errors);
+            ValidateTabMapIconContract(errors);
+            if (logSuccess && errors.Count == 0)
+            {
+                Debug.Log(
+                    $"PHS_CONTENT_ICON_CONTRACT_VALIDATE_OK catalog={catalogItems.Length} " +
+                    $"shopItems={shopProducts.Select(product => product.ItemPrefabData).Distinct().Count()} " +
+                    "special=3 hudEvents=13 tabEvents=17");
+            }
+        }
+
+        private static void ValidateHudLifecycleIconContract(
+            ICollection<string> errors)
+        {
+            var hud = AssetDatabase.LoadAssetAtPath<GameObject>(PlayHudPrefabPath);
+            var view = hud == null
+                ? null
+                : hud.GetComponentInChildren<PHSNetworkEventHudView>(true);
+            Require(view != null, "content_gate_hud_view_missing", errors);
+            if (view == null)
+            {
+                return;
+            }
+
+            var expected = new HashSet<EventId>
+            {
+                EventId.Fire,
+                EventId.EnemySpawn,
+                EventId.PowerOff,
+                EventId.OxygenLeak,
+                EventId.EngineBreak,
+                EventId.MicDestroy,
+                EventId.HullBreach,
+                EventId.SteamLeak,
+                EventId.OxygenGeneratorFailure,
+                EventId.GravityGeneratorFailure,
+                EventId.EnemyScout,
+                EventId.MeteorAttack,
+                EventId.EmpAttack
+            };
+            var entries = new SerializedObject(view).FindProperty(
+                "lifecycleIconEntries");
+            Require(
+                entries != null && entries.arraySize == expected.Count,
+                $"content_gate_hud_icon_count_invalid actual={entries?.arraySize ?? 0} expected={expected.Count}",
+                errors);
+            if (entries == null)
+            {
+                return;
+            }
+
+            var actual = new HashSet<EventId>();
+            for (var index = 0; index < entries.arraySize; index++)
+            {
+                var entry = entries.GetArrayElementAtIndex(index);
+                var eventId = (EventId)entry.FindPropertyRelative("eventId").intValue;
+                var root = entry.FindPropertyRelative("root").objectReferenceValue as GameObject;
+                Require(actual.Add(eventId),
+                    $"content_gate_hud_icon_duplicate event={eventId}", errors);
+                Require(
+                    root != null && root.GetComponent<Image>()?.sprite != null,
+                    $"content_gate_hud_icon_sprite_missing event={eventId}",
+                    errors);
+            }
+
+            Require(
+                actual.SetEquals(expected),
+                $"content_gate_hud_icon_mapping_invalid missing={string.Join(",", expected.Except(actual))} extra={string.Join(",", actual.Except(expected))}",
+                errors);
+        }
+
+        private static void ValidateTabMapIconContract(
+            ICollection<string> errors)
+        {
+            var resolver = typeof(PHSHandheldShipMapController).GetMethod(
+                "ResolveLifecycleEventIcon",
+                BindingFlags.NonPublic | BindingFlags.Static);
+            Require(resolver != null, "content_gate_tab_icon_resolver_missing", errors);
+            if (resolver != null)
+            {
+                foreach (EventId eventId in Enum.GetValues(typeof(EventId)))
+                {
+                    var iconId = (ShipMapIconId)resolver.Invoke(null, new object[] { eventId });
+                    Require(
+                        iconId != ShipMapIconId.None,
+                        $"content_gate_tab_event_icon_missing event={eventId}",
+                        errors);
+                }
+            }
+
+            var player = AssetDatabase.LoadAssetAtPath<GameObject>(PlayerPrefabPath);
+            var views = player == null
+                ? Array.Empty<PHSHandheldShipMapView>()
+                : player.GetComponentsInChildren<PHSHandheldShipMapView>(true);
+            Require(views.Length == 2,
+                $"content_gate_tab_view_count_invalid actual={views.Length}", errors);
+            var iconFields = new[]
+            {
+                "fireIcon", "powerFailureIcon", "deviceFailureIcon",
+                "hullBreachIcon", "steamLeakIcon", "oxygenFailureIcon",
+                "gravityFailureIcon", "enemySpawnIcon", "patrolZoneIcon",
+                "meteorZoneIcon", "nebulaZoneIcon", "planetZoneIcon",
+                "powerSyncIcon", "cannonIcon", "wireFixIcon", "warpIcon",
+                "batteryIcon", "wrenchIcon", "fireExtinguisherIcon", "playerIcon"
+            };
+            foreach (var view in views)
+            {
+                var serializedView = new SerializedObject(view);
+                foreach (var field in iconFields)
+                {
+                    Require(
+                        serializedView.FindProperty(field)?.objectReferenceValue != null,
+                        $"content_gate_tab_sprite_missing view={view.name} field={field}",
+                        errors);
+                }
+            }
+        }
+
         private static void ValidateUtilityItemCatalog(ICollection<string> errors)
         {
             var catalog = AssetDatabase.LoadAssetAtPath<UtilityItemCatalogSO>(UtilityItemCatalogPath);
@@ -4353,12 +4473,12 @@ namespace LastJumpCrew.ParkHanSol.Editor
             }
 
             Require(
-                catalog.Items.Count == 18,
+                catalog.Items.Count == 21,
                 $"utility_item_catalog_count_invalid actual={catalog.Items.Count}",
                 errors);
 
             var itemIds = new HashSet<string>(StringComparer.Ordinal);
-            var networkPrefabHashes = new HashSet<long>();
+            var networkPrefabHashes = new Dictionary<long, string>();
             foreach (var itemData in catalog.Items)
             {
                 Require(itemData != null, "utility_item_catalog_entry_null", errors);
@@ -4447,11 +4567,47 @@ namespace LastJumpCrew.ParkHanSol.Editor
                     hash != 0,
                     $"utility_dropped_network_hash_missing item={itemId} path={droppedPath}",
                     errors);
-                Require(
-                    hash == 0 || networkPrefabHashes.Add(hash),
-                    $"utility_dropped_network_hash_duplicate item={itemId} hash={hash} path={droppedPath}",
+                ValidateNetworkPrefabHashIdentity(
+                    hash,
+                    droppedPath,
+                    networkPrefabHashes,
+                    $"utility_dropped_network_hash_duplicate item={itemId}",
                     errors);
             }
+        }
+
+        private static void ValidateNetworkPrefabHashIdentity(
+            long hash,
+            string path,
+            IDictionary<long, string> hashToPrefabGuid,
+            string errorPrefix,
+            ICollection<string> errors)
+        {
+            if (hash == 0)
+            {
+                return;
+            }
+
+            var prefabGuid = AssetDatabase.AssetPathToGUID(path);
+            Require(
+                !string.IsNullOrWhiteSpace(prefabGuid),
+                $"{errorPrefix}_guid_missing path={path}",
+                errors);
+            if (string.IsNullOrWhiteSpace(prefabGuid))
+            {
+                return;
+            }
+
+            if (hashToPrefabGuid.TryGetValue(hash, out var existingGuid))
+            {
+                Require(
+                    string.Equals(existingGuid, prefabGuid, StringComparison.Ordinal),
+                    $"{errorPrefix} hash={hash} path={path} existing_guid={existingGuid} guid={prefabGuid}",
+                    errors);
+                return;
+            }
+
+            hashToPrefabGuid.Add(hash, prefabGuid);
         }
 
         private static void ValidateHeldNetworkObjectAllowance(
@@ -4773,7 +4929,11 @@ namespace LastJumpCrew.ParkHanSol.Editor
                 FindObjectsSortMode.None);
             Require(portals.Length == expectedPortalCount, $"{label}_count_invalid actual={portals.Length}", errors);
 
-            var portalRoot = GameObject.Find(expectedObjectName);
+            var portalRoot = UnityEngine.Object.FindObjectsByType<Transform>(
+                    FindObjectsInactive.Include,
+                    FindObjectsSortMode.None)
+                .FirstOrDefault(candidate => candidate.name == expectedObjectName)
+                ?.gameObject;
             var portal = portals.FirstOrDefault(candidate =>
                 candidate.name == expectedObjectName ||
                 portalRoot != null && candidate.transform.IsChildOf(portalRoot.transform));
@@ -4783,7 +4943,17 @@ namespace LastJumpCrew.ParkHanSol.Editor
                 return;
             }
 
-            Require(portal.isActiveAndEnabled, $"{label}_inactive", errors);
+            if (expectedTransitionMode == ShopSceneTransitionMode.RequireShopPhase)
+            {
+                Require(
+                    portalRoot != null && !portalRoot.activeSelf,
+                    $"{label}_must_start_inactive",
+                    errors);
+            }
+            else
+            {
+                Require(portal.isActiveAndEnabled, $"{label}_inactive", errors);
+            }
             Require(portal.GetComponent<Collider>() != null, $"{label}_collider_missing", errors);
 
             var serializedPortal = new SerializedObject(portal);

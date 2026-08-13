@@ -349,6 +349,12 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
 
             if (synchronizedPhase.Value == NetworkRunPhase.WarpSafe)
             {
+                if (gameState == null || gameState.Phase != GamePhase.ZoneSelect)
+                {
+                    reason = "zone_select_required";
+                    return false;
+                }
+
                 if (SelectedNextMapId <= 0)
                 {
                     reason = "next_map_not_selected";
@@ -553,7 +559,8 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
                     break;
                 case GamePhase.GameClear:
                     TryStopStageClockServer("game_clear");
-                    TickFinalShop();
+                    synchronizedFinalShopPending.Value = false;
+                    SetPhase(NetworkRunPhase.Clear);
                     break;
                 case GamePhase.GameOver:
                     TryStopStageClockServer("game_over");
@@ -635,7 +642,6 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
 
             var nextZoneId = pendingNextMapId;
             gameCommands.SelectZone(nextZoneId);
-            gameCommands.SetStageTimerPaused(true);
             if (gameState.Phase != GamePhase.Play || gameState.SelectedZoneId != nextZoneId)
             {
                 Debug.LogError(
@@ -730,70 +736,117 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
                     return;
                 }
 
-                SetPhase(NetworkRunPhase.WarpSafe);
                 gameCommands.SetStageTimerPaused(true);
                 NetworkEventCoordinator.Instance?.TryStopSchedulerServer();
-                Debug.Log("PHS_RUN_FLOW_WARP_SAFE_ENTERED", this);
+                if (!TryTerminateIncidentsAtSafeArrival())
+                {
+                    return;
+                }
+
+                if (!TryCompleteZoneAtSafeArrival())
+                {
+                    return;
+                }
+
+                Debug.Log(
+                    $"PHS_RUN_FLOW_WARP_SAFE_ENTERED cleared={gameState.ClearedZoneCount} phase={gameState.Phase}",
+                    this);
                 return;
             }
 
             departingWarpSafeZone = false;
             KillPlayersLeftInDebrisZone();
-            gameCommands.RequestJump();
             scheduledWarpReviveTime = Time.time + 0.5f;
             safePlayerIds.Clear();
             debrisPlayerIds.Clear();
             synchronizedSafePlayers.Value = 0;
             chargeElapsed = 0f;
             synchronizedWarpCharge.Value = 0f;
-            MirrorGameState();
+            TryStopStageClockServer("safe_zone_departure");
+            SetPhase(NetworkRunPhase.WarpArrival);
+            RequestMapRefresh();
 
-            if (gameState.Phase == GamePhase.ZoneSelect
-                || gameState.Phase == GamePhase.Shop
-                || gameState.Phase == GamePhase.GameClear)
+            Debug.Log($"PHS_RUN_FLOW_WARP_COMPLETED cleared={gameState.ClearedZoneCount} phase={gameState.Phase}");
+        }
+
+        private bool TryTerminateIncidentsAtSafeArrival()
+        {
+            if (!IsServer)
             {
-                TryAwardMapClearRewardServer();
+                Debug.LogError(
+                    "PHS_RUN_FLOW_SAFE_INCIDENT_RESET_FAILED reason=server_required",
+                    this);
+                return false;
             }
 
+            var eventCoordinator = NetworkEventCoordinator.Instance;
+            var accidentCoordinator = PHSNetworkShipAccidentCoordinator.Instance;
+            if (eventCoordinator == null)
+            {
+                Debug.LogError(
+                    $"PHS_RUN_FLOW_SAFE_INCIDENT_RESET_FAILED reason=coordinator_missing " +
+                    $"event={eventCoordinator != null} accident={accidentCoordinator != null}",
+                    this);
+                return false;
+            }
+
+            var eventsTerminated = eventCoordinator.TryTerminateAllServer();
+            var accidentReason = "not_present";
+            var accidentsTerminated = accidentCoordinator == null
+                || accidentCoordinator.TryTerminateAllServer(
+                    "safe_zone_arrival",
+                    out accidentReason);
+            if (!eventsTerminated || !accidentsTerminated)
+            {
+                Debug.LogError(
+                    $"PHS_RUN_FLOW_SAFE_INCIDENT_RESET_FAILED reason=termination_rejected " +
+                    $"event={eventsTerminated} accident={accidentsTerminated} " +
+                    $"detail={accidentReason ?? "none"}",
+                    this);
+                return false;
+            }
+
+            Debug.Log("PHS_RUN_FLOW_SAFE_INCIDENT_RESET_OK cause=safe_zone_arrival", this);
+            return true;
+        }
+
+        private bool TryCompleteZoneAtSafeArrival()
+        {
+            gameCommands.RequestJump();
+            MirrorGameState();
+            if (gameState.Phase == GamePhase.Play)
+            {
+                Debug.LogError("PHS_RUN_FLOW_SAFE_ARRIVAL_FAILED reason=jump_rejected", this);
+                return false;
+            }
+
+            if (gameState.Phase == GamePhase.GameOver)
+            {
+                SetPhase(NetworkRunPhase.GameOver);
+                return false;
+            }
+
+            TryAwardMapClearRewardServer();
             switch (gameState.Phase)
             {
                 case GamePhase.ZoneSelect:
-                    TryStopStageClockServer("jump_completed");
-                    SetPhase(NetworkRunPhase.WarpArrival);
-                    RequestMapRefresh();
-                    break;
+                    SetPhase(NetworkRunPhase.WarpSafe);
+                    return true;
                 case GamePhase.Shop:
-                    TryStopStageClockServer("jump_completed_shop");
                     SetPhase(NetworkRunPhase.Shop);
-                    break;
+                    Debug.Log($"PHS_RUN_FLOW_SHOP_ARRIVAL zones={gameState.ClearedZoneCount}", this);
+                    return true;
                 case GamePhase.GameClear:
-                    TryStopStageClockServer("jump_completed_clear");
-                    SetPhase(NetworkRunPhase.FinalShop);
-                    break;
-                case GamePhase.GameOver:
-                    TryStopStageClockServer("jump_completed_game_over");
-                    SetPhase(NetworkRunPhase.GameOver);
-                    break;
+                    synchronizedFinalShopPending.Value = false;
+                    SetPhase(NetworkRunPhase.Clear);
+                    Debug.Log($"PHS_RUN_FLOW_CLEAR zones={gameState.ClearedZoneCount} arrival=true", this);
+                    return true;
                 default:
-                    if (stageClock.State == NetworkRunStageClockState.Paused
-                        && !stageClock.TryResumeServer(out var clockReason))
-                    {
-                        Debug.LogError(
-                            $"PHS_RUN_FLOW_WARP_FAILED reason=stage_clock_resume_failed detail={clockReason}",
-                            this);
-                        gameCommands.ReportGameOver(GameOverReason.TimeOver);
-                        SetPhase(NetworkRunPhase.GameOver);
-                        break;
-                    }
-
-                    SetPhase(NetworkRunPhase.WarpReady);
                     Debug.LogError(
-                        $"PHS_RUN_FLOW_WARP_FAILED reason=jump_rejected phase={gameState.Phase}",
+                        $"PHS_RUN_FLOW_SAFE_ARRIVAL_FAILED reason=phase_invalid phase={gameState.Phase}",
                         this);
-                    break;
+                    return false;
             }
-
-            Debug.Log($"PHS_RUN_FLOW_WARP_COMPLETED cleared={gameState.ClearedZoneCount} phase={gameState.Phase}");
         }
 
         private void TryAwardMapClearRewardServer()
@@ -918,21 +971,9 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
                 return 0f;
             }
 
-            var incidentLedger = NetworkRunSessionRoot.Instance?.Incidents;
-            if (incidentLedger == null)
-            {
-                return 1f;
-            }
-
-            var incidentSnapshot = incidentLedger.Snapshot;
-            if (incidentSnapshot.MapId != ActiveMapId
-                || incidentSnapshot.StageSequence == 0U
-                || incidentSnapshot.StageSequence != stageClock.StageSequence)
-            {
-                return 1f;
-            }
-
-            return Mathf.Clamp01(incidentSnapshot.ActiveWarpChargeMultiplier);
+            // Team events do not own a warp-charge multiplier contract. Legacy PHS
+            // incident modifiers are intentionally not consulted here.
+            return 1f;
         }
 
         private void TickScheduledWarpExecution()
@@ -1119,6 +1160,15 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
                     TryBeginGameOverSequenceServer();
                     SetPhase(NetworkRunPhase.GameOver);
                 }
+                else if (gameState != null
+                    && gameState.Phase == GamePhase.ZoneSelect
+                    && synchronizedPhase.Value == NetworkRunPhase.Shop)
+                {
+                    SetPhase(NetworkRunPhase.WarpSafe);
+                    Debug.Log(
+                        $"PHS_RUN_FLOW_SHOP_COMPLETED zones={gameState.ClearedZoneCount}",
+                        this);
+                }
             }
         }
 
@@ -1230,11 +1280,9 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
             }
 
             synchronizedClearedZones.Value = gameState.ClearedZoneCount;
-            var completedShopCycles = gameState.ClearedZoneCount / GameLoopState.SHOP_INTERVAL;
-            if (finalShopCompleted && gameState.Phase == GamePhase.GameClear)
-            {
-                completedShopCycles++;
-            }
+            var completedShopCycles = Mathf.Min(
+                gameState.ClearedZoneCount,
+                GameLoopState.TOTAL_ZONES - 1) / GameLoopState.SHOP_INTERVAL;
 
             synchronizedShopCycles.Value = Mathf.Max(0, completedShopCycles);
         }

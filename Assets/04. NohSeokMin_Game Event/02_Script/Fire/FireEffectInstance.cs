@@ -22,6 +22,9 @@ namespace SM
 
         [SerializeField] private AudioSource audioSource;
 
+        [Header("Repair Bounds")]
+        [SerializeField] private Collider repairBounds;
+
         private float _damagePerSecond;
         private float _maxRepairProgress;
         private float _repairProgress;
@@ -34,12 +37,19 @@ namespace SM
         public EventEffectKind EffectKind => EventEffectKind.Fire;
         public Vector3 RepairPosition => transform.position;
         public bool IsRepairComplete => IsRepaired;
+        public bool IsAuthoritativePresentationVisible { get; private set; } = true;
         public event Action<FireEffectInstance> OnRemove;
 
         private readonly HashSet<IDamageable> _targetsInRange = new HashSet<IDamageable>();
 
+        private void Awake()
+        {
+            ValidateRepairBounds();
+        }
+
         public void Activate(float damagePerSecond, float maxRepairProgress)
         {
+            SetAuthoritativePresentationVisible(true);
             _damagePerSecond = damagePerSecond;
             _maxRepairProgress = maxRepairProgress;
             _repairProgress = 0f;
@@ -60,6 +70,36 @@ namespace SM
             if (audioSource != null)
             {
                 audioSource.Stop();
+            }
+        }
+
+        public void SetAuthoritativePresentationVisible(bool visible)
+        {
+            IsAuthoritativePresentationVisible = visible;
+            foreach (var renderer in GetComponentsInChildren<Renderer>(true))
+            {
+                renderer.enabled = visible;
+            }
+
+            foreach (var particle in GetComponentsInChildren<ParticleSystem>(true))
+            {
+                if (visible)
+                {
+                    particle.Play(true);
+                }
+                else
+                {
+                    particle.Stop(true, ParticleSystemStopBehavior.StopEmittingAndClear);
+                }
+            }
+
+            foreach (var source in GetComponentsInChildren<AudioSource>(true))
+            {
+                source.enabled = visible;
+                if (!visible)
+                {
+                    source.Stop();
+                }
             }
         }
 
@@ -214,6 +254,20 @@ namespace SM
             return true;
         }
 
+        public bool TryGetRepairPoint(
+            Vector3 actorPosition,
+            out Vector3 repairPoint)
+        {
+            if (!ValidateRepairBounds())
+            {
+                repairPoint = default;
+                return false;
+            }
+
+            repairPoint = repairBounds.ClosestPoint(actorPosition);
+            return true;
+        }
+
         // _____ IRepairable _____
         public bool CanRepair => !IsRepaired;
 
@@ -226,6 +280,20 @@ namespace SM
             if (!CanRepair) return false;
             ApplyRepair(amount); // 기존 ApplyRepair(float) 재사용
             return true;
+        }
+
+        private bool ValidateRepairBounds()
+        {
+            if (repairBounds != null && repairBounds.isTrigger)
+            {
+                return true;
+            }
+
+            Debug.LogError(
+                $"PHS_EVENT_REPAIR_BOUNDS_INVALID effect=Fire target={name} " +
+                $"assigned={repairBounds != null} trigger={repairBounds != null && repairBounds.isTrigger}",
+                this);
+            return false;
         }
     }
 }

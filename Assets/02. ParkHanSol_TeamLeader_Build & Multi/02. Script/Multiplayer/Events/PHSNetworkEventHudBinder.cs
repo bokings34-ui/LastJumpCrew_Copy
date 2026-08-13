@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Text;
 using SM;
+using LastJumpCrew.ParkHanSol.Multiplayer;
 using LastJumpCrew.ParkHanSol.Multiplayer.Maps;
 using UnityEngine;
 using UnityEngine.InputSystem;
@@ -185,9 +186,14 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Events
             }
         }
 
-        private void HandleCurrentProfileChanged(PHSMapProfileSO profile)
+        private void HandleCurrentProfileChanged(PHSMapProfileSO _)
         {
-            if (profile != null)
+            var runFlow = NetworkRunFlowCoordinator.Instance;
+            if (runFlow != null
+                && boundMapRuntimeContext != null
+                && boundMapRuntimeContext.TryResolveGameplayProfile(
+                    runFlow.ActiveMapId,
+                    out var profile))
             {
                 eventHudView.ShowCurrentMap(
                     profile.DisplayName,
@@ -269,14 +275,14 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Events
 
         private string BuildAlertText()
         {
-            if (hasTerminalSnapshot)
+            // Do not collapse concurrent incidents to the first sorted snapshot.
+            // Keep the complete list compact so the HUD remains inside its authored panel.
+            if (activeSnapshots.Count > 0)
             {
-                return FormatAlert(terminalSnapshot);
+                return string.Join(" · ", activeSnapshots.Select(FormatAlert));
             }
 
-            return activeSnapshots.Count == 0
-                ? string.Empty
-                : FormatAlert(activeSnapshots[0]);
+            return hasTerminalSnapshot ? FormatAlert(terminalSnapshot) : string.Empty;
         }
 
         private static string FormatAlert(NetworkEventLifecycleSnapshot snapshot)
@@ -294,6 +300,10 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Events
                 EventId.OxygenLeak => "산소 누출",
                 EventId.EngineBreak => "엔진 고장",
                 EventId.MicDestroy => "통신 장치 파손",
+                EventId.HullBreach => "선체 파손",
+                EventId.SteamLeak => "증기 누출",
+                EventId.OxygenGeneratorFailure => "산소 장치 고장",
+                EventId.GravityGeneratorFailure => "중력 장치 고장",
                 EventId.EnemyScout => "적 정찰",
                 EventId.MeteorAttack => "운석 충돌",
                 EventId.EmpAttack => "EMP 공격",

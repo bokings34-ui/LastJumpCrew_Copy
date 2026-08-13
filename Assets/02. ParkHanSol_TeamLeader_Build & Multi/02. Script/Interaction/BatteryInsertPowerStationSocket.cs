@@ -1,7 +1,7 @@
 using System.Collections.Generic;
 using LastJumpCrew.ParkHanSol.Multiplayer;
 using LastJumpCrew.ParkHanSol.Multiplayer.Audio;
-using LastJumpCrew.ParkHanSol.Multiplayer.ShipAccidents;
+using LastJumpCrew.ParkHanSol.Multiplayer.Events;
 using LastJumpCrew.ParkHanSol.Items;
 using Unity.Collections;
 using Unity.Netcode;
@@ -306,13 +306,14 @@ namespace LastJumpCrew.ParkHanSol.Interaction
                 return false;
             }
 
-            var shipAccidentCoordinator = PHSNetworkShipAccidentCoordinator.Instance;
-            var powerFailureInstanceId = 0U;
-            var hasActivePowerFailureAccident = shipAccidentCoordinator != null
-                && shipAccidentCoordinator.TryGetSingleActiveAccidentServer(
-                    PHSShipAccidentId.PowerFailure,
-                    out powerFailureInstanceId,
-                    out _);
+            var powerOffEvent = SM.EventManager.Instance
+                ?.GetActiveEvent(SM.EventId.PowerOff) as SM.PowerOffEvent;
+            if (powerOffEvent == null
+                || !powerOffEvent.IsPowerOffActive)
+            {
+                reason = "canonical_power_off_event_missing";
+                return false;
+            }
 
             var requestKey = $"{senderClientId}:{expectedRevision}";
             if (!completedRequests.Add(requestKey))
@@ -338,22 +339,8 @@ namespace LastJumpCrew.ParkHanSol.Interaction
                 return false;
             }
 
-            if (hasActivePowerFailureAccident
-                && !shipAccidentCoordinator.TryResolveAccidentServer(
-                    powerFailureInstanceId,
-                    "battery_insert",
-                    out var accidentReason))
-            {
-                reason = $"accident_resolve_failed:{accidentReason}";
-                Debug.LogError(
-                    $"PHS_BATTERY_TRANSACTION_FAILED reason={reason} clientId={senderClientId} revision={expectedRevision}",
-                    this);
-                return false;
-            }
-
-            var nohPowerOffEvent = SM.EventManager.Instance
-                .GetActiveEvent(SM.EventId.PowerOff) as SM.PowerOffEvent;
-            nohPowerOffEvent?.NotifyPowerRestored();
+            powerOffEvent.NotifyPowerRestored();
+            RestorePowerStationTargets();
 
             if (!TryResolveBatteryFamilyItem(
                     client.PlayerObject,
@@ -376,9 +363,19 @@ namespace LastJumpCrew.ParkHanSol.Interaction
                     expectedRevision);
 
             Debug.Log(
-                $"PHS_BATTERY_INSTALLED target={name} clientId={senderClientId} item={itemId} amount={powerRestoreProfile.Amount} durabilityCost={powerRestoreProfile.DurabilityCost} accidentInstance={powerFailureInstanceId} shipRevision={shipState.Revision}",
+                $"PHS_BATTERY_INSTALLED target={name} clientId={senderClientId} item={itemId} amount={powerRestoreProfile.Amount} durabilityCost={powerRestoreProfile.DurabilityCost} event={SM.EventId.PowerOff} shipRevision={shipState.Revision}",
                 this);
             return true;
+        }
+
+        private static void RestorePowerStationTargets()
+        {
+            foreach (var target in FindObjectsByType<EnemyDeviceTarget>(
+                         FindObjectsInactive.Exclude,
+                         FindObjectsSortMode.None))
+            {
+                target.TryRestoreFromBatteryServer();
+            }
         }
 
         private static bool HasBatteryFamilyPowerProfile(

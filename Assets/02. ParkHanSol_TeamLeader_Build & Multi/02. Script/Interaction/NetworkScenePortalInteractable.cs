@@ -1,5 +1,4 @@
 using LastJumpCrew.ParkHanSol.Multiplayer;
-using LastJumpCrew.ParkHanSol.Multiplayer.Maps;
 using LastJumpCrew.ParkHanSol.Shop;
 using UnityEngine;
 
@@ -52,10 +51,7 @@ namespace LastJumpCrew.ParkHanSol.Interaction
 
         private ShopSceneTransitionMode ResolveTransitionMode()
         {
-            var mapRuntime = FindAnyObjectByType<PHSMapRuntimeContext>(FindObjectsInactive.Include);
-            return mapRuntime != null && mapRuntime.KeepShopPortalAlwaysActive
-                ? ShopSceneTransitionMode.None
-                : shopTransitionMode;
+            return shopTransitionMode;
         }
     }
 }

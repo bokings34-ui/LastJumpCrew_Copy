@@ -94,7 +94,10 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Maps
                 return;
             }
 
+            var wasEnabled = mapCamera.enabled;
+            mapCamera.enabled = true;
             mapCamera.Render();
+            mapCamera.enabled = wasEnabled;
             nextRenderTime = Time.unscaledTime + renderInterval;
         }
 

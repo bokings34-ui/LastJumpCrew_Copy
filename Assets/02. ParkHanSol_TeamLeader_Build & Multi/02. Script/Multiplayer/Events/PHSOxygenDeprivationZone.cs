@@ -27,6 +27,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Events
         [SerializeField, Min(1)] private int initialDamage = 4;
         [SerializeField, Min(0)] private int damageIncreasePerTick = 2;
         [SerializeField, Min(1)] private int maximumDamage = 12;
+        [SerializeField, Min(0.1f)] private float damageRadius = 2.5f;
         [SerializeField] private LayerMask playerLayers = 1;
 
         private readonly Collider[] overlapBuffer = new Collider[64];
@@ -165,6 +166,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Events
             if (damageIntervalSeconds <= 0f
                 || initialDamage <= 0
                 || maximumDamage < initialDamage
+                || damageRadius <= 0f
                 || playerLayers.value == 0)
             {
                 reason = "damage_contract_invalid";
@@ -196,20 +198,10 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Events
 
         private void ApplySuffocationDamage()
         {
-            var zoneTransform = zoneBounds.transform;
-            var lossyScale = zoneTransform.lossyScale;
-            var halfExtents = Vector3.Scale(
-                zoneBounds.size * 0.5f,
-                new Vector3(
-                    Mathf.Abs(lossyScale.x),
-                    Mathf.Abs(lossyScale.y),
-                    Mathf.Abs(lossyScale.z)));
-            var center = zoneTransform.TransformPoint(zoneBounds.center);
-            var hitCount = Physics.OverlapBoxNonAlloc(
-                center,
-                halfExtents,
+            var hitCount = Physics.OverlapSphereNonAlloc(
+                RepairPosition,
+                damageRadius,
                 overlapBuffer,
-                zoneTransform.rotation,
                 playerLayers,
                 QueryTriggerInteraction.Collide);
             currentTargets.Clear();
@@ -307,15 +299,8 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Events
                 return;
             }
 
-            var previousMatrix = Gizmos.matrix;
-            var zoneTransform = zoneBounds.transform;
-            Gizmos.matrix = Matrix4x4.TRS(
-                zoneTransform.position,
-                zoneTransform.rotation,
-                zoneTransform.lossyScale);
             Gizmos.color = new Color(0.2f, 0.75f, 1f, 0.8f);
-            Gizmos.DrawWireCube(zoneBounds.center, zoneBounds.size);
-            Gizmos.matrix = previousMatrix;
+            Gizmos.DrawWireSphere(RepairPosition, damageRadius);
         }
     }
 }

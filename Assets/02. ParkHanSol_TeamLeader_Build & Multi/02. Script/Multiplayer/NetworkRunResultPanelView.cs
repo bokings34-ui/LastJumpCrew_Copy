@@ -26,7 +26,9 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
 
         public void SetVisible(bool visible)
         {
-            gameObject.SetActive(visible);
+            gameObject.SetActive(true);
+            GetComponent<Canvas>().enabled = visible;
+            GetComponent<GraphicRaycaster>().enabled = visible;
         }
 
         public void SetResult(

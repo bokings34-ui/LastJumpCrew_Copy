@@ -5,6 +5,9 @@ namespace LastJumpCrew.ParkHanSol.Interaction
 {
     public sealed class ExteriorTestTeleportInteractable : MonoBehaviour, IInteractable
     {
+        public const string DebrisEntryPortalName = "PHS_ExteriorDoorAutoPortal";
+        public const string DebrisReturnPortalName = "PHS_ExteriorDebrisReturnPortal";
+
         [SerializeField] private string destinationId;
         [SerializeField] private NetworkPlayerSector destinationSector = NetworkPlayerSector.Transition;
         [SerializeField] private string interactionPrompt = "Move To Exterior Test Zone";
@@ -13,6 +16,7 @@ namespace LastJumpCrew.ParkHanSol.Interaction
         public string InteractionPrompt => interactionPrompt;
         public Transform Destination => FindDestination()?.transform;
         public NetworkPlayerSector DestinationSector => destinationSector;
+        public float ServerInteractionDistance => serverInteractionDistance;
 
         public bool CanInteract(IItemHolder itemHolder)
         {

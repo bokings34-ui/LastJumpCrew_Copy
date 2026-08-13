@@ -29,16 +29,6 @@ namespace LastJumpCrew.ParkHanSol.Items
         [SerializeField, Min(0.05f)] private float targetLifetimeSeconds = 0.75f;
         [SerializeField, Min(1f)] private float maximumFeedbackDistance = 8f;
 
-        [Header("Item Feedback Colors")]
-        [SerializeField] private Color genericRangeColor = new(0.2f, 0.9f, 1f, 0.18f);
-        [SerializeField] private Color genericTargetColor = new(1f, 0.2f, 0.65f, 0.95f);
-        [SerializeField] private Color wrenchRangeColor = new(1f, 0.58f, 0.08f, 0.22f);
-        [SerializeField] private Color wrenchTargetColor = new(1f, 0.78f, 0.12f, 1f);
-        [SerializeField] private Color extinguisherRangeColor = new(0.82f, 0.96f, 1f, 0.2f);
-        [SerializeField] private Color extinguisherTargetColor = new(0.9f, 1f, 1f, 1f);
-        [SerializeField] private Color batteryRangeColor = new(0.1f, 0.8f, 1f, 0.22f);
-        [SerializeField] private Color batteryTargetColor = new(0.2f, 0.95f, 1f, 1f);
-
         private void Awake()
         {
             if (sphereRangePrefab == null || castRangePrefab == null || targetFeedbackPrefab == null)
@@ -335,24 +325,12 @@ namespace LastJumpCrew.ParkHanSol.Items
 
         private Color ResolveRangeColor(PHSItemUseFeedbackKind kind)
         {
-            return kind switch
-            {
-                PHSItemUseFeedbackKind.Wrench => wrenchRangeColor,
-                PHSItemUseFeedbackKind.FireExtinguisher => extinguisherRangeColor,
-                PHSItemUseFeedbackKind.Battery => batteryRangeColor,
-                _ => genericRangeColor
-            };
+            return TeamRepairToolVisualPalette.GetFeedbackRangeColor(kind);
         }
 
         private Color ResolveTargetColor(PHSItemUseFeedbackKind kind)
         {
-            return kind switch
-            {
-                PHSItemUseFeedbackKind.Wrench => wrenchTargetColor,
-                PHSItemUseFeedbackKind.FireExtinguisher => extinguisherTargetColor,
-                PHSItemUseFeedbackKind.Battery => batteryTargetColor,
-                _ => genericTargetColor
-            };
+            return TeamRepairToolVisualPalette.GetFeedbackTargetColor(kind);
         }
 
         private static PHSItemUseFeedbackKind ResolveFeedbackKind(

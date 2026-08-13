@@ -10,8 +10,8 @@ using UnityEngine.InputSystem;
 namespace LastJumpCrew.ParkHanSol.Multiplayer
 {
 
-    // 플레이어 공격 요청과 서버 판정을 담당한다.
-    // 실제 OverlapSphere, 데미지, 넉백 판정은 서버가 수행한다.
+    // ?�레?�어 공격 ?�청�??�버 ?�정???�당?�다.
+    // ?�제 OverlapSphere, ?��?지, ?�백 ?�정?� ?�버가 ?�행?�다.
 
     [DisallowMultipleComponent]
     [RequireComponent(typeof(NetworkObject))]
@@ -29,27 +29,27 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
 
         [Header("Fire Extinguisher Spray")]
         [SerializeField]
-        private Transform extinguisherSprayOrigin; //분사 시작위치
+        private Transform extinguisherSprayOrigin; //분사 ?�작?�치
 
-        private float nextExtinguisherDamageTime; //서버가 관리하는 다음 분사판정 가능 시간
+        private float nextExtinguisherDamageTime; //?�버가 관리하???�음 분사?�정 가???�간
 
-        [Header("Battery Throw")] //배터리 필드
+        [Header("Battery Throw")] //배터�??�드
         [SerializeField] private Transform batteryThrowOrigin;
 
         private float nextBatteryThrowTime;
 
-        [Header("General Item Throw")] //일반 투척
+        [Header("General Item Throw")] //?�반 ?�척
 
         [SerializeField]
-        private Transform generalThrowOrigin; //일반 투척 시작위치
+        private Transform generalThrowOrigin; //?�반 ?�척 ?�작?�치
         [SerializeField, Min(0f)]
-        private float minimumThrowForce = 5f; //투척 최소 속도
+        private float minimumThrowForce = 5f; //?�척 최소 ?�도
         [SerializeField, Min(0f)]
-        private float maximumThrowForce = 13f;//완전 충전 투척 속도
+        private float maximumThrowForce = 13f;//?�전 충전 ?�척 ?�도
         [SerializeField, Min(0.1f)]
-        private float fullChargeTime = 2.5f; //최대 충전 시간
+        private float fullChargeTime = 2.5f; //최�? 충전 ?�간
         [SerializeField, Min(0f)]
-        private float generalThrowCooldown = 0.3f; //일단 투척 쿨타임
+        private float generalThrowCooldown = 0.3f; //?�단 ?�척 쿨�???
 
         [Header("Broken Item Ejection")]
         [SerializeField, Min(0f)] private float brokenItemThrowForce = 2.5f;
@@ -206,7 +206,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
             RequestWrenchAttackServerRpc();
         }
         [ServerRpc]
-        private void RequestWrenchAttackServerRpc() //서버에서 실제 렌치 공격 판정 실행
+        private void RequestWrenchAttackServerRpc() //?�버?�서 ?�제 ?�치 공격 ?�정 ?�행
         {
             PerformWrenchAttack();
         }
@@ -216,7 +216,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
             {
                 return;
             }
-            /// 변경 : 고정된 ItemId 검사 대시 현재 아이템 UseType 이 Melee인지 검사하고 SO 데이터를 가져온다.
+            /// 변�?: 고정??ItemId 검???�???�재 ?�이??UseType ??Melee?��? 검?�하�?SO ?�이?��? 가?�온??
             if(!TryGetHeldItemData(ItemUseType.Melee, out var itemData))
             {
                 Debug.LogWarning($"PHS_WRENCH_ATTACK_FAILED " + $"reason=item_data_or_use_type_invalid " + $"player={name}");
@@ -241,7 +241,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
                 return;
             }
             nextWrenchAttackTime = Time.time + itemData.Cooldown;
-            //변경 오버랩 스피어 범위를 SO 데이터 값을 읽게 수정
+            //변�??�버???�피??범위�?SO ?�이??값을 ?�게 ?�정
             
 
             bool successfulUse = false;
@@ -261,8 +261,8 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
                     continue;
                 }
 
-                // 맞은 Collider가 속한 실제 대상을 찾는다.
-                // 수리 대상, 플레이어, 몬스터 등을 모두 찾는다.
+                // 맞�? Collider가 ?�한 ?�제 ?�?�을 찾는??
+                // ?�리 ?�?? ?�레?�어, 몬스???�을 모두 찾는??
                 var targetObject = CombatHitResolver.ResolveTargetObject(hit.gameObject);
                 
 
@@ -271,14 +271,14 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
                     continue;
                 }
 
-                // 자기 자신은 공격하거나 수리하지 않는다.
+                // ?�기 ?�신?� 공격?�거???�리?��? ?�는??
                 if (CombatHitResolver.IsSameTarget(targetObject, gameObject))
                  
                 {
                     continue;
                 }
 
-                // Collider가 여러 개 있어도 한 번만 처리한다.
+                // Collider가 ?�러 �??�어????번만 처리?�다.
                 if (!processedTargets.Add(targetObject))
                 {
                     continue;
@@ -315,7 +315,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
                     continue;
                 }
 
-                // 상호작용 대상이 아니라면 전투 대상을 검사한다.
+                // ?�호?�용 ?�?�이 ?�니?�면 ?�투 ?�?�을 검?�한??
                 var damageable = targetObject.GetComponentInParent<IDamageable>();
                
 
@@ -330,7 +330,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
                     continue;
                 }
 
-                // 렌치 공격 지점에서 대상 방향으로 넉백한다.
+                // ?�치 공격 지?�에???�??방향?�로 ?�백?�다.
                 var knockbackDirection = targetObject.transform.position - wrenchAttackPoint.position;
 
 
@@ -362,7 +362,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
                 $"PHS_WRENCH_ATTACK player={name} candidates={processedTargets.Count} acceptedTargets={itemFeedbackTargetPositions.Count}",
                 this);
         }
-        public void RequestExtinguisherSpray() //자기 플레이어만 소화기 사용 요청을 보낼 수 있음
+        public void RequestExtinguisherSpray() //?�기 ?�레?�어�??�화�??�용 ?�청??보낼 ???�음
         {
             if (!IsSpawned)
             {
@@ -378,7 +378,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
             }
             RequestExtinguisherSprayServerRpc();
         }
-        public void RequestBatteryThrow() //배터리
+        public void RequestBatteryThrow() //배터�?
         {
             if(batteryThrowOrigin == null)
             {
@@ -400,19 +400,19 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
                 Debug.LogWarning($"PHS_BATTERY_THROW_FAILED " + $"reason=item_data_or_use_type_invalid " + $"player={name}");
                 return;
             }
-            if(itemData.ItemId != batteryItemId)//다른 투척형 아이템의 배터리 공격 방지
+            if(itemData.ItemId != batteryItemId)//?�른 ?�척???�이?�의 배터�?공격 방�?
             {
                 Debug.LogWarning($"PHS_BATTERY_THROW_FAILED " + $"reason=battery_not_held " + $"player={name} " + $"actual={itemData.ItemId}");
                 return;
             }
-            if(Time.time < nextBatteryThrowTime) //쿨타임 아직 끝나지 않으면 중복 투척 요청 x
+            if(Time.time < nextBatteryThrowTime) //쿨�????�직 ?�나지 ?�으�?중복 ?�척 ?�청 x
             {
                 return ;
             }
             nextBatteryThrowTime = Time.time + itemData.Cooldown;
             PlayOneShotEffect(batteryUseEffect);
 
-            var direction = batteryThrowOrigin.forward.normalized; //플레이어가 바라보는 방향
+            var direction = batteryThrowOrigin.forward.normalized; //?�레?�어가 바라보는 방향
 
             Debug.Log($"PHS_BATTERY_THROW_INPUT_ACCEPTED " + $"player={name} " + $"item={itemData.ItemId} " + $"position={batteryThrowOrigin.position} " + $"direction={direction}");
 
@@ -454,7 +454,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
         }
         private void PerformThrowHeldItem(Vector3 requestedPosition, Vector3 requestedDirection, float requestedForce)
         {
-            if (IsSpawned && !IsServer) //멀티 중에는 서버만 투척처리
+            if (IsSpawned && !IsServer) //멀??중에???�버�??�척처리
             {
                 return;
             }
@@ -465,7 +465,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
                 Debug.LogError($"PHS_ITEM_THROW_FAILED " + $"reason=item_holder_missing " + $"player={name}");
                 return;
             }
-            if (!itemHolder.HasItem) //손의 아무것도 없으면 투척x
+            if (!itemHolder.HasItem) //?�의 ?�무것도 ?�으�??�척x
             {
                 return;
             }
@@ -478,7 +478,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
             }
             var throwForce = Mathf.Clamp(requestedForce, minimumThrowForce, maximumThrowForce);
 
-            var thrownItemData = itemHolder.CurrentItemPrefabData; //아이템 제거 전에 SO 저장
+            var thrownItemData = itemHolder.CurrentItemPrefabData; //?�이???�거 ?�에 SO ?�??
             if(thrownItemData == null)
             {
                 Debug.LogError($"PHS_ITEM_THROW_FAILED " + $"reason=item_data_missing " + $"player={name}");
@@ -499,7 +499,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
                     throwPosition,
                     Quaternion.LookRotation(direction),
                     out thrownItem);
-            if (!created) //현재 손 아이템의 DroppedPrefab을 생성
+            if (!created) //?�재 ???�이?�의 DroppedPrefab???�성
             {
                 return;
             }
@@ -530,7 +530,13 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
                 batteryImpact.InitializeAttackThrow(gameObject, thrownItemData);
             }
 
-            //카메라 방향으로 계산된 힘 만큼 날린다.
+            var spiderWebImpact = thrownItem.GetComponent<SpiderWebBombImpact>();
+            if (spiderWebImpact != null)
+            {
+                spiderWebImpact.InitializeAttackThrow(gameObject, thrownItemData);
+            }
+
+            //카메??방향?�로 계산????만큼 ?�린??
             body.linearVelocity = direction * throwForce;
             var impact = thrownItem.GetComponent<ThrownItemImpact>();
             if (impact != null)
@@ -592,7 +598,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
                     Quaternion.LookRotation(direction),
                     UtilityItemActionKind.BatteryDischarge,
                     out var batteryInstance,
-                    out _ )) //효과 수치는 SO HitEffects가 처리
+                    out _ )) //?�과 ?�치??SO HitEffects가 처리
             {
                 return;
             }
@@ -646,8 +652,8 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
             if (IsSpawned && !IsServer)
             {
                 return false;
-            }//네트워크 플레이 중에는 서버만 공격판정 수행
-            if(!TryGetHeldItemData(ItemUseType.Spray, out var itemData))//고정 ID 대신 UseType 과 SO 데이터 검사
+            }//?�트?�크 ?�레??중에???�버�?공격?�정 ?�행
+            if(!TryGetHeldItemData(ItemUseType.Spray, out var itemData))//고정 ID ?�??UseType �?SO ?�이??검??
             {
                 Debug.LogWarning($"PHS_EXTINGUISHER_SPRAY_FAILED " + $"reason=item_data_or_use_type_invalid " + $"player={name}");
                 return false;
@@ -671,7 +677,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
                 return false;
             }
 
-            //서버 판정 간격 검사
+            //?�버 ?�정 간격 검??
             if (Time.time < nextExtinguisherDamageTime)
             {
                 return false;
@@ -682,11 +688,11 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
 
                 return false;   
             }
-            nextExtinguisherDamageTime = Time.time + itemData.Cooldown; //SO 쿨타운 사용
+            nextExtinguisherDamageTime = Time.time + itemData.Cooldown; //SO 쿨�????�용
 
             bool successfulUse = false;
 
-            //분사 범위 판정
+            //분사 범위 ?�정
             var hits = Physics.OverlapSphere(extinguisherSprayOrigin.position, itemData.AttackRange, itemData.TargetLayers, QueryTriggerInteraction.Collide); ;
 
             processedTargets.Clear();
@@ -696,7 +702,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
 
             foreach (var hit in hits)
             {
-                // SphereCast 결과에 Collider가 없으면 처리하지 않는다.
+                // SphereCast 결과??Collider가 ?�으�?처리?��? ?�는??
                 if (hit == null)
                 {
                     continue;
@@ -713,14 +719,14 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
                 {
                     continue;
                 }
-                float targetAngle = Vector3.Angle(extinguisherSprayOrigin.forward, directionToHit.normalized); //정면과 대상 사이 각도 계산
+                float targetAngle = Vector3.Angle(extinguisherSprayOrigin.forward, directionToHit.normalized); //?�면�??�???�이 각도 계산
 
-                if(targetAngle > halfAttackAngle)//부채꼴 범위밖 대상은 제외
+                if(targetAngle > halfAttackAngle)//부채꼴 범위�??�?��? ?�외
                 {
                     continue;
                 }
-                // 맞은 Collider가 속한 실제 대상 오브젝트를 찾는다.
-                // 화재, 산소 누출, 플레이어, 몬스터 등을 모두 찾을 수 있다.
+                // 맞�? Collider가 ?�한 ?�제 ?�???�브?�트�?찾는??
+                // ?�재, ?�소 ?�출, ?�레?�어, 몬스???�을 모두 찾을 ???�다.
                 var targetObject = CombatHitResolver.ResolveTargetObject(hit.gameObject);
                 
                 if (targetObject == null)
@@ -728,24 +734,24 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
                     continue;
                 }
 
-                // 소화기를 사용하는 자기 자신은 맞지 않는다.
+                // ?�화기�? ?�용?�는 ?�기 ?�신?� 맞�? ?�는??
                 if (CombatHitResolver.IsSameTarget(targetObject, gameObject))   
                 {
                     continue;
                 }
 
-                // 한 오브젝트에 Collider가 여러 개 있어도
-                // 한 번의 분사 판정에서는 한 번만 처리한다.
+                // ???�브?�트??Collider가 ?�러 �??�어??
+                // ??번의 분사 ?�정?�서????번만 처리?�다.
                 if (!processedTargets.Add(targetObject))
                 {
                     continue;
                 }
 
-                // 이번 소화기 판정의 고유 번호를 만든다.
+                // ?�번 ?�화�??�정??고유 번호�?만든??
                 var requestSequence =
                     NextUtilityAttackSequence();
 
-                // 먼저 화재, 산소 누출 등의 상호작용 대상을 검사한다.
+                // 먼�? ?�재, ?�소 ?�출 ?�의 ?�호?�용 ?�?�을 검?�한??
                 bool utilityAccepted = CombatHitResolver.TryResolveUtilityAttack(targetObject, gameObject, itemData.ItemId, requestSequence);
 
                 bool repairApplied = utilityAccepted
@@ -757,12 +763,12 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
                     continue;
                 }
 
-                // 소화기가 분사되는 방향으로 넉백시킨다.
+                // ?�화기�? 분사?�는 방향?�로 ?�백?�킨??
                 var sprayDirection = extinguisherSprayOrigin.forward;
 
                 bool effectApplied = ItemEffectResolver.ApplyEffects(itemData, targetObject, sprayDirection, gameObject);
 
-                if (!effectApplied)//아무 효과도 적용하지 않으면 피드팩대상 제외
+                if (!effectApplied)//?�무 ?�과???�용?��? ?�으�??�드?��????�외
                 {
                     continue;
                 }

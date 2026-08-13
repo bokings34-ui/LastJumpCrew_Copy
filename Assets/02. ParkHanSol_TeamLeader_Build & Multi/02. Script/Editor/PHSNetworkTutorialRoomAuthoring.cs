@@ -4,6 +4,7 @@ using LastJumpCrew.Common;
 using LastJumpCrew.ParkHanSol.Interaction;
 using LastJumpCrew.ParkHanSol.Items;
 using LastJumpCrew.ParkHanSol.Multiplayer;
+using LastJumpCrew.ParkHanSol.Multiplayer.Audio;
 using LastJumpCrew.ParkHanSol.Multiplayer.Events.MiniGames;
 using LastJumpCrew.ParkHanSol.Multiplayer.Events.MiniGames.Runtime;
 using LastJumpCrew.ParkHanSol.Multiplayer.Tutorial;
@@ -78,6 +79,8 @@ namespace LastJumpCrew.ParkHanSol.Editor
             "Assets/02. ParkHanSol_TeamLeader_Build & Multi/01. Scene/BEAVER_2026/Tutorial/PHS_TutorialBriefing.renderTexture";
         private const string InstructionFolder =
             "Assets/02. ParkHanSol_TeamLeader_Build & Multi/04. Data/UI/TutorialInstructions/";
+        private const string TutorialPopupClipFolder =
+            "Assets/02. ParkHanSol_TeamLeader_Build & Multi/04. Data/UI/Tutorial/PopupClips/";
         private const string TutorialKeycapSpritePath =
             "Assets/02. ParkHanSol_TeamLeader_Build & Multi/03. Prefab/UI/Art/Tutorial/PHS_Tutorial_Keycap_Orange.png";
         private const string TutorialFontPath = PHSUIFontPaths.SuitRegular;
@@ -245,6 +248,58 @@ namespace LastJumpCrew.ParkHanSol.Editor
             new[] { "함선 앞", "함선 문" }
         };
 
+        [MenuItem("Tools/ParkHanSol/BEAVER/Repair Tutorial Grapple Target Materials")]
+        public static void RepairTutorialGrappleTargetMaterials()
+        {
+            var material = AssetDatabase.LoadAssetAtPath<Material>(
+                GrappleAnchorMaterialPath);
+            if (material == null)
+            {
+                throw Failure("grapple_anchor_material_missing");
+            }
+
+            var scene = EditorSceneManager.OpenScene(ScenePath, OpenSceneMode.Single);
+            var targets = scene.GetRootGameObjects()
+                .SelectMany(root => root.GetComponentsInChildren<Transform>(true))
+                .Where(transform => transform.name == "PHS_NetworkTutorialGrappleTarget_A"
+                    || transform.name == "PHS_NetworkTutorialGrappleTarget_B")
+                .Select(transform => transform.gameObject)
+                .ToArray();
+            if (targets.Length != 2)
+            {
+                throw Failure($"grapple_anchor_target_count_invalid actual={targets.Length}");
+            }
+
+            var repairedRendererCount = 0;
+            foreach (var target in targets)
+            {
+                foreach (var renderer in target.GetComponentsInChildren<Renderer>(true))
+                {
+                    if (renderer.sharedMaterials.Length == 0)
+                    {
+                        continue;
+                    }
+
+                    renderer.sharedMaterials = Enumerable
+                        .Repeat(material, renderer.sharedMaterials.Length)
+                        .ToArray();
+                    EditorUtility.SetDirty(renderer);
+                    repairedRendererCount++;
+                }
+            }
+
+            if (repairedRendererCount == 0)
+            {
+                throw Failure("grapple_anchor_renderer_missing");
+            }
+
+            EditorSceneManager.MarkSceneDirty(scene);
+            EditorSceneManager.SaveScene(scene);
+            AssetDatabase.SaveAssets();
+            Debug.Log(
+                $"PHS_NETWORK_TUTORIAL_GRAPPLE_MATERIAL_REPAIR_OK targets={targets.Length} renderers={repairedRendererCount}");
+        }
+
         [MenuItem("Tools/ParkHanSol/BEAVER/Author Network Tutorial Rooms")]
         public static void Author()
         {
@@ -379,6 +434,220 @@ namespace LastJumpCrew.ParkHanSol.Editor
                     EditorSceneManager.CloseScene(scene, true);
                 }
             }
+        }
+
+        [MenuItem("Tools/ParkHanSol/BEAVER/Repair Tutorial Completion Audio Reference")]
+        public static void RepairTutorialCompletionAudioReference()
+        {
+            var previousActive = SceneManager.GetActiveScene();
+            var scene = SceneManager.GetSceneByPath(ScenePath);
+            var sceneWasLoaded = scene.IsValid() && scene.isLoaded;
+            if (!sceneWasLoaded)
+            {
+                scene = EditorSceneManager.OpenScene(ScenePath, OpenSceneMode.Additive);
+            }
+
+            try
+            {
+                var director = FindComponent<NetworkTutorialDirector>(scene);
+                var emitters = scene.GetRootGameObjects()
+                    .SelectMany(root => root.GetComponentsInChildren<
+                        NetworkAudioCueEmitter>(true))
+                    .Where(emitter => emitter.name ==
+                        "PHS_NetworkTutorialCompletionAudio")
+                    .ToArray();
+                if (emitters.Length != 1)
+                {
+                    throw Failure(
+                        $"tutorial_completion_audio_emitter_count_invalid:{emitters.Length}");
+                }
+
+                var serializedDirector = new SerializedObject(director);
+                serializedDirector.FindProperty("audioCuePlayerSource")
+                    .objectReferenceValue = emitters[0];
+                serializedDirector.ApplyModifiedPropertiesWithoutUndo();
+                EditorUtility.SetDirty(director);
+                EditorSceneManager.MarkSceneDirty(scene);
+                if (!EditorSceneManager.SaveScene(scene))
+                {
+                    throw Failure("tutorial_completion_audio_scene_save_failed");
+                }
+
+                Debug.Log(
+                    "PHS_TUTORIAL_COMPLETION_AUDIO_AUTHOR_OK " +
+                    $"director={director.name} emitter={emitters[0].name}");
+            }
+            finally
+            {
+                if (previousActive.IsValid() && previousActive.isLoaded)
+                {
+                    SceneManager.SetActiveScene(previousActive);
+                }
+
+                if (!sceneWasLoaded && scene.IsValid() && scene.isLoaded)
+                {
+                    EditorSceneManager.CloseScene(scene, true);
+                }
+            }
+        }
+
+        [MenuItem("Tools/ParkHanSol/BEAVER/Author Tutorial Briefing Videos")]
+        public static void AuthorTutorialBriefingVideos()
+        {
+            var specs = new[]
+            {
+                new TutorialVideoBriefingSpec(
+                    "01_MoveJump",
+                    new[]
+                    {
+                        new TutorialVideoPageSpec(
+                            "이동",
+                            "기본 이동과 진행 지점을 영상으로 확인합니다.",
+                            "PHS_TutorialPopup_01_Move.mp4")
+                    }),
+                new TutorialVideoBriefingSpec(
+                    "05_ToolUse",
+                    new[]
+                    {
+                        new TutorialVideoPageSpec(
+                            "렌치",
+                            "렌치 사용과 설비 수리 위치를 영상으로 확인합니다.",
+                            "PHS_TutorialPopup_02_Wrench.mp4"),
+                        new TutorialVideoPageSpec(
+                            "소화기 수리",
+                            "소화기 사용과 화재 수리 위치를 영상으로 확인합니다.",
+                            "PHS_TutorialPopup_03_ExtinguisherRepair.mp4")
+                    }),
+                new TutorialVideoBriefingSpec(
+                    "06_TrainingTerminals",
+                    new[]
+                    {
+                        new TutorialVideoPageSpec(
+                            "미니게임",
+                            "단말기 미니게임 진행 방법을 영상으로 확인합니다.",
+                            "PHS_TutorialPopup_04_MiniGame.mp4")
+                    }),
+                new TutorialVideoBriefingSpec(
+                    "07_ExteriorDebris",
+                    new[]
+                    {
+                        new TutorialVideoPageSpec(
+                            "데브리 수집",
+                            "외부 이동과 데브리 수집 방법을 영상으로 확인합니다.",
+                            "PHS_TutorialPopup_05_Debris.mp4")
+                    }),
+                new TutorialVideoBriefingSpec(
+                    "08_BoardShip",
+                    new[]
+                    {
+                        new TutorialVideoPageSpec(
+                            "완료",
+                            "탑승 지점과 튜토리얼 완료 흐름을 영상으로 확인합니다.",
+                            "PHS_TutorialPopup_06_Complete.mp4")
+                    })
+            };
+
+            AssetDatabase.Refresh();
+            var previousActive = SceneManager.GetActiveScene();
+            var scene = SceneManager.GetSceneByPath(ScenePath);
+            var sceneWasLoaded = scene.IsValid() && scene.isLoaded;
+            if (!sceneWasLoaded)
+            {
+                scene = EditorSceneManager.OpenScene(ScenePath, OpenSceneMode.Additive);
+            }
+
+            try
+            {
+                var rooms = scene.GetRootGameObjects()
+                    .SelectMany(root => root.GetComponentsInChildren<
+                        NetworkTutorialRoomController>(true))
+                    .ToArray();
+                foreach (var spec in specs)
+                {
+                    var room = rooms.SingleOrDefault(candidate => candidate.name ==
+                        $"PHS_TutorialRoom_{spec.RoomId}");
+                    if (room == null)
+                    {
+                        throw Failure($"tutorial_video_room_missing:{spec.RoomId}");
+                    }
+
+                    var serializedRoom = new SerializedObject(room);
+                    var pages = serializedRoom.FindProperty("briefingPages");
+                    pages.arraySize = spec.Pages.Length;
+                    for (var index = 0; index < spec.Pages.Length; index++)
+                    {
+                        var pageSpec = spec.Pages[index];
+                        var clip = AssetDatabase.LoadAssetAtPath<VideoClip>(
+                            TutorialPopupClipFolder + pageSpec.ClipFileName);
+                        if (clip == null)
+                        {
+                            throw Failure(
+                                $"tutorial_video_clip_missing:{pageSpec.ClipFileName}");
+                        }
+
+                        var page = pages.GetArrayElementAtIndex(index);
+                        page.FindPropertyRelative("pageKind").enumValueIndex =
+                            (int)TutorialBriefingPageKind.Video;
+                        page.FindPropertyRelative("title").stringValue = pageSpec.Title;
+                        page.FindPropertyRelative("body").stringValue = pageSpec.Body;
+                        page.FindPropertyRelative("videoClip").objectReferenceValue = clip;
+                    }
+
+                    serializedRoom.ApplyModifiedPropertiesWithoutUndo();
+                    EditorUtility.SetDirty(room);
+                }
+
+                EditorSceneManager.MarkSceneDirty(scene);
+                if (!EditorSceneManager.SaveScene(scene))
+                {
+                    throw Failure("tutorial_video_scene_save_failed");
+                }
+
+                Debug.Log($"PHS_TUTORIAL_BRIEFING_VIDEO_AUTHOR_OK rooms={specs.Length}");
+            }
+            finally
+            {
+                if (previousActive.IsValid() && previousActive.isLoaded)
+                {
+                    SceneManager.SetActiveScene(previousActive);
+                }
+
+                if (!sceneWasLoaded && scene.IsValid() && scene.isLoaded)
+                {
+                    EditorSceneManager.CloseScene(scene, true);
+                }
+            }
+        }
+
+        private readonly struct TutorialVideoBriefingSpec
+        {
+            public TutorialVideoBriefingSpec(
+                string roomId,
+                TutorialVideoPageSpec[] pages)
+            {
+                RoomId = roomId;
+                Pages = pages;
+            }
+
+            public string RoomId { get; }
+            public TutorialVideoPageSpec[] Pages { get; }
+        }
+
+        private readonly struct TutorialVideoPageSpec
+        {
+            public TutorialVideoPageSpec(
+                string title,
+                string body,
+                string clipFileName)
+            {
+                Title = title;
+                Body = body;
+                ClipFileName = clipFileName;
+            }
+
+            public string Title { get; }
+            public string Body { get; }
+            public string ClipFileName { get; }
         }
 
         private static void EnsureGameplaySceneContext(Scene scene)

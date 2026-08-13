@@ -59,6 +59,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
         public float DeadZoneWarningRemainingSeconds => synchronizedDeadZoneSeconds.Value;
         public float RespawnRemainingSeconds => synchronizedRespawnSeconds.Value;
         public event Action<int, int> HealthChanged;
+        public event Action<int, int> HealthChangedOnAllClients;
 
         private void Awake()
         {
@@ -333,6 +334,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
 
         private void HandleHealthChanged(int previousValue, int currentValue)
         {
+            HealthChangedOnAllClients?.Invoke(previousValue, currentValue);
             if (!IsOwner)
             {
                 return;

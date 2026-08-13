@@ -27,7 +27,11 @@ namespace LastJumpCrew.ParkHanSol.Editor
             "PHS.DirectSceneTest.PendingEmbeddedPlayer";
         private const string PreviousStartSceneKey = "PHS.DirectSceneTest.PreviousStartScene";
         private const string PreviousStartSceneStoredKey = "PHS.DirectSceneTest.PreviousStartSceneStored";
-        private const double LaunchTimeoutSeconds = 20d;
+        // Editor-only verification must not collide with a retained local game session.
+        private const ushort DirectHostPort = 7799;
+        // Lobby bootstrap and the main ship scene can each consume several seconds in Editor.
+        // Keep the direct Host test alive long enough to verify the spawned local player.
+        private const double LaunchTimeoutSeconds = 60d;
 
         private enum LaunchPhase
         {
@@ -325,6 +329,14 @@ namespace LastJumpCrew.ParkHanSol.Editor
             }
 
             networkManager.NetworkConfig.ConnectionApproval = false;
+            var transport = networkManager.GetComponent<Unity.Netcode.Transports.UTP.UnityTransport>();
+            if (transport == null)
+            {
+                FailLaunch("unity_transport_missing");
+                return;
+            }
+
+            transport.SetConnectionData("127.0.0.1", DirectHostPort, "127.0.0.1");
             if (!networkManager.StartHost())
             {
                 FailLaunch("start_host_failed");

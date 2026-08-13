@@ -7,6 +7,7 @@ using SM;
 using Unity.Collections;
 using UnityEngine;
 
+#if false // Removed from the team event runtime; retained only as historical source.
 namespace LastJumpCrew.ParkHanSol.Multiplayer
 {
     /// <summary>
@@ -2148,3 +2149,4 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
         }
     }
 }
+#endif

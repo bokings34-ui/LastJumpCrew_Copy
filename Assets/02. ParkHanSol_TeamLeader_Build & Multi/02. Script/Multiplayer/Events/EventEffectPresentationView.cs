@@ -1,3 +1,4 @@
+using System;
 using LastJumpCrew.Common;
 using LastJumpCrew.ParkHanSol.Items;
 using SM;
@@ -17,11 +18,23 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Events
         [SerializeField] private Animator enemyAnimator;
         [SerializeField] private ParticleSystem enemyHitEffect;
 
+        private const byte ElectricShockMask = 1 << 0;
+        private const byte FreezeMask = 1 << 1;
+        private const byte SlowMask = 1 << 2;
+
+        private Transform enemyStatusEffectRoot;
+        private ParticleSystem[] enemyStatusParticles = Array.Empty<ParticleSystem>();
+        private ParticleSystem.MinMaxGradient[] enemyStatusBaseColors = Array.Empty<ParticleSystem.MinMaxGradient>();
+        private AudioSource[] enemyStatusAudioSources = Array.Empty<AudioSource>();
+        private Light[] enemyStatusLights = Array.Empty<Light>();
+        private byte enemyStatusMask;
+
         private NetworkEventEffectSnapshot snapshot;
 
         public ulong EventInstanceId => snapshot.EventInstanceId;
         public uint EffectInstanceId => snapshot.EffectInstanceId;
         public EventEffectKind EffectKind => snapshot.Kind;
+        public byte EnemyStatusMask => enemyStatusMask;
         public bool IsActiveEffect => snapshot.IsActive
             && snapshot.EventInstanceId != 0UL
             && snapshot.EffectInstanceId != 0U;
@@ -42,7 +55,12 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Events
 
         public void Activate(NetworkEventEffectSnapshot effectSnapshot)
         {
+            var isNewEffect = snapshot.EffectInstanceId != effectSnapshot.EffectInstanceId;
             snapshot = effectSnapshot;
+            if (snapshot.Kind == EventEffectKind.Enemy && isNewEffect)
+            {
+                SetEnemyStatusMask(0);
+            }
             transform.position = effectSnapshot.WorldPosition;
             gameObject.SetActive(true);
             foreach (var particle in GetComponentsInChildren<ParticleSystem>(true))
@@ -67,6 +85,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Events
 
         public void Deactivate()
         {
+            SetEnemyStatusMask(0);
             if (snapshot.Kind == EventEffectKind.OxygenLeak)
             {
                 foreach (var particle in GetComponentsInChildren<ParticleSystem>(true))
@@ -79,6 +98,116 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Events
 
             snapshot = default;
             gameObject.SetActive(false);
+        }
+
+        public void SetEnemyStatusMask(byte statusMask)
+        {
+            if (snapshot.Kind != EventEffectKind.Enemy)
+            {
+                return;
+            }
+
+            enemyStatusMask = (byte)(statusMask & (ElectricShockMask | FreezeMask | SlowMask));
+            if (!CacheEnemyStatusPresentation())
+            {
+                return;
+            }
+
+            var active = enemyStatusMask != 0;
+            enemyStatusEffectRoot.gameObject.SetActive(active);
+            for (var index = 0; index < enemyStatusParticles.Length; index++)
+            {
+                var particle = enemyStatusParticles[index];
+                if (particle == null)
+                {
+                    continue;
+                }
+
+                var main = particle.main;
+                main.startColor = active
+                    ? ResolveStatusColor(enemyStatusMask)
+                    : enemyStatusBaseColors[index];
+                particle.Stop(true, ParticleSystemStopBehavior.StopEmittingAndClear);
+                if (active)
+                {
+                    particle.Play(true);
+                }
+            }
+
+            foreach (var audioSource in enemyStatusAudioSources)
+            {
+                if (audioSource == null)
+                {
+                    continue;
+                }
+
+                if (active && (enemyStatusMask & ElectricShockMask) != 0)
+                {
+                    if (!audioSource.isPlaying)
+                    {
+                        audioSource.Play();
+                    }
+                }
+                else
+                {
+                    audioSource.Stop();
+                }
+            }
+
+            foreach (var light in enemyStatusLights)
+            {
+                if (light != null)
+                {
+                    light.enabled = active;
+                }
+            }
+        }
+
+        private bool CacheEnemyStatusPresentation()
+        {
+            if (enemyStatusEffectRoot != null)
+            {
+                return true;
+            }
+
+            enemyStatusEffectRoot = transform.Find("ElectricEffect");
+            if (enemyStatusEffectRoot == null)
+            {
+                Debug.LogError(
+                    $"PHS_ENEMY_STATUS_PRESENTATION_FAILED reason=electric_effect_missing effect={snapshot.EffectInstanceId}",
+                    this);
+                return false;
+            }
+
+            enemyStatusParticles = enemyStatusEffectRoot
+                .GetComponentsInChildren<ParticleSystem>(true);
+            enemyStatusBaseColors = new ParticleSystem.MinMaxGradient[
+                enemyStatusParticles.Length];
+            for (var index = 0; index < enemyStatusParticles.Length; index++)
+            {
+                enemyStatusBaseColors[index] = enemyStatusParticles[index].main.startColor;
+            }
+
+            enemyStatusAudioSources = enemyStatusEffectRoot
+                .GetComponentsInChildren<AudioSource>(true);
+            enemyStatusLights = enemyStatusEffectRoot
+                .GetComponentsInChildren<Light>(true);
+            return true;
+        }
+
+        private static Color ResolveStatusColor(byte statusMask)
+        {
+            if ((statusMask & ElectricShockMask) != 0)
+            {
+                return new Color(0.15f, 0.85f, 1f, 1f);
+            }
+
+            if ((statusMask & FreezeMask) != 0)
+            {
+                return new Color(0.48f, 0.9f, 1f, 1f);
+            }
+
+            return new Color(0.58f, 0.28f, 1f, 1f);
         }
 
         private void PlayOxygenLeakVisual()

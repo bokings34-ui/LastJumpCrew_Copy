@@ -116,6 +116,11 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
             hasVitals = true;
         }
 
+        public void PlayPlayerDamageFeedback()
+        {
+            healthMotion?.PlayDamageFeedback(true);
+        }
+
         public void SetThrusterFuel(int currentFuel, int maxFuel)
         {
             var safeMaxFuel = Mathf.Max(1, maxFuel);

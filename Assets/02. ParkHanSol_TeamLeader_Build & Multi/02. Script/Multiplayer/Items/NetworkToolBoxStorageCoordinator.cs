@@ -1,7 +1,6 @@
 using System;
 using LastJumpCrew.ParkHanSol.Interaction;
 using LastJumpCrew.ParkHanSol.Items;
-using Unity.Collections;
 using Unity.Netcode;
 using UnityEngine;
 using UtilityItemDataSO = LastJumpCrew.Common.UtilityItemDataSO;
@@ -13,43 +12,15 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
     [RequireComponent(typeof(NetworkObject))]
     public sealed class NetworkToolBoxStorageCoordinator : NetworkBehaviour
     {
-        private struct SlotState : INetworkSerializable, IEquatable<SlotState>
-        {
-            public FixedString64Bytes ItemId;
-            public int Durability;
-
-            public SlotState(string itemId, int durability)
-            {
-                ItemId = new FixedString64Bytes(itemId ?? string.Empty);
-                Durability = durability;
-            }
-
-            public bool IsEmpty => ItemId.IsEmpty;
-
-            public void NetworkSerialize<T>(BufferSerializer<T> serializer)
-                where T : IReaderWriter
-            {
-                serializer.SerializeValue(ref ItemId);
-                serializer.SerializeValue(ref Durability);
-            }
-
-            public bool Equals(SlotState other)
-            {
-                return ItemId.Equals(other.ItemId) && Durability == other.Durability;
-            }
-        }
-
         [Header("Catalog")]
         [SerializeField] private UtilityItemCatalogSO itemCatalog;
 
         [Header("Server Validation")]
-        [SerializeField, Min(0.1f)] private float serverInteractionDistance = 3f;
+        [SerializeField, Min(0.1f)] private float serverInteractionDistance = 4f;
 
         private UtilityToolBoxStorageSlotInteractable[] slots;
-        private readonly NetworkList<SlotState> slotStates = new(
-            null,
-            NetworkVariableReadPermission.Everyone,
-            NetworkVariableWritePermission.Server);
+        private string[] slotKeys;
+        private NetworkPersistentToolBoxStorage persistentStorage;
 
         private void Awake()
         {
@@ -58,23 +29,72 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
             {
                 slots[index].BindNetworkCoordinator(this, index);
             }
+
+            slotKeys = new string[slots.Length];
+            for (var index = 0; index < slots.Length; index++)
+            {
+                slotKeys[index] = BuildSlotKey(index);
+            }
         }
 
         public override void OnNetworkSpawn()
         {
-            slotStates.OnListChanged += HandleSlotStateChanged;
+            NetworkRunSessionRoot.InstanceAvailable += HandleSessionRootAvailable;
+            if (!TryBindPersistentStorage(NetworkRunSessionRoot.Instance))
+            {
+                Debug.Log(
+                    $"PHS_TOOL_BOX_NETWORK_BIND_PENDING box={name}",
+                    this);
+            }
+        }
+
+        public override void OnNetworkDespawn()
+        {
+            NetworkRunSessionRoot.InstanceAvailable -= HandleSessionRootAvailable;
+            if (persistentStorage != null)
+            {
+                persistentStorage.SlotChanged -= HandlePersistentSlotChanged;
+            }
+            base.OnNetworkDespawn();
+        }
+
+        private void HandleSessionRootAvailable(NetworkRunSessionRoot root)
+        {
+            if (!TryBindPersistentStorage(root))
+            {
+                Debug.LogError(
+                    $"PHS_TOOL_BOX_NETWORK_SETUP_FAILED reason=persistent_storage_missing box={name}",
+                    this);
+            }
+        }
+
+        private bool TryBindPersistentStorage(NetworkRunSessionRoot root)
+        {
+            var storage = root?.ToolBoxStorage;
+            if (storage == null || !storage.IsSpawned)
+            {
+                return false;
+            }
+
+            if (persistentStorage == storage)
+            {
+                return true;
+            }
+
+            if (persistentStorage != null)
+            {
+                persistentStorage.SlotChanged -= HandlePersistentSlotChanged;
+            }
+
+            persistentStorage = storage;
+            persistentStorage.SlotChanged += HandlePersistentSlotChanged;
             if (IsServer)
             {
                 InitializeServerStates();
             }
 
             ApplyAllStates();
-        }
-
-        public override void OnNetworkDespawn()
-        {
-            slotStates.OnListChanged -= HandleSlotStateChanged;
-            base.OnNetworkDespawn();
+            return true;
         }
 
         public bool IsManaging(UtilityToolBoxStorageSlotInteractable slot)
@@ -91,12 +111,11 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
                 || !holderComponent.TryGetComponent<NetworkPlayerItemLifecycle>(out var lifecycle)
                 || !lifecycle.IsSpawned
                 || !lifecycle.IsOwner
-                || slotIndex >= slotStates.Count)
+                || !TryGetState(slotIndex, out var state))
             {
                 return false;
             }
 
-            var state = slotStates[slotIndex];
             return !state.IsEmpty || itemHolder.CurrentItemPrefabData != null;
         }
 
@@ -129,15 +148,19 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
         {
             if (!IsSpawned || !IsServer || itemPrefabData == null
                 || !TryGetSlotIndex(slot, out var slotIndex)
-                || slotIndex >= slotStates.Count
-                || !slotStates[slotIndex].IsEmpty)
+                || !TryGetState(slotIndex, out var state)
+                || !state.IsEmpty)
             {
                 Debug.LogWarning($"PHS_TOOL_BOX_DELIVERY_REJECTED reason=server_contract box={name}", this);
                 return false;
             }
 
             var durability = itemPrefabData.UsesDurability ? itemPrefabData.MaxDurability : 0;
-            slotStates[slotIndex] = new SlotState(itemPrefabData.ItemId, durability);
+            if (!persistentStorage.TryReceiveDeliveryServer(
+                    slotKeys[slotIndex], itemPrefabData.ItemId, durability))
+            {
+                return false;
+            }
             Debug.Log($"PHS_TOOL_BOX_DELIVERY_STORED box={name} slot={slotIndex} item={itemPrefabData.ItemId}", this);
             return true;
         }
@@ -163,30 +186,31 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
                 return;
             }
 
-            if (slotStates.Count != 0)
+            for (var index = 0; index < slots.Length; index++)
             {
-                return;
-            }
-
-            foreach (var slot in slots)
-            {
+                var slot = slots[index];
                 var initialItem = slot.InitialStoredItemPrefabData;
-                slotStates.Add(initialItem == null
-                    ? new SlotState(string.Empty, 0)
-                    : new SlotState(
-                        initialItem.ItemId,
-                        initialItem.UsesDurability ? initialItem.MaxDurability : 0));
+                persistentStorage.TryEnsureSlotServer(
+                    slotKeys[index],
+                    initialItem == null ? string.Empty : initialItem.ItemId,
+                    initialItem != null && initialItem.UsesDurability
+                        ? initialItem.MaxDurability
+                        : 0);
             }
         }
 
-        private void HandleSlotStateChanged(NetworkListEvent<SlotState> changeEvent)
+        private void HandlePersistentSlotChanged(string slotKey)
         {
-            ApplySlotState(changeEvent.Index);
+            var slotIndex = Array.IndexOf(slotKeys, slotKey);
+            if (slotIndex >= 0)
+            {
+                ApplySlotState(slotIndex);
+            }
         }
 
         private void ApplyAllStates()
         {
-            for (var index = 0; index < slotStates.Count; index++)
+            for (var index = 0; index < slots.Length; index++)
             {
                 ApplySlotState(index);
             }
@@ -195,20 +219,19 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
         private void ApplySlotState(int slotIndex)
         {
             if (slots == null || slotIndex < 0 || slotIndex >= slots.Length
-                || slotIndex >= slotStates.Count)
+                || !TryGetState(slotIndex, out var state))
             {
                 Debug.LogError($"PHS_TOOL_BOX_NETWORK_SYNC_FAILED reason=slot_index box={name} slot={slotIndex}", this);
                 return;
             }
 
-            var state = slotStates[slotIndex];
             if (state.IsEmpty)
             {
                 slots[slotIndex].ApplyNetworkStoredItem(null);
                 return;
             }
 
-            if (TryResolveItemData(state.ItemId.ToString(), out var itemData))
+            if (TryResolveItemData(state.ItemId, out var itemData))
             {
                 slots[slotIndex].ApplyNetworkStoredItem(itemData);
             }
@@ -224,16 +247,15 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
 
         private bool TryInteractServer(ulong senderClientId, int slotIndex)
         {
-            if (!IsSpawned || !IsServer || slotIndex < 0 || slotIndex >= slotStates.Count
-                || slotIndex >= slots.Length
+            if (!IsSpawned || !IsServer || slotIndex < 0 || slotIndex >= slots.Length
                 || !TryGetPlayerLifecycle(senderClientId, out var lifecycle, out var record)
-                || !IsWithinDistance(lifecycle.transform.position, slots[slotIndex].transform.position))
+                || !IsWithinDistance(lifecycle.transform.position, slots[slotIndex].transform.position)
+                || !TryGetState(slotIndex, out var state))
             {
                 Debug.LogWarning($"PHS_TOOL_BOX_NETWORK_REJECTED reason=server_contract box={name} sender={senderClientId} slot={slotIndex}", this);
                 return false;
             }
 
-            var state = slotStates[slotIndex];
             var heldItemId = record.HeldItemId;
             if (string.IsNullOrEmpty(heldItemId))
             {
@@ -251,7 +273,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
                 : TrySwapServer(slotIndex, state, heldItemData, record, senderClientId);
         }
 
-        private bool TryTakeServer(int slotIndex, SlotState state, NetworkPlayerItemRecord record, ulong senderClientId)
+        private bool TryTakeServer(int slotIndex, NetworkPersistentToolBoxStorage.SlotSnapshot state, NetworkPlayerItemRecord record, ulong senderClientId)
         {
             if (state.IsEmpty)
             {
@@ -259,41 +281,32 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
                 return false;
             }
 
-            if (!record.TrySetHeldItemServer(state.ItemId.ToString(), state.Durability, record.Revision))
+            if (!persistentStorage.TryTakeServer(slotKeys[slotIndex], record))
             {
                 return false;
             }
 
-            slotStates[slotIndex] = new SlotState(string.Empty, 0);
             return true;
         }
 
         private bool TryStoreServer(int slotIndex, UtilityItemDataSO heldItem, NetworkPlayerItemRecord record, ulong senderClientId)
         {
-            var heldDurability = record.CurrentDurability;
-            if (!record.TryConsumeHeldItemServer(heldItem.ItemId, record.Revision))
+            if (!persistentStorage.TryStoreServer(slotKeys[slotIndex], heldItem, record))
             {
                 return false;
             }
 
-            slotStates[slotIndex] = new SlotState(heldItem.ItemId, heldDurability);
             Debug.Log($"PHS_TOOL_BOX_NETWORK_STORED box={name} sender={senderClientId} slot={slotIndex} item={heldItem.ItemId}", this);
             return true;
         }
 
-        private bool TrySwapServer(int slotIndex, SlotState storedState, UtilityItemDataSO heldItem, NetworkPlayerItemRecord record, ulong senderClientId)
+        private bool TrySwapServer(int slotIndex, NetworkPersistentToolBoxStorage.SlotSnapshot storedState, UtilityItemDataSO heldItem, NetworkPlayerItemRecord record, ulong senderClientId)
         {
-            var heldDurability = record.CurrentDurability;
-            if (!record.TryReplaceHeldItemServer(
-                    heldItem.ItemId,
-                    storedState.ItemId.ToString(),
-                    storedState.Durability,
-                    record.Revision))
+            if (!persistentStorage.TrySwapServer(slotKeys[slotIndex], heldItem, record))
             {
                 return false;
             }
 
-            slotStates[slotIndex] = new SlotState(heldItem.ItemId, heldDurability);
             Debug.Log($"PHS_TOOL_BOX_NETWORK_SWAPPED box={name} sender={senderClientId} slot={slotIndex} stored={heldItem.ItemId} held={storedState.ItemId}", this);
             return true;
         }
@@ -326,6 +339,49 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
         {
             return (playerPosition - slotPosition).sqrMagnitude
                 <= serverInteractionDistance * serverInteractionDistance;
+        }
+
+        private bool TryGetState(
+            int slotIndex,
+            out NetworkPersistentToolBoxStorage.SlotSnapshot state)
+        {
+            state = default;
+            return persistentStorage != null
+                && slotIndex >= 0
+                && slotIndex < slotKeys.Length
+                && persistentStorage.TryGetSlot(slotKeys[slotIndex], out state);
+        }
+
+        public bool TryGetStoredState(
+            UtilityToolBoxStorageSlotInteractable slot,
+            out string itemId,
+            out int durability,
+            out uint revision)
+        {
+            itemId = string.Empty;
+            durability = 0;
+            revision = 0U;
+            if (!TryGetSlotIndex(slot, out var slotIndex)
+                || !TryGetState(slotIndex, out var state))
+            {
+                return false;
+            }
+
+            itemId = state.ItemId;
+            durability = state.Durability;
+            revision = state.Revision;
+            return true;
+        }
+
+        private string BuildSlotKey(int slotIndex)
+        {
+            var path = name;
+            for (var parent = transform.parent; parent != null; parent = parent.parent)
+            {
+                path = parent.name + "/" + path;
+            }
+
+            return gameObject.scene.name + ":" + path + ":" + slotIndex;
         }
     }
 }

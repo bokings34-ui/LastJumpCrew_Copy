@@ -84,6 +84,9 @@ try {
         @{ Name = "MiniGameIndicatorSlotInvalid"; Pattern = "PHS_MINIGAME_INDICATOR_SLOT_INVALID" },
         @{ Name = "MiniGameIndicatorSetupInvalid"; Pattern = "PHS_MINIGAME_INDICATOR_SETUP_INVALID" },
         @{ Name = "IncidentSchedulePendingFailed"; Pattern = "PHS_MAP_INCIDENT_SCHEDULE_PENDING_FAILED" }
+        @{ Name = "ToolBoxSyncFailed"; Pattern = "PHS_TOOL_BOX_NETWORK_SYNC_FAILED" }
+        @{ Name = "MapRuntimeBindFailed"; Pattern = "PHS_MAP_RUNTIME_BIND_FAILED" }
+        @{ Name = "TransportSendQueueFull"; Pattern = "Send error on connection.*send queue full" }
     )
     $runtimeHealthFailures = @()
 

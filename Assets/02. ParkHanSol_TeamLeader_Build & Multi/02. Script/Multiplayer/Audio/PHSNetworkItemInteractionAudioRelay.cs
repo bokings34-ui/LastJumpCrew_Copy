@@ -118,6 +118,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Audio
         {
             return cue is NetworkAudioCue.WrenchImpact
                 or NetworkAudioCue.RepairComplete
+                or NetworkAudioCue.ExtinguisherSpray
                 or NetworkAudioCue.ExtinguishComplete
                 or NetworkAudioCue.BatteryInstall
                 or NetworkAudioCue.FoamAttach

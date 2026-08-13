@@ -19,6 +19,11 @@ namespace LastJumpCrew.Common
         void ApplyStatusEffect(StatusEffectType effectType, float duration, GameObject source);
 
         /// <summary>
+        /// Extended request kept alongside the original overload for team item compatibility.
+        /// </summary>
+        void ApplyStatusEffect(StatusEffectRequest request);
+
+        /// <summary>
         /// 지정 상태이상을 제거합니다.
         /// </summary>
         void RemoveStatusEffect(StatusEffectType effectType);

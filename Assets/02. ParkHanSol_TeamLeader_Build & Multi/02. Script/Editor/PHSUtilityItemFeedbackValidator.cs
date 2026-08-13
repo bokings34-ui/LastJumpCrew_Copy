@@ -26,6 +26,7 @@ namespace LastJumpCrew.ParkHanSol.Editor
             var errors = new List<string>();
             ValidatePlayerPrefabs(errors);
             ValidateFeedbackMapping(errors);
+            ValidateFeedbackPalette(errors);
             ValidateSuccessRoutes(errors);
 
             if (errors.Count > 0)
@@ -162,6 +163,29 @@ namespace LastJumpCrew.ParkHanSol.Editor
                     "shipState.TryRestorePowerWithBattery(out reason)"
                 },
                 errors);
+        }
+
+        private static void ValidateFeedbackPalette(ICollection<string> errors)
+        {
+            var source = ReadSource(FeedbackSource, errors);
+            RequireContains(
+                source,
+                "TeamRepairToolVisualPalette.GetFeedbackRangeColor(kind)",
+                "feedback_range_palette_missing",
+                errors);
+            RequireContains(
+                source,
+                "TeamRepairToolVisualPalette.GetFeedbackTargetColor(kind)",
+                "feedback_target_palette_missing",
+                errors);
+            var wrench = TeamRepairToolVisualPalette.Wrench;
+            if (!Mathf.Approximately(wrench.r, 0.68f)
+                || !Mathf.Approximately(wrench.g, 0.32f)
+                || !Mathf.Approximately(wrench.b, 1f)
+                || !Mathf.Approximately(wrench.a, 1f))
+            {
+                errors.Add("feedback_wrench_palette_not_purple");
+            }
         }
 
         private static void ValidateRoute(

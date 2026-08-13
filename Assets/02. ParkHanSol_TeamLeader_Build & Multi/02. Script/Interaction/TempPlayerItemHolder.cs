@@ -3,6 +3,7 @@ using LastJumpCrew.ParkHanSol.Items;
 using LastJumpCrew.ParkHanSol.Multiplayer;
 using Unity.Netcode;
 using UnityEngine;
+using UnityEngine.SceneManagement;
 
 namespace LastJumpCrew.ParkHanSol.Interaction
 {
@@ -756,7 +757,9 @@ namespace LastJumpCrew.ParkHanSol.Interaction
             }
 
             // 변경: HeldPrefab → HandPrefab
-            heldItemInstance = Instantiate(itemData.HandPrefab, activeHoldPoint);
+            heldItemInstance = Instantiate(itemData.HandPrefab);
+            SceneManager.MoveGameObjectToScene(heldItemInstance, gameObject.scene);
+            heldItemInstance.transform.SetParent(activeHoldPoint, false);
         
             heldItemInstance.name = itemData.HandPrefab.name;
 
@@ -1027,6 +1030,7 @@ namespace LastJumpCrew.ParkHanSol.Interaction
 
                 thrownItemInstance =
                     spawnedItem.gameObject;
+                InitializeSpecialThrowEffects(thrownItemInstance);
                 ApplyThrowSpin(thrownItemInstance);
 
                 Debug.Log($"PHS_TEMP_ITEM_THROW_CREATED " + $"player={name} " + $"item={networkItemId} " + $"networkObjectId={spawnedItem.NetworkObjectId} " + $"position={spawnPosition}");
@@ -1108,6 +1112,7 @@ namespace LastJumpCrew.ParkHanSol.Interaction
             }
 
             thrownItemObject.OnDropped(spawnPosition);
+            InitializeSpecialThrowEffects(thrownItemInstance);
             ApplyThrowSpin(thrownItemInstance);
 
             if (networkSessionActive && !thrownNetworkObject.IsSpawned)
@@ -1132,6 +1137,19 @@ namespace LastJumpCrew.ParkHanSol.Interaction
             Debug.Log($"PHS_TEMP_ITEM_THROW_CREATED " + $"player={name} " + $"item={thrownItemId} " + $"position={spawnPosition}");
 
             return true;
+        }
+
+        private void InitializeSpecialThrowEffects(GameObject thrownItem)
+        {
+            if (thrownItem == null
+                || !thrownItem.TryGetComponent<global::LastJumpCrew.ParkHanSol.Items.PHSSpiderWebBombImpactEffect>(
+                    out var spiderImpactEffect))
+            {
+                return;
+            }
+
+            var itemData = thrownItem.GetComponent<UtilityItemObject>()?.ItemData;
+            spiderImpactEffect.InitializeAttackThrow(gameObject, itemData);
         }
 
         private void ApplyThrowSpin(GameObject thrownItem)

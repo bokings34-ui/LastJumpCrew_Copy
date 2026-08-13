@@ -41,6 +41,7 @@ namespace LastJumpCrew.ParkHanSol.Editor
         private static readonly Binding[] WorldBindings =
         {
             new(NetworkAudioCue.WrenchImpact, 0.75f, 0.08f),
+            new(NetworkAudioCue.ExtinguisherSpray, 0.7f, 0.12f),
             new(NetworkAudioCue.RepairComplete, 0.8f, 0.20f),
             new(NetworkAudioCue.ExtinguishComplete, 0.8f, 0.20f),
             new(NetworkAudioCue.BatteryInstall, 0.8f, 0.20f),
@@ -62,7 +63,7 @@ namespace LastJumpCrew.ParkHanSol.Editor
             }
 
             AssetDatabase.SaveAssets();
-            Debug.Log("PHS_ITEM_INTERACTION_AUDIO_AUTHORED players=2 owner2D=3 world3D=8");
+            Debug.Log("PHS_ITEM_INTERACTION_AUDIO_AUTHORED players=2 owner2D=3 world3D=9");
         }
 
         private static void EditPrefab(string path)

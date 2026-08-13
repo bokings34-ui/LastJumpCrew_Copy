@@ -24,7 +24,7 @@ namespace LastJumpCrew.ParkHanSol.Editor
         private const string SprayTexturePath =
             "Assets/02. ParkHanSol_TeamLeader_Build & Multi/_ThirdParty/" +
             "PilotoStudio1_RuntimeSubset/Textures/Flare_SoftCross.png";
-        private static readonly Color SprayBlue = new(0.12f, 0.78f, 1f, 0.8f);
+        private static readonly Color SprayBlue = new(0.12f, 0.78f, 1f, 0.95f);
 
         [MenuItem("Tools/ParkHanSol/BEAVER/Author Oxygen Continuous Blue Spray")]
         public static void Author()
@@ -111,9 +111,12 @@ namespace LastJumpCrew.ParkHanSol.Editor
 
                     var emission = particle.emission;
                     emission.enabled = true;
+                    // The copied player extinguisher uses a dense 230/s burst.
+                    // This is a permanent environmental leak, so keep it clearly
+                    // readable without matching the burst's full screen density.
                     emission.rateOverTime = particle.name.Contains("FoamMist")
-                        ? 16f
-                        : 40f;
+                        ? 64f
+                        : 96f;
 
                     var fade = particle.colorOverLifetime;
                     fade.enabled = true;
@@ -127,8 +130,8 @@ namespace LastJumpCrew.ParkHanSol.Editor
                         },
                         new[]
                         {
-                            new GradientAlphaKey(0.15f, 0f),
-                            new GradientAlphaKey(0.72f, 0.2f),
+                            new GradientAlphaKey(0.58f, 0f),
+                            new GradientAlphaKey(0.9f, 0.2f),
                             new GradientAlphaKey(0f, 1f)
                         });
                     fade.color = gradient;

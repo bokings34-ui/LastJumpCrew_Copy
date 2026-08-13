@@ -104,6 +104,17 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
             AddImpact(impactSpeed);
         }
 
+        public void PlayDamageImpact()
+        {
+            if (!setupComplete)
+            {
+                LogSetupError("damage_impact_before_setup");
+                return;
+            }
+
+            impactAmount = 1f;
+        }
+
         private void AddImpact(float impactSpeed)
         {
             if (impactSpeed < minimumImpactSpeed)

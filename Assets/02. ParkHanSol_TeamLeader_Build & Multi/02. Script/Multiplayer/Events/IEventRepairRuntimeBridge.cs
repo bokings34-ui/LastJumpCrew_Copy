@@ -15,6 +15,7 @@ namespace SM
     public interface IEventRepairableEffect : IEventRepairTargetHandle
     {
         Vector3 RepairPosition { get; }
+        bool TryGetRepairPoint(Vector3 actorPosition, out Vector3 repairPoint);
         bool IsRepairComplete { get; }
         bool TryApplyRepairStep(float amount);
     }

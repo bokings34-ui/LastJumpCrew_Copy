@@ -15,14 +15,47 @@ namespace LastJumpCrew.ParkHanSol.EditorTools
         private const string NoPlayerInteractLayerName =
             "NoPlayerInteract";
         private const string PlayerLayerName = "Player";
+        private const float DamageRadius = 2.5f;
 
         [MenuItem("Tools/ParkHanSol/Author 0723 Oxygen Zones")]
         public static void AuthorRuntimePrefab()
         {
+            var root = PrefabUtility.LoadPrefabContents(RuntimePrefabPath);
+            try
+            {
+                var zones = root.GetComponentsInChildren<PHSOxygenDeprivationZone>(true);
+                if (zones.Length != 4)
+                {
+                    throw new InvalidOperationException(
+                        $"PHS_OXYGEN_AUTHORING_FAILED reason=zone_count expected=4 actual={zones.Length}");
+                }
+
+                foreach (var zone in zones)
+                {
+                    var serialized = new SerializedObject(zone);
+                    var damageRadius = serialized.FindProperty("damageRadius")
+                        ?? throw new InvalidOperationException(
+                            "PHS_OXYGEN_AUTHORING_FAILED reason=damage_radius_property_missing");
+                    damageRadius.floatValue = DamageRadius;
+                    serialized.ApplyModifiedPropertiesWithoutUndo();
+                    EditorUtility.SetDirty(zone);
+                }
+
+                if (PrefabUtility.SaveAsPrefabAsset(root, RuntimePrefabPath) == null)
+                {
+                    throw new InvalidOperationException(
+                        "PHS_OXYGEN_AUTHORING_FAILED reason=prefab_save_failed");
+                }
+            }
+            finally
+            {
+                PrefabUtility.UnloadPrefabContents(root);
+            }
+
+            AssetDatabase.SaveAssets();
             ValidateRuntimePrefab();
             Debug.Log(
-                "PHS_OXYGEN_AUTHORING_SKIPPED " +
-                "reason=manual_pipe_site_contract validation=passed");
+                "PHS_OXYGEN_AUTHORING_OK zones=4 damage_radius=2.50");
         }
 
         [MenuItem("Tools/ParkHanSol/Validate 0723 Oxygen Zones")]
@@ -91,6 +124,8 @@ namespace LastJumpCrew.ParkHanSol.EditorTools
                     var zoneSerialized = new SerializedObject(roomZones[0]);
                     var playerLayers = zoneSerialized.FindProperty(
                         "playerLayers");
+                    var damageRadius = zoneSerialized.FindProperty(
+                        "damageRadius");
                     if (expectedPlayerMask == 0
                         || playerLayers == null
                         || playerLayers.intValue != expectedPlayerMask)
@@ -98,6 +133,17 @@ namespace LastJumpCrew.ParkHanSol.EditorTools
                         throw new InvalidOperationException(
                             $"PHS_OXYGEN_PREFAB_VALIDATION_FAILED " +
                             $"reason=player_layer_mask_invalid room={room.RoomId}");
+                    }
+
+                    if (damageRadius == null
+                        || !Mathf.Approximately(
+                            damageRadius.floatValue,
+                            DamageRadius))
+                    {
+                        throw new InvalidOperationException(
+                            $"PHS_OXYGEN_PREFAB_VALIDATION_FAILED " +
+                            $"reason=vfx_damage_radius_invalid room={room.RoomId} " +
+                            $"radius={damageRadius?.floatValue ?? 0f:0.00}");
                     }
                 }
 

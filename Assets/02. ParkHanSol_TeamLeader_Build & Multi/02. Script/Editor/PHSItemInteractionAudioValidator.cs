@@ -27,6 +27,7 @@ namespace LastJumpCrew.ParkHanSol.Editor
         private static readonly BindingContract[] WorldBindings =
         {
             new(NetworkAudioCue.WrenchImpact, 0.75f, 0.08f),
+            new(NetworkAudioCue.ExtinguisherSpray, 0.7f, 0.12f),
             new(NetworkAudioCue.RepairComplete, 0.8f, 0.20f),
             new(NetworkAudioCue.ExtinguishComplete, 0.8f, 0.20f),
             new(NetworkAudioCue.BatteryInstall, 0.8f, 0.20f),
@@ -77,7 +78,7 @@ namespace LastJumpCrew.ParkHanSol.Editor
                     string.Join("\n", errors));
             }
 
-            Debug.Log("PHS_ITEM_INTERACTION_AUDIO_VALIDATION_PASSED waves=11 players=2 owner2D=true world3D=true shock3D=true");
+            Debug.Log("PHS_ITEM_INTERACTION_AUDIO_VALIDATION_PASSED waves=12 players=2 owner2D=true world3D=true shock3D=true");
         }
 
         private static void ValidateWave(string path, ICollection<string> errors)
@@ -354,20 +355,26 @@ namespace LastJumpCrew.ParkHanSol.Editor
                 "if (itemLifecycle == null",
                 "ownerSequence++;",
                 "RequestActionServerRpc(",
+                "if (familyKind == PHSUtilityFamilyActionKind.Wrench)",
                 "TryPlayOwnerPredicted(",
-                "NetworkAudioCue.ExtinguisherSpray");
+                "NetworkAudioCue.WrenchImpact");
             RequireOrdered(
                 Root + "/02. Script/Multiplayer/PHSNetworkUtilityFamilyActionController.cs",
-                "family_server_commit_terminal_sequence",
+                "family_server_confirmed_feedback_sequence",
                 errors,
                 "if (!IsServer",
                 "lastServerSequence = requestSequence;",
-                "if (candidate.TryResolve(itemRecord, requestSequence, gameObject))",
-                "NetworkAudioCue.WrenchImpact",
-                "if (candidate.IsRepairComplete)",
+                "if (resolvedCandidate.TryResolve(itemRecord, requestSequence, gameObject))",
+                "if (resolvedCandidate.IsRepairTarget)",
                 "NetworkAudioCue.RepairComplete",
                 "== PHSUtilityFamilyActionKind.FireExtinguisher",
-                "&& candidate.IsRepairComplete)",
+                "NetworkAudioCue.ExtinguisherSpray",
+                "if (familyKind == PHSUtilityFamilyActionKind.Wrench)",
+                "NetworkAudioCue.WrenchImpact",
+                "if (resolvedCandidate.IsRepairComplete)",
+                "NetworkAudioCue.RepairComplete",
+                "== PHSUtilityFamilyActionKind.FireExtinguisher",
+                "&& resolvedCandidate.IsRepairComplete)",
                 "NetworkAudioCue.ExtinguishComplete");
             RequireOrdered(
                 Root + "/02. Script/Items/PHSNetworkFoamGunController.cs",

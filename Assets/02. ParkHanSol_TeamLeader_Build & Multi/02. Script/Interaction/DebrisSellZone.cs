@@ -38,6 +38,11 @@ namespace LastJumpCrew.ParkHanSol.Interaction
 
         private void OnTriggerEnter(Collider other)
         {
+            if (IsNetworkSessionActive() && !IsSpawned)
+            {
+                return;
+            }
+
             if (!TryResolveDebrisForSale(other, out var debrisItem))
             {
                 return;
@@ -54,7 +59,7 @@ namespace LastJumpCrew.ParkHanSol.Interaction
 
         private void OnTriggerStay(Collider other)
         {
-            if (!IsNetworkSessionActive() || networkSalePending || Time.unscaledTime < nextNetworkSaleTime)
+            if (!IsNetworkSessionActive() || !IsSpawned || networkSalePending || Time.unscaledTime < nextNetworkSaleTime)
             {
                 return;
             }

@@ -51,6 +51,7 @@ namespace LastJumpCrew.ParkHanSol.Items
             {
                 EventEffectKind.Fire => UtilityItemActionKind.FireSuppression,
                 EventEffectKind.OxygenLeak => UtilityItemActionKind.OxygenLeakRepair,
+                EventEffectKind.HullBreach => UtilityItemActionKind.HullBreachRepair,
                 _ => UtilityItemActionKind.None
             };
             return actionKind != UtilityItemActionKind.None;

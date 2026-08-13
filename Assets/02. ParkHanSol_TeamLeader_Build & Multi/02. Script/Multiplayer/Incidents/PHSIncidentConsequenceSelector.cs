@@ -3,6 +3,7 @@ using LastJumpCrew.ParkHanSol.Multiplayer.Events;
 using LastJumpCrew.ParkHanSol.Multiplayer.ShipAccidents;
 using UnityEngine;
 
+#if false // Removed from the team event runtime; retained only as historical source.
 namespace LastJumpCrew.ParkHanSol.Multiplayer
 {
     [DisallowMultipleComponent]
@@ -271,3 +272,4 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
         }
     }
 }
+#endif

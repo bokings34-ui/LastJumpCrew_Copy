@@ -48,7 +48,6 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
             if (networkManager != null)
             {
                 networkManager.OnServerStarted -= HandleServerStarted;
-                networkManager.ConnectionApprovalCallback -= RejectConnectionDuringRestart;
                 if (networkManager.SceneManager != null)
                 {
                     networkManager.SceneManager.OnLoadEventCompleted -= HandleRestartSceneLoaded;
@@ -97,9 +96,37 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
             }
 
             networkObject.name = runSessionRootPrefab.name;
+            ValidatePersistentEventAuthority(networkObject);
             Debug.Log(
                 $"PHS_RUN_SESSION_ROOT_SPAWNED prefab={runSessionRootPrefab.name} objectId={networkObject.NetworkObjectId}",
                 this);
+        }
+
+        private static void ValidatePersistentEventAuthority(NetworkObject sessionRoot)
+        {
+            var runRoot = sessionRoot.GetComponent<NetworkRunSessionRoot>();
+            if (runRoot == null)
+            {
+                Debug.LogError(
+                    $"PHS_RUN_SESSION_ROOT_SPAWN_FAILED reason=persistent_event_authority_invalid " +
+                    "detail=session_root_missing",
+                    sessionRoot);
+                return;
+            }
+
+            if (!runRoot.TryValidatePersistentEventAuthority(out var authorityReason))
+            {
+                Debug.LogError(
+                    $"PHS_RUN_SESSION_ROOT_SPAWN_FAILED reason=persistent_event_authority_invalid " +
+                    $"detail={authorityReason}",
+                    sessionRoot);
+                return;
+            }
+
+            Debug.Log(
+                $"PHS_RUN_SESSION_ROOT_EVENT_AUTHORITY_OK objectId={sessionRoot.NetworkObjectId} " +
+                "spawn_mode=shared_root",
+                sessionRoot);
         }
 
         internal bool CanBeginRestartServer(
@@ -199,8 +226,6 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
             restartInProgress = true;
             restartExcludedClientIds.Clear();
             coordinator.BeginLoadingServer(restartEpoch);
-            networkManager.ConnectionApprovalCallback -= RejectConnectionDuringRestart;
-            networkManager.ConnectionApprovalCallback += RejectConnectionDuringRestart;
             networkManager.SceneManager.OnLoadEventCompleted -= HandleRestartSceneLoaded;
             networkManager.SceneManager.OnLoadEventCompleted += HandleRestartSceneLoaded;
 
@@ -288,15 +313,6 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
         {
             yield return null;
 
-            if (!TryPrepareFreshObjects(
-                    out var freshRoot,
-                    out var freshPlayers,
-                    out var prepareReason))
-            {
-                FailRestartServer($"prepare_failed:{prepareReason}");
-                yield break;
-            }
-
             var oldRoot = NetworkRunSessionRoot.Instance;
             var oldPlayers = new List<NetworkObject>();
             foreach (var pair in networkManager.ConnectedClients)
@@ -307,21 +323,33 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
                 }
             }
 
+            for (var index = 0; index < oldPlayers.Count; index++)
+            {
+                if (oldPlayers[index] != null && oldPlayers[index].IsSpawned)
+                {
+                    oldPlayers[index].Despawn(true);
+                }
+            }
+
+            if (oldRoot != null && oldRoot.IsSpawned)
+            {
+                oldRoot.NetworkObject.Despawn(true);
+            }
+
+            // Let NGO finish the old authority despawn before publishing its replacement.
+            yield return null;
+
+            if (!TryPrepareFreshObjects(
+                    out var freshRoot,
+                    out var freshPlayers,
+                    out var prepareReason))
+            {
+                FailRestartServer($"prepare_failed:{prepareReason}");
+                yield break;
+            }
+
             try
             {
-                for (var index = 0; index < oldPlayers.Count; index++)
-                {
-                    if (oldPlayers[index] != null && oldPlayers[index].IsSpawned)
-                    {
-                        oldPlayers[index].Despawn(true);
-                    }
-                }
-
-                if (oldRoot != null && oldRoot.IsSpawned)
-                {
-                    oldRoot.NetworkObject.Despawn(true);
-                }
-
                 GameCore.Instance.Commands.StartGame();
 
                 freshRoot.NetworkObject.SpawnWithOwnership(
@@ -507,7 +535,6 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
 
         private void CompleteRestartServer()
         {
-            networkManager.ConnectionApprovalCallback -= RejectConnectionDuringRestart;
             Debug.Log(
                 $"PHS_RUN_RESTART_COMPLETED epoch={restartEpoch} scene={restartSceneName} " +
                 $"players={networkManager.ConnectedClients.Count}",
@@ -516,21 +543,6 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
             restartSceneName = null;
             restartExcludedClientIds.Clear();
             restartInProgress = false;
-        }
-
-        private void RejectConnectionDuringRestart(
-            NetworkManager.ConnectionApprovalRequest request,
-            NetworkManager.ConnectionApprovalResponse response)
-        {
-            if (!restartInProgress)
-            {
-                return;
-            }
-
-            response.Approved = false;
-            response.CreatePlayerObject = false;
-            response.Pending = false;
-            response.Reason = $"Run restart is in progress. epoch={restartEpoch}";
         }
 
         private void DestroyPreparedObjects(
@@ -576,10 +588,10 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
                 || runSessionRootPrefab.GetComponent<NetworkShipSystemsState>() == null
                 || runSessionRootPrefab.GetComponent<NetworkRunEconomyLedger>() == null
                 || runSessionRootPrefab.GetComponent<NetworkRunRandomLedger>() == null
-                || runSessionRootPrefab.GetComponent<NetworkRunIncidentLedger>() == null
-                || runSessionRootPrefab.GetComponent<PHSNetworkIncidentDirector>() == null
                 || runSessionRootPrefab.GetComponent<NetworkShopTransitionVoteCoordinator>() == null
-                || runSessionRootPrefab.GetComponent<NetworkRunRestartCoordinator>() == null)
+                || runSessionRootPrefab.GetComponent<NetworkRunRestartCoordinator>() == null
+                || runSessionRootPrefab.GetComponent<
+                    LastJumpCrew.ParkHanSol.Multiplayer.Events.NetworkEventCoordinator>() == null)
             {
                 Debug.LogError(
                     "PHS_RUN_SESSION_ROOT_BOOTSTRAP_FAILED reason=prefab_contract_invalid",

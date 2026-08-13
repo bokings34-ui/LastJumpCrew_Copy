@@ -6,6 +6,7 @@ using LastJumpCrew.ParkHanSol.Multiplayer;
 using LastJumpCrew.ParkHanSol.Multiplayer.Audio;
 using LastJumpCrew.ParkHanSol.Multiplayer.Tutorial;
 using LastJumpCrew.ParkHanSol.Multiplayer.Events.MiniGames.Runtime;
+using LastJumpCrew.ParkHanSol.Multiplayer.Events;
 using LastJumpCrew.ParkHanSol.Multiplayer.Input;
 using Unity.Netcode;
 using UnityEditor;
@@ -38,7 +39,7 @@ namespace LastJumpCrew.ParkHanSol.Editor
         private const string LobbyUiPrefabPath =
             Root + "/03. Prefab/UI/PHS_NetworkStartLobbyUI.prefab";
         private const string MiniGamePrefabPath =
-            "Assets/01. MainGame/02. Final_Prefab/01. Prefab_ParkHanSol_TeamLeader/Prefab/Integration0716/PHS_MiniGameRuntimeSystem.prefab";
+            Root + "/03. Prefab/LegacyMigrated/Prefab/Integration0716/PHS_MiniGameRuntimeSystem.prefab";
         private const string GameplayScenePath =
             Root + "/01. Scene/BEAVER_2026/PHS_Map_ver1.unity";
 
@@ -107,11 +108,76 @@ namespace LastJumpCrew.ParkHanSol.Editor
             Debug.Log("PHS_PLAYER_AUDIO_RECOVERY_COMPLETE prefabs=2 curated=true movement=true interaction=true");
         }
 
+        [MenuItem("Tools/ParkHanSol/BEAVER/Author Team Mini Game Success Audio")]
+        public static void AuthorMiniGameSuccessAudio()
+        {
+            PHSCuratedAssetSfxAuthoring.Author();
+            var clips = LoadRequiredClips();
+            ConfigureMiniGamePrefab(clips);
+            AssetDatabase.SaveAssets();
+            ValidateMiniGameSuccessAudioOrThrow();
+            Debug.Log(
+                "PHS_MINIGAME_SUCCESS_AUDIO_AUTHOR_OK cue=MissionSuccess " +
+                "vfx=flash_screen");
+        }
+
+        [MenuItem("Tools/ParkHanSol/BEAVER/Author Scheduler Event Audio Only")]
+        public static void AuthorSchedulerEventAudioOnly()
+        {
+            PHSCuratedAssetSfxAuthoring.Author();
+            var clips = LoadRequiredClips();
+            ConfigureRunRootPrefab(clips);
+            AssetDatabase.SaveAssets();
+            ValidateSchedulerEventAudio();
+            Debug.Log(
+                "PHS_EVENT_AUDIO_AUTHOR_OK scope=scheduler_only " +
+                "events=7101-7107,7201-7203 cue=AccidentAppeared");
+        }
+
         [MenuItem("Tools/ParkHanSol/BEAVER/Validate Recovered Player Audio")]
         public static void ValidatePlayerAudio()
         {
             ValidatePlayerAudioOrThrow();
             Debug.Log("PHS_PLAYER_AUDIO_RECOVERY_VALIDATE_OK prefabs=2 curated=true movement=true interaction=true");
+        }
+
+        [MenuItem("Tools/ParkHanSol/BEAVER/Validate Scheduler Event Audio")]
+        public static void ValidateSchedulerEventAudio()
+        {
+            var root = PrefabUtility.LoadPrefabContents(RunRootPrefabPath);
+            try
+            {
+                var coordinator = RequireSingle<NetworkEventCoordinator>(root);
+                var presenter = RequireSingle<NetworkEventLifecycleAudioPresenter>(root);
+                var data = new SerializedObject(presenter);
+                var assignedCoordinator = data.FindProperty("eventCoordinator")?.objectReferenceValue;
+                var cuePlayer = data.FindProperty("cuePlayerSource")?.objectReferenceValue
+                    as NetworkAudioCueEmitter;
+                if (!presenter.HasRequiredReferences
+                    || assignedCoordinator != coordinator
+                    || cuePlayer == null)
+                {
+                    throw new InvalidOperationException(
+                        "PHS_EVENT_AUDIO_VALIDATE_FAILED reason=inspector_reference_invalid");
+                }
+
+                ValidateEmitterBindings(
+                    cuePlayer,
+                    RunRootPrefabPath,
+                    NetworkAudioCue.AccidentAppeared);
+            }
+            finally
+            {
+                PrefabUtility.UnloadPrefabContents(root);
+            }
+
+            Debug.Log("PHS_EVENT_AUDIO_VALIDATE_OK events=7101-7107,7201-7203 cue=AccidentAppeared");
+        }
+
+        public static void ValidateMiniGameSuccessAudio()
+        {
+            ValidateMiniGameSuccessAudioOrThrow();
+            Debug.Log("PHS_MINIGAME_SUCCESS_AUDIO_VALIDATE_OK cue=MissionSuccess vfx=flash_screen");
         }
 
         [MenuItem("Tools/ParkHanSol/BEAVER/Author Requested SFX")]
@@ -201,6 +267,11 @@ namespace LastJumpCrew.ParkHanSol.Editor
                 var interactionScanner = RequireSingle<TempPlayerInteractionScanner>(root);
                 var feedback = GetOrAddSingle<NetworkPlayerItemAudioFeedback>(root);
                 var movementFeedback = GetOrAddSingle<NetworkPlayerMovementAudioFeedback>(root);
+
+                if (!includeTutorialCompletion)
+                {
+                    RemoveNamedDescendants(root.transform, "PHS_NetworkTutorialCompletionAudio");
+                }
 
                 var ownerRoot = RequireNamedChild(root.transform, "PHS_NetworkItemAudio_2D");
                 var ownerSource = ConfigureAudioSource(ownerRoot.gameObject, false, 25f);
@@ -310,19 +381,24 @@ namespace LastJumpCrew.ParkHanSol.Editor
         {
             EditPrefab(RunRootPrefabPath, root =>
             {
-                var ledger = RequireSingle<NetworkRunIncidentLedger>(root);
-                var clock = RequireSingle<NetworkRunStageClock>(root);
-                var presenter = GetOrAddSingle<NetworkRunWarningAudioPresenter>(root);
+                // TeamSingleTruth schedules incidents through NetworkEventCoordinator.
+                // Legacy ledger warning wiring must not gate this prefab-only pass.
+                foreach (var legacyPresenter in root.GetComponents<NetworkRunWarningAudioPresenter>())
+                {
+                    UnityEngine.Object.DestroyImmediate(legacyPresenter);
+                }
+
                 var audioRoot = RequireNamedChild(root.transform, "PHS_NetworkWarningAudio");
                 var source = ConfigureAudioSource(audioRoot.gameObject, false, 25f);
                 var emitter = ConfigureEmitter(
                     audioRoot.gameObject,
                     source,
-                    Binding(NetworkAudioCue.Warning, clips, 0.8f, 0.5f),
                     Binding(NetworkAudioCue.AccidentAppeared, clips, 0.82f, 0.4f));
-                SetObjectReference(presenter, "incidentLedger", ledger);
-                SetObjectReference(presenter, "stageClock", clock);
-                SetObjectReference(presenter, "cuePlayerSource", emitter);
+
+                var eventCoordinator = RequireSingle<NetworkEventCoordinator>(root);
+                var eventPresenter = GetOrAddSingle<NetworkEventLifecycleAudioPresenter>(root);
+                SetObjectReference(eventPresenter, "eventCoordinator", eventCoordinator);
+                SetObjectReference(eventPresenter, "cuePlayerSource", emitter);
 
                 var runFlow = RequireSingle<NetworkRunFlowCoordinator>(root);
                 var warpPresenter = GetOrAddSingle<NetworkRunWarpAudioPresenter>(root);
@@ -539,6 +615,17 @@ namespace LastJumpCrew.ParkHanSol.Editor
             return child;
         }
 
+        private static void RemoveNamedDescendants(Transform root, string objectName)
+        {
+            var matches = root.GetComponentsInChildren<Transform>(true)
+                .Where(candidate => candidate != root && candidate.name == objectName)
+                .ToArray();
+            foreach (var match in matches)
+            {
+                UnityEngine.Object.DestroyImmediate(match.gameObject);
+            }
+        }
+
         private static T RequireSingle<T>(GameObject root)
             where T : Component
         {
@@ -595,6 +682,34 @@ namespace LastJumpCrew.ParkHanSol.Editor
 
             ValidatePlayerAudioPrefab(PlayerPrefabPath);
             ValidatePlayerAudioPrefab(TutorialPlayerPrefabPath);
+        }
+
+        private static void ValidateMiniGameSuccessAudioOrThrow()
+        {
+            var root = PrefabUtility.LoadPrefabContents(MiniGamePrefabPath);
+            try
+            {
+                var manager = RequireSingle<PHSMiniGameManager>(root);
+                var managerData = new SerializedObject(manager);
+                var emitter = managerData.FindProperty("successCuePlayerSource")
+                    ?.objectReferenceValue as NetworkAudioCueEmitter;
+                if (manager.flashScreen == null || emitter == null || !emitter.HasRequiredReferences)
+                {
+                    throw new InvalidOperationException(
+                        "PHS_MINIGAME_SUCCESS_AUDIO_VALIDATE_FAILED " +
+                        $"flash={(manager.flashScreen == null ? "missing" : "ok")} " +
+                        $"emitter={(emitter == null ? "missing" : "invalid")}");
+                }
+
+                ValidateEmitterBindings(
+                    emitter,
+                    MiniGamePrefabPath,
+                    NetworkAudioCue.MissionSuccess);
+            }
+            finally
+            {
+                PrefabUtility.UnloadPrefabContents(root);
+            }
         }
 
         private static void ValidatePlayerAudioPrefab(string path)

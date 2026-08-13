@@ -1,6 +1,5 @@
 using System;
 using LastJumpCrew.ParkHanSol.Multiplayer.Events;
-using LastJumpCrew.ParkHanSol.Multiplayer.ShipAccidents;
 using Unity.Netcode;
 using UnityEngine;
 
@@ -15,12 +14,8 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Maps
         [SerializeField] private PHSMapProfileSO shopPortalProfile;
         [SerializeField] private Transform environmentRoot;
         [SerializeField] private WarpTransitionPresenter warpTransitionPresenter;
-        [SerializeField] private PHSNetworkEventScheduler externalThreatScheduler;
-        [SerializeField] private PHSNetworkShipAccidentCoordinator internalAccidentCoordinator;
-        [SerializeField] private PHSMapIncidentCommandConsumer incidentCommandConsumer;
         [SerializeField] private PHSRandomDebrisStream debrisStream;
         [SerializeField] private GameObject shopPortalRoot;
-        [SerializeField] private bool keepShopPortalAlwaysActive = true;
 
         [Header("Runtime Binding")]
         [SerializeField, Min(0.1f)] private float bindTimeoutSeconds = 5f;
@@ -31,22 +26,23 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Maps
         private bool setupValid;
         private bool bindErrorLogged;
         private bool initialApplyPending;
-        private PHSMapProfileSO pendingIncidentScheduleProfile;
-        private float pendingIncidentScheduleStartedAt;
-        private bool pendingIncidentScheduleErrorLogged;
 
         public PHSMapProfileSO CurrentProfile { get; private set; }
-        public bool KeepShopPortalAlwaysActive => keepShopPortalAlwaysActive;
+
+        public bool TryResolveGameplayProfile(
+            int mapId,
+            out PHSMapProfileSO profile)
+        {
+            profile = null;
+            return mapCatalog != null && mapCatalog.TryResolve(mapId, out profile);
+        }
 
         public event Action<PHSMapProfileSO> CurrentProfileChanged;
 
         private void Awake()
         {
             setupValid = ValidateSetup();
-            if (shopPortalRoot != null)
-            {
-                shopPortalRoot.SetActive(keepShopPortalAlwaysActive);
-            }
+            SetShopPortalActive(false);
 
             enabled = setupValid;
         }
@@ -60,12 +56,6 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Maps
 
         private void OnDisable()
         {
-            if (IsServer())
-            {
-                TryCancelIncidentSchedule("map_runtime_disabled");
-            }
-
-            ClearPendingIncidentSchedule();
             UnbindRunFlow();
         }
 
@@ -91,6 +81,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Maps
                 TryBindRunFlow();
                 if (runFlowCoordinator == null
                     && !bindErrorLogged
+                    && NetworkRunSessionRoot.Instance != null
                     && Time.unscaledTime - bindStartedAt >= bindTimeoutSeconds)
                 {
                     bindErrorLogged = true;
@@ -106,7 +97,6 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Maps
                 ApplyCurrentPhaseState();
             }
 
-            TryConfigurePendingIncidentSchedule();
         }
 
         private void TryBindRunFlow()
@@ -181,12 +171,15 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Maps
 
         private void HandleActiveMapCommitted(int currentMapId)
         {
-            ClearPendingIncidentSchedule();
             initialApplyPending = true;
         }
 
         private void HandlePhaseChanged(NetworkRunPhase previousPhase, NetworkRunPhase currentPhase)
         {
+            SetShopPortalActive(
+                currentPhase == NetworkRunPhase.Shop
+                || currentPhase == NetworkRunPhase.FinalShop);
+
             if (IsServer()
                 && (currentPhase == NetworkRunPhase.WarpArrival
                     || currentPhase == NetworkRunPhase.Shop
@@ -229,42 +222,22 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Maps
                 return;
             }
 
-            if (currentPhase == NetworkRunPhase.WarpReady)
-            {
-                ClearPendingIncidentSchedule();
-                return;
-            }
-
             if (currentPhase == NetworkRunPhase.Charging && CurrentProfile != null)
             {
-                ClearPendingIncidentSchedule();
-
-                if (!internalAccidentCoordinator.TryStopServer(out var internalStopReason))
+                if (CurrentProfile.AllowsEventGeneration)
                 {
-                    Debug.LogError(
-                        $"PHS_MAP_INTERNAL_ACCIDENT_STOP_FAILED reason={internalStopReason} mapId={CurrentProfile.MapId}",
-                        this);
-                }
-
-                var incidentDirector = NetworkRunSessionRoot.Instance?.IncidentDirector;
-                if (incidentDirector != null
-                    && incidentDirector.IsConfigured
-                    && !incidentDirector.ScheduleCancelled
-                    && !incidentDirector.TrySetSchedulingEnabledServer(
-                        false,
-                        out var incidentDisableReason))
-                {
-                    Debug.LogError(
-                        $"PHS_MAP_INCIDENT_SCHEDULE_DISABLE_FAILED reason={incidentDisableReason} mapId={CurrentProfile.MapId}",
-                        this);
-                }
-
-                if (CurrentProfile.AllowsEventGeneration
-                    && !externalThreatScheduler.TryStartServer(out var externalStartReason))
-                {
-                    Debug.LogError(
-                        $"PHS_MAP_TEAM_EVENT_SCHEDULE_START_FAILED reason={externalStartReason} mapId={CurrentProfile.MapId}",
-                        this);
+                    if (!TryGetPersistentEventScheduler(out var externalThreatScheduler))
+                    {
+                        Debug.LogError(
+                            $"PHS_MAP_TEAM_EVENT_SCHEDULE_START_FAILED reason=persistent_scheduler_missing mapId={CurrentProfile.MapId}",
+                            this);
+                    }
+                    else if (!externalThreatScheduler.TryStartServer(out var externalStartReason))
+                    {
+                        Debug.LogError(
+                            $"PHS_MAP_TEAM_EVENT_SCHEDULE_START_FAILED reason={externalStartReason} mapId={CurrentProfile.MapId}",
+                            this);
+                    }
                 }
 
             }
@@ -349,16 +322,6 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Maps
             }
 
             debrisStream.SetSimulationEnabled(profile.AllowsDebrisGeneration);
-            if (IsServer()
-                && !internalAccidentCoordinator.TrySetMaintenancePausedServer(
-                    profile.IsWarpMaintenance || profile.IsShopPortalProfile,
-                    out var maintenanceReason))
-            {
-                Debug.LogError($"PHS_MAP_MAINTENANCE_STATE_FAILED reason={maintenanceReason} mapId={mapId}", this);
-                return false;
-            }
-
-            shopPortalRoot.SetActive(keepShopPortalAlwaysActive || profile.AllowsShopPortal);
             CurrentProfile = profile;
             CurrentProfileChanged?.Invoke(profile);
             Debug.Log($"PHS_MAP_RUNTIME_APPLIED mapId={mapId} name={profile.DisplayName}", this);
@@ -427,35 +390,20 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Maps
 
         private bool TryConfigureSchedules(PHSMapProfileSO profile, out string reason)
         {
+            if (!TryGetPersistentEventScheduler(out var externalThreatScheduler))
+            {
+                reason = "persistent_event_scheduler_missing";
+                return false;
+            }
+
             if (!externalThreatScheduler.TryStopServer(out var externalStopReason))
             {
                 reason = $"external_threat_scheduler_stop_failed:{externalStopReason}";
                 return false;
             }
 
-            if (!internalAccidentCoordinator.TryStopServer(out var internalStopReason))
-            {
-                reason = $"internal_accident_scheduler_stop_failed:{internalStopReason}";
-                return false;
-            }
-
             if (!profile.AllowsEventGeneration)
             {
-                ClearPendingIncidentSchedule();
-                var director =
-                    NetworkRunSessionRoot.Instance?.IncidentDirector;
-                if (director != null
-                    && director.IsConfigured
-                    && !director.ScheduleCancelled
-                    && !director.TrySetSchedulingEnabledServer(
-                        false,
-                        out var pauseReason))
-                {
-                    reason =
-                        $"incident_schedule_pause_failed:{pauseReason}";
-                    return false;
-                }
-
                 reason = null;
                 return true;
             }
@@ -469,11 +417,14 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Maps
                     externalWeights[index].Weight);
             }
 
+            var clearedZones = runFlowCoordinator == null
+                ? 0
+                : runFlowCoordinator.ClearedZoneCount;
             if (!externalThreatScheduler.TryConfigureServer(
                     PHSNetworkEventChannel.LegacyMixed,
                     externalEntries,
-                    profile.ExternalThreatIntervalMinSeconds,
-                    profile.ExternalThreatIntervalMaxSeconds,
+                    profile.GetExternalThreatIntervalMinSeconds(clearedZones),
+                    profile.GetExternalThreatIntervalMaxSeconds(clearedZones),
                     profile.MaximumActiveExternalThreats,
                     out var externalConfigureReason))
             {
@@ -487,311 +438,36 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Maps
                 : null;
             if (eventCoordinator == null
                 || !eventCoordinator.TryConfigureShipModuleImpactServer(
-                    profile.InternalModuleDamageMultiplier,
-                    profile.InternalShipDamageMultiplier,
+                    profile.GetInternalModuleDamageMultiplier(clearedZones),
+                    profile.GetInternalShipDamageMultiplier(clearedZones),
                     out eventImpactReason))
             {
                 reason = $"event_module_impact_configure_failed:{eventImpactReason}";
                 return false;
             }
 
-            ClearPendingIncidentSchedule();
-            var incidentDirector = NetworkRunSessionRoot.Instance?.IncidentDirector;
-            if (incidentDirector != null
-                && incidentDirector.IsConfigured
-                && !incidentDirector.ScheduleCancelled
-                && !incidentDirector.TrySetSchedulingEnabledServer(false, out var incidentDisableReason))
-            {
-                reason = $"incident_schedule_disable_failed:{incidentDisableReason}";
-                return false;
-            }
-
             Debug.Log(
                 $"PHS_MAP_TEAM_EVENT_AUTHORITY_READY mapId={profile.MapId} " +
-                $"entries={externalEntries.Length}",
+                $"entries={externalEntries.Length} " +
+                $"runDifficulty={PHSMapProfileSO.GetRunDifficultyStage(clearedZones)} " +
+                $"cleared={clearedZones}",
                 this);
             reason = null;
             return true;
-        }
-
-        private bool TryConfigureIncidentDirector(
-            PHSMapProfileSO profile,
-            NetworkRunSessionRoot root,
-            out string reason)
-        {
-            if (!TryBuildIncidentScheduleDefinition(
-                    profile,
-                    root.StageClock.StageSequence,
-                    out var definition,
-                    out reason))
-            {
-                return false;
-            }
-
-            if (!root.IncidentDirector.TryConfigureServer(definition, out reason))
-            {
-                reason = $"incident_director_configure_failed:{reason}";
-                return false;
-            }
-
-            if (runFlowCoordinator != null
-                && runFlowCoordinator.Phase == NetworkRunPhase.Charging
-                && !root.IncidentDirector.TrySetSchedulingEnabledServer(
-                    true,
-                    out var enableReason))
-            {
-                reason =
-                    $"incident_schedule_start_failed:{enableReason}";
-                return false;
-            }
-
-            ClearPendingIncidentSchedule();
-            reason = null;
-            return true;
-        }
-
-        private void SetPendingIncidentSchedule(PHSMapProfileSO profile)
-        {
-            if (pendingIncidentScheduleProfile == profile)
-            {
-                return;
-            }
-
-            pendingIncidentScheduleProfile = profile;
-            pendingIncidentScheduleStartedAt = Time.unscaledTime;
-            pendingIncidentScheduleErrorLogged = false;
-            var stageClock = NetworkRunSessionRoot.Instance?.StageClock;
-            Debug.Log(
-                $"PHS_MAP_INCIDENT_SCHEDULE_DEFERRED mapId={profile.MapId} " +
-                $"clock={stageClock?.MapId ?? 0} " +
-                $"sequence={stageClock?.StageSequence ?? 0U}",
-                this);
-        }
-
-        private void ClearPendingIncidentSchedule()
-        {
-            pendingIncidentScheduleProfile = null;
-            pendingIncidentScheduleStartedAt = 0f;
-            pendingIncidentScheduleErrorLogged = false;
-        }
-
-        private void TryConfigurePendingIncidentSchedule()
-        {
-            var profile = pendingIncidentScheduleProfile;
-            if (profile == null || !IsServer())
-            {
-                return;
-            }
-
-            var root = NetworkRunSessionRoot.Instance;
-            if (root == null
-                || root.IncidentDirector == null
-                || root.StageClock == null)
-            {
-                LogPendingIncidentScheduleFailure("incident_root_not_ready");
-                return;
-            }
-
-            if (!IsIncidentStageReady(profile, root.StageClock))
-            {
-                LogPendingIncidentScheduleFailure(
-                    $"incident_stage_mismatch:" +
-                    $"profile={profile.MapId}:" +
-                    $"clock={root.StageClock.MapId}:" +
-                    $"sequence={root.StageClock.StageSequence}:" +
-                    $"state={root.StageClock.State}");
-                return;
-            }
-
-            if (!TryConfigureIncidentDirector(profile, root, out var reason))
-            {
-                LogPendingIncidentScheduleFailure(reason);
-                return;
-            }
-
-            Debug.Log(
-                $"PHS_MAP_INCIDENT_SCHEDULE_READY mapId={profile.MapId} " +
-                $"sequence={root.StageClock.StageSequence}",
-                this);
-            if (runFlowCoordinator != null
-                && runFlowCoordinator.Phase == NetworkRunPhase.Charging
-                && !TrySetIncidentSchedulingEnabled(true, out var enableReason))
-            {
-                Debug.LogError(
-                    $"PHS_MAP_INCIDENT_SCHEDULE_START_FAILED " +
-                    $"reason={enableReason} mapId={profile.MapId}",
-                    this);
-            }
-        }
-
-        private static bool IsIncidentStageReady(
-            PHSMapProfileSO profile,
-            NetworkRunStageClock stageClock)
-        {
-            return profile != null
-                && stageClock != null
-                && stageClock.MapId == profile.MapId
-                && stageClock.StageSequence != 0U
-                && (stageClock.State == NetworkRunStageClockState.Running
-                    || stageClock.State
-                        == NetworkRunStageClockState.Paused);
-        }
-
-        private void LogPendingIncidentScheduleFailure(string reason)
-        {
-            if (pendingIncidentScheduleErrorLogged
-                || runFlowCoordinator == null
-                || runFlowCoordinator.Phase != NetworkRunPhase.Charging
-                || Time.unscaledTime - pendingIncidentScheduleStartedAt
-                    < bindTimeoutSeconds)
-            {
-                return;
-            }
-
-            pendingIncidentScheduleErrorLogged = true;
-            Debug.LogError(
-                $"PHS_MAP_INCIDENT_SCHEDULE_PENDING_FAILED " +
-                $"reason={reason ?? "unknown"}",
-                this);
-        }
-
-        private static bool TryBuildIncidentScheduleDefinition(
-            PHSMapProfileSO profile,
-            uint stageSequence,
-            out RunIncidentScheduleDefinition definition,
-            out string reason)
-        {
-            var externalWeights = profile.ExternalThreatWeights;
-            var externalEntries = new RunIncidentWeightedEntry[externalWeights.Count];
-            for (var index = 0; index < externalWeights.Count; index++)
-            {
-                var entry = externalWeights[index];
-                if (!TryResolveExternalIncidentFamily(
-                        entry.EventId,
-                        out var family))
-                {
-                    definition = null;
-                    reason = $"external_incident_family_missing:{entry.EventId}";
-                    return false;
-                }
-
-                externalEntries[index] = new RunIncidentWeightedEntry(
-                    (int)entry.EventId,
-                    family,
-                    entry.Weight,
-                    1,
-                    entry.WarpChargeMultiplier);
-            }
-
-            var internalWeights = profile.InternalAccidentWeights;
-            var internalEntries = new RunIncidentWeightedEntry[internalWeights.Count];
-            for (var index = 0; index < internalWeights.Count; index++)
-            {
-                var entry = internalWeights[index];
-                if (!TryResolveInternalIncidentFamily(
-                        entry.Definition.Id,
-                        out var family))
-                {
-                    definition = null;
-                    reason =
-                        $"internal_incident_family_missing:" +
-                        $"{entry.Definition.Id}";
-                    return false;
-                }
-
-                internalEntries[index] = new RunIncidentWeightedEntry(
-                    (int)entry.Definition.Id,
-                    family,
-                    entry.Weight,
-                    1,
-                    entry.WarpChargeMultiplier);
-            }
-
-            definition = new RunIncidentScheduleDefinition(
-                profile.MapId,
-                stageSequence,
-                (ushort)profile.IncidentPressureCapacity,
-                (byte)profile.MaximumActiveExternalThreats,
-                (byte)profile.MaximumActiveInternalAccidents,
-                profile.ExternalThreatIntervalMinSeconds,
-                profile.ExternalThreatIntervalMaxSeconds,
-                profile.InternalAccidentIntervalMinSeconds,
-                profile.InternalAccidentIntervalMaxSeconds,
-                externalEntries,
-                internalEntries);
-            if (!definition.TryValidate(out reason))
-            {
-                definition = null;
-                return false;
-            }
-
-            reason = null;
-            return true;
-        }
-
-        private static bool TryResolveExternalIncidentFamily(
-            SM.EventId eventId,
-            out NetworkRunIncidentFamily family)
-        {
-            switch (eventId)
-            {
-                case SM.EventId.EnemyScout:
-                    family = NetworkRunIncidentFamily.Enemy;
-                    return true;
-                case SM.EventId.MeteorAttack:
-                    family = NetworkRunIncidentFamily.Meteor;
-                    return true;
-                case SM.EventId.EmpAttack:
-                    family = NetworkRunIncidentFamily.EMP;
-                    return true;
-                case SM.EventId.MicDestroy:
-                    family = NetworkRunIncidentFamily.Device;
-                    return true;
-                default:
-                    family = NetworkRunIncidentFamily.None;
-                    return false;
-            }
-        }
-
-        private static bool TryResolveInternalIncidentFamily(
-            PHSShipAccidentId accidentId,
-            out NetworkRunIncidentFamily family)
-        {
-            switch (accidentId)
-            {
-                case PHSShipAccidentId.Fire:
-                    family = NetworkRunIncidentFamily.Fire;
-                    return true;
-                case PHSShipAccidentId.PowerFailure:
-                    family = NetworkRunIncidentFamily.Power;
-                    return true;
-                case PHSShipAccidentId.DeviceFailure:
-                    family = NetworkRunIncidentFamily.Device;
-                    return true;
-                case PHSShipAccidentId.HullBreach:
-                    family = NetworkRunIncidentFamily.Hull;
-                    return true;
-                case PHSShipAccidentId.SteamLeak:
-                    family = NetworkRunIncidentFamily.Steam;
-                    return true;
-                case PHSShipAccidentId.OxygenFailure:
-                    family = NetworkRunIncidentFamily.Oxygen;
-                    return true;
-                case PHSShipAccidentId.GravityGeneratorFailure:
-                    family = NetworkRunIncidentFamily.Gravity;
-                    return true;
-                default:
-                    family = NetworkRunIncidentFamily.None;
-                    return false;
-            }
         }
 
         private void TerminateIncidentRuntimeForPhase(
             NetworkRunPhase currentPhase)
         {
-            ClearPendingIncidentSchedule();
-            if (!externalThreatScheduler.TryStopServer(
-                    out var externalStopReason))
+            if (!TryGetPersistentEventScheduler(out var externalThreatScheduler))
+            {
+                Debug.LogError(
+                    $"PHS_MAP_EXTERNAL_THREAT_STOP_FAILED reason=persistent_scheduler_missing phase={currentPhase}",
+                    this);
+                return;
+            }
+
+            if (!externalThreatScheduler.TryStopServer(out var externalStopReason))
             {
                 Debug.LogError(
                     $"PHS_MAP_EXTERNAL_THREAT_STOP_FAILED " +
@@ -799,58 +475,6 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Maps
                     this);
             }
 
-            if (!internalAccidentCoordinator.TryStopServer(
-                    out var internalStopReason))
-            {
-                Debug.LogError(
-                    $"PHS_MAP_INTERNAL_ACCIDENT_STOP_FAILED " +
-                    $"reason={internalStopReason} phase={currentPhase}",
-                    this);
-            }
-
-            if (!incidentCommandConsumer.TryTerminateAllServer(
-                    $"phase_{currentPhase}",
-                    out var terminateReason))
-            {
-                Debug.LogError(
-                    $"PHS_MAP_INCIDENT_RUNTIME_TERMINATE_FAILED " +
-                    $"reason={terminateReason} phase={currentPhase}",
-                    this);
-            }
-
-            TryCancelIncidentSchedule($"phase_{currentPhase}");
-        }
-
-        private bool TrySetIncidentSchedulingEnabled(
-            bool schedulingEnabled,
-            out string reason)
-        {
-            var director = NetworkRunSessionRoot.Instance?.IncidentDirector;
-            if (director == null)
-            {
-                reason = "incident_director_missing";
-                return false;
-            }
-
-            return director.TrySetSchedulingEnabledServer(
-                schedulingEnabled,
-                out reason);
-        }
-
-        private void TryCancelIncidentSchedule(string cause)
-        {
-            var director = NetworkRunSessionRoot.Instance?.IncidentDirector;
-            if (director == null || !director.IsConfigured)
-            {
-                return;
-            }
-
-            if (!director.TryCancelScheduleServer(cause, out var reason))
-            {
-                Debug.LogError(
-                    $"PHS_MAP_INCIDENT_SCHEDULE_CANCEL_FAILED reason={reason} cause={cause}",
-                    this);
-            }
         }
 
         private bool ValidateSetup()
@@ -897,27 +521,30 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Maps
                 return false;
             }
 
-            if (externalThreatScheduler == null)
-            {
-                Debug.LogError("PHS_MAP_RUNTIME_SETUP_FAILED reason=external_threat_scheduler_missing", this);
-                return false;
-            }
-
-            if (internalAccidentCoordinator == null)
-            {
-                Debug.LogError("PHS_MAP_RUNTIME_SETUP_FAILED reason=internal_accident_coordinator_missing", this);
-                return false;
-            }
-
-            if (incidentCommandConsumer == null)
-            {
-                Debug.LogError(
-                    "PHS_MAP_RUNTIME_SETUP_FAILED reason=incident_command_consumer_missing",
-                    this);
-                return false;
-            }
-
             return true;
+        }
+
+        private void SetShopPortalActive(bool active)
+        {
+            if (shopPortalRoot != null && shopPortalRoot.activeSelf != active)
+            {
+                shopPortalRoot.SetActive(active);
+            }
+        }
+
+        private bool TryGetPersistentEventScheduler(
+            out PHSNetworkEventScheduler scheduler)
+        {
+            scheduler = NetworkRunSessionRoot.Instance?.EventScheduler;
+            if (scheduler != null)
+            {
+                return true;
+            }
+
+            Debug.LogError(
+                "PHS_MAP_RUNTIME_EVENT_AUTHORITY_FAILED reason=persistent_scheduler_missing",
+                this);
+            return false;
         }
 
         private static bool IsServer()

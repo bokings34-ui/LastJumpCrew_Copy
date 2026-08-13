@@ -14,8 +14,6 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Validation
         private const string LobbySceneName = "ParkHanSol_LobbyScene";
         private const float SetupTimeoutSeconds = 30f;
         private const float RestartTimeoutSeconds = 120f;
-        private const float ResultReplicationDelaySeconds = 1f;
-
         private static PHS_NetworkRunRestartValidationDriver instance;
         private ValidationScenario scenario;
         private bool failed;
@@ -64,6 +62,12 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Validation
                 $"PHS_NETWORK_RUN_RESTART_VALIDATION START scenario={scenario}",
                 this);
 
+            // Service authentication and Relay allocation happen before NGO starts listening.
+            // The restart contract timeout begins only after the network session exists.
+            yield return new WaitUntil(
+                () => NetworkManager.Singleton != null
+                    && NetworkManager.Singleton.IsListening);
+
             NetworkManager networkManager = null;
             NetworkRunSessionRoot initialRoot = null;
             yield return WaitForCondition(
@@ -73,12 +77,26 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Validation
                     initialRoot = NetworkRunSessionRoot.Instance;
                     return networkManager != null
                         && networkManager.IsListening
+                        && networkManager.ConnectedClients.Count >= 2
                         && networkManager.LocalClient?.PlayerObject != null
                         && initialRoot != null
                         && initialRoot.Restart != null
                         && initialRoot.RunFlow != null;
                 },
                 "network_session_ready",
+                SetupTimeoutSeconds);
+            if (failed)
+            {
+                yield break;
+            }
+
+            yield return WaitForCondition(
+                () => networkManager.IsHost
+                    ? initialRoot.RunFlow.Phase == NetworkRunPhase.Charging
+                    : initialRoot.RunFlow.Phase == NetworkRunPhase.Charging
+                        || initialRoot.RunFlow.Phase == NetworkRunPhase.GameOver
+                        || initialRoot.Restart.RestartEpoch > 0,
+                "initial_gameplay_started",
                 SetupTimeoutSeconds);
             if (failed)
             {
@@ -154,11 +172,10 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Validation
                 yield break;
             }
 
-            yield return new WaitForSecondsRealtime(ResultReplicationDelaySeconds);
-            Require(
-                NetworkRunResultPanelController.IsLocalResultVisible,
+            yield return WaitForCondition(
+                () => NetworkRunResultPanelController.IsLocalResultVisible,
                 "old_player_result_visible",
-                "result_panel_not_visible_before_restart");
+                SetupTimeoutSeconds);
             if (failed)
             {
                 yield break;
@@ -242,9 +259,13 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Validation
                     var root = NetworkRunSessionRoot.Instance;
                     return root != null
                         && root.Restart != null
-                        && root.Restart.RestartEpoch == targetEpoch
-                        && (root.Restart.RestartState == NetworkRunRestartState.Completed
-                            || root.Restart.RestartState == NetworkRunRestartState.Failed);
+                        && (networkManager.IsHost
+                            ? root.Restart.RestartEpoch == targetEpoch
+                                && (root.Restart.RestartState == NetworkRunRestartState.Completed
+                                || root.Restart.RestartState == NetworkRunRestartState.Failed
+                                )
+                            : networkManager.LocalClient?.PlayerObject != null
+                                && networkManager.LocalClient.PlayerObject.NetworkObjectId != oldPlayerId);
                 },
                 "restart_terminal_state",
                 RestartTimeoutSeconds);
@@ -268,7 +289,10 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Validation
             }
 
             Require(
-                restart.RestartState == NetworkRunRestartState.Completed,
+                networkManager.IsHost
+                    ? restart.RestartState == NetworkRunRestartState.Completed
+                    : networkManager.LocalClient?.PlayerObject != null
+                        && networkManager.LocalClient.PlayerObject.NetworkObjectId != oldPlayerId,
                 "restart_completed_state",
                 $"state={restart.RestartState} reason={restart.LastFailureReason}");
             if (failed)
@@ -280,7 +304,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Validation
                 () => networkManager != null
                     && networkManager.IsListening
                     && networkManager.LocalClient?.PlayerObject != null
-                    && networkManager.LocalClient.PlayerObject != oldPlayer,
+                    && networkManager.LocalClient.PlayerObject.NetworkObjectId != oldPlayerId,
                 "fresh_player_spawned",
                 SetupTimeoutSeconds);
             if (failed)

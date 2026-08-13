@@ -79,7 +79,6 @@ namespace LastJumpCrew.ParkHanSol.Editor
             var coordinator = RequireOne<NetworkEventCoordinator>(scene, "event_coordinator");
             var presenter = RequireOne<NetworkEventEffectMirrorPresenter>(scene, "effect_presenter");
             var runtime = RequireOne<PHSMapRuntimeContext>(scene, "map_runtime");
-            var consumer = RequireOne<PHSMapIncidentCommandConsumer>(scene, "incident_consumer");
             var rooms = FindSceneComponents<ShipRoom>(scene)
                 .OrderBy(room => room.RoomId, StringComparer.Ordinal)
                 .ToArray();
@@ -97,11 +96,11 @@ namespace LastJumpCrew.ParkHanSol.Editor
                     $"enemy_device_target_health_invalid:{enemyDeviceTarget.name}");
                 Require(targetData.FindProperty("visualRoot")?.objectReferenceValue != null,
                     $"enemy_device_target_visual_missing:{enemyDeviceTarget.name}");
-                Require(targetData.FindProperty("destructionAccident")?.enumValueIndex > 0,
-                    $"enemy_device_target_accident_missing:{enemyDeviceTarget.name}");
-                Require(!string.IsNullOrWhiteSpace(
-                        targetData.FindProperty("requestedAnchorId")?.stringValue),
-                    $"enemy_device_target_anchor_missing:{enemyDeviceTarget.name}");
+                var destroyedEvent = targetData.FindProperty("destroyedEvent");
+                Require(destroyedEvent != null
+                        && Enum.IsDefined(typeof(EventId), destroyedEvent.intValue)
+                        && destroyedEvent.intValue > 0,
+                    $"enemy_device_target_event_missing:{enemyDeviceTarget.name}");
             }
             Require(coordinator.GetComponent<NetworkObject>() != null,
                 "coordinator_network_object_missing");
@@ -125,22 +124,6 @@ namespace LastJumpCrew.ParkHanSol.Editor
             RequireReference(coordinator, "roomRegistry", roomRegistry);
             RequireReference(coordinator, "effectMirrorPresenter", presenter);
             RequireReference(runtime, "externalThreatScheduler", scheduler);
-            RequireReference(runtime, "incidentCommandConsumer", consumer);
-            RequireReference(consumer, "eventCoordinator", coordinator);
-
-            var consumerData = new SerializedObject(consumer);
-            var roomProperty = consumerData.FindProperty("rooms");
-            Require(roomProperty != null && roomProperty.isArray,
-                "consumer_rooms_property_missing");
-            Require(roomProperty.arraySize == rooms.Length,
-                $"consumer_room_count:{roomProperty.arraySize}");
-            for (var index = 0; index < rooms.Length; index++)
-            {
-                Require(
-                    roomProperty.GetArrayElementAtIndex(index).objectReferenceValue
-                        == rooms[index],
-                    $"consumer_room_mismatch:{index}");
-            }
 
             var missingScripts = scene.GetRootGameObjects()
                 .SelectMany(root => root.GetComponentsInChildren<Transform>(true))
@@ -184,12 +167,6 @@ namespace LastJumpCrew.ParkHanSol.Editor
             var coordinator = RequireOne<NetworkEventCoordinator>(scene, "event_coordinator");
             var presenter = RequireOne<NetworkEventEffectMirrorPresenter>(scene, "effect_presenter");
             var runtime = RequireOne<PHSMapRuntimeContext>(scene, "map_runtime");
-            var consumer = RequireOne<PHSMapIncidentCommandConsumer>(scene, "incident_consumer");
-            var rooms = FindSceneComponents<ShipRoom>(scene)
-                .OrderBy(room => room.RoomId, StringComparer.Ordinal)
-                .ToArray();
-
-            Require(rooms.Length == 4, $"room_count:{rooms.Length}");
             Require(coordinator.GetComponent<NetworkObject>() != null,
                 "coordinator_network_object_missing");
 
@@ -199,21 +176,6 @@ namespace LastJumpCrew.ParkHanSol.Editor
             SetReference(coordinator, "roomRegistry", roomRegistry);
             SetReference(coordinator, "effectMirrorPresenter", presenter);
             SetReference(runtime, "externalThreatScheduler", scheduler);
-            SetReference(runtime, "incidentCommandConsumer", consumer);
-            SetReference(consumer, "eventCoordinator", coordinator);
-
-            var consumerData = new SerializedObject(consumer);
-            var roomProperty = consumerData.FindProperty("rooms");
-            Require(roomProperty != null && roomProperty.isArray,
-                "consumer_rooms_property_missing");
-            roomProperty.arraySize = rooms.Length;
-            for (var index = 0; index < rooms.Length; index++)
-            {
-                roomProperty.GetArrayElementAtIndex(index).objectReferenceValue
-                    = rooms[index];
-            }
-            consumerData.ApplyModifiedPropertiesWithoutUndo();
-            EditorUtility.SetDirty(consumer);
         }
 
         private static T RequireOne<T>(Scene scene, string label)

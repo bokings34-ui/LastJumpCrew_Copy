@@ -112,7 +112,11 @@ namespace LastJumpCrew.ParkHanSol.Editor
 
                 if (existingRoot != null)
                 {
-                    PreserveTutorialCompletionAudio(existingRoot, root);
+                    if (FindChild(root.transform, "PHS_NetworkTutorialCompletionAudio") == null)
+                    {
+                        PreserveTutorialCompletionAudio(existingRoot, root);
+                    }
+
                     PrefabUtility.UnloadPrefabContents(existingRoot);
                     existingRoot = null;
                 }

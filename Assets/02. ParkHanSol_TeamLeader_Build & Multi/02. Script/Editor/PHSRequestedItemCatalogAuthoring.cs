@@ -42,20 +42,13 @@ namespace LastJumpCrew.ParkHanSol.Editor
                 (UtilityItemActionKind.FireSuppression, 70, 1))
         };
 
-        private static readonly string[] ProductNames =
+        private static readonly HashSet<string> VendingOnlyToolIds = new(StringComparer.Ordinal)
         {
-            "ParkHanSol_AutoRepairKitShopProductData.asset",
-            "ParkHanSol_BatteryPackShopProductData.asset",
-            "ParkHanSol_FireExtinguisherShopProductData.asset",
-            "ParkHanSol_FoamSealantGunShopProductData.asset",
-            "ParkHanSol_FuturisticAdjustableWrenchShopProductData.asset",
-            "ParkHanSol_FuturisticCanisterShopProductData.asset",
-            "ParkHanSol_TripoFireExtinguisherShopProductData.asset",
-            "PHS_ShipHpRestoreShopProductData.asset",
-            "PHS_ShipMaxHpUpgradeShopProductData.asset",
-            "PHS_HookPowerUpgradeShopProductData.asset",
-            "PHS_ThrusterDurationUpgradeShopProductData.asset",
-            "PHS_PlayerMaxHpUpgradeShopProductData.asset"
+            "wrench",
+            "futuristic_adjustable_wrench",
+            "fire_extinguisher",
+            "tripo_fire_extinguisher",
+            "battery_pack"
         };
 
         [MenuItem("Tools/ParkHanSol/Items/Author Requested Shop Items")]
@@ -66,10 +59,7 @@ namespace LastJumpCrew.ParkHanSol.Editor
                 ConfigureItem(spec);
             }
 
-            SetCatalogObjects<ShopProductData>(
-                ShopCatalogPath,
-                "products",
-                ProductNames.Select(name => DataRoot + "/ShopProducts/" + name));
+            ApplyShopOfferPolicy();
 
             var itemCatalog = AssetDatabase.LoadAssetAtPath<UtilityItemCatalogSO>(ItemCatalogPath);
             var serializedCatalog = new SerializedObject(itemCatalog);
@@ -122,17 +112,27 @@ namespace LastJumpCrew.ParkHanSol.Editor
             }
 
             var shop = AssetDatabase.LoadAssetAtPath<ShopCatalogSO>(ShopCatalogPath);
-            var expectedOffers = Specs.Select(spec => spec.Id)
-                .Concat(new[] { "battery_pack", "fire_extinguisher", "ship_hp_restore", "ship_max_hp_upgrade", "hook_power_upgrade", "thruster_duration_upgrade", "player_max_hp_upgrade" })
-                .OrderBy(id => id).ToArray();
-            var actualOffers = shop == null ? Array.Empty<string>() : shop.Products.Select(product => product.OfferId).OrderBy(id => id).ToArray();
-            if (!actualOffers.SequenceEqual(expectedOffers))
+            var shopProducts = shop?.Products ?? Array.Empty<ShopProductData>();
+            if (shopProducts.Any(product => product == null
+                || product.ItemPrefabData == null
+                || VendingOnlyToolIds.Contains(product.ItemPrefabData.ItemId)))
             {
-                errors.Add($"shop_catalog expected=12 actual={actualOffers.Length}");
+                errors.Add("shop_catalog_vending_tool_offer_present");
+            }
+
+            var consumableOffers = shopProducts
+                .Where(product => product?.ItemPrefabData != null
+                    && !product.ItemPrefabData.UsesDurability
+                    && product.ItemPrefabData.ItemId is "auto_repair_kit" or "foam_sealant_gun" or "futuristic_canister")
+                .ToArray();
+            if (consumableOffers.Length < 2
+                || consumableOffers.Any(product => product.StockPolicy != ShopStockPolicy.Unlimited))
+            {
+                errors.Add($"shop_catalog_consumable_offer_policy_invalid count={consumableOffers.Length}");
             }
 
             var itemCatalog = AssetDatabase.LoadAssetAtPath<UtilityItemCatalogSO>(ItemCatalogPath);
-            if (itemCatalog == null || itemCatalog.Items.Count != 18
+            if (itemCatalog == null || itemCatalog.Items.Count != 21
                 || Specs.Any(spec => !itemCatalog.TryGetById(spec.Id, out _)))
             {
                 errors.Add($"item_catalog expected=18 actual={itemCatalog?.Items.Count ?? 0}");
@@ -143,7 +143,26 @@ namespace LastJumpCrew.ParkHanSol.Editor
                 throw new InvalidOperationException("PHS_REQUESTED_ITEM_VALIDATION_FAILED\n" + string.Join("\n", errors));
             }
 
-            Debug.Log("PHS_REQUESTED_ITEM_VALIDATION_PASS shop=12 utility=18 requested=5");
+            Debug.Log($"PHS_REQUESTED_ITEM_VALIDATION_PASS shop={shopProducts.Count()} utility=21 requested=5 vending_tools=0");
+        }
+
+        private static void ApplyShopOfferPolicy()
+        {
+            var catalog = AssetDatabase.LoadAssetAtPath<ShopCatalogSO>(ShopCatalogPath);
+            if (catalog == null)
+            {
+                throw new InvalidOperationException("PHS_REQUESTED_ITEM_AUTHOR_FAILED reason=shop_catalog_missing");
+            }
+
+            var retained = catalog.Products
+                .Where(product => product != null
+                    && product.ItemPrefabData != null
+                    && !VendingOnlyToolIds.Contains(product.ItemPrefabData.ItemId))
+                .ToArray();
+            var serialized = new SerializedObject(catalog);
+            WriteObjectList(serialized.FindProperty("products"), retained);
+            serialized.ApplyModifiedPropertiesWithoutUndo();
+            EditorUtility.SetDirty(catalog);
         }
 
         private static void ConfigureItem(ItemSpec spec)

@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using LastJumpCrew.ParkHanSol.Items;
 using TMPro;
 using UnityEngine;
 using UnityEngine.UI;
@@ -10,12 +11,18 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Maps
     [DisallowMultipleComponent]
     public sealed class PHSHandheldShipMapView : MonoBehaviour, IShipMapView
     {
+        private static readonly Quaternion MarkerGlyphUprightRotation =
+            Quaternion.Euler(0f, 0f, -90f);
+
         [SerializeField] private GameObject deviceRoot;
         [SerializeField] private RawImage mapImage;
         [SerializeField] private RectTransform markerRoot;
         [SerializeField] private Image markerTemplate;
         [SerializeField] private Image markerGlyphTemplate;
         [SerializeField] private TMP_Text markerLabelTemplate;
+        [Header("Player Marker Priority")]
+        [SerializeField] private Vector2 playerMarkerSize = new(18f, 18f);
+        [SerializeField] private Color playerMarkerColor = new(0.9f, 0.96f, 1f, 1f);
         [Header("Tactical Status")]
         [SerializeField] private TMP_Text currentMapText;
         [SerializeField] private TMP_Text mapDetailText;
@@ -52,14 +59,13 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Maps
         [SerializeField] private Sprite batteryIcon;
         [SerializeField] private Sprite wrenchIcon;
         [SerializeField] private Sprite fireExtinguisherIcon;
-        [SerializeField] private Color selfColor = new(0.1f, 1f, 0.35f, 1f);
-        [SerializeField] private Color teammateColor = new(0.1f, 0.75f, 1f, 1f);
-        [SerializeField] private Color incidentColor = new(1f, 0.15f, 0.08f, 1f);
-        [SerializeField] private Color objectColor = new(1f, 0.72f, 0.12f, 1f);
+        [SerializeField] private Sprite playerIcon;
 
         private readonly List<Image> markerPool = new();
         private readonly List<Image> markerGlyphPool = new();
         private readonly List<TMP_Text> markerLabelPool = new();
+        private readonly List<TMP_Text> eventRowPool = new();
+        private readonly List<Image> eventIconPool = new();
         private bool mapTextureErrorLogged;
 
         private void Awake()
@@ -101,6 +107,8 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Maps
             }
 
             ValidateIconReferences();
+            eventRowPool.AddRange(eventRows);
+            eventIconPool.AddRange(eventIcons);
             ConfigureEventRows();
             markerTemplate.gameObject.SetActive(false);
             markerGlyphTemplate.gameObject.SetActive(false);
@@ -157,6 +165,9 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Maps
             RenderEvents(presentation.Events);
 
             EnsurePoolSize(markers.Count);
+            // MarkerRoot owns map coordinates. Rotating it rotates marker
+            // positions around the map centre, so only glyph visuals compensate.
+            markerRoot.localRotation = Quaternion.identity;
             var size = markerRoot.rect.size;
             for (var index = 0; index < markerPool.Count; index++)
             {
@@ -169,75 +180,139 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Maps
                 }
 
                 var marker = markers[index];
+                // The device is world-space UI. Runtime markers must not inherit
+                // any authored tilt from the map panel hierarchy.
+                markerImage.rectTransform.localRotation = Quaternion.identity;
+                markerImage.rectTransform.localScale = Vector3.one;
                 markerImage.rectTransform.anchoredPosition = new Vector2(
                     (marker.NormalizedPosition.x - 0.5f) * size.x,
                     (marker.NormalizedPosition.y - 0.5f) * size.y);
                 var hasIcon = marker.IconId != ShipMapIconId.None;
-                markerImage.sprite = markerTemplate.sprite;
-                markerImage.preserveAspect = true;
-                markerImage.color = ResolveColor(marker.Kind);
+                markerImage.enabled = false;
                 markerImage.rectTransform.sizeDelta = marker.Kind switch
                 {
                     ShipMapMarkerKind.Incident => new Vector2(26f, 26f),
                     ShipMapMarkerKind.Object => new Vector2(20f, 20f),
+                    ShipMapMarkerKind.Self or ShipMapMarkerKind.Teammate => playerMarkerSize,
                     _ => new Vector2(22f, 22f)
                 };
                 var markerGlyph = markerGlyphPool[index];
                 markerGlyph.gameObject.SetActive(hasIcon);
                 if (hasIcon)
                 {
+                    markerGlyph.rectTransform.localRotation = MarkerGlyphUprightRotation;
+                    markerGlyph.rectTransform.localScale = Vector3.one;
                     markerGlyph.sprite = ResolveIcon(marker.IconId);
                     markerGlyph.preserveAspect = true;
-                    markerGlyph.color = Color.white;
+                    markerGlyph.color = ResolveMarkerIconColor(marker.IconId);
                 }
 
                 var markerLabel = markerLabelPool[index];
-                markerLabel.text = marker.Symbol;
+                var isPlayerMarker = marker.Kind is ShipMapMarkerKind.Self
+                    or ShipMapMarkerKind.Teammate;
                 markerLabel.gameObject.SetActive(
-                    !hasIcon && !string.IsNullOrWhiteSpace(marker.Symbol));
+                    isPlayerMarker && !string.IsNullOrWhiteSpace(marker.Symbol));
+                if (markerLabel.gameObject.activeSelf)
+                {
+                    markerLabel.rectTransform.localRotation = Quaternion.identity;
+                    markerLabel.rectTransform.localScale = Vector3.one;
+                    markerLabel.text = marker.Symbol;
+                    markerLabel.alignment = TextAlignmentOptions.Center;
+                    markerLabel.color = Color.white;
+                }
+            }
+
+            // Player markers must stay readable above every incident/tool marker.
+            // This is explicit ordering, not dependent on incoming marker order.
+            for (var index = 0; index < markers.Count; index++)
+            {
+                if (markers[index].Kind is ShipMapMarkerKind.Self
+                    or ShipMapMarkerKind.Teammate)
+                {
+                    markerPool[index].transform.SetAsLastSibling();
+                }
             }
         }
 
         private void RenderEvents(IReadOnlyList<ShipMapEventDetail> events)
         {
-            var visibleCount = Mathf.Min(events.Count, eventRows.Length);
-            for (var index = 0; index < eventRows.Length; index++)
+            EnsureEventRowPoolSize(events.Count);
+            var visibleCount = events.Count;
+            for (var index = 0; index < eventRowPool.Count; index++)
             {
                 var active = index < visibleCount;
-                eventRows[index].gameObject.SetActive(active);
+                var eventRow = eventRowPool[index];
+                var eventIcon = eventIconPool[index];
+                eventRow.gameObject.SetActive(active);
                 if (active)
                 {
                     var detail = events[index];
                     var hasIcon = detail.IconId != ShipMapIconId.None;
-                    eventIcons[index].gameObject.SetActive(hasIcon);
+                    eventIcon.gameObject.SetActive(hasIcon);
                     if (hasIcon)
                     {
-                        eventIcons[index].sprite = ResolveIcon(detail.IconId);
-                        eventIcons[index].preserveAspect = true;
-                        eventIcons[index].color = Color.white;
+                        eventIcon.sprite = ResolveIcon(detail.IconId);
+                        eventIcon.preserveAspect = true;
+                        eventIcon.color = Color.white;
                     }
 
-                    eventRows[index].rectTransform.anchoredPosition = new Vector2(
+                    eventRow.rectTransform.anchoredPosition = new Vector2(
                         hasIcon ? eventRowWithIconX : eventRowWithoutIconX,
-                        eventRows[index].rectTransform.anchoredPosition.y);
-                    eventRows[index].rectTransform.sizeDelta = new Vector2(
+                        eventRow.rectTransform.anchoredPosition.y);
+                    eventRow.rectTransform.sizeDelta = new Vector2(
                         hasIcon ? eventRowWithIconWidth : eventRowWithoutIconWidth,
-                        eventRows[index].rectTransform.sizeDelta.y);
+                        eventRow.rectTransform.sizeDelta.y);
                     var prefix = hasIcon || string.IsNullOrWhiteSpace(detail.Symbol)
                         ? string.Empty
                         : $"[{detail.Symbol}] ";
-                    eventRows[index].text =
-                        $"{prefix}{detail.Title}\n<color=#A9C7D0>{detail.Status}</color>";
+                    eventRow.text =
+                        $"{prefix}{detail.Title} <color=#A9C7D0>· {detail.Status}</color>";
                 }
                 else
                 {
-                    eventIcons[index].gameObject.SetActive(false);
+                    eventIcon.gameObject.SetActive(false);
                 }
             }
 
-            var overflow = events.Count - visibleCount;
-            eventOverflowText.gameObject.SetActive(overflow > 0);
-            eventOverflowText.text = overflow > 0 ? $"+{overflow}개 더 있음" : string.Empty;
+            eventOverflowText.gameObject.SetActive(false);
+            eventOverflowText.text = string.Empty;
+        }
+
+        private void EnsureEventRowPoolSize(int requiredCount)
+        {
+            while (eventRowPool.Count < requiredCount)
+            {
+                var sourceRow = eventRowPool[eventRowPool.Count - 1];
+                var sourceIcon = eventIconPool[eventIconPool.Count - 1];
+                var previousRow = eventRowPool.Count > 1
+                    ? eventRowPool[eventRowPool.Count - 2]
+                    : null;
+                var step = previousRow == null
+                    ? -(sourceRow.rectTransform.rect.height + 4f)
+                    : sourceRow.rectTransform.anchoredPosition.y
+                        - previousRow.rectTransform.anchoredPosition.y;
+                if (Mathf.Approximately(step, 0f))
+                {
+                    step = -(sourceRow.rectTransform.rect.height + 4f);
+                }
+
+                var row = Instantiate(sourceRow, sourceRow.transform.parent);
+                row.name = $"Runtime Event Row {eventRowPool.Count + 1}";
+                row.rectTransform.anchoredPosition = new Vector2(
+                    sourceRow.rectTransform.anchoredPosition.x,
+                    sourceRow.rectTransform.anchoredPosition.y + step);
+                row.gameObject.SetActive(false);
+
+                var icon = Instantiate(sourceIcon, sourceIcon.transform.parent);
+                icon.name = $"Runtime Event Icon {eventIconPool.Count + 1}";
+                icon.rectTransform.anchoredPosition = new Vector2(
+                    sourceIcon.rectTransform.anchoredPosition.x,
+                    sourceIcon.rectTransform.anchoredPosition.y + step);
+                icon.gameObject.SetActive(false);
+
+                eventRowPool.Add(row);
+                eventIconPool.Add(icon);
+            }
         }
 
         private bool TryBindMapTexture()
@@ -301,19 +376,6 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Maps
             }
         }
 
-        private Color ResolveColor(ShipMapMarkerKind kind)
-        {
-            return kind switch
-            {
-                ShipMapMarkerKind.Self => selfColor,
-                ShipMapMarkerKind.Teammate => teammateColor,
-                ShipMapMarkerKind.Incident => incidentColor,
-                ShipMapMarkerKind.Object => objectColor,
-                ShipMapMarkerKind.ExternalInteraction => incidentColor,
-                _ => throw new ArgumentOutOfRangeException(nameof(kind), kind, null)
-            };
-        }
-
         private Sprite ResolveIcon(ShipMapIconId iconId)
         {
             return iconId switch
@@ -337,7 +399,22 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Maps
                 ShipMapIconId.Battery => batteryIcon,
                 ShipMapIconId.Wrench => wrenchIcon,
                 ShipMapIconId.FireExtinguisher => fireExtinguisherIcon,
+                ShipMapIconId.Vending => throw new InvalidOperationException(
+                    "PHS_HANDHELD_MAP_ICON_FAILED reason=generic_vending_icon_forbidden"),
+                ShipMapIconId.Player => playerIcon,
                 _ => throw new ArgumentOutOfRangeException(nameof(iconId), iconId, null)
+            };
+        }
+
+        private Color ResolveMarkerIconColor(ShipMapIconId iconId)
+        {
+            return iconId switch
+            {
+                ShipMapIconId.Wrench => TeamRepairToolVisualPalette.Wrench,
+                ShipMapIconId.FireExtinguisher => TeamRepairToolVisualPalette.FireExtinguisher,
+                ShipMapIconId.Battery => TeamRepairToolVisualPalette.Battery,
+                ShipMapIconId.Player => playerMarkerColor,
+                _ => Color.white
             };
         }
 
@@ -345,7 +422,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Maps
         {
             foreach (ShipMapIconId iconId in Enum.GetValues(typeof(ShipMapIconId)))
             {
-                if (iconId == ShipMapIconId.None)
+                if (iconId == ShipMapIconId.None || iconId == ShipMapIconId.Vending)
                 {
                     continue;
                 }

@@ -66,10 +66,9 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer.Events.MiniGames.Runtime
             }
 
             // 4. 파티클 시스템을 찾아 작동시킵니다.
-            ParticleSystem ps = effectGo.GetComponent<ParticleSystem>();
-            if (ps != null)
+            foreach (var particle in effectGo.GetComponentsInChildren<ParticleSystem>(true))
             {
-                ps.Play();
+                particle.Play(true);
             }
 
             // 5. 연출이 끝나면 메모리를 위해 1초 뒤에 깔끔하게 파괴합니다.

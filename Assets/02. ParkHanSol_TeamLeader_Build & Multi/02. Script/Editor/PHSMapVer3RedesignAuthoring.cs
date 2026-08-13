@@ -32,7 +32,6 @@ namespace LastJumpCrew.ParkHanSol.Editor
             EditorSceneManager.MarkSceneDirty(scene);
             Require(EditorSceneManager.SaveScene(scene), "initial_scene_save_failed");
 
-            PHS0719IncidentLocationAuthoring.MigrateIncidentLocations();
             scene = SceneManager.GetSceneByPath(ScenePath);
             ConfigureAccidentReferences(scene);
             Physics.SyncTransforms();
@@ -168,7 +167,7 @@ namespace LastJumpCrew.ParkHanSol.Editor
                     $"Spawn Point {index + 1}");
                 spawnPoint.SetPositionAndRotation(
                     positions[index],
-                    Quaternion.Euler(0f, 180f, 0f));
+                    Quaternion.identity);
             }
 
             FindDirectChild(spawnRoot, "PHS_WarpSafeZone").position = new Vector3(0f, 0f, 7.5f);

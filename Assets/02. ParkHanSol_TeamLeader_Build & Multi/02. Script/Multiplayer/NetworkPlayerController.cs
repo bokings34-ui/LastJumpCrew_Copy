@@ -54,6 +54,9 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
         public const float DefaultMouseSensitivity = 0.6f;
         public const float MinimumMouseSensitivity = NetworkPlayerOptionsStore.MinimumMouseSensitivity;
         public const float MaximumMouseSensitivity = NetworkPlayerOptionsStore.MaximumMouseSensitivity;
+        // Cursor.lockState is always None in -batchmode/-nographics. Keep the
+        // requested gameplay contract observable without pretending OS state exists.
+        public static bool IsGameplayCursorLockRequested { get; private set; }
 
         [SerializeField, Range(MinimumMouseSensitivity, MaximumMouseSensitivity)] private float mouseSensitivity = DefaultMouseSensitivity;
         [SerializeField] private Transform cameraRoot;
@@ -93,6 +96,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
         private bool inputDeviceProbeReported;
         private bool inputDeviceProbeBlockedLogged;
         private bool inputDeviceProbeSampleLogged;
+        private bool inputDeviceRemoteProbeRequested;
         private float inputDeviceProbeStartTime;
         private Vector3 inputDeviceProbeStartPosition;
         private float inputDeviceProbeStartYaw;
@@ -948,22 +952,25 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
                     this);
             }
 
+            if (!IsServer
+                && !inputDeviceRemoteProbeRequested
+                && (move.sqrMagnitude > 0.01f || look.sqrMagnitude > 0.01f))
+            {
+                inputDeviceRemoteProbeRequested = true;
+                BeginInputDeviceRemoteProbeServerRpc();
+            }
+
             if (!inputDeviceProbeStarted)
             {
-                if (inputDeviceProbeMaximumMove < 0.5f || inputDeviceProbeMaximumLook < 0.1f)
-                {
-                    return;
-                }
-
                 inputDeviceProbeStarted = true;
                 inputDeviceProbeStartTime = Time.unscaledTime;
                 inputDeviceProbeStartPosition = transform.position;
                 inputDeviceProbeStartYaw = transform.eulerAngles.y;
                 inputDeviceProbeStartPitch = cameraPitch;
-                if (!IsServer)
-                {
-                    BeginInputDeviceRemoteProbeServerRpc();
-                }
+                Debug.Log(
+                    $"PHS_INPUT_DEVICE_PROBE_ARMED ownerClientId={OwnerClientId} " +
+                    $"seconds={inputDeviceProbeSeconds:F1}",
+                    this);
             }
             if (Time.unscaledTime < inputDeviceProbeStartTime + inputDeviceProbeSeconds)
             {
@@ -1149,7 +1156,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
         private void MoveOnServer(Vector2 move, float verticalMove, float yawDegrees, float lookPitch, bool jump, bool ascend, bool sprint, float deltaTime)
         {
             if ((playerLifeState != null && !playerLifeState.IsAlive)
-                || (statusEffectController != null && statusEffectController.IsShocked))
+                || (statusEffectController != null && statusEffectController.IsMovementBlocked))
             {
                 StopMovementForShock();
                 return;
@@ -1192,7 +1199,8 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
             var hasPlanarMoveInput = wishDirection.sqrMagnitude > 0.001f;
             if (hasPlanarMoveInput || grappleController == null || !grappleController.IsPullingPlayer)
             {
-                var targetSpeed = sprint ? runSpeed : moveSpeed;
+                var targetSpeed = (sprint ? runSpeed : moveSpeed)
+                    * (statusEffectController?.MovementSpeedMultiplier ?? 1f);
                 var targetPlanar = wishDirection * targetSpeed;
                 PlanarVelocity = Vector3.MoveTowards(
                     PlanarVelocity,
@@ -1687,7 +1695,22 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
             {
                 networkTransform.Teleport(targetPosition, targetRotation, transform.localScale);
                 ResetMovementForRespawn();
-                targetYaw = targetRotation.eulerAngles.y;
+                if (IsOwner)
+                {
+                    ApplyAuthoritativeTeleportLookState(targetRotation);
+                }
+                else
+                {
+                    ApplyTeleportLookStateClientRpc(
+                        targetRotation,
+                        new ClientRpcParams
+                        {
+                            Send = new ClientRpcSendParams
+                            {
+                                TargetClientIds = new[] { OwnerClientId }
+                            }
+                        });
+                }
             }
             finally
             {
@@ -1715,6 +1738,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
             PlanarVelocity = Vector3.zero;
             verticalVelocity = 0f;
             zeroGravityVelocity = Vector3.zero;
+            ApplyAuthoritativeTeleportLookState(targetRotation);
 
             if (characterController != null)
             {
@@ -1724,6 +1748,41 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
             RefreshGravityTrackingAtCurrentPosition();
 
             Debug.Log($"PHS_PLAYER_TELEPORT_OK player={name} pos={targetPosition}");
+        }
+
+        [ClientRpc]
+        private void ApplyTeleportLookStateClientRpc(
+            Quaternion targetRotation,
+            ClientRpcParams clientRpcParams = default)
+        {
+            if (!IsOwner)
+            {
+                return;
+            }
+
+            ApplyAuthoritativeTeleportLookState(targetRotation);
+        }
+
+        private void ApplyAuthoritativeTeleportLookState(Quaternion targetRotation)
+        {
+            targetYaw = targetRotation.eulerAngles.y;
+            cameraPitch = Mathf.Clamp(
+                Mathf.DeltaAngle(0f, targetRotation.eulerAngles.x),
+                -80f,
+                80f);
+            currentCameraPitch = cameraPitch;
+            yawVelocity = 0f;
+            cameraPitchVelocity = 0f;
+
+            if (cameraRoot != null)
+            {
+                cameraRoot.localRotation = Quaternion.Euler(cameraPitch, 0f, 0f);
+            }
+
+            Debug.Log(
+                $"PHS_PLAYER_TELEPORT_LOOK_SYNC ownerClientId={OwnerClientId} " +
+                $"yaw={targetYaw:F2} pitch={cameraPitch:F2}",
+                this);
         }
 
         private void ResetGravityTracking()
@@ -1758,21 +1817,8 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
 
             if (cameraRoot != null)
             {
-                if (gravityMode == NetworkPlayerGravityMode.ShipGravity)
-                {
-                    currentCameraPitch = cameraPitch;
-                    cameraPitchVelocity = 0f;
-                }
-                else
-                {
-                    currentCameraPitch = Mathf.SmoothDampAngle(
-                        currentCameraPitch,
-                        cameraPitch,
-                        ref cameraPitchVelocity,
-                        cameraRotationSmoothTime,
-                        cameraMaxRotationSpeed,
-                        Time.deltaTime);
-                }
+                currentCameraPitch = cameraPitch;
+                cameraPitchVelocity = 0f;
 
                 var shake = GetThrusterCameraShake();
                 cameraRoot.localRotation = Quaternion.Euler(
@@ -1784,6 +1830,7 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
 
         private static void SetCursorLock(bool active)
         {
+            IsGameplayCursorLockRequested = active;
             Cursor.lockState = active ? CursorLockMode.Locked : CursorLockMode.None;
             Cursor.visible = !active;
         }
@@ -1808,21 +1855,8 @@ namespace LastJumpCrew.ParkHanSol.Multiplayer
         private void RotatePlayer(float yawDegrees, float deltaTime)
         {
             targetYaw += yawDegrees;
-            if (gravityMode == NetworkPlayerGravityMode.ShipGravity)
-            {
-                yawVelocity = 0f;
-                transform.rotation = Quaternion.Euler(0f, targetYaw, 0f);
-                return;
-            }
-
-            var nextYaw = Mathf.SmoothDampAngle(
-                transform.eulerAngles.y,
-                targetYaw,
-                ref yawVelocity,
-                cameraRotationSmoothTime,
-                cameraMaxRotationSpeed,
-                deltaTime);
-            transform.rotation = Quaternion.Euler(0f, nextYaw, 0f);
+            yawVelocity = 0f;
+            transform.rotation = Quaternion.Euler(0f, targetYaw, 0f);
         }
 
         private float GetMouseLookDegrees()
